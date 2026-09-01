@@ -12,6 +12,7 @@ import {
 } from "@mui/material";
 import ViewListRoundedIcon from "@mui/icons-material/ViewListRounded";
 import HomeRoundedIcon from "@mui/icons-material/HomeRounded";
+import WebRoundedIcon from "@mui/icons-material/WebRounded";
 import SettingsSuggestRoundedIcon from "@mui/icons-material/SettingsSuggestRounded";
 import { tokens } from "../theme";
 import { useAuth } from "../hooks/useAuth";
@@ -20,8 +21,10 @@ import DevTierToggle from "./DevTierToggle";
 
 const RAIL_WIDTH = 236;
 
-function activeSection(pathname: string): "leads" | "home" {
-  return pathname.startsWith("/home") || pathname.startsWith("/courses") || pathname.startsWith("/lead-page") ? "home" : "leads";
+function activeSection(pathname: string): "leads" | "mypage" | "home" {
+  if (pathname.startsWith("/lead-page")) return "mypage";
+  if (pathname.startsWith("/home")) return "home";
+  return "leads";
 }
 
 function BrandMark({ size = 24 }: { size?: number }) {
@@ -53,6 +56,7 @@ export default function AppShell() {
   const navItems = [
     { key: "leads" as const, label: "Leads", icon: <ViewListRoundedIcon />, to: "/leads" },
     { key: "home" as const, label: "Home", icon: <HomeRoundedIcon />, to: "/home" },
+    { key: "mypage" as const, label: "My Page", icon: <WebRoundedIcon />, to: "/lead-page" },
   ];
 
   return (

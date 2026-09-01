@@ -1,17 +1,36 @@
-export const STAGES = [
-  "New Lead",
-  "No Answer",
-  "Contacted",
-  "Booked",
-  "Mandate Signed",
-  "Lost",
-  "Invalid Number",
-] as const;
+export type Stage =
+  | "New Lead"
+  | "No Answer"
+  | "Contacted"
+  | "Booked"
+  | "Mandate Signed"
+  | "Viewing Booked"
+  | "Offer Made"
+  | "Bought"
+  | "Lost"
+  | "Invalid Number";
 
-export type Stage = (typeof STAGES)[number];
+/** The two built-in pipeline shapes. A pipeline's stage list is always one of
+ * these two presets — there is no custom-stage editor. */
+export type PipelineKind = "seller" | "buyer";
+
+export const PIPELINE_STAGES: Record<PipelineKind, Stage[]> = {
+  seller: ["New Lead", "No Answer", "Contacted", "Booked", "Mandate Signed", "Lost", "Invalid Number"],
+  buyer: ["New Lead", "No Answer", "Contacted", "Viewing Booked", "Offer Made", "Bought", "Lost", "Invalid Number"],
+};
+
+export const PIPELINE_KIND_LABEL: Record<PipelineKind, string> = { seller: "Seller-style", buyer: "Buyer-style" };
+
+/** A named pipeline instance. `kind` fixes its stage list — adding a pipeline
+ * only ever means picking a preset + a name, never authoring stages. */
+export interface Pipeline {
+  id: string;
+  name: string;
+  kind: PipelineKind;
+}
 
 export const DEAD_STAGES: Stage[] = ["Lost", "Invalid Number"];
-export const PARKED_STAGES: Stage[] = ["Booked", "Mandate Signed"];
+export const PARKED_STAGES: Stage[] = ["Booked", "Mandate Signed", "Viewing Booked", "Offer Made", "Bought"];
 
 export interface FormAnswer {
   q: string;
@@ -21,6 +40,7 @@ export interface FormAnswer {
 export interface LeadRow {
   id: string;
   agent_id: string;
+  pipeline_id: string;
   name: string;
   phone: string;
   email: string | null;
@@ -41,21 +61,12 @@ export interface OverviewDailyRow {
   date: string;
   spend: number;
   leads: number;
+  leads_reached: number;
   appts: number;
+  appts_held: number;
   mandates: number;
-  commission: number;
-}
-
-export interface SetupStepRow {
-  id: string;
-  agent_id: string;
-  key: string;
-  title: string;
-  sort_order: number;
-  done: boolean;
-  cta_label: string | null;
-  cta_url: string | null;
-  cta_filled: boolean;
+  commission_expected: number;
+  commission_earned: number;
 }
 
 export interface CallQuestionRow {
@@ -100,48 +111,36 @@ export interface StageChangeExtra {
 /** Gates locked course content, custom form questions, and the upgrade nudge. No shared/pooled-lead concept exists — every lead belongs to the agent. */
 export type Tier = "free" | "paid";
 
-export const ACCENT_PRESETS = [
-  { key: "blue", label: "Blue", value: "#1976d2" },
-  { key: "green", label: "Green", value: "#2e7d32" },
-  { key: "terracotta", label: "Terracotta", value: "#c05621" },
-] as const;
+export const DEFAULT_ACCENT_COLOR = "#1976d2";
 
-export type AccentKey = (typeof ACCENT_PRESETS)[number]["key"];
-
-export interface LeadPageConfig {
+/**
+ * A lead-capture page. Every page feeds exactly one pipeline — set once at
+ * creation and never edited in place (create a new page to change it,
+ * mirroring how a Pipeline's stage preset is also fixed at creation). Which
+ * pipeline it feeds decides its one fixed template (see LeadCaptureForm):
+ * Seller-linked pages ask property address + timeline, Buyer-linked pages
+ * ask area + budget. No page builder — only the branding fields below vary.
+ */
+export interface LeadPage {
+  id: string;
+  name: string;
+  pipelineId: string;
   agentName: string;
   headline: string;
   suburb: string;
   phone: string;
   logoDataUrl: string | null;
-  accent: AccentKey;
+  accentColor: string;
 }
 
 export type QuestionType = "short_text" | "multiple_choice" | "yes_no";
 
 export interface CustomQuestion {
   id: string;
+  pageId: string;
   label: string;
   type: QuestionType;
   options?: string[];
   order: number;
 }
 
-export interface CourseLesson {
-  id: string;
-  title: string;
-  youtubeEmbedUrl: string;
-}
-
-export interface CourseModule {
-  id: string;
-  title: string;
-  description: string;
-  thumbnail: string;
-  freeTier: boolean;
-  lessons: CourseLesson[];
-}
-
-export interface CourseModuleWithLock extends CourseModule {
-  locked: boolean;
-}

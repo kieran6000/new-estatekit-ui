@@ -1,13 +1,16 @@
 import { useState, type MouseEvent, type ReactNode } from "react";
 import { Menu, MenuItem } from "@mui/material";
-import { STAGES, type Stage } from "../types";
+import type { Stage } from "../types";
 
 export default function StageMenu({
   current,
+  stages,
   onPick,
   children,
 }: {
   current: Stage;
+  /** The current lead's pipeline stage list — Seller and Buyer pipelines have different stages. */
+  stages: Stage[];
   onPick: (stage: Stage) => void;
   children: (open: (e: MouseEvent<HTMLElement>) => void) => ReactNode;
 }) {
@@ -16,7 +19,7 @@ export default function StageMenu({
     <>
       {children((e) => setAnchor(e.currentTarget))}
       <Menu anchorEl={anchor} open={!!anchor} onClose={() => setAnchor(null)}>
-        {STAGES.map((s) => (
+        {stages.map((s) => (
           <MenuItem
             key={s}
             selected={s === current}

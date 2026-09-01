@@ -5,8 +5,10 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import CallIcon from "@mui/icons-material/Call";
 import { tokens } from "../theme";
 import { useLead, useUpdateLeadNote, useUpdateLeadStage } from "../hooks/useLeads";
+import { usePipelines } from "../hooks/usePipelines";
 import { useSnack } from "../hooks/useSnack";
-import { STEP_FOR_STAGE } from "../lib/stageLogic";
+import { PIPELINE_STAGES } from "../types";
+import { pipelineKindFor, STEP_FOR_STAGE } from "../lib/stageLogic";
 import StageMenu from "../components/StageMenu";
 import OutcomeSheet from "../components/OutcomeSheet";
 import type { OutcomeStep, Stage } from "../types";
@@ -15,6 +17,7 @@ export default function LeadDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const lead = useLead(id);
+  const { data: pipelines = [] } = usePipelines();
   const updateNote = useUpdateLeadNote();
   const updateStage = useUpdateLeadStage();
   const showSnack = useSnack();
@@ -22,7 +25,7 @@ export default function LeadDetailPage() {
   const [note, setNote] = useState(lead?.note ?? "");
   const [saveState, setSaveState] = useState("");
   const [outcomeOpen, setOutcomeOpen] = useState(false);
-  const [stageStep, setStageStep] = useState<OutcomeStep | null>(null);
+  const [stageStep, setStageStep] = useState<{ step: OutcomeStep; stage: Stage } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => setNote(lead?.note ?? ""), [lead?.id]);
@@ -53,10 +56,13 @@ export default function LeadDetailPage() {
     timer.current = setTimeout(() => saveNote(value), 500);
   }
 
+  const pipelineKind = pipelineKindFor(lead, pipelines);
+  const stagesForPipeline = PIPELINE_STAGES[pipelineKind];
+
   function handleStagePick(stage: Stage) {
     const step = STEP_FOR_STAGE[stage];
     if (step) {
-      setStageStep(step);
+      setStageStep({ step, stage });
       return;
     }
     const prev = { stage: lead!.stage, next_label: lead!.next_label, due: lead!.due, reminder_at: lead!.reminder_at, commission: lead!.commission };
@@ -103,7 +109,7 @@ export default function LeadDetailPage() {
           >
             <CallIcon fontSize="small" /> Call
           </Box>
-          <StageMenu current={lead.stage} onPick={handleStagePick}>
+          <StageMenu current={lead.stage} stages={stagesForPipeline} onPick={handleStagePick}>
             {(open) => (
               <Box
                 component="button"
@@ -160,11 +166,13 @@ export default function LeadDetailPage() {
         </Section>
       </Box>
 
-      <OutcomeSheet lead={lead} open={outcomeOpen} onClose={() => setOutcomeOpen(false)} onSnack={showSnack} />
+      <OutcomeSheet lead={lead} pipelineKind={pipelineKind} open={outcomeOpen} onClose={() => setOutcomeOpen(false)} onSnack={showSnack} />
       <OutcomeSheet
         lead={lead}
+        pipelineKind={pipelineKind}
         open={!!stageStep}
-        entryStep={stageStep ?? "main"}
+        entryStep={stageStep?.step ?? "main"}
+        entryStage={stageStep?.stage}
         onClose={() => setStageStep(null)}
         onSnack={showSnack}
       />

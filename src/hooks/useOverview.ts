@@ -24,23 +24,67 @@ function fromDateFor(period: OverviewPeriod): string | null {
 
 export interface OverviewComputedRow {
   date: string;
+  // raw counts (also the totals-row aggregation inputs)
   spend: number;
   leads: number;
+  leadsReached: number;
   appts: number;
+  apptsHeld: number;
   mandates: number;
-  comm: number;
+  commExpected: number;
+  commEarned: number;
+  // derived — Simple view
   cpl: number;
+  // derived — Advanced view only
+  costPerReachedLead: number;
+  costPerAppt: number;
+  apptToMandatePct: number;
+  leadToMandatePct: number;
+  costPerMandate: number;
+  expectedProfit: number;
+  actualProfit: number;
+  expectedRoi: number;
+  actualRoi: number;
+}
+
+type RawTotals = Pick<
+  OverviewComputedRow,
+  "spend" | "leads" | "leadsReached" | "appts" | "apptsHeld" | "mandates" | "commExpected" | "commEarned"
+>;
+
+/** Turns raw counts into every derived ratio the Overview table shows.
+ * Shared by the per-day mapping and the totals row, so a total is always the
+ * ratio of summed counts — never a sum of already-computed percentages. */
+export function computeDerived(raw: RawTotals): Omit<OverviewComputedRow, "date"> {
+  const { spend, leads, leadsReached, appts, mandates, commExpected, commEarned } = raw;
+  return {
+    ...raw,
+    cpl: leads ? spend / leads : 0,
+    costPerReachedLead: leadsReached ? spend / leadsReached : 0,
+    costPerAppt: appts ? spend / appts : 0,
+    apptToMandatePct: appts ? mandates / appts : 0,
+    leadToMandatePct: leads ? mandates / leads : 0,
+    costPerMandate: mandates ? spend / mandates : 0,
+    expectedProfit: commExpected - spend,
+    actualProfit: commEarned - spend,
+    expectedRoi: spend ? (commExpected - spend) / spend : 0,
+    actualRoi: spend ? (commEarned - spend) / spend : 0,
+  };
 }
 
 function toComputed(r: OverviewDailyRow): OverviewComputedRow {
   return {
     date: r.date,
-    spend: Number(r.spend),
-    leads: r.leads,
-    appts: r.appts,
-    mandates: r.mandates,
-    comm: Number(r.commission),
-    cpl: r.leads ? Number(r.spend) / r.leads : 0,
+    ...computeDerived({
+      spend: Number(r.spend),
+      leads: r.leads,
+      leadsReached: r.leads_reached,
+      appts: r.appts,
+      apptsHeld: r.appts_held,
+      mandates: r.mandates,
+      commExpected: Number(r.commission_expected),
+      commEarned: Number(r.commission_earned),
+    }),
   };
 }
 

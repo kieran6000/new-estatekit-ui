@@ -11,6 +11,7 @@ import {
   Toolbar,
   Typography,
 } from "@mui/material";
+import DoneAllIcon from "@mui/icons-material/DoneAll";
 import { tokens } from "../theme";
 import {
   useAutomations,
@@ -19,14 +20,95 @@ import {
   useToggleAutomation,
   useUpdateAutomationStep,
 } from "../hooks/useAutomations";
+import { useLeads } from "../hooks/useLeads";
 import { useSnack } from "../hooks/useSnack";
 import type { AutomationRow, AutomationStepRow } from "../types/automations";
+import type { LeadRow } from "../types";
 
 const TRIGGER_LABEL: Record<string, string> = {
   lead_created: "When a lead is created",
   stage_changed: "When stage changes to",
   reminder_due: "When a reminder comes due",
 };
+
+function renderTemplate(text: string, lead: LeadRow): string {
+  const fields: Record<string, string> = {
+    name: lead.name,
+    first_name: lead.name.split(" ")[0],
+    phone: lead.phone,
+    stage: lead.stage,
+    next_label: lead.next_label,
+  };
+  return text.replace(/\{\{(\w+)\}\}/g, (_m, key: string) => fields[key] ?? `{{${key}}}`);
+}
+
+/** Deterministic 4-char mock slug so the same lead always previews the same short link. */
+function shortSlugFor(id: string): string {
+  let h = 0;
+  for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return h.toString(36).padStart(4, "0").slice(0, 4);
+}
+
+/**
+ * A 1:1 WhatsApp chat mockup so an operator can see exactly what the lead
+ * receives, without opening the step editor — the short lead-action link is
+ * a real link to /l/:leadId (the public, no-login-required page a tap on
+ * WhatsApp lands on), built from a real lead so it's actually clickable to
+ * preview here, not just decorative text.
+ */
+function WhatsAppPreview({ lead, text }: { lead: LeadRow | undefined; text: string | null }) {
+  if (!lead || !text) return null;
+  const body = renderTemplate(text, lead);
+  const link = `ek.co/L/${shortSlugFor(lead.id)}`;
+  return (
+    <Box
+      sx={{
+        borderRadius: "8px",
+        overflow: "hidden",
+        border: `1px solid ${tokens.divider}`,
+      }}
+    >
+      <Box sx={{ bgcolor: "#075e54", color: "#fff", px: 1.5, py: 1, fontSize: 12.5, fontWeight: 500 }}>WhatsApp preview</Box>
+      <Box
+        sx={{
+          bgcolor: "#e5ddd5",
+          backgroundImage:
+            "radial-gradient(rgba(0,0,0,.035) 1px, transparent 1px), radial-gradient(rgba(0,0,0,.035) 1px, transparent 1px)",
+          backgroundSize: "18px 18px",
+          backgroundPosition: "0 0, 9px 9px",
+          p: "14px 12px",
+          display: "flex",
+          justifyContent: "flex-end",
+        }}
+      >
+        <Box
+          sx={{
+            maxWidth: "80%",
+            bgcolor: "#dcf8c6",
+            borderRadius: "8px",
+            borderTopRightRadius: 0,
+            p: "7px 9px 6px",
+            boxShadow: "0 1px 1px rgba(0,0,0,.12)",
+          }}
+        >
+          <Typography sx={{ fontSize: 13.5, color: "#111", whiteSpace: "pre-wrap", lineHeight: 1.35 }}>
+            {body}
+            {"\n\n"}
+            <Box component="a" href={`/l/${lead.id}`} target="_blank" rel="noopener" sx={{ color: "#0b57d0" }}>
+              {link}
+            </Box>
+          </Typography>
+          <Box sx={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 0.4, mt: 0.5 }}>
+            <Typography sx={{ fontSize: 10.5, color: "rgba(0,0,0,.45)" }}>
+              {new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            </Typography>
+            <DoneAllIcon sx={{ fontSize: 14, color: "#53bdeb" }} />
+          </Box>
+        </Box>
+      </Box>
+    </Box>
+  );
+}
 
 export default function AdminAutomationsPage() {
   const { data: isOperator, isLoading: loadingOperator } = useIsOperator();
@@ -58,8 +140,10 @@ export default function AdminAutomationsPage() {
 function AutomationsAdmin() {
   const { data: automations = [], isLoading } = useAutomations();
   const { data: steps = [] } = useAutomationSteps();
+  const { data: leads = [] } = useLeads();
   const toggle = useToggleAutomation();
   const showSnack = useSnack();
+  const previewLead = leads[0];
 
   return (
     <Box sx={{ maxWidth: 820, mx: "auto", pb: 4 }}>
@@ -83,6 +167,7 @@ function AutomationsAdmin() {
             key={a.id}
             automation={a}
             steps={steps.filter((s) => s.automation_id === a.id)}
+            previewLead={previewLead}
             onToggle={(enabled) => {
               toggle.mutate({ id: a.id, enabled });
               showSnack(`${a.name} ${enabled ? "enabled" : "disabled"}`);
@@ -97,13 +182,16 @@ function AutomationsAdmin() {
 function AutomationCard({
   automation,
   steps,
+  previewLead,
   onToggle,
 }: {
   automation: AutomationRow;
   steps: AutomationStepRow[];
+  previewLead: LeadRow | undefined;
   onToggle: (enabled: boolean) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const whatsappSteps = steps.filter((s) => s.action_type === "send_whatsapp");
 
   return (
     <Box sx={{ m: "12px 16px 0", border: `1px solid ${tokens.divider}`, borderRadius: "8px", bgcolor: "background.paper" }}>
@@ -122,6 +210,15 @@ function AutomationCard({
           onChange={(e) => onToggle(e.target.checked)}
         />
       </Box>
+
+      {whatsappSteps.length > 0 && (
+        <Box sx={{ px: 2, pb: 2, display: "flex", flexDirection: "column", gap: 1.5 }}>
+          {whatsappSteps.map((s) => (
+            <WhatsAppPreview key={s.id} lead={previewLead} text={s.template_text} />
+          ))}
+        </Box>
+      )}
+
       {expanded && (
         <>
           <Divider />

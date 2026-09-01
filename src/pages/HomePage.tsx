@@ -1,25 +1,27 @@
-import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { AppBar, Avatar, Box, Button, LinearProgress, TextField, Toolbar, Typography } from "@mui/material";
+import { useState } from "react";
+import { AppBar, Avatar, Box, Button, TextField, Toolbar, Typography } from "@mui/material";
 import EventIcon from "@mui/icons-material/Event";
 import MailOutlineIcon from "@mui/icons-material/Mail";
 import StorefrontIcon from "@mui/icons-material/Storefront";
-import CheckIcon from "@mui/icons-material/Check";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
-import LockIcon from "@mui/icons-material/Lock";
+import PlayCircleOutlineIcon from "@mui/icons-material/PlayCircleOutlineRounded";
 import { tokens } from "../theme";
-import { useMarkStepDone, useSetupSteps } from "../hooks/useSetupSteps";
 import { useSendCallQuestion } from "../hooks/useSupport";
 import { useSnack } from "../hooks/useSnack";
-import { useCourseModules } from "../hooks/useCourses";
 import TicketDialog from "../components/TicketDialog";
 
-const DOCS: [string, string, boolean?][] = [
+const DOCS: [string, string][] = [
   ["Ad templates", "https://drive.google.com"],
   ["Landing pages", "https://drive.google.com"],
   ["Forms", "https://drive.google.com"],
-  ["My lead page", "/lead-page", true],
+];
+
+const WHOP_COURSE_URL = "https://whop.com/estatekit/ads-that-convert";
+const COURSE_BANNER_IMAGE = "https://i.imgur.com/9TvDhuJ.png";
+const WATCH_AND_LEARN: { title: string; thumbnail: string; url: string }[] = [
+  { title: "Buyer & Seller Ads", thumbnail: "https://i.imgur.com/9TvDhuJ.png", url: "https://whop.com/estatekit/buyer-seller-ads" },
+  { title: "Fix a Problem", thumbnail: "https://i.imgur.com/q8a1KNu.png", url: "https://whop.com/estatekit/fix-a-problem" },
 ];
 
 function GoogleMeetLogo({ size = 18 }: { size?: number }) {
@@ -35,20 +37,10 @@ function GoogleMeetLogo({ size = 18 }: { size?: number }) {
 }
 
 export default function HomePage() {
-  const navigate = useNavigate();
-  const { data: steps = [] } = useSetupSteps();
-  const { data: modules } = useCourseModules();
-  const markDone = useMarkStepDone();
   const sendQuestion = useSendCallQuestion();
   const showSnack = useSnack();
   const [question, setQuestion] = useState("");
   const [ticketOpen, setTicketOpen] = useState(false);
-
-  const done = steps.filter((s) => s.done).length;
-  const total = steps.length || 4;
-  const left = total - done;
-
-  const progress = useMemo(() => (total ? (done / total) * 100 : 0), [done, total]);
 
   async function submitQuestion() {
     const v = question.trim();
@@ -70,20 +62,6 @@ export default function HomePage() {
           <Avatar sx={{ width: 32, height: 32, bgcolor: tokens.primary, fontSize: 14 }}>K</Avatar>
         </Toolbar>
       </AppBar>
-
-      {left > 0 && (
-        <Box sx={{ bgcolor: "background.paper", p: 2, borderBottom: `1px solid ${tokens.divider}` }}>
-          <Typography sx={{ fontSize: 15, fontWeight: 500 }}>
-            {total ? `You're ${done} of ${total} set up` : "Setting up…"}
-          </Typography>
-          <LinearProgress
-            variant="determinate"
-            value={progress}
-            sx={{ height: 4, borderRadius: 2, mt: 1.25, bgcolor: tokens.divider, "& .MuiLinearProgress-bar": { bgcolor: tokens.primary } }}
-          />
-          <Typography sx={{ color: "text.secondary", fontSize: 13, mt: 0.75 }}>one call and you're live</Typography>
-        </Box>
-      )}
 
       <Box sx={{ m: "12px 16px 0", border: `1px solid ${tokens.divider}`, borderRadius: "8px", bgcolor: "background.paper", p: "14px 16px", boxShadow: "0 1px 2px rgba(0,0,0,.14)" }}>
         <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
@@ -159,98 +137,61 @@ export default function HomePage() {
         </Box>
       </Box>
 
-      {left > 0 && (
-      <>
-      <Typography sx={{ fontSize: 12, fontWeight: 500, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.06em", p: "14px 16px 6px" }}>
-        Finish setup
+      <Typography sx={{ fontSize: 12, fontWeight: 500, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.06em", p: "16px 16px 8px" }}>
+        Your course
       </Typography>
-      <Box sx={{ bgcolor: "background.paper", borderTop: `1px solid ${tokens.divider}`, borderBottom: `1px solid ${tokens.divider}` }}>
-        {steps.map((s, i) => (
-          <Box
-            key={s.id}
-            sx={{ display: "flex", alignItems: "center", gap: 1.75, p: "12px 16px", borderBottom: i < steps.length - 1 ? `1px solid ${tokens.divider2}` : 0 }}
-          >
-            <Box
-              sx={{
-                width: 24,
-                height: 24,
-                borderRadius: "50%",
-                border: `2px solid ${s.done ? tokens.green : tokens.ink3}`,
-                bgcolor: s.done ? tokens.green : "transparent",
-                color: s.done ? "#fff" : tokens.ink3,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 13,
-                fontWeight: 600,
-                flex: "0 0 auto",
-              }}
-            >
-              {s.done ? <CheckIcon sx={{ fontSize: 15 }} /> : i + 1}
-            </Box>
-            <Typography sx={{ flex: 1, fontWeight: 500, fontSize: 15, color: s.done ? "text.secondary" : "text.primary" }}>{s.title}</Typography>
-            {s.done ? null : s.cta_url ? (
-              <Button
-                variant={s.cta_filled ? "contained" : "text"}
-                size="small"
-                href={s.cta_url}
-                target="_blank"
-                rel="noopener"
-                onClick={() => setTimeout(() => markDone.mutate(s.id), 350)}
-              >
-                {s.cta_label}
-              </Button>
-            ) : null}
+      <Box sx={{ px: 2 }}>
+        <Box
+          component="a"
+          href={WHOP_COURSE_URL}
+          target="_blank"
+          rel="noopener"
+          sx={{
+            display: "flex",
+            borderRadius: "12px",
+            overflow: "hidden",
+            textDecoration: "none",
+            boxShadow: "0 1px 2px rgba(0,0,0,.14)",
+          }}
+        >
+          <Box sx={{ width: 108, flexShrink: 0, bgcolor: "#0d1b2e", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Box component="img" src={COURSE_BANNER_IMAGE} alt="" sx={{ width: "100%", height: "100%", objectFit: "contain" }} />
           </Box>
-        ))}
+          <Box sx={{ flex: 1, minWidth: 0, background: `linear-gradient(135deg, ${tokens.primaryDark}, ${tokens.primary})`, color: "#fff", p: "16px 18px" }}>
+            <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", opacity: 0.85 }}>YOUR COURSE</Typography>
+            <Typography sx={{ fontSize: 17, fontWeight: 700, mt: 0.5 }}>Ads That Convert: The Full EstateKit Course</Typography>
+            <Typography sx={{ fontSize: 13, opacity: 0.85, mt: 0.5 }}>Watch on Whop →</Typography>
+          </Box>
+        </Box>
       </Box>
-      </>
-      )}
 
       <Typography sx={{ fontSize: 12, fontWeight: 500, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.06em", p: "16px 16px 8px" }}>
-        Guides
+        Watch &amp; learn
       </Typography>
-      <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 1.5, px: 2 }}>
-        {modules.map((m) => (
+      <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1.5, px: 2 }}>
+        {WATCH_AND_LEARN.map((v) => (
           <Box
-            key={m.id}
-            component="button"
-            onClick={() => navigate(m.locked ? "/upgrade" : `/courses/${m.id}`)}
+            key={v.title}
+            component="a"
+            href={v.url}
+            target="_blank"
+            rel="noopener"
             sx={{
-              position: "relative",
               display: "flex",
               flexDirection: "column",
-              justifyContent: "flex-end",
-              aspectRatio: "1/1",
               borderRadius: "12px",
               overflow: "hidden",
-              border: 0,
-              p: 0,
+              textDecoration: "none",
               cursor: "pointer",
               boxShadow: "0 1px 2px rgba(0,0,0,.14)",
-              textAlign: "left",
+              bgcolor: "background.paper",
             }}
           >
-            <Box
-              component="img"
-              src={m.thumbnail}
-              alt=""
-              sx={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", opacity: m.locked ? 0.35 : 0.9 }}
-            />
-            <Box sx={{ position: "absolute", inset: 0, background: "linear-gradient(0deg, rgba(0,0,0,.55), rgba(0,0,0,0) 60%)" }} />
-            {m.locked ? (
-              <Box sx={{ position: "relative", p: 1.75, color: "#fff" }}>
-                <LockIcon sx={{ display: "block", mb: 0.5 }} />
-                <Typography sx={{ fontWeight: 700, fontSize: 13, lineHeight: 1.15 }}>{m.title}</Typography>
-                <Typography sx={{ fontSize: 11, fontWeight: 600, mt: 0.5, textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                  Unlock with paid
-                </Typography>
-              </Box>
-            ) : (
-              <Typography sx={{ position: "relative", p: 1.75, color: "#fff", fontWeight: 700, fontSize: 14, lineHeight: 1.15, textShadow: "0 1px 6px rgba(0,0,0,.5)" }}>
-                {m.title}
-              </Typography>
-            )}
+            <Box sx={{ position: "relative", width: "100%", aspectRatio: "16/10", bgcolor: "#0d1b2e" }}>
+              <Box component="img" src={v.thumbnail} alt="" sx={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain" }} />
+              <PlayCircleOutlineIcon sx={{ position: "absolute", top: 8, right: 8, color: "#fff", opacity: 0.9 }} />
+            </Box>
+            <Typography sx={{ p: "10px 12px", fontWeight: 500, fontSize: 13.5, lineHeight: 1.2, color: "text.primary" }}>{v.title}</Typography>
           </Box>
         ))}
       </Box>
@@ -259,14 +200,13 @@ export default function HomePage() {
         Templates &amp; links
       </Typography>
       <Box sx={{ bgcolor: "background.paper", borderTop: `1px solid ${tokens.divider}`, borderBottom: `1px solid ${tokens.divider}`, mt: 1 }}>
-        {DOCS.map(([label, url, internal], i) => (
+        {DOCS.map(([label, url], i) => (
           <Box
             key={label}
-            component={internal ? "button" : "a"}
-            onClick={internal ? () => navigate(url) : undefined}
-            href={internal ? undefined : url}
-            target={internal ? undefined : "_blank"}
-            rel={internal ? undefined : "noopener"}
+            component="a"
+            href={url}
+            target="_blank"
+            rel="noopener"
             sx={{
               display: "flex",
               alignItems: "center",

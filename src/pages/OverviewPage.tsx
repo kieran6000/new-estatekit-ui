@@ -11,50 +11,91 @@ import {
   TableCell,
   TableHead,
   TableRow,
+  ToggleButton,
+  ToggleButtonGroup,
   Toolbar,
   Typography,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { tokens } from "../theme";
-import { useOverview, type OverviewComputedRow, type OverviewPeriod } from "../hooks/useOverview";
+import { computeDerived, useOverview, type OverviewComputedRow, type OverviewPeriod } from "../hooks/useOverview";
 
 const PERIODS: OverviewPeriod[] = ["This month", "Last 30 days", "Last 7 days", "Lifetime"];
 
-type ColKey = "date" | "spend" | "leads" | "cpl" | "appts" | "mandates" | "comm";
-const COLS: { k: ColKey; label: string; num?: boolean; fmt?: (v: number) => string }[] = [
+type Mode = "simple" | "advanced";
+type ColKey = keyof OverviewComputedRow;
+
+const money = (v: number) => "R" + Math.round(v).toLocaleString();
+const moneyOrDash = (v: number) => (v ? money(v) : "—");
+const pct = (v: number) => (v ? Math.round(v * 100) + "%" : "—");
+
+interface Col {
+  k: ColKey;
+  label: string;
+  num?: boolean;
+  fmt?: (v: number) => string;
+}
+
+const SIMPLE_COLS: Col[] = [
   { k: "date", label: "Date" },
-  { k: "spend", label: "Ad spend", num: true, fmt: (v) => "R" + v.toLocaleString() },
+  { k: "spend", label: "Ad spend", num: true, fmt: money },
   { k: "leads", label: "Leads", num: true },
-  { k: "cpl", label: "Cost / lead", num: true, fmt: (v) => (v ? "R" + v.toFixed(0) : "—") },
+  { k: "cpl", label: "Cost / lead", num: true, fmt: moneyOrDash },
   { k: "appts", label: "Appts", num: true },
   { k: "mandates", label: "Mandates", num: true },
-  { k: "comm", label: "Commission", num: true, fmt: (v) => (v ? "R" + v.toLocaleString() : "—") },
+  { k: "commExpected", label: "Commission", num: true, fmt: moneyOrDash },
+];
+
+const ADVANCED_COLS: Col[] = [
+  { k: "date", label: "Date" },
+  { k: "spend", label: "Ad spend", num: true, fmt: money },
+  { k: "leads", label: "Leads", num: true },
+  { k: "cpl", label: "Cost / lead", num: true, fmt: moneyOrDash },
+  { k: "leadsReached", label: "Leads reached", num: true },
+  { k: "costPerReachedLead", label: "Cost / reached lead", num: true, fmt: moneyOrDash },
+  { k: "appts", label: "Appts booked", num: true },
+  { k: "apptsHeld", label: "Appts held", num: true },
+  { k: "costPerAppt", label: "Cost / appt", num: true, fmt: moneyOrDash },
+  { k: "mandates", label: "Mandates signed", num: true },
+  { k: "apptToMandatePct", label: "Appt → mandate %", num: true, fmt: pct },
+  { k: "leadToMandatePct", label: "Lead → mandate %", num: true, fmt: pct },
+  { k: "commExpected", label: "Expected commission", num: true, fmt: moneyOrDash },
+  { k: "commEarned", label: "Earned commission", num: true, fmt: moneyOrDash },
+  { k: "costPerMandate", label: "Cost / mandate", num: true, fmt: moneyOrDash },
+  { k: "expectedProfit", label: "Expected profit", num: true, fmt: money },
+  { k: "actualProfit", label: "Actual profit", num: true, fmt: money },
+  { k: "expectedRoi", label: "Expected ROI", num: true, fmt: pct },
+  { k: "actualRoi", label: "Actual ROI", num: true, fmt: pct },
 ];
 
 export default function OverviewPage() {
   const navigate = useNavigate();
   const [period, setPeriod] = useState<OverviewPeriod>("Last 30 days");
+  const [mode, setMode] = useState<Mode>("simple");
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [sort, setSort] = useState<{ k: ColKey; dir: 1 | -1 }>({ k: "date", dir: -1 });
   const { data = [] } = useOverview(period);
+  const cols = mode === "simple" ? SIMPLE_COLS : ADVANCED_COLS;
 
   const totals = useMemo(() => {
-    const t = { date: "TOTAL", spend: 0, leads: 0, appts: 0, mandates: 0, comm: 0, cpl: 0 };
+    const raw = { spend: 0, leads: 0, leadsReached: 0, appts: 0, apptsHeld: 0, mandates: 0, commExpected: 0, commEarned: 0 };
     data.forEach((r) => {
-      t.spend += r.spend;
-      t.leads += r.leads;
-      t.appts += r.appts;
-      t.mandates += r.mandates;
-      t.comm += r.comm;
+      raw.spend += r.spend;
+      raw.leads += r.leads;
+      raw.leadsReached += r.leadsReached;
+      raw.appts += r.appts;
+      raw.apptsHeld += r.apptsHeld;
+      raw.mandates += r.mandates;
+      raw.commExpected += r.commExpected;
+      raw.commEarned += r.commEarned;
     });
-    t.cpl = t.leads ? t.spend / t.leads : 0;
-    return t;
+    return { date: "TOTAL", ...computeDerived(raw) };
   }, [data]);
 
   const sorted = useMemo(() => {
     return [...data].sort((a, b) => {
-      const x = a[sort.k as keyof OverviewComputedRow];
-      const y = b[sort.k as keyof OverviewComputedRow];
+      const x = a[sort.k];
+      const y = b[sort.k];
       return (x < y ? -1 : x > y ? 1 : 0) * sort.dir;
     });
   }, [data, sort]);
@@ -63,7 +104,7 @@ export default function OverviewPage() {
     setSort((s) => (s.k === k ? { k, dir: (s.dir * -1) as 1 | -1 } : { k, dir: 1 }));
   }
 
-  const cell = (c: (typeof COLS)[number], row: Record<string, number | string>) => {
+  const cell = (c: Col, row: Record<string, number | string>) => {
     const v = row[c.k];
     return c.fmt ? c.fmt(v as number) : v;
   };
@@ -79,7 +120,7 @@ export default function OverviewPage() {
         </Toolbar>
       </AppBar>
 
-      <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, p: "10px 16px", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
+      <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.5, p: "10px 16px", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
         <Box
           component="button"
           onClick={(e) => setMenuAnchor(e.currentTarget)}
@@ -101,6 +142,18 @@ export default function OverviewPage() {
             </MenuItem>
           ))}
         </Menu>
+
+        <ToggleButtonGroup
+          size="small"
+          exclusive
+          value={mode}
+          onChange={(_e, v) => v && setMode(v)}
+          sx={{ "& .MuiToggleButton-root": { textTransform: "none", fontSize: 13, px: 1.5, py: 0.5 } }}
+        >
+          <ToggleButton value="simple">Simple</ToggleButton>
+          <ToggleButton value="advanced">Advanced</ToggleButton>
+        </ToggleButtonGroup>
+
         <Typography sx={{ ml: "auto", color: "text.disabled", fontSize: 12 }}>Tap a heading to sort</Typography>
       </Box>
 
@@ -108,7 +161,7 @@ export default function OverviewPage() {
         <Table size="small">
           <TableHead>
             <TableRow>
-              {COLS.map((c) => (
+              {cols.map((c) => (
                 <TableCell
                   key={c.k}
                   align={c.num ? "right" : "left"}
@@ -122,16 +175,16 @@ export default function OverviewPage() {
           </TableHead>
           <TableBody>
             <TableRow sx={{ bgcolor: "#eef1f3" }}>
-              {COLS.map((c) => (
-                <TableCell key={c.k} align={c.num ? "right" : "left"} sx={{ fontWeight: 500, borderTop: `2px solid ${tokens.divider}`, borderBottom: `2px solid ${tokens.divider}` }}>
-                  {cell(c, totals)}
+              {cols.map((c) => (
+                <TableCell key={c.k} align={c.num ? "right" : "left"} sx={{ fontWeight: 500, borderTop: `2px solid ${tokens.divider}`, borderBottom: `2px solid ${tokens.divider}`, whiteSpace: "nowrap" }}>
+                  {cell(c, totals as unknown as Record<string, number | string>)}
                 </TableCell>
               ))}
             </TableRow>
             {sorted.map((r, i) => (
               <TableRow key={r.date} sx={i % 2 === 1 ? { bgcolor: "#f7f9fb" } : undefined}>
-                {COLS.map((c) => (
-                  <TableCell key={c.k} align={c.num ? "right" : "left"}>
+                {cols.map((c) => (
+                  <TableCell key={c.k} align={c.num ? "right" : "left"} sx={{ whiteSpace: "nowrap" }}>
                     {cell(c, r as unknown as Record<string, number | string>)}
                   </TableCell>
                 ))}
@@ -141,7 +194,9 @@ export default function OverviewPage() {
         </Table>
       </Box>
       <Typography variant="caption" sx={{ display: "block", p: "12px 16px", color: "text.disabled" }}>
-        The numbers that matter day-to-day. Reached, show-rate, ROI &amp; profit columns are hidden to keep it clean.
+        {mode === "simple"
+          ? "The numbers that matter day-to-day. Switch to Advanced for reach, show-rate, ROI & profit."
+          : "Everything, including reach, show-rate, expected vs. actual commission, profit and ROI."}
       </Typography>
     </Box>
   );

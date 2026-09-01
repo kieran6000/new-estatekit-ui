@@ -3,17 +3,19 @@ import { Box, IconButton, LinearProgress, TextField, Typography } from "@mui/mat
 import CloseIcon from "@mui/icons-material/Close";
 import CallIcon from "@mui/icons-material/Call";
 import * as leadsApi from "../api/leads";
-import { dueLeads } from "../lib/stageLogic";
-import type { LeadRow } from "../types";
+import { dueLeads, pipelineKindFor } from "../lib/stageLogic";
+import type { LeadRow, Pipeline } from "../types";
 import OutcomeSheet from "./OutcomeSheet";
 
 export default function FocusCallModal({
   leads,
+  pipelines,
   open,
   onClose,
   onSnack,
 }: {
   leads: LeadRow[];
+  pipelines: Pipeline[];
   open: boolean;
   onClose: () => void;
   onSnack: (msg: string) => void;
@@ -151,12 +153,31 @@ export default function FocusCallModal({
                 }}
               />
             </Box>
-            <Box sx={{ flexShrink: 0, bgcolor: "#1c272c", borderTop: "1px solid #0e1519", p: "12px 16px" }}>
+            <Box sx={{ flexShrink: 0, bgcolor: "#1c272c", borderTop: "1px solid #0e1519", p: "12px 16px", display: "flex", gap: 1 }}>
+              <Box
+                component="button"
+                onClick={() => setQi((n) => n + 1)}
+                sx={{
+                  bgcolor: "transparent",
+                  color: "#b0bec5",
+                  border: "1px solid rgba(255,255,255,.25)",
+                  borderRadius: "6px",
+                  p: "16px 20px",
+                  fontSize: 15,
+                  fontWeight: 500,
+                  letterSpacing: "0.06em",
+                  textTransform: "uppercase",
+                  cursor: "pointer",
+                }}
+              >
+                Skip
+              </Box>
               <Box
                 component="a"
                 href={`tel:${lead.phone.replace(/\s/g, "")}`}
                 onClick={saveNoteAndCall}
                 sx={{
+                  flex: 1,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -182,6 +203,7 @@ export default function FocusCallModal({
 
       <OutcomeSheet
         lead={lead}
+        pipelineKind={lead ? pipelineKindFor(lead, pipelines) : "seller"}
         open={outcomeOpen}
         onClose={() => setOutcomeOpen(false)}
         onSnack={onSnack}

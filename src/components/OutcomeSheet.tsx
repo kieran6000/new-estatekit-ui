@@ -17,21 +17,36 @@ import EventIcon from "@mui/icons-material/Event";
 import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutlineOutlined";
 import PhoneDisabledIcon from "@mui/icons-material/PhoneDisabled";
 import WorkspacePremiumIcon from "@mui/icons-material/WorkspacePremium";
+import RequestQuoteIcon from "@mui/icons-material/RequestQuote";
 import BlockIcon from "@mui/icons-material/Block";
 import CloseFullscreenIcon from "@mui/icons-material/CallEnd";
-import { defaultReminderISO } from "../lib/stageLogic";
+import { defaultReminderISO, MAIN_OUTCOME_OPTIONS, STEP_FOR_STAGE, type MainOutcomeOption } from "../lib/stageLogic";
 import { useUpdateLeadStage } from "../hooks/useLeads";
-import type { LeadRow, OutcomeStep } from "../types";
+import type { LeadRow, OutcomeStep, PipelineKind, Stage } from "../types";
+
+export const OUTCOME_ICONS: Record<MainOutcomeOption["icon"], React.ReactNode> = {
+  event: <EventIcon />,
+  chat: <ChatBubbleOutlineIcon />,
+  no_answer: <PhoneDisabledIcon />,
+  premium: <WorkspacePremiumIcon />,
+  offer: <RequestQuoteIcon />,
+  block: <BlockIcon />,
+  wrong_number: <CloseFullscreenIcon />,
+};
 
 export default function OutcomeSheet({
   lead,
+  pipelineKind = "seller",
   open,
   onClose,
   onLogged,
   onSnack,
   entryStep = "main",
+  entryStage,
 }: {
   lead: LeadRow | undefined;
+  /** Which pipeline the lead belongs to — drives the "how did it go?" wording/targets. */
+  pipelineKind?: PipelineKind;
   open: boolean;
   onClose: () => void;
   onLogged?: () => void;
@@ -41,13 +56,20 @@ export default function OutcomeSheet({
    * we don't re-ask something already answered. Back from this step closes
    * the sheet instead of returning to "main" (which was never shown). */
   entryStep?: OutcomeStep;
+  /** The exact stage the sub-step should resolve to when entered directly
+   * (e.g. "Viewing Booked" vs "Booked") — required whenever entryStep isn't "main". */
+  entryStage?: Stage;
 }) {
   const [step, setStep] = useState<OutcomeStep>(entryStep);
+  const [targetStage, setTargetStage] = useState<Stage | null>(entryStage ?? null);
   const updateStage = useUpdateLeadStage();
 
   useEffect(() => {
-    if (open) setStep(entryStep);
-  }, [open, entryStep]);
+    if (open) {
+      setStep(entryStep);
+      setTargetStage(entryStep === "main" ? null : entryStage ?? null);
+    }
+  }, [open, entryStep, entryStage]);
 
   function close() {
     onClose();
@@ -64,21 +86,44 @@ export default function OutcomeSheet({
       setStep(entryStep);
     }
   }
+  function pickMain(option: MainOutcomeOption) {
+    const subStep = STEP_FOR_STAGE[option.stage];
+    if (subStep) {
+      setTargetStage(option.stage);
+      setStep(subStep);
+      return;
+    }
+    updateStage.mutate({ id: lead!.id, stage: option.stage });
+    finish(outcomeSnack(option.stage));
+  }
 
   if (!lead) return null;
   const firstName = lead.name.split(" ")[0];
+  const stage = targetStage;
 
   const titles: Record<OutcomeStep, { title: string; sub: string }> = {
     main: { title: `How did it go with ${firstName}?`, sub: "Tap what happened." },
-    booked: { title: "When is the appointment?", sub: "We'll remind you before it." },
+    booked: {
+      title: stage === "Viewing Booked" ? "When is the viewing?" : "When is the appointment?",
+      sub: "We'll remind you before it.",
+    },
     reminder: { title: "When should we remind you?", sub: `We'll put ${firstName} back at the top that day.` },
     commission: { title: "What's the commission?", sub: "Type the amount so it shows on your numbers." },
   };
   const t = titles[step];
-  const showBack = step !== "main";
+  const showBack = step !== entryStep;
 
   return (
-    <Drawer anchor="bottom" open={open} onClose={close} slotProps={{ paper: { sx: { borderRadius: "8px 8px 0 0", maxWidth: 480, mx: "auto" } } }}>
+    <Drawer
+      anchor="bottom"
+      open={open}
+      onClose={close}
+      // Above theme.zIndex.modal (1300) — Drawer defaults to zIndex.drawer
+      // (1200), which renders it behind full-screen overlays like
+      // FocusCallModal that this sheet can be opened on top of.
+      sx={{ zIndex: (theme) => theme.zIndex.modal + 1 }}
+      slotProps={{ paper: { sx: { borderRadius: "8px 8px 0 0", maxWidth: 480, mx: "auto" } } }}
+    >
       <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, p: "8px 8px 4px 16px" }}>
         {showBack && (
           <IconButton onClick={goBack}>
@@ -98,37 +143,13 @@ export default function OutcomeSheet({
 
       {step === "main" && (
         <List disablePadding>
-          <Opt icon={<EventIcon />} label="Booked an appointment" onClick={() => setStep("booked")} />
-          <Opt icon={<ChatBubbleOutlineIcon />} label="Spoke — following up" onClick={() => setStep("reminder")} />
-          <Opt
-            icon={<PhoneDisabledIcon />}
-            label="No answer"
-            onClick={() => {
-              updateStage.mutate({ id: lead.id, stage: "No Answer" });
-              finish("Retry reminder set");
-            }}
-          />
-          <Opt icon={<WorkspacePremiumIcon />} label="Signed the mandate" onClick={() => setStep("commission")} />
-          <Opt
-            icon={<BlockIcon />}
-            label="Not selling"
-            onClick={() => {
-              updateStage.mutate({ id: lead.id, stage: "Lost" });
-              finish("Marked as lost");
-            }}
-          />
-          <Opt
-            icon={<CloseFullscreenIcon />}
-            label="Wrong number"
-            onClick={() => {
-              updateStage.mutate({ id: lead.id, stage: "Invalid Number" });
-              finish("Marked invalid");
-            }}
-          />
+          {MAIN_OUTCOME_OPTIONS[pipelineKind].map((opt) => (
+            <Opt key={opt.label} icon={OUTCOME_ICONS[opt.icon]} label={opt.label} onClick={() => pickMain(opt)} />
+          ))}
         </List>
       )}
 
-      {step === "booked" && (
+      {step === "booked" && stage && (
         <Box sx={{ pb: 1 }}>
           {[
             ["Tomorrow morning", "Tomorrow AM", 1],
@@ -139,8 +160,8 @@ export default function OutcomeSheet({
               key={label as string}
               label={label as string}
               onClick={() => {
-                updateStage.mutate({ id: lead.id, stage: "Booked", extra: { label: tag as string, at: defaultReminderISO(days as number) } });
-                finish("Booked · reminder set");
+                updateStage.mutate({ id: lead.id, stage, extra: { label: tag as string, at: defaultReminderISO(days as number) } });
+                finish(outcomeSnack(stage));
               }}
             />
           ))}
@@ -148,14 +169,14 @@ export default function OutcomeSheet({
             buttonLabel="Set date"
             onSet={(d) => {
               const lbl = "Appt " + d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
-              updateStage.mutate({ id: lead.id, stage: "Booked", extra: { label: lbl, at: d.toISOString() } });
-              finish("Booked · reminder set");
+              updateStage.mutate({ id: lead.id, stage, extra: { label: lbl, at: d.toISOString() } });
+              finish(outcomeSnack(stage));
             }}
           />
         </Box>
       )}
 
-      {step === "reminder" && (
+      {step === "reminder" && stage && (
         <Box sx={{ pb: 1 }}>
           {[
             ["Tomorrow", "tomorrow", 1],
@@ -166,8 +187,8 @@ export default function OutcomeSheet({
               key={label as string}
               label={label as string}
               onClick={() => {
-                updateStage.mutate({ id: lead.id, stage: "Contacted", extra: { label: tag as string, at: defaultReminderISO(days as number) } });
-                finish("Follow-up reminder set");
+                updateStage.mutate({ id: lead.id, stage, extra: { label: tag as string, at: defaultReminderISO(days as number) } });
+                finish(outcomeSnack(stage));
               }}
             />
           ))}
@@ -175,26 +196,26 @@ export default function OutcomeSheet({
             buttonLabel="Set"
             onSet={(d) => {
               const lbl = "on " + d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
-              updateStage.mutate({ id: lead.id, stage: "Contacted", extra: { label: lbl, at: d.toISOString() } });
-              finish("Follow-up reminder set");
+              updateStage.mutate({ id: lead.id, stage, extra: { label: lbl, at: d.toISOString() } });
+              finish(outcomeSnack(stage));
             }}
           />
           <Opt
             label="No reminder"
             onClick={() => {
-              updateStage.mutate({ id: lead.id, stage: "Contacted", extra: { label: "no reminder", at: null } });
-              finish("Marked contacted");
+              updateStage.mutate({ id: lead.id, stage, extra: { label: "no reminder", at: null } });
+              finish(outcomeSnack(stage));
             }}
           />
         </Box>
       )}
 
-      {step === "commission" && (
+      {step === "commission" && stage && (
         <Box sx={{ pb: 1.5 }}>
           <CommissionInput
             onSave={(v) => {
-              updateStage.mutate({ id: lead.id, stage: "Mandate Signed", extra: v });
-              finish("Mandate logged");
+              updateStage.mutate({ id: lead.id, stage, extra: v });
+              finish(outcomeSnack(stage));
             }}
           />
           {[25000, 45000, 75000].map((a) => (
@@ -202,8 +223,8 @@ export default function OutcomeSheet({
               key={a}
               label={"R" + a.toLocaleString()}
               onClick={() => {
-                updateStage.mutate({ id: lead.id, stage: "Mandate Signed", extra: a });
-                finish("Mandate logged");
+                updateStage.mutate({ id: lead.id, stage, extra: a });
+                finish(outcomeSnack(stage));
               }}
             />
           ))}
@@ -211,6 +232,28 @@ export default function OutcomeSheet({
       )}
     </Drawer>
   );
+}
+
+export function outcomeSnack(stage: Stage): string {
+  switch (stage) {
+    case "No Answer":
+      return "Retry reminder set";
+    case "Lost":
+      return "Marked as lost";
+    case "Invalid Number":
+      return "Marked invalid";
+    case "Booked":
+    case "Viewing Booked":
+      return "Booked · reminder set";
+    case "Contacted":
+    case "Offer Made":
+      return "Follow-up reminder set";
+    case "Mandate Signed":
+    case "Bought":
+      return "Deal logged";
+    default:
+      return "Updated";
+  }
 }
 
 function Opt({ icon, label, onClick }: { icon?: React.ReactNode; label: string; onClick: () => void }) {

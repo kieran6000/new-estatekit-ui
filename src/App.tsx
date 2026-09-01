@@ -7,10 +7,10 @@ import LeadsPage from "./pages/LeadsPage";
 import LeadDetailPage from "./pages/LeadDetailPage";
 import OverviewPage from "./pages/OverviewPage";
 import HomePage from "./pages/HomePage";
-import CourseModulePage from "./pages/CourseModulePage";
 import LeadPagePage from "./pages/LeadPagePage";
 import UpgradePage from "./pages/UpgradePage";
 import AdminAutomationsPage from "./pages/AdminAutomationsPage";
+import LeadActionPage from "./pages/LeadActionPage";
 
 function Splash() {
   return (
@@ -25,28 +25,30 @@ export default function App() {
 
   if (loading) return <Splash />;
 
-  if (!user) {
-    return (
-      <Routes>
-        <Route path="*" element={<LoginPage />} />
-      </Routes>
-    );
-  }
-
   return (
     <Routes>
-      <Route path="/login" element={<Navigate to="/leads" replace />} />
-      <Route element={<AppShell />}>
-        <Route path="/leads" element={<LeadsPage />} />
-        <Route path="/leads/:id" element={<LeadDetailPage />} />
-        <Route path="/overview" element={<OverviewPage />} />
-        <Route path="/home" element={<HomePage />} />
-        <Route path="/courses/:moduleId" element={<CourseModulePage />} />
-        <Route path="/lead-page" element={<LeadPagePage />} />
-        <Route path="/upgrade" element={<UpgradePage />} />
-        <Route path="/admin/automations" element={<AdminAutomationsPage />} />
-      </Route>
-      <Route path="*" element={<Navigate to="/leads" replace />} />
+      {/* Public — the WhatsApp lead-action link a call/reminder automation
+       * sends. No login required, and deliberately not linked from anywhere
+       * in the dashboard; reachable only by its direct URL. */}
+      <Route path="/l/:leadId" element={<LeadActionPage />} />
+
+      {!user ? (
+        <Route path="*" element={<LoginPage />} />
+      ) : (
+        <>
+          <Route path="/login" element={<Navigate to="/leads" replace />} />
+          <Route element={<AppShell />}>
+            <Route path="/leads" element={<LeadsPage />} />
+            <Route path="/leads/:id" element={<LeadDetailPage />} />
+            <Route path="/overview" element={<OverviewPage />} />
+            <Route path="/home" element={<HomePage />} />
+            <Route path="/lead-page" element={<LeadPagePage />} />
+            <Route path="/upgrade" element={<UpgradePage />} />
+            <Route path="/admin/automations" element={<AdminAutomationsPage />} />
+          </Route>
+          <Route path="*" element={<Navigate to="/leads" replace />} />
+        </>
+      )}
     </Routes>
   );
 }

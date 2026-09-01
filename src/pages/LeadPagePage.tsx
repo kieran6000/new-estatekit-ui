@@ -1,28 +1,36 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { QRCodeCanvas } from "qrcode.react";
 import {
   AppBar,
   Box,
   Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   IconButton,
+  Menu,
   MenuItem,
+  Radio,
+  RadioGroup,
+  FormControlLabel,
   TextField,
   Toolbar,
   Typography,
 } from "@mui/material";
-import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
-import DownloadIcon from "@mui/icons-material/Download";
+import ShareIcon from "@mui/icons-material/Share";
 import LockIcon from "@mui/icons-material/Lock";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlineRounded";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
+import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
 import { tokens } from "../theme";
-import { ACCENT_PRESETS, type LeadPageConfig, type QuestionType } from "../types";
-import { slugFor } from "../api/leadPageConfig";
-import { useLeadPageConfig, useSaveLeadPageConfig, useSubmitMockLead } from "../hooks/useLeadPageConfig";
+import { PIPELINE_KIND_LABEL, type LeadPage, type Pipeline, type PipelineKind, type QuestionType } from "../types";
+import { shortLinkFor } from "../api/leadPages";
+import { useAddLeadPage, useLeadPages, useSubmitMockLead, useUpdateLeadPage } from "../hooks/useLeadPages";
+import { usePipelines } from "../hooks/usePipelines";
 import {
   useAddCustomQuestion,
   useCustomQuestions,
@@ -31,32 +39,27 @@ import {
 } from "../hooks/useCustomQuestions";
 import { useTier } from "../hooks/useTier";
 import { useSnack } from "../hooks/useSnack";
-import SellerLeadForm from "../components/SellerLeadForm";
-
-const FIXED_FIELDS = ["Full name", "Property address", "WhatsApp number"];
+import LeadCaptureForm, { LEAD_FORM_TEMPLATE } from "../components/LeadCaptureForm";
 
 export default function LeadPagePage() {
   const navigate = useNavigate();
   const { tier } = useTier();
-  const { data: savedConfig } = useLeadPageConfig();
-  const saveConfig = useSaveLeadPageConfig();
-  const submitLead = useSubmitMockLead();
-  const { data: customQuestions = [] } = useCustomQuestions();
+  const { data: pages = [] } = useLeadPages();
+  const { data: pipelines = [] } = usePipelines();
+  const updatePage = useUpdateLeadPage();
   const showSnack = useSnack();
 
-  const [config, setConfig] = useState<LeadPageConfig | null>(null);
-  useEffect(() => {
-    if (savedConfig && !config) setConfig(savedConfig);
-  }, [savedConfig, config]);
+  const [pageId, setPageId] = useState<string | null>(null);
+  const [pageMenuAnchor, setPageMenuAnchor] = useState<HTMLElement | null>(null);
+  const [addPageOpen, setAddPageOpen] = useState(false);
 
-  const qrRef = useRef<HTMLCanvasElement>(null);
+  const page: LeadPage | undefined = pages.find((p) => p.id === pageId) ?? pages[0];
+  const pipeline: Pipeline | undefined = pipelines.find((p) => p.id === page?.pipelineId);
 
-  if (!config) return null;
+  if (!page || !pipeline) return null;
 
-  function update(patch: Partial<LeadPageConfig>) {
-    const next = { ...config!, ...patch };
-    setConfig(next);
-    saveConfig.mutate(next);
+  function update(patch: Partial<Omit<LeadPage, "id" | "pipelineId">>) {
+    updatePage.mutate({ id: page!.id, patch });
   }
 
   function onLogoChange(file: File | null) {
@@ -66,121 +69,254 @@ export default function LeadPagePage() {
     reader.readAsDataURL(file);
   }
 
-  const url = slugFor(config.agentName);
-
-  function copyLink() {
-    navigator.clipboard.writeText(`https://${url}`);
-    showSnack("Link copied");
-  }
-
-  function downloadQr() {
-    const canvas = qrRef.current;
-    if (!canvas) return;
-    const a = document.createElement("a");
-    a.href = canvas.toDataURL("image/png");
-    a.download = `${url}-qr.png`;
-    a.click();
-  }
-
   return (
     <Box>
       <AppBar position="sticky">
         <Toolbar sx={{ height: 56, minHeight: "56px !important" }}>
-          <IconButton onClick={() => navigate("/home")}>
-            <ArrowBackIcon />
-          </IconButton>
-          <Typography sx={{ fontSize: 18, fontWeight: 500 }}>My Lead Page</Typography>
+          <Typography sx={{ fontSize: 18, fontWeight: 500 }}>My Page</Typography>
         </Toolbar>
       </AppBar>
+
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1.25, p: "10px 16px", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
+        <Box
+          component="button"
+          onClick={(e) => setPageMenuAnchor(e.currentTarget)}
+          sx={{ display: "flex", alignItems: "center", gap: 0.25, border: `1px solid ${tokens.divider}`, borderRadius: "4px", bgcolor: "#fff", fontSize: 13, fontWeight: 500, p: "7px 6px 7px 12px", cursor: "pointer" }}
+        >
+          {page.name} <ArrowDropDownIcon fontSize="small" />
+        </Box>
+        <Menu anchorEl={pageMenuAnchor} open={!!pageMenuAnchor} onClose={() => setPageMenuAnchor(null)}>
+          {pages.map((p) => (
+            <MenuItem
+              key={p.id}
+              onClick={() => {
+                setPageId(p.id);
+                setPageMenuAnchor(null);
+              }}
+            >
+              {p.name}
+            </MenuItem>
+          ))}
+          <MenuItem
+            onClick={() => {
+              setPageMenuAnchor(null);
+              setAddPageOpen(true);
+            }}
+            sx={{ color: tokens.primary, borderTop: `1px solid ${tokens.divider2}`, mt: 0.5 }}
+          >
+            + Add page
+          </MenuItem>
+        </Menu>
+        <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
+          Sends leads to <b style={{ color: tokens.ink }}>{pipeline.name}</b> pipeline
+        </Typography>
+      </Box>
 
       <Box sx={{ display: "flex", flexDirection: { xs: "column", md: "row" }, gap: 3, p: 2, maxWidth: 1100, mx: "auto" }}>
         <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
           <Section title="Page details">
-            <TextField label="Agent name" value={config.agentName} onChange={(e) => update({ agentName: e.target.value })} fullWidth />
-            <TextField label="Headline" value={config.headline} onChange={(e) => update({ headline: e.target.value })} fullWidth multiline minRows={2} />
-            <TextField label="Suburb / area" value={config.suburb} onChange={(e) => update({ suburb: e.target.value })} fullWidth />
-            <TextField label="Phone" value={config.phone} onChange={(e) => update({ phone: e.target.value })} fullWidth />
+            <TextField label="Agent name" value={page.agentName} onChange={(e) => update({ agentName: e.target.value })} fullWidth />
+            <TextField label="Headline" value={page.headline} onChange={(e) => update({ headline: e.target.value })} fullWidth multiline minRows={2} />
+            <TextField label="Suburb / area" value={page.suburb} onChange={(e) => update({ suburb: e.target.value })} fullWidth />
+            <TextField label="Phone" value={page.phone} onChange={(e) => update({ phone: e.target.value })} fullWidth />
             <Button variant="outlined" component="label" size="small" sx={{ alignSelf: "flex-start" }}>
-              {config.logoDataUrl ? "Change logo / photo" : "Upload logo / photo"}
+              {page.logoDataUrl ? "Change logo / photo" : "Upload logo / photo"}
               <input type="file" hidden accept="image/*" onChange={(e) => onLogoChange(e.target.files?.[0] ?? null)} />
             </Button>
 
             <Box>
               <Typography sx={{ fontSize: 13, color: "text.secondary", mb: 1 }}>Accent color</Typography>
-              <Box sx={{ display: "flex", gap: 1 }}>
-                {ACCENT_PRESETS.map((preset) => (
-                  <Box
-                    key={preset.key}
-                    component="button"
-                    onClick={() => update({ accent: preset.key })}
-                    title={preset.label}
-                    sx={{
-                      width: 36,
-                      height: 36,
-                      borderRadius: "50%",
-                      bgcolor: preset.value,
-                      border: config.accent === preset.key ? `3px solid ${tokens.ink}` : "3px solid transparent",
-                      cursor: "pointer",
-                    }}
-                  />
-                ))}
+              <Box
+                component="label"
+                sx={{
+                  position: "relative",
+                  width: 36,
+                  height: 36,
+                  borderRadius: "50%",
+                  bgcolor: page.accentColor,
+                  outline: `1px solid ${tokens.divider}`,
+                  cursor: "pointer",
+                  display: "block",
+                  overflow: "hidden",
+                }}
+              >
+                <input
+                  type="color"
+                  value={page.accentColor}
+                  onChange={(e) => update({ accentColor: e.target.value })}
+                  style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer", border: 0, padding: 0 }}
+                />
               </Box>
             </Box>
           </Section>
 
           <Section title="Form questions">
-            <Typography sx={{ fontSize: 12, color: "text.secondary" }}>Always shown first, on every plan:</Typography>
-            {FIXED_FIELDS.map((f) => (
+            <Typography sx={{ fontSize: 12, color: "text.secondary" }}>Always shown, on every plan:</Typography>
+            {[LEAD_FORM_TEMPLATE[pipeline.kind].step1Label, LEAD_FORM_TEMPLATE[pipeline.kind].secondQuestion, "Full name", "WhatsApp number"].map((f) => (
               <Box key={f} sx={{ display: "flex", alignItems: "center", gap: 1, p: "10px 12px", borderRadius: "4px", bgcolor: tokens.hover, color: "text.secondary", fontSize: 14 }}>
                 <LockIcon sx={{ fontSize: 16 }} /> {f}
               </Box>
             ))}
 
             {tier === "free" ? (
-              <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, p: "14px", border: `1px dashed ${tokens.divider}`, borderRadius: "6px" }}>
-                <LockIcon sx={{ color: "text.disabled" }} />
-                <Typography sx={{ flex: 1, fontSize: 13.5, color: "text.secondary" }}>Add custom questions with paid</Typography>
-                <Button size="small" variant="contained" onClick={() => navigate("/upgrade")}>
-                  Upgrade
-                </Button>
-              </Box>
+              <UpgradeNudge onUpgrade={() => navigate("/upgrade")} />
             ) : (
-              <CustomQuestionEditor />
+              <CustomQuestionEditor pageId={page.id} />
             )}
           </Section>
         </Box>
 
         <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
           <Section title="Live preview">
-            <SellerLeadForm
-              config={config}
-              customQuestions={tier === "paid" ? customQuestions : []}
-              onSubmit={async (values) => {
-                await submitLead.mutateAsync(values);
-                showSnack("Form submitted (demo) — a real lead lands in Leads once connected");
-              }}
-            />
+            <PreviewAndSubmit page={page} pipelineKind={pipeline.kind} tier={tier} />
           </Section>
 
-          <Section title="Share">
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-              <TextField value={`https://${url}`} fullWidth size="small" slotProps={{ input: { readOnly: true } }} />
-              <Button variant="outlined" startIcon={<ContentCopyIcon fontSize="small" />} onClick={copyLink}>
-                Copy
-              </Button>
-            </Box>
-            <Box sx={{ display: "flex", alignItems: "center", gap: 2, mt: 1 }}>
-              <Box sx={{ p: 1.5, border: `1px solid ${tokens.divider}`, borderRadius: "8px", bgcolor: "#fff" }}>
-                <QRCodeCanvas ref={qrRef} value={`https://${url}`} size={120} />
-              </Box>
-              <Button variant="outlined" startIcon={<DownloadIcon fontSize="small" />} onClick={downloadQr}>
-                Download QR
-              </Button>
-            </Box>
-          </Section>
+          <ShareSection page={page} />
         </Box>
       </Box>
+
+      <AddPageDialog
+        open={addPageOpen}
+        pipelines={pipelines}
+        onClose={() => setAddPageOpen(false)}
+        onCreated={(id) => {
+          setPageId(id);
+          showSnack("Page created");
+        }}
+      />
     </Box>
+  );
+}
+
+function PreviewAndSubmit({ page, pipelineKind, tier }: { page: LeadPage; pipelineKind: PipelineKind; tier: "free" | "paid" }) {
+  const { data: customQuestions = [] } = useCustomQuestions(page.id);
+  const submitLead = useSubmitMockLead();
+  const showSnack = useSnack();
+  return (
+    <LeadCaptureForm
+      page={page}
+      pipelineKind={pipelineKind}
+      customQuestions={tier === "paid" ? customQuestions : []}
+      onSubmit={async ({ name, phone, answers }) => {
+        await submitLead.mutateAsync({ pageId: page.id, name, phone, formAnswers: answers });
+        showSnack("Form submitted (demo) — a real lead lands in Leads once connected");
+      }}
+    />
+  );
+}
+
+function UpgradeNudge({ onUpgrade }: { onUpgrade: () => void }) {
+  return (
+    <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, p: "14px", border: `1px dashed ${tokens.divider}`, borderRadius: "6px" }}>
+      <LockIcon sx={{ color: "text.disabled" }} />
+      <Typography sx={{ flex: 1, fontSize: 13.5, color: "text.secondary" }}>Add custom questions with paid</Typography>
+      <Button size="small" variant="contained" onClick={onUpgrade}>
+        Upgrade
+      </Button>
+    </Box>
+  );
+}
+
+function ShareSection({ page }: { page: LeadPage }) {
+  const showSnack = useSnack();
+  const shareUrl = shortLinkFor(page);
+
+  function copyLink() {
+    navigator.clipboard.writeText(`https://${shareUrl}`);
+    showSnack("Link copied");
+  }
+
+  async function shareLink() {
+    const shareData = { title: page.agentName || page.name, text: page.headline, url: `https://${shareUrl}` };
+    if (navigator.share) {
+      try {
+        await navigator.share(shareData);
+      } catch {
+        // user cancelled the share sheet — nothing to do
+      }
+    } else {
+      copyLink();
+      showSnack("Link copied — paste it into WhatsApp or your bio");
+    }
+  }
+
+  return (
+    <Section title="Start capturing leads">
+      <Typography sx={{ fontSize: 13.5, color: "text.secondary", mt: -1 }}>
+        Share this link anywhere — every submission lands straight in your Leads tab.
+      </Typography>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+        <TextField value={`https://${shareUrl}`} fullWidth size="small" slotProps={{ input: { readOnly: true } }} />
+        <Button variant="outlined" startIcon={<ContentCopyIcon fontSize="small" />} onClick={copyLink}>
+          Copy
+        </Button>
+      </Box>
+      <Button variant="contained" startIcon={<ShareIcon fontSize="small" />} onClick={shareLink} sx={{ alignSelf: "flex-start" }}>
+        Share
+      </Button>
+      <Box sx={{ display: "flex", gap: 1.25, p: "12px 14px", bgcolor: tokens.primaryBg, borderRadius: "6px" }}>
+        <Typography sx={{ fontSize: 11, fontWeight: 700, color: tokens.primaryDark, textTransform: "uppercase", letterSpacing: "0.04em", flexShrink: 0 }}>
+          Tip
+        </Typography>
+        <Typography sx={{ fontSize: 13, color: tokens.primaryDark }}>
+          Post this link to your WhatsApp status or Instagram bio today — it's the fastest way to get your first lead.
+        </Typography>
+      </Box>
+    </Section>
+  );
+}
+
+function AddPageDialog({
+  open,
+  pipelines,
+  onClose,
+  onCreated,
+}: {
+  open: boolean;
+  pipelines: Pipeline[];
+  onClose: () => void;
+  onCreated: (id: string) => void;
+}) {
+  const [name, setName] = useState("");
+  const [pipelineId, setPipelineId] = useState("");
+  const addPage = useAddLeadPage();
+
+  useEffect(() => {
+    if (open) {
+      setName("");
+      setPipelineId(pipelines[0]?.id ?? "");
+    }
+  }, [open, pipelines]);
+
+  async function create() {
+    const pipeline = pipelines.find((p) => p.id === pipelineId);
+    if (!pipeline || !name.trim()) return;
+    const p = await addPage.mutateAsync({ name: name.trim(), pipelineId: pipeline.id, kind: pipeline.kind });
+    onClose();
+    onCreated(p.id);
+  }
+
+  return (
+    <Dialog open={open} onClose={onClose} fullWidth maxWidth="xs">
+      <DialogTitle sx={{ fontSize: 18, fontWeight: 500 }}>Add a lead page</DialogTitle>
+      <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        <TextField label="Page name" value={name} onChange={(e) => setName(e.target.value)} fullWidth autoFocus />
+        <Box>
+          <Typography sx={{ fontSize: 13, color: "text.secondary", mb: 0.5 }}>Which pipeline should this feed?</Typography>
+          <RadioGroup value={pipelineId} onChange={(e) => setPipelineId(e.target.value)}>
+            {pipelines.map((p) => (
+              <FormControlLabel key={p.id} value={p.id} control={<Radio />} label={`${p.name} (${PIPELINE_KIND_LABEL[p.kind]})`} />
+            ))}
+          </RadioGroup>
+        </Box>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Cancel</Button>
+        <Button variant="contained" disabled={!name.trim() || !pipelineId} onClick={create}>
+          Create
+        </Button>
+      </DialogActions>
+    </Dialog>
   );
 }
 
@@ -199,11 +335,11 @@ const QUESTION_TYPES: { value: QuestionType; label: string }[] = [
   { value: "yes_no", label: "Yes / No" },
 ];
 
-function CustomQuestionEditor() {
-  const { data: questions = [] } = useCustomQuestions();
-  const addQuestion = useAddCustomQuestion();
-  const removeQuestion = useRemoveCustomQuestion();
-  const moveQuestion = useMoveCustomQuestion();
+function CustomQuestionEditor({ pageId }: { pageId: string }) {
+  const { data: questions = [] } = useCustomQuestions(pageId);
+  const addQuestion = useAddCustomQuestion(pageId);
+  const removeQuestion = useRemoveCustomQuestion(pageId);
+  const moveQuestion = useMoveCustomQuestion(pageId);
   const [label, setLabel] = useState("");
   const [type, setType] = useState<QuestionType>("short_text");
   const [optionsText, setOptionsText] = useState("");
