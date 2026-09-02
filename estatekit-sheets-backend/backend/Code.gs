@@ -502,18 +502,6 @@ function profileGet(ss) {
   return rows[0] || {};
 }
 
-function profileSet(ss, patch) {
-  const sheet = sheetGetOrCreate(ss, 'Profile', SCHEMA.Profile.headers);
-  if (sheet.getLastRow() < 2) {
-    appendObject(sheet, SCHEMA.Profile.headers, SCHEMA.Profile.json, SCHEMA.Profile.bool,
-      Object.assign({ agent_id: '', display_name: '', whatsapp_number: '', tier: 'paid', is_operator: true }, patch));
-  } else {
-    const current = readObjects(sheet, SCHEMA.Profile.headers, SCHEMA.Profile.json, SCHEMA.Profile.bool)[0];
-    updateRowById(sheet, SCHEMA.Profile.headers, SCHEMA.Profile.json, current.agent_id, patch);
-  }
-  return {};
-}
-
 // ───────────────────────── Leads ─────────────────────────
 
 function pipelineTabNames(ss) {
