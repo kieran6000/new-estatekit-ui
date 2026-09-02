@@ -42,6 +42,16 @@ const RESERVED_TABS = [
   'Automations', 'AutomationSteps', 'CallQuestions', 'SupportTickets', 'Profile',
 ];
 
+// Range#setValues auto-detects types the same way typing into a cell does,
+// so a plain-digits phone string like "+27821234567" silently becomes the
+// NUMBER 27821234567 on write (dropping the leading '+'). objectToRow
+// quotes these fields with a leading apostrophe — Sheets' documented
+// force-text marker — so they round-trip as the exact original string.
+// Without this, getOrCreateAccount's `r.phone === phone` string compare
+// never matches on a second login, silently creating a brand-new
+// duplicate account (and spreadsheet) every single time.
+const PHONE_FIELDS = ['phone', 'whatsapp_number'];
+
 // Lives in the CONTROL spreadsheet (not per-client) so the time-driven
 // trigger can scan every client's due actions in one pass instead of
 // opening every client spreadsheet on every run.
@@ -278,7 +288,8 @@ function createClientSpreadsheet(agentId, phone) {
   const defaultSheet = ss.getSheets()[0];
   defaultSheet.setName('Profile');
   defaultSheet.getRange(1, 1, 1, SCHEMA.Profile.headers.length).setValues([SCHEMA.Profile.headers]);
-  defaultSheet.appendRow([agentId, '', phone, 'paid', true]);
+  // "'" prefix forces Sheets to keep this as literal text — see PHONE_FIELDS.
+  defaultSheet.appendRow([agentId, '', "'" + phone, 'paid', true]);
 
   Object.keys(SCHEMA).forEach(function (name) {
     if (name === 'Profile' || name === 'Leads') return;
@@ -428,6 +439,11 @@ function rowToObject(row, headers, jsonFields, boolFields) {
       v = (v === true || v === 'TRUE' || v === 'true');
     } else if (v instanceof Date) {
       v = v.toISOString();
+    } else if (PHONE_FIELDS.indexOf(h) !== -1 && typeof v === 'number') {
+      // Defensive only — recovers a phone written before the objectToRow
+      // fix below existed. Can't restore a lost leading '+' or '0', so
+      // still-broken old rows need a manual fix in the sheet.
+      v = String(v);
     }
     obj[h] = v;
   });
@@ -446,6 +462,7 @@ function objectToRow(headers, jsonFields, obj) {
     let v = obj[h];
     if (v === undefined) v = '';
     if (jsonFields.indexOf(h) !== -1) return JSON.stringify(v === undefined ? null : v);
+    if (PHONE_FIELDS.indexOf(h) !== -1 && typeof v === 'string' && v !== '') return "'" + v;
     return v;
   });
 }
