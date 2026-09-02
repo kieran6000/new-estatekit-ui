@@ -17,6 +17,7 @@ import {
   Radio,
   RadioGroup,
   FormControlLabel,
+  Skeleton,
   Table,
   TableBody,
   TableCell,
@@ -44,8 +45,8 @@ import FocusCallModal from "../components/FocusCallModal";
 
 export default function LeadsPage() {
   const navigate = useNavigate();
-  const { data: leads = [] } = useLeads();
-  const { data: pipelines = [] } = usePipelines();
+  const { data: leads = [], isLoading: leadsLoading } = useLeads();
+  const { data: pipelines = [], isLoading: pipelinesLoading } = usePipelines();
   const updateStage = useUpdateLeadStage();
   const showSnack = useSnack();
 
@@ -106,6 +107,7 @@ export default function LeadsPage() {
     setPipelineMenuAnchor(null);
   }
 
+  if (leadsLoading || pipelinesLoading) return <LeadsPageSkeleton />;
   if (!activePipeline) return null;
 
   return (
@@ -242,7 +244,45 @@ export default function LeadsPage() {
         onSnack={showSnack}
       />
       <FocusCallModal leads={pipelineLeads} pipelines={pipelines} open={focusOpen} onClose={() => setFocusOpen(false)} onSnack={showSnack} />
-      <AddPipelineDialog open={addPipelineOpen} onClose={() => setAddPipelineOpen(false)} onCreated={selectPipeline} />
+      <AddPipelineDialog
+        open={addPipelineOpen}
+        onClose={() => setAddPipelineOpen(false)}
+        onCreated={(id) => {
+          selectPipeline(id);
+          showSnack("Pipeline created");
+        }}
+      />
+    </Box>
+  );
+}
+
+function LeadsPageSkeleton() {
+  return (
+    <Box>
+      <AppBar position="sticky">
+        <Toolbar sx={{ height: 56, minHeight: "56px !important", px: "8px 8px 8px 16px" }}>
+          <Typography sx={{ fontSize: 18, fontWeight: 500, flex: 1 }}>Leads</Typography>
+        </Toolbar>
+      </AppBar>
+      <Box sx={{ p: 2, display: "flex", flexDirection: "column", gap: 1.5 }}>
+        <Skeleton variant="rounded" height={64} sx={{ borderRadius: "6px" }} />
+        <Skeleton variant="rounded" height={40} width={180} sx={{ borderRadius: "4px" }} />
+        <Skeleton variant="rounded" height={72} sx={{ borderRadius: "6px" }} />
+        <Skeleton variant="rounded" height={72} sx={{ borderRadius: "6px" }} />
+      </Box>
+    </Box>
+  );
+}
+
+function EmptyLeadsState({ filter }: { filter: "All" | Stage }) {
+  return (
+    <Box sx={{ p: "48px 24px", textAlign: "center", color: "text.secondary" }}>
+      <Typography sx={{ fontSize: 15, fontWeight: 500, mb: 0.5 }}>
+        {filter === "All" ? "No leads yet in this pipeline" : `No leads in "${filter}"`}
+      </Typography>
+      <Typography sx={{ fontSize: 13.5 }}>
+        {filter === "All" ? "New leads from your lead pages will show up here." : "Try a different stage, or switch back to All."}
+      </Typography>
     </Box>
   );
 }
@@ -325,6 +365,10 @@ function LeadsTable({
   const isMobile = useMediaQuery("(max-width:639px)");
   if (isMobile) {
     return <MobileLeadsList leads={leads} stages={stages} filter={filter} onOpen={onOpen} onCall={onCall} onStagePick={onStagePick} />;
+  }
+
+  if (leads.length === 0) {
+    return <EmptyLeadsState filter={filter} />;
   }
 
   const grouped = filter === "All";
@@ -433,6 +477,10 @@ function MobileLeadsList({
   onCall: (id: string) => void;
   onStagePick: (id: string, stage: Stage) => void;
 }) {
+  if (leads.length === 0) {
+    return <EmptyLeadsState filter={filter} />;
+  }
+
   const grouped = filter === "All";
 
   const card = (l: LeadRow) => (

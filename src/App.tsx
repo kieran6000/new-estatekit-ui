@@ -11,6 +11,7 @@ import LeadPagePage from "./pages/LeadPagePage";
 import UpgradePage from "./pages/UpgradePage";
 import AdminAutomationsPage from "./pages/AdminAutomationsPage";
 import LeadActionPage from "./pages/LeadActionPage";
+import LeadPagePreviewPage from "./pages/LeadPagePreviewPage";
 
 function Splash() {
   return (
@@ -31,6 +32,10 @@ export default function App() {
        * sends. No login required, and deliberately not linked from anywhere
        * in the dashboard; reachable only by its direct URL. */}
       <Route path="/l/:leadId" element={<LeadActionPage />} />
+
+      {/* Public — the real page a "My Page" share link opens, and what
+       * "Open live preview" on My Page links to. Not in the dashboard nav. */}
+      <Route path="/p/:pageId" element={<LeadPagePreviewPage />} />
 
       {!user ? (
         <Route path="*" element={<LoginPage />} />

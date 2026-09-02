@@ -14,6 +14,8 @@ import {
   Radio,
   RadioGroup,
   FormControlLabel,
+  Skeleton,
+  Switch,
   TextField,
   Toolbar,
   Typography,
@@ -39,13 +41,14 @@ import {
 } from "../hooks/useCustomQuestions";
 import { useTier } from "../hooks/useTier";
 import { useSnack } from "../hooks/useSnack";
-import LeadCaptureForm, { LEAD_FORM_TEMPLATE } from "../components/LeadCaptureForm";
+import { LEAD_FORM_TEMPLATE } from "../lib/leadFormTemplate";
+import LeadCaptureForm from "../components/LeadCaptureForm";
 
 export default function LeadPagePage() {
   const navigate = useNavigate();
   const { tier } = useTier();
-  const { data: pages = [] } = useLeadPages();
-  const { data: pipelines = [] } = usePipelines();
+  const { data: pages = [], isLoading: pagesLoading } = useLeadPages();
+  const { data: pipelines = [], isLoading: pipelinesLoading } = usePipelines();
   const updatePage = useUpdateLeadPage();
   const showSnack = useSnack();
 
@@ -56,6 +59,7 @@ export default function LeadPagePage() {
   const page: LeadPage | undefined = pages.find((p) => p.id === pageId) ?? pages[0];
   const pipeline: Pipeline | undefined = pipelines.find((p) => p.id === page?.pipelineId);
 
+  if (pagesLoading || pipelinesLoading) return <LeadPagePageSkeleton />;
   if (!page || !pipeline) return null;
 
   function update(patch: Partial<Omit<LeadPage, "id" | "pipelineId">>) {
@@ -148,6 +152,37 @@ export default function LeadPagePage() {
                 />
               </Box>
             </Box>
+
+            <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <Box>
+                <Typography sx={{ fontSize: 14, fontWeight: 500 }}>Show intro screen</Typography>
+                <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>Headline + Get Started, before Step 1</Typography>
+              </Box>
+              <Switch checked={page.showIntro} onChange={(e) => update({ showIntro: e.target.checked })} />
+            </Box>
+          </Section>
+
+          <Section title="Submit &amp; thank you">
+            <TextField label="Submit button text" value={page.ctaLabel} onChange={(e) => update({ ctaLabel: e.target.value })} fullWidth />
+            <TextField
+              label="Thank-you headline"
+              value={page.thankYouHeadline}
+              onChange={(e) => update({ thankYouHeadline: e.target.value })}
+              helperText="{name} is replaced with what they typed"
+              fullWidth
+            />
+            <TextField label="Thank-you subtext" value={page.thankYouSubtext} onChange={(e) => update({ thankYouSubtext: e.target.value })} fullWidth multiline minRows={2} />
+          </Section>
+
+          <Section title="Tracking">
+            <TextField
+              label="Facebook Pixel ID"
+              placeholder="e.g. 1234567890123456"
+              value={page.fbPixelId}
+              onChange={(e) => update({ fbPixelId: e.target.value })}
+              helperText="For custom conversion events — mock only, no pixel actually fires here"
+              fullWidth
+            />
           </Section>
 
           <Section title="Form questions">
@@ -167,7 +202,20 @@ export default function LeadPagePage() {
         </Box>
 
         <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
-          <Section title="Live preview">
+          <Section
+            title="Live preview"
+            action={
+              <Typography
+                component="a"
+                href={`/p/${page.id}`}
+                target="_blank"
+                rel="noopener"
+                sx={{ fontSize: 12.5, color: tokens.primary, textDecoration: "none", textTransform: "none", fontWeight: 500, "&:hover": { textDecoration: "underline" } }}
+              >
+                Open live preview ↗
+              </Typography>
+            }
+          >
             <PreviewAndSubmit page={page} pipelineKind={pipeline.kind} tier={tier} />
           </Section>
 
@@ -320,10 +368,34 @@ function AddPageDialog({
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function LeadPagePageSkeleton() {
+  return (
+    <Box>
+      <AppBar position="sticky">
+        <Toolbar sx={{ height: 56, minHeight: "56px !important" }}>
+          <Typography sx={{ fontSize: 18, fontWeight: 500 }}>My Page</Typography>
+        </Toolbar>
+      </AppBar>
+      <Box sx={{ display: "flex", flexDirection: { xs: "column", md: "row" }, gap: 3, p: 2, maxWidth: 1100, mx: "auto" }}>
+        <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
+          <Skeleton variant="rounded" height={280} sx={{ borderRadius: "8px" }} />
+          <Skeleton variant="rounded" height={140} sx={{ borderRadius: "8px" }} />
+        </Box>
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Skeleton variant="rounded" height={340} sx={{ borderRadius: "8px" }} />
+        </Box>
+      </Box>
+    </Box>
+  );
+}
+
+function Section({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
     <Box sx={{ border: `1px solid ${tokens.divider}`, borderRadius: "8px", bgcolor: "background.paper", p: 2, display: "flex", flexDirection: "column", gap: 2 }}>
-      <Typography sx={{ fontSize: 12, fontWeight: 500, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.06em" }}>{title}</Typography>
+      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <Typography sx={{ fontSize: 12, fontWeight: 500, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.06em" }}>{title}</Typography>
+        {action}
+      </Box>
       {children}
     </Box>
   );

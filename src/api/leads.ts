@@ -11,6 +11,7 @@ function seedLeads(): LeadRow[] {
       id: uid(),
       agent_id: AGENT_ID,
       pipeline_id: "pipeline-seller",
+      source_page_id: null,
       name: "Riana Carstens",
       phone: "082 633 3522",
       email: "riana.c@example.com",
@@ -31,6 +32,7 @@ function seedLeads(): LeadRow[] {
       id: uid(),
       agent_id: AGENT_ID,
       pipeline_id: "pipeline-seller",
+      source_page_id: "page-seller",
       name: "Sipho Nkosi",
       phone: "071 442 9981",
       email: "sipho.n@example.com",
@@ -48,6 +50,7 @@ function seedLeads(): LeadRow[] {
       id: uid(),
       agent_id: AGENT_ID,
       pipeline_id: "pipeline-buyer",
+      source_page_id: null,
       name: "Thandiwe Mokoena",
       phone: "083 220 5567",
       email: "thandiwe.m@example.com",
@@ -82,13 +85,20 @@ export async function updateLead(id: string, patch: Partial<LeadRow>): Promise<v
 }
 
 // TODO: connect backend — replace with a real insert from a lead-page form submit.
-export async function createLeadFromSubmission(name: string, phone: string, formAnswers: FormAnswer[], pipelineId: string): Promise<LeadRow> {
+export async function createLeadFromSubmission(
+  name: string,
+  phone: string,
+  formAnswers: FormAnswer[],
+  pipelineId: string,
+  sourcePageId: string | null,
+): Promise<LeadRow> {
   const leads = await listLeads();
   const now = new Date().toISOString();
   const lead: LeadRow = {
     id: uid(),
     agent_id: AGENT_ID,
     pipeline_id: pipelineId,
+    source_page_id: sourcePageId,
     name,
     phone,
     email: null,

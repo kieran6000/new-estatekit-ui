@@ -20,6 +20,14 @@ export function useLead(id: string | undefined) {
   return leads?.find((l) => l.id === id);
 }
 
+/** Like useLead, but also reports whether the list is still loading — needed
+ * wherever "lead not found" and "hasn't loaded yet" must render differently
+ * (e.g. a public page reached cold, with nothing pre-cached). */
+export function useLeadWithStatus(id: string | undefined) {
+  const { data: leads, isLoading } = useLeads();
+  return { lead: leads?.find((l) => l.id === id), isLoading };
+}
+
 interface StageChangeArgs {
   id: string;
   stage: Stage;

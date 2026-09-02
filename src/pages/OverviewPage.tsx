@@ -6,6 +6,7 @@ import {
   IconButton,
   Menu,
   MenuItem,
+  Skeleton,
   Table,
   TableBody,
   TableCell,
@@ -74,7 +75,7 @@ export default function OverviewPage() {
   const [mode, setMode] = useState<Mode>("simple");
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [sort, setSort] = useState<{ k: ColKey; dir: 1 | -1 }>({ k: "date", dir: -1 });
-  const { data = [] } = useOverview(period);
+  const { data = [], isLoading } = useOverview(period);
   const cols = mode === "simple" ? SIMPLE_COLS : ADVANCED_COLS;
 
   const totals = useMemo(() => {
@@ -174,22 +175,36 @@ export default function OverviewPage() {
             </TableRow>
           </TableHead>
           <TableBody>
-            <TableRow sx={{ bgcolor: "#eef1f3" }}>
-              {cols.map((c) => (
-                <TableCell key={c.k} align={c.num ? "right" : "left"} sx={{ fontWeight: 500, borderTop: `2px solid ${tokens.divider}`, borderBottom: `2px solid ${tokens.divider}`, whiteSpace: "nowrap" }}>
-                  {cell(c, totals as unknown as Record<string, number | string>)}
-                </TableCell>
-              ))}
-            </TableRow>
-            {sorted.map((r, i) => (
-              <TableRow key={r.date} sx={i % 2 === 1 ? { bgcolor: "#f7f9fb" } : undefined}>
-                {cols.map((c) => (
-                  <TableCell key={c.k} align={c.num ? "right" : "left"} sx={{ whiteSpace: "nowrap" }}>
-                    {cell(c, r as unknown as Record<string, number | string>)}
-                  </TableCell>
+            {isLoading ? (
+              Array.from({ length: 8 }).map((_, i) => (
+                <TableRow key={i}>
+                  {cols.map((c) => (
+                    <TableCell key={c.k}>
+                      <Skeleton variant="text" />
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))
+            ) : (
+              <>
+                <TableRow sx={{ bgcolor: "#eef1f3" }}>
+                  {cols.map((c) => (
+                    <TableCell key={c.k} align={c.num ? "right" : "left"} sx={{ fontWeight: 500, borderTop: `2px solid ${tokens.divider}`, borderBottom: `2px solid ${tokens.divider}`, whiteSpace: "nowrap" }}>
+                      {cell(c, totals as unknown as Record<string, number | string>)}
+                    </TableCell>
+                  ))}
+                </TableRow>
+                {sorted.map((r, i) => (
+                  <TableRow key={r.date} sx={i % 2 === 1 ? { bgcolor: "#f7f9fb" } : undefined}>
+                    {cols.map((c) => (
+                      <TableCell key={c.k} align={c.num ? "right" : "left"} sx={{ whiteSpace: "nowrap" }}>
+                        {cell(c, r as unknown as Record<string, number | string>)}
+                      </TableCell>
+                    ))}
+                  </TableRow>
                 ))}
-              </TableRow>
-            ))}
+              </>
+            )}
           </TableBody>
         </Table>
       </Box>

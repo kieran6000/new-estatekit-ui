@@ -41,6 +41,8 @@ export interface LeadRow {
   id: string;
   agent_id: string;
   pipeline_id: string;
+  /** Which LeadPage's form this came through — null for hand-seeded/manual leads. */
+  source_page_id: string | null;
   name: string;
   phone: string;
   email: string | null;
@@ -131,6 +133,15 @@ export interface LeadPage {
   phone: string;
   logoDataUrl: string | null;
   accentColor: string;
+  /** Whether the branded headline screen shows before Step 1 — off starts straight at the form. */
+  showIntro: boolean;
+  /** The final step's submit button text (e.g. "Get my free estimate"). */
+  ctaLabel: string;
+  /** Shown after submit, in place of the form. `{name}` is replaced with what they typed. */
+  thankYouHeadline: string;
+  thankYouSubtext: string;
+  /** Mock only — no pixel actually fires. A place to store the id for when this connects to a real backend. */
+  fbPixelId: string;
 }
 
 export type QuestionType = "short_text" | "multiple_choice" | "yes_no";

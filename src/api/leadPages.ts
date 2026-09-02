@@ -1,15 +1,26 @@
 import { getStore, setStore, uid } from "./_store";
 import type { FormAnswer, LeadPage, PipelineKind } from "../types";
 import { createLeadFromSubmission } from "./leads";
+import { LEAD_FORM_TEMPLATE } from "../lib/leadFormTemplate";
 
 const KEY = "lead_pages";
 
-/** The one fixed headline per pipeline kind a brand-new page starts with —
- * still just a starting point, fully editable afterwards. */
-export const DEFAULT_HEADLINE: Record<PipelineKind, string> = {
-  seller: "Find out what your home is worth — free, no obligation.",
-  buyer: "Find your next home — free, no obligation.",
-};
+function blankPage(kind: PipelineKind): Omit<LeadPage, "id" | "name" | "pipelineId"> {
+  const t = LEAD_FORM_TEMPLATE[kind];
+  return {
+    agentName: "",
+    headline: t.defaultHeadline,
+    suburb: "",
+    phone: "",
+    logoDataUrl: null,
+    accentColor: "#1976d2",
+    showIntro: true,
+    ctaLabel: t.defaultCta,
+    thankYouHeadline: t.defaultThankYouHeadline,
+    thankYouSubtext: t.defaultThankYouSubtext,
+    fbPixelId: "",
+  };
+}
 
 function seedLeadPages(): LeadPage[] {
   return [
@@ -17,12 +28,10 @@ function seedLeadPages(): LeadPage[] {
       id: "page-seller",
       name: "Seller page",
       pipelineId: "pipeline-seller",
+      ...blankPage("seller"),
       agentName: "Kegan Smith",
-      headline: DEFAULT_HEADLINE.seller,
       suburb: "Cape Town",
       phone: "082 000 0000",
-      logoDataUrl: null,
-      accentColor: "#1976d2",
     },
   ];
 }
@@ -37,17 +46,7 @@ export async function listLeadPages(): Promise<LeadPage[]> {
 // create a new page instead if leads need to go somewhere else.
 export async function addLeadPage(name: string, pipelineId: string, kind: PipelineKind): Promise<LeadPage> {
   const rows = await listLeadPages();
-  const row: LeadPage = {
-    id: uid(),
-    name,
-    pipelineId,
-    agentName: "",
-    headline: DEFAULT_HEADLINE[kind],
-    suburb: "",
-    phone: "",
-    logoDataUrl: null,
-    accentColor: "#1976d2",
-  };
+  const row: LeadPage = { id: uid(), name, pipelineId, ...blankPage(kind) };
   setStore(KEY, [...rows, row]);
   return row;
 }
@@ -81,5 +80,5 @@ export async function submitMockLead(pageId: string, name: string, phone: string
   const pages = await listLeadPages();
   const page = pages.find((p) => p.id === pageId);
   if (!page) throw new Error("Lead page not found");
-  return createLeadFromSubmission(name, phone, formAnswers, page.pipelineId);
+  return createLeadFromSubmission(name, phone, formAnswers, page.pipelineId, page.id);
 }
