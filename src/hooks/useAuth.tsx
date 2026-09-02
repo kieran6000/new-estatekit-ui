@@ -1,5 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { usePostHog } from "@posthog/react";
 import * as authApi from "../api/auth";
+import * as tierApi from "../api/tier";
 import type { MockUser } from "../api/auth";
 
 // Frontend-only mock auth — no backend, no keys. Accepts the fixed dev
@@ -23,6 +25,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<MockUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const posthog = usePostHog();
 
   useEffect(() => {
     authApi.getSession().then((session) => {
@@ -39,12 +42,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { error, user: signedInUser } = await authApi.verifyCode(phone, code);
     if (error) return { error };
     setUser(signedInUser ?? null);
+    if (signedInUser) {
+      const tier = await tierApi.getTier();
+      posthog.identify(signedInUser.id, { phone: signedInUser.phone, tier });
+    }
     return {};
   }
 
   async function signOut() {
     await authApi.signOut();
     setUser(null);
+    posthog.reset();
   }
 
   return (

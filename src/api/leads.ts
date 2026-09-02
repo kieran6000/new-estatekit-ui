@@ -91,6 +91,7 @@ export async function createLeadFromSubmission(
   formAnswers: FormAnswer[],
   pipelineId: string,
   sourcePageId: string | null,
+  email: string | null = null,
 ): Promise<LeadRow> {
   const leads = await listLeads();
   const now = new Date().toISOString();
@@ -101,7 +102,7 @@ export async function createLeadFromSubmission(
     source_page_id: sourcePageId,
     name,
     phone,
-    email: null,
+    email,
     stage: "New Lead" as Stage,
     next_label: "Just came in",
     reminder_at: null,

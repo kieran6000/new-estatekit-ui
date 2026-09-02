@@ -11,6 +11,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import { usePostHog } from "@posthog/react";
 import CloseIcon from "@mui/icons-material/Close";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import EventIcon from "@mui/icons-material/Event";
@@ -22,7 +23,7 @@ import BlockIcon from "@mui/icons-material/Block";
 import CloseFullscreenIcon from "@mui/icons-material/CallEnd";
 import { defaultReminderISO, MAIN_OUTCOME_OPTIONS, STEP_FOR_STAGE, type MainOutcomeOption } from "../lib/stageLogic";
 import { useUpdateLeadStage } from "../hooks/useLeads";
-import type { LeadRow, OutcomeStep, PipelineKind, Stage } from "../types";
+import type { LeadRow, OutcomeStep, PipelineKind, Stage, StageChangeExtra } from "../types";
 
 export const OUTCOME_ICONS: Record<MainOutcomeOption["icon"], React.ReactNode> = {
   event: <EventIcon />,
@@ -63,6 +64,7 @@ export default function OutcomeSheet({
   const [step, setStep] = useState<OutcomeStep>(entryStep);
   const [targetStage, setTargetStage] = useState<Stage | null>(entryStage ?? null);
   const updateStage = useUpdateLeadStage();
+  const posthog = usePostHog();
 
   useEffect(() => {
     if (open) {
@@ -86,6 +88,11 @@ export default function OutcomeSheet({
       setStep(entryStep);
     }
   }
+  function commitStage(toStage: Stage, extra?: StageChangeExtra | number) {
+    posthog.capture("lead_stage_changed", { pipeline: pipelineKind, from: lead!.stage, to: toStage });
+    updateStage.mutate({ id: lead!.id, stage: toStage, extra });
+    finish(outcomeSnack(toStage));
+  }
   function pickMain(option: MainOutcomeOption) {
     const subStep = STEP_FOR_STAGE[option.stage];
     if (subStep) {
@@ -93,8 +100,7 @@ export default function OutcomeSheet({
       setStep(subStep);
       return;
     }
-    updateStage.mutate({ id: lead!.id, stage: option.stage });
-    finish(outcomeSnack(option.stage));
+    commitStage(option.stage);
   }
 
   if (!lead) return null;
@@ -159,18 +165,14 @@ export default function OutcomeSheet({
             <Opt
               key={label as string}
               label={label as string}
-              onClick={() => {
-                updateStage.mutate({ id: lead.id, stage, extra: { label: tag as string, at: defaultReminderISO(days as number) } });
-                finish(outcomeSnack(stage));
-              }}
+              onClick={() => commitStage(stage, { label: tag as string, at: defaultReminderISO(days as number) })}
             />
           ))}
           <DatePickerRow
             buttonLabel="Set date"
             onSet={(d) => {
               const lbl = "Appt " + d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
-              updateStage.mutate({ id: lead.id, stage, extra: { label: lbl, at: d.toISOString() } });
-              finish(outcomeSnack(stage));
+              commitStage(stage, { label: lbl, at: d.toISOString() });
             }}
           />
         </Box>
@@ -186,47 +188,25 @@ export default function OutcomeSheet({
             <Opt
               key={label as string}
               label={label as string}
-              onClick={() => {
-                updateStage.mutate({ id: lead.id, stage, extra: { label: tag as string, at: defaultReminderISO(days as number) } });
-                finish(outcomeSnack(stage));
-              }}
+              onClick={() => commitStage(stage, { label: tag as string, at: defaultReminderISO(days as number) })}
             />
           ))}
           <DatePickerRow
             buttonLabel="Set"
             onSet={(d) => {
               const lbl = "on " + d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
-              updateStage.mutate({ id: lead.id, stage, extra: { label: lbl, at: d.toISOString() } });
-              finish(outcomeSnack(stage));
+              commitStage(stage, { label: lbl, at: d.toISOString() });
             }}
           />
-          <Opt
-            label="No reminder"
-            onClick={() => {
-              updateStage.mutate({ id: lead.id, stage, extra: { label: "no reminder", at: null } });
-              finish(outcomeSnack(stage));
-            }}
-          />
+          <Opt label="No reminder" onClick={() => commitStage(stage, { label: "no reminder", at: null })} />
         </Box>
       )}
 
       {step === "commission" && stage && (
         <Box sx={{ pb: 1.5 }}>
-          <CommissionInput
-            onSave={(v) => {
-              updateStage.mutate({ id: lead.id, stage, extra: v });
-              finish(outcomeSnack(stage));
-            }}
-          />
+          <CommissionInput onSave={(v) => commitStage(stage, v)} />
           {[25000, 45000, 75000].map((a) => (
-            <Opt
-              key={a}
-              label={"R" + a.toLocaleString()}
-              onClick={() => {
-                updateStage.mutate({ id: lead.id, stage, extra: a });
-                finish(outcomeSnack(stage));
-              }}
-            />
+            <Opt key={a} label={"R" + a.toLocaleString()} onClick={() => commitStage(stage, a)} />
           ))}
         </Box>
       )}

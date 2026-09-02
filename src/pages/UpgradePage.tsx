@@ -17,7 +17,7 @@ const ROWS: [string, boolean, boolean][] = [
 export default function UpgradePage() {
   const navigate = useNavigate();
   return (
-    <Box sx={{ maxWidth: 640, mx: "auto", pb: 4 }}>
+    <Box>
       <AppBar position="sticky">
         <Toolbar sx={{ height: 56, minHeight: "56px !important" }}>
           <IconButton onClick={() => navigate(-1)}>
@@ -27,6 +27,7 @@ export default function UpgradePage() {
         </Toolbar>
       </AppBar>
 
+      <Box sx={{ maxWidth: 640, mx: "auto", pb: 4 }}>
       <Box sx={{ p: "20px 16px 4px", textAlign: "center" }}>
         <Typography sx={{ fontSize: 20, fontWeight: 500 }}>Get more from EstateKit</Typography>
         <Typography sx={{ color: "text.secondary", fontSize: 14, mt: 0.5 }}>
@@ -77,6 +78,7 @@ export default function UpgradePage() {
         >
           <StorefrontIcon fontSize="small" /> Hire the agency
         </Box>
+      </Box>
       </Box>
     </Box>
   );

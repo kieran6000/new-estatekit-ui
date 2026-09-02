@@ -31,7 +31,18 @@ export function useUpdateLeadPage() {
 
 export function useSubmitMockLead() {
   return useMutation({
-    mutationFn: async ({ pageId, name, phone, formAnswers }: { pageId: string; name: string; phone: string; formAnswers: FormAnswer[] }) =>
-      leadPagesApi.submitMockLead(pageId, name, phone, formAnswers),
+    mutationFn: async ({
+      pageId,
+      name,
+      phone,
+      formAnswers,
+      email,
+    }: {
+      pageId: string;
+      name: string;
+      phone: string;
+      formAnswers: FormAnswer[];
+      email?: string | null;
+    }) => leadPagesApi.submitMockLead(pageId, name, phone, formAnswers, email ?? null),
   });
 }

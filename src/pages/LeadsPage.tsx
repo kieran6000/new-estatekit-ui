@@ -33,6 +33,7 @@ import NotificationsIcon from "@mui/icons-material/Notifications";
 import CallIcon from "@mui/icons-material/Call";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
+import { usePostHog } from "@posthog/react";
 import { tokens } from "../theme";
 import { DEAD_STAGES, PIPELINE_KIND_LABEL, PIPELINE_STAGES, type LeadRow, type OutcomeStep, type Pipeline, type PipelineKind, type Stage } from "../types";
 import { dueLeads, pipelineKindFor, sortLeadsForList, STEP_FOR_STAGE } from "../lib/stageLogic";
@@ -318,10 +319,12 @@ function AddPipelineDialog({ open, onClose, onCreated }: { open: boolean; onClos
   const [kind, setKind] = useState<PipelineKind>("seller");
   const [name, setName] = useState("");
   const addPipeline = useAddPipeline();
+  const posthog = usePostHog();
 
   async function create() {
     const finalName = name.trim() || PIPELINE_KIND_LABEL[kind].replace("-style", "");
     const p = await addPipeline.mutateAsync({ name: finalName, kind });
+    posthog.capture("pipeline_added", { preset: kind });
     setName("");
     onClose();
     onCreated(p.id);

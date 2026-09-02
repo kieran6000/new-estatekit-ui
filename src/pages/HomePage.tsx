@@ -6,6 +6,7 @@ import StorefrontIcon from "@mui/icons-material/Storefront";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import PlayCircleOutlineIcon from "@mui/icons-material/PlayCircleOutlineRounded";
+import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import { tokens } from "../theme";
 import { useSendCallQuestion } from "../hooks/useSupport";
 import { useSnack } from "../hooks/useSnack";
@@ -55,7 +56,7 @@ export default function HomePage() {
   }
 
   return (
-    <Box sx={{ maxWidth: 680, mx: "auto", pb: 3 }}>
+    <Box>
       <AppBar position="sticky">
         <Toolbar sx={{ height: 56, minHeight: "56px !important" }}>
           <Typography sx={{ fontSize: 18, fontWeight: 500, flex: 1 }}>Home</Typography>
@@ -63,6 +64,7 @@ export default function HomePage() {
         </Toolbar>
       </AppBar>
 
+      <Box sx={{ maxWidth: 680, mx: "auto", pb: 3 }}>
       <Box sx={{ m: "12px 16px 0", border: `1px solid ${tokens.divider}`, borderRadius: "8px", bgcolor: "background.paper", p: "14px 16px", boxShadow: "0 1px 2px rgba(0,0,0,.14)" }}>
         <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
           <Box sx={{ position: "relative", width: 40, height: 40, borderRadius: "8px", bgcolor: tokens.primaryBg, color: tokens.primary, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 auto" }}>
@@ -160,7 +162,9 @@ export default function HomePage() {
           <Box sx={{ flex: 1, minWidth: 0, background: `linear-gradient(135deg, ${tokens.primaryDark}, ${tokens.primary})`, color: "#fff", p: "16px 18px" }}>
             <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", opacity: 0.85 }}>YOUR COURSE</Typography>
             <Typography sx={{ fontSize: 17, fontWeight: 700, mt: 0.5 }}>Ads That Convert: The Full EstateKit Course</Typography>
-            <Typography sx={{ fontSize: 13, opacity: 0.85, mt: 0.5 }}>Watch on Whop →</Typography>
+            <Typography sx={{ fontSize: 13, opacity: 0.85, mt: 0.5, display: "flex", alignItems: "center", gap: 0.4 }}>
+              Watch on Whop <OpenInNewIcon sx={{ fontSize: 14 }} />
+            </Typography>
           </Box>
         </Box>
       </Box>
@@ -231,6 +235,7 @@ export default function HomePage() {
       </Box>
 
       <TicketDialog open={ticketOpen} onClose={() => setTicketOpen(false)} />
+      </Box>
     </Box>
   );
 }

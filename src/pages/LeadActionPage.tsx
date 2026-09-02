@@ -2,16 +2,15 @@ import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { Box, Paper, Skeleton, TextField, Typography } from "@mui/material";
 import CallIcon from "@mui/icons-material/Call";
+import WhatsAppIcon from "@mui/icons-material/WhatsApp";
 import { tokens } from "../theme";
-import { useLeadWithStatus, useUpdateLeadNote, useUpdateLeadStage } from "../hooks/useLeads";
+import { useLeadWithStatus, useUpdateLeadNote } from "../hooks/useLeads";
 import { usePipelines } from "../hooks/usePipelines";
 import { useLeadPages } from "../hooks/useLeadPages";
 import { useSnack } from "../hooks/useSnack";
-import { PIPELINE_STAGES } from "../types";
-import { pipelineKindFor, STEP_FOR_STAGE } from "../lib/stageLogic";
-import StageMenu from "../components/StageMenu";
+import { pipelineKindFor } from "../lib/stageLogic";
 import OutcomeSheet from "../components/OutcomeSheet";
-import type { OutcomeStep, Stage } from "../types";
+import estateKitLogo from "../assets/blue logo full.png";
 
 /**
  * The page a WhatsApp lead-action link (see AdminAutomationsPage) opens —
@@ -20,8 +19,9 @@ import type { OutcomeStep, Stage } from "../types";
  * reachable only by its own URL (an agent gets there from a WhatsApp tap).
  * Deliberately the same call → outcome-popup flow as the dashboard's lead
  * page, not a different one — the agent already knows how it works. Read
- * the lead's details first, then act — the CTAs sit at the bottom, not
- * above the fold, since there's nothing to decide until you've read them.
+ * the lead's details first, then act — the CTAs are pinned to the bottom of
+ * the viewport and only the middle content scrolls, so a lead with a long
+ * form never pushes the actions below the fold.
  */
 export default function LeadActionPage() {
   const { leadId } = useParams<{ leadId: string }>();
@@ -29,13 +29,11 @@ export default function LeadActionPage() {
   const { data: pipelines = [] } = usePipelines();
   const { data: pages = [] } = useLeadPages();
   const updateNote = useUpdateLeadNote();
-  const updateStage = useUpdateLeadStage();
   const showSnack = useSnack();
 
   const [note, setNote] = useState(lead?.note ?? "");
   const [saveState, setSaveState] = useState("");
   const [outcomeOpen, setOutcomeOpen] = useState(false);
-  const [stageStep, setStageStep] = useState<{ step: OutcomeStep; stage: Stage } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => setNote(lead?.note ?? ""), [lead?.id]);
@@ -60,28 +58,13 @@ export default function LeadActionPage() {
   }
 
   const pipelineKind = lead ? pipelineKindFor(lead, pipelines) : "seller";
-  const stagesForPipeline = PIPELINE_STAGES[pipelineKind];
   const sourcePage = lead?.source_page_id ? pages.find((p) => p.id === lead.source_page_id) : undefined;
-
-  function handleStagePick(stage: Stage) {
-    if (!lead) return;
-    const step = STEP_FOR_STAGE[stage];
-    if (step) {
-      setStageStep({ step, stage });
-      return;
-    }
-    const prev = { stage: lead.stage, next_label: lead.next_label, due: lead.due, reminder_at: lead.reminder_at, commission: lead.commission };
-    updateStage.mutate({ id: lead.id, stage });
-    showSnack(`${lead.name.split(" ")[0]} moved to ${stage}`, () =>
-      updateStage.mutate({ id: lead.id, stage: prev.stage, override: prev }),
-    );
-  }
+  const digits = lead?.phone.replace(/\D/g, "") ?? "";
 
   return (
-    <Box sx={{ minHeight: "100vh", bgcolor: tokens.bg }}>
-      <Box sx={{ display: "flex", alignItems: "center", gap: 1, p: "14px 16px", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
-        <Box sx={{ width: 20, height: 20, borderRadius: "5px", bgcolor: tokens.primary }} />
-        <Typography sx={{ fontSize: 16, fontWeight: 700 }}>EstateKit</Typography>
+    <Box sx={{ height: "100vh", display: "flex", flexDirection: "column", bgcolor: tokens.bg }}>
+      <Box sx={{ flexShrink: 0, display: "flex", alignItems: "center", p: "10px 16px", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
+        <Box component="img" src={estateKitLogo} alt="EstateKit" sx={{ height: 22 }} />
       </Box>
 
       {isLoading ? (
@@ -91,45 +74,83 @@ export default function LeadActionPage() {
           <Typography color="text.secondary">This link isn't valid or has expired.</Typography>
         </Box>
       ) : (
-        <Box sx={{ maxWidth: 720, mx: "auto", pb: 3 }}>
-          <Typography sx={{ fontSize: 19, fontWeight: 600, m: "16px 16px 0" }}>{lead.name}</Typography>
+        <>
+          <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+            <Box sx={{ maxWidth: 720, mx: "auto", pb: 3 }}>
+              <Typography sx={{ fontSize: 19, fontWeight: 600, m: "16px 16px 0" }}>{lead.name}</Typography>
 
-          <Section title="Contact">
-            <Row k="Phone" v={lead.phone} />
-            <Row k="Email" v={lead.email || ""} />
-            <Row k="Stage" v={lead.stage} />
-            <Row k="Next" v={lead.next_label} />
-            <Row k="Came from" v={sourcePage ? sourcePage.name : "Added manually"} />
-          </Section>
+              <Section title="Contact">
+                <Row k="Phone" v={lead.phone} />
+                <Row k="Email" v={lead.email || ""} />
+                <Row k="Stage" v={lead.stage} />
+                <Row k="Next" v={lead.next_label} />
+                <Row k="Came from" v={sourcePage ? sourcePage.name : "Added manually"} />
+              </Section>
 
-          <Section title="From their form">
-            {lead.form_answers.length ? (
-              lead.form_answers.map((r, i) => <Row key={i} k={r.q} v={r.a} />)
-            ) : (
-              <Row k="" v="No answers captured." />
-            )}
-          </Section>
+              <Section title="From their form">
+                {lead.form_answers.length ? (
+                  lead.form_answers.map((r, i) => <Row key={i} k={r.q} v={r.a} />)
+                ) : (
+                  <Row k="" v="No answers captured." />
+                )}
+              </Section>
 
-          <Section title="Notes">
-            <TextField
-              multiline
-              minRows={4}
-              fullWidth
-              placeholder="Add a note about this lead…"
-              value={note}
-              onChange={(e) => onNoteChange(e.target.value)}
-              onBlur={() => saveNote(note)}
-              sx={{ mx: 2, mt: 1, mb: 0.5, width: "calc(100% - 32px)" }}
-            />
-            <Typography variant="caption" sx={{ color: "text.disabled", px: 2, pb: 1.75, display: "block", height: 18 }}>
-              {saveState}
-            </Typography>
-          </Section>
+              <Section title="Notes">
+                <TextField
+                  multiline
+                  minRows={4}
+                  fullWidth
+                  placeholder="Add a note about this lead…"
+                  value={note}
+                  onChange={(e) => onNoteChange(e.target.value)}
+                  onBlur={() => saveNote(note)}
+                  sx={{ mx: 2, mt: 1, mb: 0.5, width: "calc(100% - 32px)" }}
+                />
+                <Typography variant="caption" sx={{ color: "text.disabled", px: 2, pb: 1.75, display: "block", height: 18 }}>
+                  {saveState}
+                </Typography>
+              </Section>
 
-          <Box sx={{ display: "flex", gap: 1.25, m: "18px 16px 0" }}>
+              <Typography
+                component="a"
+                href="/leads"
+                sx={{ display: "block", textAlign: "center", mt: 2, fontSize: 13, color: "text.disabled", textDecoration: "none", "&:hover": { color: tokens.primary } }}
+              >
+                Go to dashboard
+              </Typography>
+            </Box>
+          </Box>
+
+          <Box sx={{ flexShrink: 0, display: "flex", gap: 1.25, p: "12px 16px", bgcolor: "background.paper", borderTop: `1px solid ${tokens.divider}` }}>
             <Box
               component="a"
-              href={`tel:${lead.phone.replace(/\s/g, "")}`}
+              href={`https://wa.me/${digits}`}
+              target="_blank"
+              rel="noopener"
+              sx={{
+                flex: 1,
+                bgcolor: "#fff",
+                color: "#25D366",
+                border: `1px solid ${tokens.divider}`,
+                borderRadius: "4px",
+                p: "14px",
+                fontWeight: 500,
+                fontSize: 14,
+                textTransform: "uppercase",
+                textAlign: "center",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 1,
+                textDecoration: "none",
+                "&:hover": { bgcolor: tokens.hover },
+              }}
+            >
+              <WhatsAppIcon fontSize="small" /> Open on WhatsApp
+            </Box>
+            <Box
+              component="a"
+              href={`tel:${digits}`}
               onClick={() => setTimeout(() => setOutcomeOpen(true), 150)}
               sx={{
                 flex: 1,
@@ -151,50 +172,10 @@ export default function LeadActionPage() {
             >
               <CallIcon fontSize="small" /> Call
             </Box>
-            <StageMenu current={lead.stage} stages={stagesForPipeline} onPick={handleStagePick}>
-              {(open) => (
-                <Box
-                  component="button"
-                  onClick={open}
-                  sx={{
-                    flex: 1,
-                    bgcolor: "#fff",
-                    color: tokens.primary,
-                    border: `1px solid ${tokens.divider}`,
-                    borderRadius: "4px",
-                    p: "14px",
-                    fontWeight: 500,
-                    fontSize: 14,
-                    textTransform: "uppercase",
-                    cursor: "pointer",
-                    "&:hover": { bgcolor: tokens.primaryBg },
-                  }}
-                >
-                  Change stage
-                </Box>
-              )}
-            </StageMenu>
           </Box>
 
-          <Typography
-            component="a"
-            href="/leads"
-            sx={{ display: "block", textAlign: "center", mt: 2, fontSize: 13, color: "text.disabled", textDecoration: "none", "&:hover": { color: tokens.primary } }}
-          >
-            Go to dashboard
-          </Typography>
-
           <OutcomeSheet lead={lead} pipelineKind={pipelineKind} open={outcomeOpen} onClose={() => setOutcomeOpen(false)} onSnack={showSnack} />
-          <OutcomeSheet
-            lead={lead}
-            pipelineKind={pipelineKind}
-            open={!!stageStep}
-            entryStep={stageStep?.step ?? "main"}
-            entryStage={stageStep?.stage}
-            onClose={() => setStageStep(null)}
-            onSnack={showSnack}
-          />
-        </Box>
+        </>
       )}
     </Box>
   );

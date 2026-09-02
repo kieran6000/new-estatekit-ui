@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Button, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, TextField, Typography } from "@mui/material";
+import { usePostHog } from "@posthog/react";
 import { useSendTicket } from "../hooks/useSupport";
 import { useSnack } from "../hooks/useSnack";
 
@@ -12,11 +13,13 @@ export default function TicketDialog({ open, onClose }: { open: boolean; onClose
   const [message, setMessage] = useState("");
   const send = useSendTicket();
   const showSnack = useSnack();
+  const posthog = usePostHog();
 
   async function submit() {
     if (!message.trim()) return;
     try {
       const data = await send.mutateAsync({ type, priority, message: message.trim() });
+      posthog.capture("support_ticket_submitted", { type, priority });
       showSnack(data?.emailed ? "Sent — we'll reply by email" : "Saved — email may be delayed");
       setMessage("");
       onClose();

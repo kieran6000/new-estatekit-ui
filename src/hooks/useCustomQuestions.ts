@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as questionsApi from "../api/customQuestions";
-import type { QuestionType } from "../types";
+import type { NewCustomQuestion } from "../api/customQuestions";
 
 const KEY = (pageId: string) => ["customQuestions", pageId] as const;
 
@@ -14,8 +14,7 @@ export function useCustomQuestions(pageId: string) {
 export function useAddCustomQuestion(pageId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ label, type, options }: { label: string; type: QuestionType; options?: string[] }) =>
-      questionsApi.addCustomQuestion(pageId, label, type, options),
+    mutationFn: async (data: NewCustomQuestion) => questionsApi.addCustomQuestion(pageId, data),
     onSuccess: () => qc.invalidateQueries({ queryKey: KEY(pageId) }),
   });
 }

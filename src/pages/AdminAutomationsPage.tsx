@@ -12,6 +12,7 @@ import {
   Typography,
 } from "@mui/material";
 import DoneAllIcon from "@mui/icons-material/DoneAll";
+import { usePostHog } from "@posthog/react";
 import { tokens } from "../theme";
 import {
   useAutomations,
@@ -143,15 +144,17 @@ function AutomationsAdmin() {
   const { data: leads = [] } = useLeads();
   const toggle = useToggleAutomation();
   const showSnack = useSnack();
+  const posthog = usePostHog();
   const previewLead = leads[0];
 
   return (
-    <Box sx={{ maxWidth: 820, mx: "auto", pb: 4 }}>
+    <Box>
       <AppBar position="sticky">
         <Toolbar sx={{ height: 56, minHeight: "56px !important" }}>
           <Typography sx={{ fontSize: 18, fontWeight: 500 }}>Automations</Typography>
         </Toolbar>
       </AppBar>
+      <Box sx={{ maxWidth: 820, mx: "auto", pb: 4 }}>
       <Typography variant="body2" color="text.secondary" sx={{ p: "16px 16px 0" }}>
         The lead-follow-up SOP, running automatically. Agents never see this — messages go to the agent's own WhatsApp
         as a nudge about their lead.
@@ -170,11 +173,13 @@ function AutomationsAdmin() {
             previewLead={previewLead}
             onToggle={(enabled) => {
               toggle.mutate({ id: a.id, enabled });
+              posthog.capture("automation_toggled", { automation: a.name, enabled });
               showSnack(`${a.name} ${enabled ? "enabled" : "disabled"}`);
             }}
           />
         ))
       )}
+      </Box>
     </Box>
   );
 }

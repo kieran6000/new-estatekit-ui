@@ -118,10 +118,12 @@ export const DEFAULT_ACCENT_COLOR = "#1976d2";
 /**
  * A lead-capture page. Every page feeds exactly one pipeline — set once at
  * creation and never edited in place (create a new page to change it,
- * mirroring how a Pipeline's stage preset is also fixed at creation). Which
- * pipeline it feeds decides its one fixed template (see LeadCaptureForm):
- * Seller-linked pages ask property address + timeline, Buyer-linked pages
- * ask area + budget. No page builder — only the branding fields below vary.
+ * mirroring how a Pipeline's stage preset is also fixed at creation). The
+ * only fixed, non-editable-structure fields are the final Name → Email →
+ * Phone step; every other question (including the address/timeline
+ * questions a new page starts with) is a regular, reorderable CustomQuestion
+ * — see api/customQuestions.ts. No page builder — the questions are always
+ * one-per-step, in the app's fixed visual template.
  */
 export interface LeadPage {
   id: string;
@@ -131,10 +133,17 @@ export interface LeadPage {
   headline: string;
   suburb: string;
   phone: string;
+  /** Shown in the page's header/navbar — the visitor never sees profilePhotoDataUrl there. */
   logoDataUrl: string | null;
+  /** Shown only on the thank-you screen, next to the calling animation — never in the header. */
+  profilePhotoDataUrl: string | null;
   accentColor: string;
   /** Whether the branded headline screen shows before Step 1 — off starts straight at the form. */
   showIntro: boolean;
+  /** Wording for the two fixed contact fields — always present, in this
+   * fixed order (Name → Email → Phone), and never reordered/removable. */
+  nameLabel: string;
+  phoneLabel: string;
   /** The final step's submit button text (e.g. "Get my free estimate"). */
   ctaLabel: string;
   /** Shown after submit, in place of the form. `{name}` is replaced with what they typed. */
@@ -144,7 +153,10 @@ export interface LeadPage {
   fbPixelId: string;
 }
 
-export type QuestionType = "short_text" | "multiple_choice" | "yes_no";
+/** "address" behaves like short_text but keeps the location-pin icon and an
+ * example caption (CustomQuestion.helperText) — the only visual difference
+ * from a plain short_text question. */
+export type QuestionType = "short_text" | "address" | "multiple_choice" | "yes_no";
 
 export interface CustomQuestion {
   id: string;
@@ -152,6 +164,16 @@ export interface CustomQuestion {
   label: string;
   type: QuestionType;
   options?: string[];
+  /** Small example/caption text shown under the question — mainly for "address". */
+  helperText?: string;
+  /** Blocks "Next Step" until answered. Choice-type questions already can't
+   * be skipped, since tapping an option is the only way to advance. */
+  required: boolean;
+  /** True for the address/timeline questions a page starts with — still
+   * fully editable/reorderable/removable, just pre-seeded so a brand-new
+   * page's form isn't just three contact fields. Adding *more* than the
+   * seeded questions is the paid-tier feature; editing/reordering isn't. */
+  isDefault: boolean;
   order: number;
 }
 

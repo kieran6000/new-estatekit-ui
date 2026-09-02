@@ -1,10 +1,43 @@
 import { getStore, setStore, uid } from "./_store";
-import type { CustomQuestion, QuestionType } from "../types";
+import type { CustomQuestion, PipelineKind } from "../types";
+import { LEAD_FORM_TEMPLATE } from "../lib/leadFormTemplate";
 
 const KEY = "custom_questions";
 
+/** "page-seller" (the app's seeded starter page) gets the same two default
+ * questions a freshly-created seller page would — see seedDefaultQuestions. */
+function seedAll(): CustomQuestion[] {
+  return defaultQuestionRows("page-seller", "seller", "q-seller-");
+}
+
+function defaultQuestionRows(pageId: string, kind: PipelineKind, idPrefix: string): CustomQuestion[] {
+  const t = LEAD_FORM_TEMPLATE[kind];
+  return [
+    {
+      id: idPrefix + "address",
+      pageId,
+      label: t.addressLabel,
+      type: "address",
+      helperText: t.addressHelperText,
+      required: true,
+      isDefault: true,
+      order: 0,
+    },
+    {
+      id: idPrefix + "second",
+      pageId,
+      label: t.secondQuestionLabel,
+      type: "multiple_choice",
+      options: [...t.secondOptions],
+      required: true,
+      isDefault: true,
+      order: 1,
+    },
+  ];
+}
+
 async function listAll(): Promise<CustomQuestion[]> {
-  return getStore<CustomQuestion[]>(KEY, []);
+  return getStore<CustomQuestion[]>(KEY, seedAll());
 }
 
 // TODO: connect backend — replace with a real `select * from custom_questions where page_id = ... order by order` call.
@@ -12,16 +45,35 @@ export async function listCustomQuestions(pageId: string): Promise<CustomQuestio
   return (await listAll()).filter((q) => q.pageId === pageId).sort((a, b) => a.order - b.order);
 }
 
+/** Gives a brand-new page its starting address + timeline/budget questions —
+ * called once, right after a page is created. From then on they're just
+ * regular rows: fully editable, reorderable, and removable. */
+export async function seedDefaultQuestions(pageId: string, kind: PipelineKind): Promise<void> {
+  const all = await listAll();
+  setStore(KEY, [...all, ...defaultQuestionRows(pageId, kind, `${pageId}-`)]);
+}
+
+export interface NewCustomQuestion {
+  label: string;
+  type: CustomQuestion["type"];
+  options?: string[];
+  helperText?: string;
+  required: boolean;
+}
+
 // TODO: connect backend — replace with a real insert.
-export async function addCustomQuestion(pageId: string, label: string, type: QuestionType, options?: string[]): Promise<void> {
+export async function addCustomQuestion(pageId: string, data: NewCustomQuestion): Promise<void> {
   const all = await listAll();
   const order = all.filter((q) => q.pageId === pageId).length;
-  const row: CustomQuestion = { id: uid(), pageId, label, type, options, order };
+  const row: CustomQuestion = { id: uid(), pageId, order, isDefault: false, ...data };
   setStore(KEY, [...all, row]);
 }
 
 // TODO: connect backend — replace with a real update.
-export async function updateCustomQuestion(id: string, patch: Partial<Pick<CustomQuestion, "label" | "type" | "options">>): Promise<void> {
+export async function updateCustomQuestion(
+  id: string,
+  patch: Partial<Pick<CustomQuestion, "label" | "type" | "options" | "helperText" | "required">>,
+): Promise<void> {
   const all = await listAll();
   setStore(KEY, all.map((q) => (q.id === id ? { ...q, ...patch } : q)));
 }

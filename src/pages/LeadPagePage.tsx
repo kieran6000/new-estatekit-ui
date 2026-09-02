@@ -25,11 +25,15 @@ import ShareIcon from "@mui/icons-material/Share";
 import LockIcon from "@mui/icons-material/Lock";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlineRounded";
+import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
+import OpenInNewIcon from "@mui/icons-material/OpenInNew";
+import PlaceIcon from "@mui/icons-material/PlaceOutlined";
+import { usePostHog } from "@posthog/react";
 import { tokens } from "../theme";
-import { PIPELINE_KIND_LABEL, type LeadPage, type Pipeline, type PipelineKind, type QuestionType } from "../types";
+import { PIPELINE_KIND_LABEL, type CustomQuestion, type LeadPage, type Pipeline, type PipelineKind, type QuestionType } from "../types";
 import { shortLinkFor } from "../api/leadPages";
 import { useAddLeadPage, useLeadPages, useSubmitMockLead, useUpdateLeadPage } from "../hooks/useLeadPages";
 import { usePipelines } from "../hooks/usePipelines";
@@ -38,10 +42,10 @@ import {
   useCustomQuestions,
   useMoveCustomQuestion,
   useRemoveCustomQuestion,
+  useUpdateCustomQuestion,
 } from "../hooks/useCustomQuestions";
 import { useTier } from "../hooks/useTier";
 import { useSnack } from "../hooks/useSnack";
-import { LEAD_FORM_TEMPLATE } from "../lib/leadFormTemplate";
 import LeadCaptureForm from "../components/LeadCaptureForm";
 
 export default function LeadPagePage() {
@@ -51,6 +55,7 @@ export default function LeadPagePage() {
   const { data: pipelines = [], isLoading: pipelinesLoading } = usePipelines();
   const updatePage = useUpdateLeadPage();
   const showSnack = useSnack();
+  const posthog = usePostHog();
 
   const [pageId, setPageId] = useState<string | null>(null);
   const [pageMenuAnchor, setPageMenuAnchor] = useState<HTMLElement | null>(null);
@@ -70,6 +75,13 @@ export default function LeadPagePage() {
     if (!file) return update({ logoDataUrl: null });
     const reader = new FileReader();
     reader.onload = () => update({ logoDataUrl: reader.result as string });
+    reader.readAsDataURL(file);
+  }
+
+  function onPhotoChange(file: File | null) {
+    if (!file) return update({ profilePhotoDataUrl: null });
+    const reader = new FileReader();
+    reader.onload = () => update({ profilePhotoDataUrl: reader.result as string });
     reader.readAsDataURL(file);
   }
 
@@ -123,10 +135,19 @@ export default function LeadPagePage() {
             <TextField label="Headline" value={page.headline} onChange={(e) => update({ headline: e.target.value })} fullWidth multiline minRows={2} />
             <TextField label="Suburb / area" value={page.suburb} onChange={(e) => update({ suburb: e.target.value })} fullWidth />
             <TextField label="Phone" value={page.phone} onChange={(e) => update({ phone: e.target.value })} fullWidth />
-            <Button variant="outlined" component="label" size="small" sx={{ alignSelf: "flex-start" }}>
-              {page.logoDataUrl ? "Change logo / photo" : "Upload logo / photo"}
-              <input type="file" hidden accept="image/*" onChange={(e) => onLogoChange(e.target.files?.[0] ?? null)} />
-            </Button>
+            <Box sx={{ display: "flex", gap: 1 }}>
+              <Button variant="outlined" component="label" size="small">
+                {page.logoDataUrl ? "Change logo" : "Upload logo"}
+                <input type="file" hidden accept="image/*" onChange={(e) => onLogoChange(e.target.files?.[0] ?? null)} />
+              </Button>
+              <Button variant="outlined" component="label" size="small">
+                {page.profilePhotoDataUrl ? "Change profile photo" : "Upload profile photo"}
+                <input type="file" hidden accept="image/*" onChange={(e) => onPhotoChange(e.target.files?.[0] ?? null)} />
+              </Button>
+            </Box>
+            <Typography sx={{ fontSize: 12, color: "text.secondary", mt: -1 }}>
+              Logo shows in the page's top navbar. Profile photo (optional) shows on the thank-you screen — without one, a call animation takes its place.
+            </Typography>
 
             <Box>
               <Typography sx={{ fontSize: 13, color: "text.secondary", mb: 1 }}>Accent color</Typography>
@@ -186,22 +207,21 @@ export default function LeadPagePage() {
           </Section>
 
           <Section title="Form questions">
-            <Typography sx={{ fontSize: 12, color: "text.secondary" }}>Always shown, on every plan:</Typography>
-            {[LEAD_FORM_TEMPLATE[pipeline.kind].step1Label, LEAD_FORM_TEMPLATE[pipeline.kind].secondQuestion, "Full name", "WhatsApp number"].map((f) => (
-              <Box key={f} sx={{ display: "flex", alignItems: "center", gap: 1, p: "10px 12px", borderRadius: "4px", bgcolor: tokens.hover, color: "text.secondary", fontSize: 14 }}>
-                <LockIcon sx={{ fontSize: 16 }} /> {f}
-              </Box>
-            ))}
+            <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
+              Name, phone and email are always collected last, in that order, and can't be reordered or removed. Every other
+              question — including the address and timeline ones every page starts with — can be edited, reordered or removed.
+            </Typography>
+            <TextField label="Name field question" value={page.nameLabel} onChange={(e) => update({ nameLabel: e.target.value })} fullWidth />
+            <TextField label="Phone field question" value={page.phoneLabel} onChange={(e) => update({ phoneLabel: e.target.value })} fullWidth />
 
-            {tier === "free" ? (
-              <UpgradeNudge onUpgrade={() => navigate("/upgrade")} />
-            ) : (
-              <CustomQuestionEditor pageId={page.id} />
-            )}
+            <CustomQuestionEditor pageId={page.id} tier={tier} onUpgrade={() => {
+              posthog.capture("upgrade_clicked", { source: "lead_page_custom_questions" });
+              navigate("/upgrade");
+            }} />
           </Section>
         </Box>
 
-        <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
+        <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2, alignSelf: "flex-start", position: { md: "sticky" }, top: { md: 72 } }}>
           <Section
             title="Live preview"
             action={
@@ -210,13 +230,13 @@ export default function LeadPagePage() {
                 href={`/p/${page.id}`}
                 target="_blank"
                 rel="noopener"
-                sx={{ fontSize: 12.5, color: tokens.primary, textDecoration: "none", textTransform: "none", fontWeight: 500, "&:hover": { textDecoration: "underline" } }}
+                sx={{ display: "flex", alignItems: "center", gap: 0.4, fontSize: 12.5, color: tokens.primary, textDecoration: "none", textTransform: "none", fontWeight: 500, "&:hover": { textDecoration: "underline" } }}
               >
-                Open live preview ↗
+                Open live preview <OpenInNewIcon sx={{ fontSize: 14 }} />
               </Typography>
             }
           >
-            <PreviewAndSubmit page={page} pipelineKind={pipeline.kind} tier={tier} />
+            <PreviewAndSubmit page={page} pipelineKind={pipeline.kind} />
           </Section>
 
           <ShareSection page={page} />
@@ -236,7 +256,7 @@ export default function LeadPagePage() {
   );
 }
 
-function PreviewAndSubmit({ page, pipelineKind, tier }: { page: LeadPage; pipelineKind: PipelineKind; tier: "free" | "paid" }) {
+function PreviewAndSubmit({ page, pipelineKind }: { page: LeadPage; pipelineKind: PipelineKind }) {
   const { data: customQuestions = [] } = useCustomQuestions(page.id);
   const submitLead = useSubmitMockLead();
   const showSnack = useSnack();
@@ -244,9 +264,9 @@ function PreviewAndSubmit({ page, pipelineKind, tier }: { page: LeadPage; pipeli
     <LeadCaptureForm
       page={page}
       pipelineKind={pipelineKind}
-      customQuestions={tier === "paid" ? customQuestions : []}
-      onSubmit={async ({ name, phone, answers }) => {
-        await submitLead.mutateAsync({ pageId: page.id, name, phone, formAnswers: answers });
+      customQuestions={customQuestions}
+      onSubmit={async ({ name, phone, email, answers }) => {
+        await submitLead.mutateAsync({ pageId: page.id, name, phone, email, formAnswers: answers });
         showSnack("Form submitted (demo) — a real lead lands in Leads once connected");
       }}
     />
@@ -328,6 +348,7 @@ function AddPageDialog({
   const [name, setName] = useState("");
   const [pipelineId, setPipelineId] = useState("");
   const addPage = useAddLeadPage();
+  const posthog = usePostHog();
 
   useEffect(() => {
     if (open) {
@@ -340,6 +361,7 @@ function AddPageDialog({
     const pipeline = pipelines.find((p) => p.id === pipelineId);
     if (!pipeline || !name.trim()) return;
     const p = await addPage.mutateAsync({ name: name.trim(), pipelineId: pipeline.id, kind: pipeline.kind });
+    posthog.capture("lead_page_added", { preset: pipeline.kind });
     onClose();
     onCreated(p.id);
   }
@@ -403,70 +425,153 @@ function Section({ title, action, children }: { title: string; action?: React.Re
 
 const QUESTION_TYPES: { value: QuestionType; label: string }[] = [
   { value: "short_text", label: "Short text" },
+  { value: "address", label: "Address" },
   { value: "multiple_choice", label: "Multiple choice" },
   { value: "yes_no", label: "Yes / No" },
 ];
 
-function CustomQuestionEditor({ pageId }: { pageId: string }) {
+function CustomQuestionEditor({
+  pageId,
+  tier,
+  onUpgrade,
+}: {
+  pageId: string;
+  tier: "free" | "paid";
+  onUpgrade: () => void;
+}) {
   const { data: questions = [] } = useCustomQuestions(pageId);
   const addQuestion = useAddCustomQuestion(pageId);
   const removeQuestion = useRemoveCustomQuestion(pageId);
   const moveQuestion = useMoveCustomQuestion(pageId);
+  const posthog = usePostHog();
   const [label, setLabel] = useState("");
   const [type, setType] = useState<QuestionType>("short_text");
+  const [required, setRequired] = useState(false);
   const [optionsText, setOptionsText] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   async function add() {
     if (!label.trim()) return;
     const options = type === "multiple_choice" ? optionsText.split(",").map((o) => o.trim()).filter(Boolean) : undefined;
-    await addQuestion.mutateAsync({ label: label.trim(), type, options });
+    await addQuestion.mutateAsync({ label: label.trim(), type, required, options });
+    posthog.capture("custom_question_added", { type });
     setLabel("");
     setOptionsText("");
+    setRequired(false);
   }
 
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
-      {questions.map((q, i) => (
-        <Box key={q.id} sx={{ display: "flex", alignItems: "center", gap: 1, p: "10px 12px", border: `1px solid ${tokens.divider}`, borderRadius: "6px" }}>
-          <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography sx={{ fontSize: 14, fontWeight: 500 }}>{q.label}</Typography>
-            <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
-              {QUESTION_TYPES.find((t) => t.value === q.type)?.label}
-              {q.options?.length ? ` — ${q.options.join(", ")}` : ""}
-            </Typography>
+      {questions.map((q, i) =>
+        editingId === q.id ? (
+          <EditQuestionRow key={q.id} pageId={pageId} question={q} onDone={() => setEditingId(null)} />
+        ) : (
+          <Box key={q.id} sx={{ display: "flex", alignItems: "center", gap: 1, p: "10px 12px", border: `1px solid ${tokens.divider}`, borderRadius: "6px" }}>
+            {q.type === "address" && <PlaceIcon fontSize="small" sx={{ color: "text.secondary" }} />}
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography sx={{ fontSize: 14, fontWeight: 500 }}>
+                {q.label}
+                {q.required && <Box component="span" sx={{ ml: 0.75, fontSize: 11, color: "text.secondary", fontWeight: 400 }}>(required)</Box>}
+              </Typography>
+              <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
+                {QUESTION_TYPES.find((t) => t.value === q.type)?.label}
+                {q.options?.length ? ` — ${q.options.join(", ")}` : ""}
+              </Typography>
+            </Box>
+            <IconButton size="small" onClick={() => setEditingId(q.id)}>
+              <EditOutlinedIcon fontSize="small" />
+            </IconButton>
+            <IconButton size="small" disabled={i === 0} onClick={() => moveQuestion.mutate({ id: q.id, direction: "up" })}>
+              <ArrowUpwardIcon fontSize="small" />
+            </IconButton>
+            <IconButton size="small" disabled={i === questions.length - 1} onClick={() => moveQuestion.mutate({ id: q.id, direction: "down" })}>
+              <ArrowDownwardIcon fontSize="small" />
+            </IconButton>
+            <IconButton size="small" onClick={() => removeQuestion.mutate(q.id)}>
+              <DeleteOutlineIcon fontSize="small" />
+            </IconButton>
           </Box>
-          <IconButton size="small" disabled={i === 0} onClick={() => moveQuestion.mutate({ id: q.id, direction: "up" })}>
-            <ArrowUpwardIcon fontSize="small" />
-          </IconButton>
-          <IconButton size="small" disabled={i === questions.length - 1} onClick={() => moveQuestion.mutate({ id: q.id, direction: "down" })}>
-            <ArrowDownwardIcon fontSize="small" />
-          </IconButton>
-          <IconButton size="small" onClick={() => removeQuestion.mutate(q.id)}>
-            <DeleteOutlineIcon fontSize="small" />
-          </IconButton>
-        </Box>
-      ))}
+        ),
+      )}
 
-      <Box sx={{ display: "flex", flexDirection: "column", gap: 1, p: "12px", border: `1px dashed ${tokens.divider}`, borderRadius: "6px" }}>
-        <TextField label="Question" size="small" value={label} onChange={(e) => setLabel(e.target.value)} fullWidth />
-        <TextField select label="Type" size="small" value={type} onChange={(e) => setType(e.target.value as QuestionType)} fullWidth>
-          {QUESTION_TYPES.map((t) => (
-            <MenuItem key={t.value} value={t.value}>
-              {t.label}
-            </MenuItem>
-          ))}
-        </TextField>
-        {type === "multiple_choice" && (
-          <TextField
-            label="Options (comma-separated)"
-            size="small"
-            value={optionsText}
-            onChange={(e) => setOptionsText(e.target.value)}
-            fullWidth
-          />
-        )}
-        <Button startIcon={<AddIcon fontSize="small" />} onClick={add} variant="contained" size="small" sx={{ alignSelf: "flex-start" }}>
-          Add question
+      {tier === "free" ? (
+        <UpgradeNudge onUpgrade={onUpgrade} />
+      ) : (
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 1, p: "12px", border: `1px dashed ${tokens.divider}`, borderRadius: "6px" }}>
+          <TextField label="Question" size="small" value={label} onChange={(e) => setLabel(e.target.value)} fullWidth />
+          <TextField select label="Type" size="small" value={type} onChange={(e) => setType(e.target.value as QuestionType)} fullWidth>
+            {QUESTION_TYPES.filter((t) => t.value !== "address").map((t) => (
+              <MenuItem key={t.value} value={t.value}>
+                {t.label}
+              </MenuItem>
+            ))}
+          </TextField>
+          {type === "multiple_choice" && (
+            <TextField
+              label="Options (comma-separated)"
+              size="small"
+              value={optionsText}
+              onChange={(e) => setOptionsText(e.target.value)}
+              fullWidth
+            />
+          )}
+          {type === "short_text" && (
+            <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <Typography sx={{ fontSize: 13 }}>Required</Typography>
+              <Switch size="small" checked={required} onChange={(e) => setRequired(e.target.checked)} />
+            </Box>
+          )}
+          <Button startIcon={<AddIcon fontSize="small" />} onClick={add} variant="contained" size="small" sx={{ alignSelf: "flex-start" }}>
+            Add question
+          </Button>
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+function EditQuestionRow({ pageId, question, onDone }: { pageId: string; question: CustomQuestion; onDone: () => void }) {
+  const updateQuestion = useUpdateCustomQuestion(pageId);
+  const [label, setLabel] = useState(question.label);
+  const [helperText, setHelperText] = useState(question.helperText ?? "");
+  const [required, setRequired] = useState(question.required);
+  const [optionsText, setOptionsText] = useState((question.options ?? []).join(", "));
+
+  async function save() {
+    if (!label.trim()) return;
+    await updateQuestion.mutateAsync({
+      id: question.id,
+      patch: {
+        label: label.trim(),
+        required,
+        ...(question.type === "address" ? { helperText: helperText.trim() } : {}),
+        ...(question.type === "multiple_choice"
+          ? { options: optionsText.split(",").map((o) => o.trim()).filter(Boolean) }
+          : {}),
+      },
+    });
+    onDone();
+  }
+
+  return (
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 1, p: "12px", border: `1px solid ${tokens.primary}`, borderRadius: "6px" }}>
+      <TextField label="Question" size="small" value={label} onChange={(e) => setLabel(e.target.value)} fullWidth autoFocus />
+      {question.type === "address" && (
+        <TextField label="Example / helper text" size="small" value={helperText} onChange={(e) => setHelperText(e.target.value)} fullWidth />
+      )}
+      {question.type === "multiple_choice" && (
+        <TextField label="Options (comma-separated)" size="small" value={optionsText} onChange={(e) => setOptionsText(e.target.value)} fullWidth />
+      )}
+      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <Typography sx={{ fontSize: 13 }}>Required</Typography>
+        <Switch size="small" checked={required} onChange={(e) => setRequired(e.target.checked)} />
+      </Box>
+      <Box sx={{ display: "flex", gap: 1, justifyContent: "flex-end" }}>
+        <Button size="small" onClick={onDone}>
+          Cancel
+        </Button>
+        <Button size="small" variant="contained" onClick={save}>
+          Save
         </Button>
       </Box>
     </Box>

@@ -17,7 +17,9 @@ import SettingsSuggestRoundedIcon from "@mui/icons-material/SettingsSuggestRound
 import { tokens } from "../theme";
 import { useAuth } from "../hooks/useAuth";
 import { useIsOperator } from "../hooks/useAutomations";
+import { usePageviewTracking } from "../hooks/usePageviewTracking";
 import DevTierToggle from "./DevTierToggle";
+import estateKitLogoWhite from "../assets/whitelogofull.png";
 
 const RAIL_WIDTH = 236;
 
@@ -27,23 +29,6 @@ function activeSection(pathname: string): "leads" | "mypage" | "home" {
   return "leads";
 }
 
-function BrandMark({ size = 24 }: { size?: number }) {
-  return (
-    <Box
-      sx={{
-        width: size,
-        height: size,
-        borderRadius: "5px",
-        background: tokens.primary,
-        position: "relative",
-        "&:before,&:after": { content: '""', position: "absolute", background: "#fff" },
-        "&:before": { left: 0, right: 0, top: size / 3, height: "1.5px" },
-        "&:after": { top: 0, bottom: 0, left: size / 3, width: "1.5px" },
-      }}
-    />
-  );
-}
-
 export default function AppShell() {
   const isDesktop = useMediaQuery("(min-width:900px)");
   const { pathname } = useLocation();
@@ -51,6 +36,7 @@ export default function AppShell() {
   const { user, signOut } = useAuth();
   const { data: isOperator } = useIsOperator();
   const section = activeSection(pathname);
+  usePageviewTracking();
   const initial = useMemo(() => (user?.phone || "?")[0].toUpperCase(), [user]);
 
   const navItems = [
@@ -76,8 +62,8 @@ export default function AppShell() {
             },
           }}
         >
-          <Box sx={{ display: "flex", alignItems: "center", gap: 1.25, color: "#fff", fontSize: 19, fontWeight: 600, px: 1.5, pb: 2 }}>
-            <BrandMark /> EstateKit
+          <Box sx={{ px: 1.5, pb: 2 }}>
+            <Box component="img" src={estateKitLogoWhite} alt="EstateKit" sx={{ height: 26, display: "block" }} />
           </Box>
           <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
             {navItems.map((item) => (

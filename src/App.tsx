@@ -15,7 +15,14 @@ import LeadPagePreviewPage from "./pages/LeadPagePreviewPage";
 
 function Splash() {
   return (
-    <Box sx={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+    <Box
+      sx={{
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
       <CircularProgress />
     </Box>
   );
@@ -49,7 +56,10 @@ export default function App() {
             <Route path="/home" element={<HomePage />} />
             <Route path="/lead-page" element={<LeadPagePage />} />
             <Route path="/upgrade" element={<UpgradePage />} />
-            <Route path="/admin/automations" element={<AdminAutomationsPage />} />
+            <Route
+              path="/admin/automations"
+              element={<AdminAutomationsPage />}
+            />
           </Route>
           <Route path="*" element={<Navigate to="/leads" replace />} />
         </>
