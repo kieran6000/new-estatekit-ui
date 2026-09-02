@@ -16,6 +16,16 @@
  *                                    a fresh one from scratch each time>
  *  4. Deploy → New deployment → Web app → Execute as Me, Access Anyone.
  *  5. Run `runOneTimeSetup` once from the editor to seed the control sheet.
+ *  6. Run `installTimeTrigger` once from the editor — this is what fires
+ *     delayed automation steps (anything with delay_minutes > 0). Without
+ *     it, only the instant (delay_minutes === 0) steps ever run.
+ *  7. If you have accounts created before this file's automation/lead-page
+ *     seeding existed, run `migrateSeedExistingAccounts` once to backfill
+ *     them (idempotent — safe to run more than once).
+ *
+ * All new accounts default to the 'paid' tier — there's no free tier or
+ * client-facing upgrade flow at launch, and there is deliberately no
+ * 'tier.set' action a client session can call to change its own tier.
  * ─────────────────────────────────────────────────────────────────────────
  */
 
@@ -30,6 +40,14 @@ const OTP_TTL_SECONDS = 300; // 5 minutes
 const RESERVED_TABS = [
   'Pipelines', 'LeadPages', 'CustomQuestions', 'Overview',
   'Automations', 'AutomationSteps', 'CallQuestions', 'SupportTickets', 'Profile',
+];
+
+// Lives in the CONTROL spreadsheet (not per-client) so the time-driven
+// trigger can scan every client's due actions in one pass instead of
+// opening every client spreadsheet on every run.
+const PENDING_ACTIONS_HEADERS = [
+  'id', 'spreadsheetId', 'agentId', 'leadId', 'dueAt', 'actionType',
+  'templateText', 'payload', 'processed', 'createdAt',
 ];
 
 // header/JSON-field/boolean-field config per table, used by the generic
@@ -130,8 +148,12 @@ function route(action, payload, token) {
         case 'support.sendCallQuestion': return supportSendCallQuestion(ss, agentId, payload.question);
         case 'support.sendTicket': return supportSendTicket(ss, agentId, payload);
 
-        case 'tier.get': return profileGet(ss).tier || 'free';
-        case 'tier.set': return profileSet(ss, { tier: payload.tier });
+        // tier.get only — everyone launches on 'paid' and there is no
+        // client-facing upgrade flow yet, so a real client session must
+        // never be able to grant itself a tier. Deliberately no 'tier.set'
+        // case here; see src/api/tier.ts's setTier() comment on the
+        // frontend side.
+        case 'tier.get': return profileGet(ss).tier || 'paid';
 
         case 'leadPages.list': return genericList(ss, 'LeadPages');
         case 'leadPages.add': return leadPagesAdd(ss, agentId, payload.name, payload.pipelineId, payload.kind);
@@ -187,11 +209,16 @@ function authVerifyCode(phone, code) {
 }
 
 function sendWhatsAppOtp(phone, code) {
+  sendWhatsAppMessage(phone, 'Your EstateKit login code is ' + code);
+}
+
+// Shared by OTP delivery and automation execution.
+function sendWhatsAppMessage(phone, text) {
   const apiKey = PROPS.getProperty('TEXTMEBOT_API_KEY');
   if (!apiKey) throw new Error('TEXTMEBOT_API_KEY not configured');
   const url = 'https://api.textmebot.com/send.php?recipient=' + encodeURIComponent(phone) +
     '&apikey=' + encodeURIComponent(apiKey) +
-    '&text=' + encodeURIComponent('Your EstateKit login code is ' + code);
+    '&text=' + encodeURIComponent(text);
   UrlFetchApp.fetch(url, { muteHttpExceptions: true });
 }
 
@@ -251,7 +278,7 @@ function createClientSpreadsheet(agentId, phone) {
   const defaultSheet = ss.getSheets()[0];
   defaultSheet.setName('Profile');
   defaultSheet.getRange(1, 1, 1, SCHEMA.Profile.headers.length).setValues([SCHEMA.Profile.headers]);
-  defaultSheet.appendRow([agentId, '', phone, 'free', true]);
+  defaultSheet.appendRow([agentId, '', phone, 'paid', true]);
 
   Object.keys(SCHEMA).forEach(function (name) {
     if (name === 'Profile' || name === 'Leads') return;
@@ -267,7 +294,117 @@ function createClientSpreadsheet(agentId, phone) {
   sheetGetOrCreate(ss, pipelineId1, SCHEMA.Leads.headers);
   sheetGetOrCreate(ss, pipelineId2, SCHEMA.Leads.headers);
 
+  // seed default automations + steps and one default lead page per pipeline
+  // so nothing is blank on a fresh account's first login.
+  seedAutomations(ss);
+  seedDefaultLeadPage(ss, agentId, pipelineId1, 'seller');
+  seedDefaultLeadPage(ss, agentId, pipelineId2, 'buyer');
+
   return ss;
+}
+
+// ───────────────────────── Fresh-account seeding ─────────────────────────
+
+// Same defaults the original mock's seedAutomations()/seedSteps() used —
+// see git history of src/api/automations.ts prior to the real backend.
+function seedAutomations(ss) {
+  const autoSheet = sheetGetOrCreate(ss, 'Automations', SCHEMA.Automations.headers);
+  if (autoSheet.getLastRow() >= 2) return; // already seeded — don't duplicate
+  const stepSheet = sheetGetOrCreate(ss, 'AutomationSteps', SCHEMA.AutomationSteps.headers);
+  const now = new Date().toISOString();
+
+  const automations = [
+    { id: 'auto-1', name: 'New lead ping', trigger_type: 'lead_created', trigger_stage: null, enabled: true, created_at: now },
+    { id: 'auto-2', name: 'No-answer retry', trigger_type: 'stage_changed', trigger_stage: 'No Answer', enabled: true, created_at: now },
+    { id: 'auto-3', name: 'Follow-up sequence', trigger_type: 'stage_changed', trigger_stage: 'Contacted', enabled: true, created_at: now },
+    { id: 'auto-4', name: 'Appointment reminder', trigger_type: 'stage_changed', trigger_stage: 'Booked', enabled: false, created_at: now },
+  ];
+  automations.forEach(function (a) { appendObject(autoSheet, SCHEMA.Automations.headers, SCHEMA.Automations.json, SCHEMA.Automations.bool, a); });
+
+  const steps = [
+    { id: 'step-1', automation_id: 'auto-1', step_order: 1, delay_minutes: 0, action_type: 'send_whatsapp', template_text: 'New lead: {{name}} ({{phone}}) just came in.', payload: {} },
+    { id: 'step-2', automation_id: 'auto-2', step_order: 1, delay_minutes: 240, action_type: 'send_whatsapp', template_text: 'Still no answer from {{first_name}} — try again?', payload: {} },
+    { id: 'step-3', automation_id: 'auto-3', step_order: 1, delay_minutes: 2880, action_type: 'send_whatsapp', template_text: 'Time to follow up with {{first_name}}.', payload: {} },
+    { id: 'step-4', automation_id: 'auto-3', step_order: 2, delay_minutes: 4320, action_type: 'set_reminder', template_text: null, payload: { label: 'in 3 days', offset_minutes: 4320, due: true } },
+    { id: 'step-5', automation_id: 'auto-4', step_order: 1, delay_minutes: 1440, action_type: 'send_whatsapp', template_text: 'Appointment with {{first_name}} is coming up.', payload: {} },
+  ];
+  steps.forEach(function (s) { appendObject(stepSheet, SCHEMA.AutomationSteps.headers, SCHEMA.AutomationSteps.json, SCHEMA.AutomationSteps.bool, s); });
+}
+
+// Matches the frontend's src/lib/leadFormTemplate.ts copy so a fresh
+// account's "My Page" reads the same as the old mock's starting point.
+const LEAD_PAGE_TEMPLATES = {
+  seller: {
+    pageName: 'Seller page',
+    headline: 'Find out what your home is worth — free, no obligation.',
+    ctaLabel: 'Get my free estimate',
+    thankYouHeadline: 'Thanks {name}, your estimate is on its way',
+    thankYouSubtext: "We'll be in touch shortly to confirm a few details.",
+  },
+  buyer: {
+    pageName: 'Buyer page',
+    headline: 'Find your next home — free, no obligation.',
+    ctaLabel: 'Get matched with listings',
+    thankYouHeadline: "Thanks {name}, we're on it",
+    thankYouSubtext: "We'll be in touch shortly with matching listings.",
+  },
+};
+
+// Used both for fresh-account seeding and the one-off migration below —
+// unlike leadPagesAdd (a blank page an agent explicitly asks to create),
+// this pre-fills the kind-specific copy so My Page isn't an empty form on
+// first login.
+function seedDefaultLeadPage(ss, agentId, pipelineId, kind) {
+  const t = LEAD_PAGE_TEMPLATES[kind] || LEAD_PAGE_TEMPLATES.seller;
+  const sheet = sheetGetOrCreate(ss, 'LeadPages', SCHEMA.LeadPages.headers);
+  const id = 'page-' + Utilities.getUuid().slice(0, 8);
+  const row = {
+    id: id, name: t.pageName, pipelineId: pipelineId, agentName: '', headline: t.headline, suburb: '', phone: '',
+    logoDataUrl: null, profilePhotoDataUrl: null, accentColor: '#1976d2', showIntro: true,
+    nameLabel: "What's your name?", phoneLabel: 'WhatsApp number', ctaLabel: t.ctaLabel,
+    thankYouHeadline: t.thankYouHeadline, thankYouSubtext: t.thankYouSubtext, fbPixelId: '',
+  };
+  appendObject(sheet, SCHEMA.LeadPages.headers, SCHEMA.LeadPages.json, SCHEMA.LeadPages.bool, row);
+  seedDefaultQuestions(ss, id, kind);
+
+  const ctrl = getControlSheet();
+  const idx = sheetGetOrCreate(ctrl, 'PageIndex', ['pageId', 'spreadsheetId', 'pipelineId', 'agentId']);
+  appendObject(idx, ['pageId', 'spreadsheetId', 'pipelineId', 'agentId'], [], [],
+    { pageId: id, spreadsheetId: ss.getId(), pipelineId: pipelineId, agentId: agentId });
+
+  return row;
+}
+
+// One-off migration for accounts created before this seeding existed — run
+// manually once from the Apps Script editor. Safe to run repeatedly: it
+// only fills in what's actually missing (empty Automations tab, or a
+// pipeline with no LeadPage yet) and never duplicates existing rows.
+function migrateSeedExistingAccounts() {
+  const ctrl = getControlSheet();
+  const accounts = sheetGetOrCreate(ctrl, 'Accounts', ['phone', 'agent_id', 'spreadsheet_id', 'created_at']);
+  const rows = readObjects(accounts, ['phone', 'agent_id', 'spreadsheet_id', 'created_at'], [], []);
+  rows.forEach(function (acct) {
+    try {
+      const ss = SpreadsheetApp.openById(acct.spreadsheet_id);
+      seedAutomations(ss);
+
+      const pipelines = genericList(ss, 'Pipelines');
+      const pages = genericList(ss, 'LeadPages');
+      pipelines.forEach(function (p) {
+        const hasPage = pages.some(function (pg) { return pg.pipelineId === p.id; });
+        if (!hasPage) seedDefaultLeadPage(ss, acct.agent_id, p.id, p.kind);
+      });
+
+      // paid-tier default only applies going forward for NEW accounts —
+      // deliberately not force-changing existing clients' tier here, since
+      // that's a billing decision, not a data-migration one. Flagging in
+      // SETUP.md instead.
+      Logger.log('Migrated: ' + acct.phone);
+    } catch (e) {
+      Logger.log('Migration failed for ' + acct.phone + ': ' + e);
+    }
+  });
+  Logger.log('Migration complete.');
 }
 
 // ───────────────────────── Generic sheet<->object helpers ─────────────────────────
@@ -281,25 +418,27 @@ function sheetGetOrCreate(ss, name, headers) {
   return sheet;
 }
 
+function rowToObject(row, headers, jsonFields, boolFields) {
+  const obj = {};
+  headers.forEach(function (h, i) {
+    let v = row[i];
+    if (jsonFields.indexOf(h) !== -1) {
+      try { v = v ? JSON.parse(v) : (h === 'options' ? undefined : []); } catch (e) { v = v; }
+    } else if (boolFields.indexOf(h) !== -1) {
+      v = (v === true || v === 'TRUE' || v === 'true');
+    } else if (v instanceof Date) {
+      v = v.toISOString();
+    }
+    obj[h] = v;
+  });
+  return obj;
+}
+
 function readObjects(sheet, headers, jsonFields, boolFields) {
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return [];
   const values = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
-  return values.map(function (row) {
-    const obj = {};
-    headers.forEach(function (h, i) {
-      let v = row[i];
-      if (jsonFields.indexOf(h) !== -1) {
-        try { v = v ? JSON.parse(v) : (h === 'options' ? undefined : []); } catch (e) { v = v; }
-      } else if (boolFields.indexOf(h) !== -1) {
-        v = (v === true || v === 'TRUE' || v === 'true');
-      } else if (v instanceof Date) {
-        v = v.toISOString();
-      }
-      obj[h] = v;
-    });
-    return obj;
-  });
+  return values.map(function (row) { return rowToObject(row, headers, jsonFields, boolFields); });
 }
 
 function objectToRow(headers, jsonFields, obj) {
@@ -328,10 +467,11 @@ function findRowIndexById(sheet, headers, id) {
 function updateRowById(sheet, headers, jsonFields, id, patch) {
   const rowIdx = findRowIndexById(sheet, headers, id);
   if (rowIdx === -1) return false;
-  const current = sheet.getRange(rowIdx, 1, 1, headers.length).getValues()[0];
-  const currentObj = {};
-  headers.forEach(function (h, i) { currentObj[h] = current[i]; });
-  const merged = Object.assign({}, currentObj, patch);
+  // Parse jsonFields off the raw row before merging — merging the patch
+  // onto the still-JSON-encoded string and re-stringifying it would
+  // double-encode any jsonField the patch doesn't happen to touch.
+  const current = rowToObject(sheet.getRange(rowIdx, 1, 1, headers.length).getValues()[0], headers, jsonFields, []);
+  const merged = Object.assign({}, current, patch);
   sheet.getRange(rowIdx, 1, 1, headers.length).setValues([objectToRow(headers, jsonFields, merged)]);
   return true;
 }
@@ -366,7 +506,7 @@ function profileSet(ss, patch) {
   const sheet = sheetGetOrCreate(ss, 'Profile', SCHEMA.Profile.headers);
   if (sheet.getLastRow() < 2) {
     appendObject(sheet, SCHEMA.Profile.headers, SCHEMA.Profile.json, SCHEMA.Profile.bool,
-      Object.assign({ agent_id: '', display_name: '', whatsapp_number: '', tier: 'free', is_operator: true }, patch));
+      Object.assign({ agent_id: '', display_name: '', whatsapp_number: '', tier: 'paid', is_operator: true }, patch));
   } else {
     const current = readObjects(sheet, SCHEMA.Profile.headers, SCHEMA.Profile.json, SCHEMA.Profile.bool)[0];
     updateRowById(sheet, SCHEMA.Profile.headers, SCHEMA.Profile.json, current.agent_id, patch);
@@ -395,9 +535,16 @@ function leadsUpdate(ss, id, patch) {
   const tabs = pipelineTabNames(ss);
   for (let i = 0; i < tabs.length; i++) {
     const sheet = ss.getSheetByName(tabs[i]);
-    const found = updateRowById(sheet, SCHEMA.Leads.headers, SCHEMA.Leads.json, id,
-      Object.assign({}, patch, { updated_at: new Date().toISOString() }));
-    if (found) return {};
+    const rowIdx = findRowIndexById(sheet, SCHEMA.Leads.headers, id);
+    if (rowIdx === -1) continue;
+    const current = rowToObject(sheet.getRange(rowIdx, 1, 1, SCHEMA.Leads.headers.length).getValues()[0],
+      SCHEMA.Leads.headers, SCHEMA.Leads.json, SCHEMA.Leads.bool);
+    const merged = Object.assign({}, current, patch, { updated_at: new Date().toISOString() });
+    sheet.getRange(rowIdx, 1, 1, SCHEMA.Leads.headers.length).setValues([objectToRow(SCHEMA.Leads.headers, SCHEMA.Leads.json, merged)]);
+    if (patch.stage && patch.stage !== current.stage) {
+      executeAutomationsForEvent(ss, merged.agent_id, merged, 'stage_changed', patch.stage);
+    }
+    return {};
   }
   throw new Error('Lead not found: ' + id);
 }
@@ -413,6 +560,7 @@ function leadsCreate(ss, agentId, name, phone, formAnswers, pipelineId, sourcePa
     created_at: now, updated_at: now,
   };
   appendObject(sheet, SCHEMA.Leads.headers, SCHEMA.Leads.json, SCHEMA.Leads.bool, lead);
+  executeAutomationsForEvent(ss, agentId, lead, 'lead_created', null);
   return lead;
 }
 
@@ -464,6 +612,144 @@ function supportSendTicket(ss, agentId, args) {
   } catch (e) {
     return { emailed: false };
   }
+}
+
+// ───────────────────────── Automation execution ─────────────────────────
+
+function mergeTemplate(template, lead) {
+  if (!template) return template;
+  const firstName = (lead.name || '').trim().split(/\s+/)[0] || lead.name || '';
+  const vars = { name: lead.name || '', phone: lead.phone || '', email: lead.email || '', first_name: firstName };
+  return template.replace(/\{\{\s*(\w+)\s*\}\}/g, function (m, key) {
+    return Object.prototype.hasOwnProperty.call(vars, key) ? vars[key] : m;
+  });
+}
+
+// Fires whenever a lead is created or changes stage. `stage` is the new
+// stage for a 'stage_changed' event, null for 'lead_created'.
+function executeAutomationsForEvent(ss, agentId, lead, eventType, stage) {
+  const automations = genericList(ss, 'Automations').filter(function (a) {
+    if (!a.enabled || a.trigger_type !== eventType) return false;
+    if (eventType === 'stage_changed' && a.trigger_stage !== stage) return false;
+    return true;
+  });
+  if (!automations.length) return;
+
+  const steps = genericList(ss, 'AutomationSteps');
+  automations.forEach(function (a) {
+    const mySteps = steps.filter(function (s) { return s.automation_id === a.id; })
+      .sort(function (x, y) { return x.step_order - y.step_order; });
+    mySteps.forEach(function (step) {
+      if (step.delay_minutes > 0) {
+        addPendingAction(ss, agentId, lead.id, step, step.delay_minutes);
+      } else {
+        executeStep(ss, agentId, lead, step);
+      }
+    });
+  });
+}
+
+function executeStep(ss, agentId, lead, step) {
+  try {
+    if (step.action_type === 'send_whatsapp') {
+      const profile = profileGet(ss);
+      if (!profile.whatsapp_number) {
+        Logger.log('Skipped automation step ' + step.id + ' for agent ' + agentId + ': no whatsapp_number on Profile.');
+        return;
+      }
+      sendWhatsAppMessage(profile.whatsapp_number, mergeTemplate(step.template_text, lead));
+    } else if (step.action_type === 'set_reminder') {
+      const payload = step.payload || {};
+      const offsetMinutes = typeof payload.offset_minutes === 'number' ? payload.offset_minutes : 0;
+      const reminderAt = new Date(Date.now() + offsetMinutes * 60000).toISOString();
+      leadsUpdateSilent(ss, lead.id, { reminder_at: reminderAt, next_label: payload.label || null, due: !!payload.due });
+    } else {
+      Logger.log('Unknown automation action_type: ' + step.action_type);
+    }
+  } catch (e) {
+    Logger.log('Automation step ' + step.id + ' failed for agent ' + agentId + ': ' + e);
+  }
+}
+
+// Same row-merge as leadsUpdate but never re-fires automations — used by
+// executeStep (e.g. set_reminder) so a step can't recursively trigger
+// stage-changed automations off its own side effect.
+function leadsUpdateSilent(ss, id, patch) {
+  const tabs = pipelineTabNames(ss);
+  for (let i = 0; i < tabs.length; i++) {
+    const sheet = ss.getSheetByName(tabs[i]);
+    const rowIdx = findRowIndexById(sheet, SCHEMA.Leads.headers, id);
+    if (rowIdx === -1) continue;
+    const current = rowToObject(sheet.getRange(rowIdx, 1, 1, SCHEMA.Leads.headers.length).getValues()[0],
+      SCHEMA.Leads.headers, SCHEMA.Leads.json, SCHEMA.Leads.bool);
+    const merged = Object.assign({}, current, patch, { updated_at: new Date().toISOString() });
+    sheet.getRange(rowIdx, 1, 1, SCHEMA.Leads.headers.length).setValues([objectToRow(SCHEMA.Leads.headers, SCHEMA.Leads.json, merged)]);
+    return true;
+  }
+  return false;
+}
+
+// Apps Script can't block execution to wait out a delay, so delayed steps
+// are parked here (in the CONTROL spreadsheet, so one time trigger can scan
+// every client at once) and picked up by processPendingActions().
+function addPendingAction(ss, agentId, leadId, step, delayMinutes) {
+  const ctrl = getControlSheet();
+  const sheet = sheetGetOrCreate(ctrl, 'PendingActions', PENDING_ACTIONS_HEADERS);
+  const dueAt = new Date(Date.now() + delayMinutes * 60000).toISOString();
+  appendObject(sheet, PENDING_ACTIONS_HEADERS, ['payload'], ['processed'], {
+    id: Utilities.getUuid(), spreadsheetId: ss.getId(), agentId: agentId, leadId: leadId, dueAt: dueAt,
+    actionType: step.action_type, templateText: step.template_text, payload: step.payload || {},
+    processed: false, createdAt: new Date().toISOString(),
+  });
+}
+
+// Install once from the Apps Script editor: creates a time-driven trigger
+// that calls processPendingActions() every 10 minutes. Re-running this is
+// safe but will create a duplicate trigger — check Triggers in the editor
+// before running twice.
+function installTimeTrigger() {
+  ScriptApp.newTrigger('processPendingActions').timeBased().everyMinutes(10).create();
+  Logger.log('Trigger installed — processPendingActions will run every 10 minutes.');
+}
+
+// The time-driven trigger's entry point. Scans every due, unprocessed
+// PendingActions row (across all clients) and fires it.
+function processPendingActions() {
+  const ctrl = getControlSheet();
+  const sheet = sheetGetOrCreate(ctrl, 'PendingActions', PENDING_ACTIONS_HEADERS);
+  const rows = readObjects(sheet, PENDING_ACTIONS_HEADERS, ['payload'], ['processed']);
+  const now = Date.now();
+
+  rows.forEach(function (row) {
+    if (row.processed || new Date(row.dueAt).getTime() > now) return;
+    // Mark processed first — a slow WhatsApp send shouldn't leave the row
+    // eligible for a second trigger run to pick up and double-fire.
+    updateRowById(sheet, PENDING_ACTIONS_HEADERS, ['payload'], row.id, { processed: true });
+    try {
+      const clientSs = SpreadsheetApp.openById(row.spreadsheetId);
+      const lead = findLeadById(clientSs, row.leadId);
+      if (!lead) {
+        Logger.log('Pending action ' + row.id + ': lead ' + row.leadId + ' no longer exists, skipping.');
+        return;
+      }
+      executeStep(clientSs, row.agentId, lead, { id: row.id, action_type: row.actionType, template_text: row.templateText, payload: row.payload });
+    } catch (e) {
+      Logger.log('Pending action ' + row.id + ' failed: ' + e);
+    }
+  });
+}
+
+function findLeadById(ss, leadId) {
+  const tabs = pipelineTabNames(ss);
+  for (let i = 0; i < tabs.length; i++) {
+    const sheet = ss.getSheetByName(tabs[i]);
+    const rowIdx = findRowIndexById(sheet, SCHEMA.Leads.headers, leadId);
+    if (rowIdx !== -1) {
+      return rowToObject(sheet.getRange(rowIdx, 1, 1, SCHEMA.Leads.headers.length).getValues()[0],
+        SCHEMA.Leads.headers, SCHEMA.Leads.json, SCHEMA.Leads.bool);
+    }
+  }
+  return null;
 }
 
 // ───────────────────────── Lead pages / custom questions ─────────────────────────
@@ -548,5 +834,6 @@ function runOneTimeSetup() {
   const ctrl = getControlSheet();
   sheetGetOrCreate(ctrl, 'Accounts', ['phone', 'agent_id', 'spreadsheet_id', 'created_at']);
   sheetGetOrCreate(ctrl, 'PageIndex', ['pageId', 'spreadsheetId', 'pipelineId', 'agentId']);
+  sheetGetOrCreate(ctrl, 'PendingActions', PENDING_ACTIONS_HEADERS);
   Logger.log('Control sheet initialized.');
 }

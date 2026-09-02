@@ -159,7 +159,7 @@ export default function AppShell() {
           </BottomNavigation>
         </Paper>
       )}
-      <DevTierToggle />
+      {import.meta.env.DEV && <DevTierToggle />}
     </Box>
   );
 }
