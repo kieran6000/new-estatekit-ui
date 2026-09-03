@@ -36,7 +36,7 @@ export default function AppShell() {
   const isDesktop = useMediaQuery("(min-width:900px)");
   const { pathname } = useLocation();
   const navigate = useNavigate();
-  const { user, signOut } = useAuth();
+  const { user } = useAuth();
   const { data: isOperator } = useIsOperator();
   const section = activeSection(pathname);
   usePageviewTracking();
