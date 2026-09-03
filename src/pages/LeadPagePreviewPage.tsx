@@ -59,7 +59,7 @@ export default function LeadPagePreviewPage() {
                 onSubmit={async ({ name, phone, email, answers }) => {
                   await submitMockLead(page.id, name, phone, answers, email);
                   posthog.capture("lead_page_form_submitted", { pipeline: pipeline.kind });
-                  navigate("/thank-you");
+                  navigate(`/thank-you?p=${page.id}&n=${encodeURIComponent(name.split(" ")[0] || "there")}`);
                 }}
               />
               <Typography sx={{ fontSize: 11, color: "text.disabled", lineHeight: 1.5, mt: 2, textAlign: "center", px: 1 }}>
