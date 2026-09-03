@@ -1,28 +1,40 @@
-// Talks to the Apps Script Web App backend. POST body is sent as text/plain
-// on purpose — Apps Script Web Apps don't respond to CORS preflight
-// (OPTIONS), so a "simple request" (text/plain, no custom headers) is the
-// only content-type that avoids a failed preflight from the browser.
+import { createClient } from "@supabase/supabase-js";
 
-const API_URL = import.meta.env.VITE_API_URL as string;
-const TOKEN_KEY = "estatekit_token";
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
-export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  throw new Error("VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY must be set");
 }
 
-export function setToken(token: string | null): void {
-  if (token) localStorage.setItem(TOKEN_KEY, token);
-  else localStorage.removeItem(TOKEN_KEY);
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+export async function getCurrentUserId(): Promise<string> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.user) throw new Error("Not authenticated");
+  return session.user.id;
 }
 
-export async function callApi<T>(action: string, payload: unknown = {}): Promise<T> {
-  if (!API_URL) throw new Error("VITE_API_URL is not set");
-  const res = await fetch(API_URL, {
-    method: "POST",
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify({ action, payload, token: getToken() }),
-  });
-  const json = await res.json();
-  if (!json.ok) throw new Error(json.error || "Request failed");
-  return json.data as T;
+let _activeAgentId: string | null = null;
+
+export function setActiveAgent(id: string | null): void {
+  _activeAgentId = id;
+}
+
+export async function getActiveAgentId(): Promise<string> {
+  if (_activeAgentId) return _activeAgentId;
+  return getCurrentUserId();
+}
+
+export async function listAgentProfiles(): Promise<
+  { agent_id: string; display_name: string | null; whatsapp_number: string | null }[]
+> {
+  const { data, error } = await supabase
+    .from("agent_profiles")
+    .select("agent_id, display_name, whatsapp_number")
+    .order("display_name", { ascending: true });
+  if (error) throw new Error(error.message);
+  return data ?? [];
 }

@@ -4,10 +4,11 @@ import type { FormAnswer, LeadPage, PipelineKind } from "../types";
 
 const KEY = ["leadPages"] as const;
 
-export function useLeadPages() {
+export function useLeadPages(opts?: { enabled?: boolean }) {
   return useQuery({
     queryKey: KEY,
     queryFn: leadPagesApi.listLeadPages,
+    enabled: opts?.enabled,
   });
 }
 

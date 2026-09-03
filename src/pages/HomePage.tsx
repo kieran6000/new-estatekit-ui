@@ -12,17 +12,19 @@ import { useSendCallQuestion } from "../hooks/useSupport";
 import { useSnack } from "../hooks/useSnack";
 import TicketDialog from "../components/TicketDialog";
 
+const WHOP_BASE = "https://whop.com/estatekit-1a6c/estatekit-seller-attraction-system";
+
 const DOCS: [string, string][] = [
-  ["Ad templates", "https://drive.google.com"],
-  ["Landing pages", "https://drive.google.com"],
-  ["Forms", "https://drive.google.com"],
+  ["Ad templates", WHOP_BASE],
+  ["Landing pages", WHOP_BASE],
+  ["Forms", WHOP_BASE],
 ];
 
-const WHOP_COURSE_URL = "https://whop.com/estatekit/ads-that-convert";
+const WHOP_COURSE_URL = WHOP_BASE;
 const COURSE_BANNER_IMAGE = "https://i.imgur.com/9TvDhuJ.png";
 const WATCH_AND_LEARN: { title: string; thumbnail: string; url: string }[] = [
-  { title: "Buyer & Seller Ads", thumbnail: "https://i.imgur.com/9TvDhuJ.png", url: "https://whop.com/estatekit/buyer-seller-ads" },
-  { title: "Fix a Problem", thumbnail: "https://i.imgur.com/q8a1KNu.png", url: "https://whop.com/estatekit/fix-a-problem" },
+  { title: "Buyer & Seller Ads", thumbnail: "https://i.imgur.com/9TvDhuJ.png", url: WHOP_BASE },
+  { title: "Fix a Problem", thumbnail: "https://i.imgur.com/q8a1KNu.png", url: WHOP_BASE },
 ];
 
 function GoogleMeetLogo({ size = 18 }: { size?: number }) {

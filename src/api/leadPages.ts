@@ -1,20 +1,125 @@
-import { callApi } from "./_client";
+import { supabase, getCurrentUserId, getActiveAgentId } from "./_client";
 import type { FormAnswer, LeadPage, PipelineKind } from "../types";
 
+interface LeadPageRow {
+  id: string;
+  pipeline_id: string;
+  agent_name: string;
+  name: string;
+  headline: string;
+  suburb: string;
+  phone: string;
+  logo_data_url: string | null;
+  profile_photo_data_url: string | null;
+  accent_color: string;
+  show_intro: boolean;
+  name_label: string;
+  phone_label: string;
+  cta_label: string;
+  thank_you_headline: string;
+  thank_you_subtext: string;
+  fb_pixel_id: string;
+}
+
+function rowToPage(r: LeadPageRow): LeadPage {
+  return {
+    id: r.id,
+    pipelineId: r.pipeline_id,
+    agentName: r.agent_name,
+    name: r.name,
+    headline: r.headline,
+    suburb: r.suburb,
+    phone: r.phone,
+    logoDataUrl: r.logo_data_url,
+    profilePhotoDataUrl: r.profile_photo_data_url,
+    accentColor: r.accent_color,
+    showIntro: r.show_intro,
+    nameLabel: r.name_label,
+    phoneLabel: r.phone_label,
+    ctaLabel: r.cta_label,
+    thankYouHeadline: r.thank_you_headline,
+    thankYouSubtext: r.thank_you_subtext,
+    fbPixelId: r.fb_pixel_id,
+  };
+}
+
+function patchToRow(
+  p: Partial<Omit<LeadPage, "id" | "pipelineId">>,
+): Record<string, unknown> {
+  const m: Record<string, unknown> = {};
+  if (p.agentName !== undefined) m.agent_name = p.agentName;
+  if (p.name !== undefined) m.name = p.name;
+  if (p.headline !== undefined) m.headline = p.headline;
+  if (p.suburb !== undefined) m.suburb = p.suburb;
+  if (p.phone !== undefined) m.phone = p.phone;
+  if (p.logoDataUrl !== undefined) m.logo_data_url = p.logoDataUrl;
+  if (p.profilePhotoDataUrl !== undefined)
+    m.profile_photo_data_url = p.profilePhotoDataUrl;
+  if (p.accentColor !== undefined) m.accent_color = p.accentColor;
+  if (p.showIntro !== undefined) m.show_intro = p.showIntro;
+  if (p.nameLabel !== undefined) m.name_label = p.nameLabel;
+  if (p.phoneLabel !== undefined) m.phone_label = p.phoneLabel;
+  if (p.ctaLabel !== undefined) m.cta_label = p.ctaLabel;
+  if (p.thankYouHeadline !== undefined)
+    m.thank_you_headline = p.thankYouHeadline;
+  if (p.thankYouSubtext !== undefined)
+    m.thank_you_subtext = p.thankYouSubtext;
+  if (p.fbPixelId !== undefined) m.fb_pixel_id = p.fbPixelId;
+  return m;
+}
+
 export async function listLeadPages(): Promise<LeadPage[]> {
-  return callApi<LeadPage[]>("leadPages.list");
+  const agentId = await getActiveAgentId();
+  const { data, error } = await supabase
+    .from("lead_pages")
+    .select("*")
+    .eq("agent_id", agentId)
+    .order("created_at", { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data as LeadPageRow[]).map(rowToPage);
 }
 
-export async function addLeadPage(name: string, pipelineId: string, kind: PipelineKind): Promise<LeadPage> {
-  return callApi<LeadPage>("leadPages.add", { name, pipelineId, kind });
+export async function getLeadPagePublic(pageId: string): Promise<LeadPage | null> {
+  const { data, error } = await supabase
+    .from("lead_pages")
+    .select("*")
+    .eq("id", pageId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? rowToPage(data as LeadPageRow) : null;
 }
 
-export async function updateLeadPage(id: string, patch: Partial<Omit<LeadPage, "id" | "pipelineId">>): Promise<void> {
-  await callApi("leadPages.update", { id, patch });
+export async function addLeadPage(
+  name: string,
+  pipelineId: string,
+  _kind: PipelineKind,
+): Promise<LeadPage> {
+  const agentId = await getCurrentUserId();
+  const { data, error } = await supabase
+    .from("lead_pages")
+    .insert({ agent_id: agentId, pipeline_id: pipelineId, name })
+    .select("*")
+    .single();
+  if (error) throw new Error(error.message);
+  return rowToPage(data as LeadPageRow);
 }
 
-/** A short, shareable public URL. Purely client-side — no backend call. */
-export function shortLinkFor(page: Pick<LeadPage, "name" | "agentName">): string {
+export async function updateLeadPage(
+  id: string,
+  patch: Partial<Omit<LeadPage, "id" | "pipelineId">>,
+): Promise<void> {
+  const row = patchToRow(patch);
+  if (Object.keys(row).length === 0) return;
+  const { error } = await supabase
+    .from("lead_pages")
+    .update(row)
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+export function shortLinkFor(
+  page: Pick<LeadPage, "name" | "agentName">,
+): string {
   const slug = (page.agentName || page.name)
     .toLowerCase()
     .trim()
@@ -23,8 +128,6 @@ export function shortLinkFor(page: Pick<LeadPage, "name" | "agentName">): string
   return "ek.co/p/" + (slug || "agent");
 }
 
-// Public submission — no session/token. The backend resolves which client's
-// spreadsheet owns this pageId via its own PageIndex lookup.
 export async function submitMockLead(
   pageId: string,
   name: string,
@@ -32,5 +135,10 @@ export async function submitMockLead(
   formAnswers: FormAnswer[],
   email: string | null = null,
 ) {
-  return callApi("leadPages.submitMockLead", { pageId, name, phone, formAnswers, email });
+  const { data, error } = await supabase.functions.invoke(
+    "public-submit-lead",
+    { body: { pageId, name, phone, formAnswers, email } },
+  );
+  if (error) throw new Error(error.message);
+  return data;
 }

@@ -12,6 +12,8 @@ import UpgradePage from "./pages/UpgradePage";
 import AdminAutomationsPage from "./pages/AdminAutomationsPage";
 import LeadActionPage from "./pages/LeadActionPage";
 import LeadPagePreviewPage from "./pages/LeadPagePreviewPage";
+import ThankYouPage from "./pages/ThankYouPage";
+import PrivacyPolicyPage from "./pages/PrivacyPolicyPage";
 
 function Splash() {
   return (
@@ -35,14 +37,11 @@ export default function App() {
 
   return (
     <Routes>
-      {/* Public — the WhatsApp lead-action link a call/reminder automation
-       * sends. No login required, and deliberately not linked from anywhere
-       * in the dashboard; reachable only by its direct URL. */}
+      {/* Public routes — no login required */}
       <Route path="/l/:leadId" element={<LeadActionPage />} />
-
-      {/* Public — the real page a "My Page" share link opens, and what
-       * "Open live preview" on My Page links to. Not in the dashboard nav. */}
       <Route path="/p/:pageId" element={<LeadPagePreviewPage />} />
+      <Route path="/thank-you" element={<ThankYouPage />} />
+      <Route path="/privacy" element={<PrivacyPolicyPage />} />
 
       {!user ? (
         <Route path="*" element={<LoginPage />} />

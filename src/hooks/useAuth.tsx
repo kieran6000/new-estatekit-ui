@@ -1,13 +1,10 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { usePostHog } from "@posthog/react";
+import { supabase } from "../api/_client";
 import * as authApi from "../api/auth";
 import * as tierApi from "../api/tier";
 import type { MockUser } from "../api/auth";
 
-// Frontend-only mock auth — no backend, no keys. Accepts the fixed dev
-// phone/code (see src/api/auth.ts) and persists a fake session in
-// localStorage. authMode is kept as a field (always "dev_bypass") so
-// LoginPage's copy/prefill logic needs no changes.
 export const DEV_BYPASS_PHONE = authApi.DEV_BYPASS_PHONE;
 export const DEV_BYPASS_CODE = authApi.DEV_BYPASS_CODE;
 
@@ -32,6 +29,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(session);
       setLoading(false);
     });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        if (session?.user) {
+          setUser({ id: session.user.id, phone: session.user.phone || "" });
+        } else {
+          setUser(null);
+        }
+      },
+    );
+    return () => subscription.unsubscribe();
   }, []);
 
   async function requestCode(phone: string): Promise<{ error?: string }> {
@@ -43,8 +51,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) return { error };
     setUser(signedInUser ?? null);
     if (signedInUser) {
-      const tier = await tierApi.getTier();
-      posthog.identify(signedInUser.id, { phone: signedInUser.phone, tier });
+      try {
+        const tier = await tierApi.getTier();
+        posthog.identify(signedInUser.id, { phone: signedInUser.phone, tier });
+      } catch {
+        posthog.identify(signedInUser.id, { phone: signedInUser.phone });
+      }
     }
     return {};
   }

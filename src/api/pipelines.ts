@@ -1,10 +1,37 @@
-import { callApi } from "./_client";
+import { supabase, getCurrentUserId, getActiveAgentId } from "./_client";
 import type { Pipeline, PipelineKind } from "../types";
 
 export async function listPipelines(): Promise<Pipeline[]> {
-  return callApi<Pipeline[]>("pipelines.list");
+  const agentId = await getActiveAgentId();
+  const { data, error } = await supabase
+    .from("pipelines")
+    .select("id, name, kind")
+    .eq("agent_id", agentId)
+    .order("created_at", { ascending: true });
+  if (error) throw new Error(error.message);
+  return data as Pipeline[];
 }
 
-export async function addPipeline(name: string, kind: PipelineKind): Promise<Pipeline> {
-  return callApi<Pipeline>("pipelines.add", { name, kind });
+export async function getPipelinePublic(id: string): Promise<Pipeline | null> {
+  const { data, error } = await supabase
+    .from("pipelines")
+    .select("id, name, kind")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data as Pipeline | null;
+}
+
+export async function addPipeline(
+  name: string,
+  kind: PipelineKind,
+): Promise<Pipeline> {
+  const agentId = await getCurrentUserId();
+  const { data, error } = await supabase
+    .from("pipelines")
+    .insert({ agent_id: agentId, name, kind })
+    .select("id, name, kind")
+    .single();
+  if (error) throw new Error(error.message);
+  return data as Pipeline;
 }

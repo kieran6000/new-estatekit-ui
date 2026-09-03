@@ -1,9 +1,22 @@
-import { callApi } from "./_client";
+import { supabase, getCurrentUserId } from "./_client";
 
 export async function sendCallQuestion(question: string): Promise<void> {
-  await callApi("support.sendCallQuestion", { question });
+  const agentId = await getCurrentUserId();
+  const { error } = await supabase
+    .from("call_questions")
+    .insert({ agent_id: agentId, question });
+  if (error) throw new Error(error.message);
 }
 
-export async function sendTicket(args: { type: string; priority: string; message: string }): Promise<{ emailed: boolean }> {
-  return callApi<{ emailed: boolean }>("support.sendTicket", args);
+export async function sendTicket(args: {
+  type: string;
+  priority: string;
+  message: string;
+}): Promise<{ emailed: boolean }> {
+  const { data, error } = await supabase.functions.invoke(
+    "send-ticket-email",
+    { body: args },
+  );
+  if (error) throw new Error(error.message);
+  return { emailed: data?.emailed ?? false };
 }

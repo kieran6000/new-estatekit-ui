@@ -1,13 +1,60 @@
-import { callApi } from "./_client";
+import { supabase, getCurrentUserId } from "./_client";
 import type { CustomQuestion, PipelineKind } from "../types";
 
-export async function listCustomQuestions(pageId: string): Promise<CustomQuestion[]> {
-  return callApi<CustomQuestion[]>("customQuestions.list", { pageId });
+interface CqRow {
+  id: string;
+  page_id: string;
+  label: string;
+  type: string;
+  options: string[] | null;
+  helper_text: string | null;
+  required: boolean;
+  is_default: boolean;
+  sort_order: number;
 }
 
-// Seeding now happens server-side inside leadPages.add — kept here as a
-// no-op export so any existing import doesn't break; safe to delete callers.
-export async function seedDefaultQuestions(_pageId: string, _kind: PipelineKind): Promise<void> {
+function rowToQuestion(r: CqRow): CustomQuestion {
+  return {
+    id: r.id,
+    pageId: r.page_id,
+    label: r.label,
+    type: r.type as CustomQuestion["type"],
+    options: r.options ?? undefined,
+    helperText: r.helper_text ?? undefined,
+    required: r.required,
+    isDefault: r.is_default,
+    order: r.sort_order,
+  };
+}
+
+export async function listCustomQuestions(
+  pageId: string,
+): Promise<CustomQuestion[]> {
+  const { data, error } = await supabase
+    .from("custom_questions")
+    .select("*")
+    .eq("page_id", pageId)
+    .order("sort_order", { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data as CqRow[]).map(rowToQuestion);
+}
+
+export async function listCustomQuestionsPublic(
+  pageId: string,
+): Promise<CustomQuestion[]> {
+  const { data, error } = await supabase
+    .from("custom_questions")
+    .select("*")
+    .eq("page_id", pageId)
+    .order("sort_order", { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data as CqRow[]).map(rowToQuestion);
+}
+
+export async function seedDefaultQuestions(
+  _pageId: string,
+  _kind: PipelineKind,
+): Promise<void> {
   return;
 }
 
@@ -19,21 +66,91 @@ export interface NewCustomQuestion {
   required: boolean;
 }
 
-export async function addCustomQuestion(pageId: string, data: NewCustomQuestion): Promise<void> {
-  await callApi("customQuestions.add", { pageId, data });
+export async function addCustomQuestion(
+  pageId: string,
+  data: NewCustomQuestion,
+): Promise<void> {
+  const agentId = await getCurrentUserId();
+  const { data: maxRow } = await supabase
+    .from("custom_questions")
+    .select("sort_order")
+    .eq("page_id", pageId)
+    .order("sort_order", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const nextOrder = (maxRow?.sort_order ?? -1) + 1;
+
+  const { error } = await supabase.from("custom_questions").insert({
+    page_id: pageId,
+    agent_id: agentId,
+    label: data.label,
+    type: data.type,
+    options: data.options ?? null,
+    helper_text: data.helperText ?? null,
+    required: data.required,
+    is_default: false,
+    sort_order: nextOrder,
+  });
+  if (error) throw new Error(error.message);
 }
 
 export async function updateCustomQuestion(
   id: string,
-  patch: Partial<Pick<CustomQuestion, "label" | "type" | "options" | "helperText" | "required">>,
+  patch: Partial<
+    Pick<CustomQuestion, "label" | "type" | "options" | "helperText" | "required">
+  >,
 ): Promise<void> {
-  await callApi("customQuestions.update", { id, patch });
+  const row: Record<string, unknown> = {};
+  if (patch.label !== undefined) row.label = patch.label;
+  if (patch.type !== undefined) row.type = patch.type;
+  if (patch.options !== undefined) row.options = patch.options;
+  if (patch.helperText !== undefined) row.helper_text = patch.helperText;
+  if (patch.required !== undefined) row.required = patch.required;
+  if (Object.keys(row).length === 0) return;
+  const { error } = await supabase
+    .from("custom_questions")
+    .update(row)
+    .eq("id", id);
+  if (error) throw new Error(error.message);
 }
 
 export async function removeCustomQuestion(id: string): Promise<void> {
-  await callApi("customQuestions.remove", { id });
+  const { error } = await supabase
+    .from("custom_questions")
+    .delete()
+    .eq("id", id);
+  if (error) throw new Error(error.message);
 }
 
-export async function moveCustomQuestion(id: string, direction: "up" | "down"): Promise<void> {
-  await callApi("customQuestions.move", { id, direction });
+export async function moveCustomQuestion(
+  id: string,
+  direction: "up" | "down",
+): Promise<void> {
+  const { data: current, error: fetchErr } = await supabase
+    .from("custom_questions")
+    .select("page_id, sort_order")
+    .eq("id", id)
+    .single();
+  if (fetchErr || !current) throw new Error(fetchErr?.message ?? "Not found");
+
+  const targetOrder =
+    direction === "up" ? current.sort_order - 1 : current.sort_order + 1;
+
+  const { data: sibling } = await supabase
+    .from("custom_questions")
+    .select("id")
+    .eq("page_id", current.page_id)
+    .eq("sort_order", targetOrder)
+    .maybeSingle();
+
+  if (!sibling) return;
+
+  await supabase
+    .from("custom_questions")
+    .update({ sort_order: targetOrder })
+    .eq("id", id);
+  await supabase
+    .from("custom_questions")
+    .update({ sort_order: current.sort_order })
+    .eq("id", sibling.id);
 }

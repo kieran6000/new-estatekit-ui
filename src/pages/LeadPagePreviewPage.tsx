@@ -1,33 +1,37 @@
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { Box, Skeleton, Typography } from "@mui/material";
 import { usePostHog } from "@posthog/react";
 import { tokens } from "../theme";
-import { useLeadPages, useSubmitMockLead } from "../hooks/useLeadPages";
-import { usePipelines } from "../hooks/usePipelines";
-import { useCustomQuestions } from "../hooks/useCustomQuestions";
-import type { Pipeline } from "../types";
+import { getLeadPagePublic, submitMockLead } from "../api/leadPages";
+import { getPipelinePublic } from "../api/pipelines";
+import { listCustomQuestionsPublic } from "../api/customQuestions";
 import LeadCaptureForm, { HeaderBrand } from "../components/LeadCaptureForm";
 
-/**
- * The actual public page a lead lands on after tapping a "My Page" share
- * link (`ek.co/p/...`) — public, no login, no AppShell nav, not linked from
- * anywhere in the dashboard except the "Open live preview" link on My Page.
- * Renders a real, full-width navbar (unlike the dashboard editor's boxed
- * preview, which keeps its header attached to the card) with the form card
- * just beneath it, and a real submit — not a demo one — so previewing it
- * here is previewing the real thing.
- */
 export default function LeadPagePreviewPage() {
   const { pageId } = useParams<{ pageId: string }>();
-  const { data: pages, isLoading: pagesLoading } = useLeadPages();
-  const { data: pipelines = [], isLoading: pipelinesLoading } = usePipelines();
-  const page = pages?.find((p) => p.id === pageId);
-  const pipeline: Pipeline | undefined = pipelines.find((p) => p.id === page?.pipelineId);
-  const { data: customQuestions = [] } = useCustomQuestions(pageId ?? "");
-  const submitLead = useSubmitMockLead();
+  const navigate = useNavigate();
   const posthog = usePostHog();
 
-  const loading = pagesLoading || pipelinesLoading;
+  const { data: page, isLoading: pageLoading } = useQuery({
+    queryKey: ["publicPage", pageId],
+    queryFn: () => getLeadPagePublic(pageId!),
+    enabled: !!pageId,
+  });
+
+  const { data: pipeline, isLoading: pipelineLoading } = useQuery({
+    queryKey: ["publicPipeline", page?.pipelineId],
+    queryFn: () => getPipelinePublic(page!.pipelineId),
+    enabled: !!page?.pipelineId,
+  });
+
+  const { data: customQuestions = [] } = useQuery({
+    queryKey: ["publicQuestions", pageId],
+    queryFn: () => listCustomQuestionsPublic(pageId!),
+    enabled: !!pageId,
+  });
+
+  const loading = pageLoading || pipelineLoading;
 
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: tokens.bg }}>
@@ -52,8 +56,9 @@ export default function LeadPagePreviewPage() {
               customQuestions={customQuestions}
               showHeader={false}
               onSubmit={async ({ name, phone, email, answers }) => {
-                await submitLead.mutateAsync({ pageId: page.id, name, phone, email, formAnswers: answers });
+                await submitMockLead(page.id, name, phone, answers, email);
                 posthog.capture("lead_page_form_submitted", { pipeline: pipeline.kind });
+                navigate("/thank-you");
               }}
             />
           )}

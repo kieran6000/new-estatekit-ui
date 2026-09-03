@@ -212,6 +212,23 @@ export default function LeadCaptureForm({
                       slotProps={{ input: { startAdornment: <InputAdornment position="start"><WhatsAppIcon fontSize="small" sx={{ color: "text.disabled" }} /></InputAdornment> } }}
                     />
                   </Box>
+                  <Typography sx={{ fontSize: 11, color: "text.disabled", lineHeight: 1.5, mt: 0.5 }}>
+                    By submitting this form, you agree to be contacted by{" "}
+                    {page.agentName || "our team"} via phone, email, and SMS
+                    regarding your property enquiry. Message and data rates may
+                    apply. You can unsubscribe at any time. Not intended to
+                    solicit buyers or sellers currently under contract with an
+                    agent.{" "}
+                    <Box
+                      component="a"
+                      href="/privacy"
+                      target="_blank"
+                      rel="noopener"
+                      sx={{ color: "text.secondary", textDecoration: "underline" }}
+                    >
+                      Privacy Policy
+                    </Box>
+                  </Typography>
                 </Box>
               )}
 

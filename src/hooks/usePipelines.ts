@@ -4,10 +4,11 @@ import type { PipelineKind } from "../types";
 
 const KEY = ["pipelines"] as const;
 
-export function usePipelines() {
+export function usePipelines(opts?: { enabled?: boolean }) {
   return useQuery({
     queryKey: KEY,
     queryFn: pipelinesApi.listPipelines,
+    enabled: opts?.enabled,
   });
 }
 

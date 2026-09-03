@@ -1,13 +1,23 @@
-import { callApi } from "./_client";
+import { supabase, getCurrentUserId } from "./_client";
 import type { Tier } from "../types";
 
 export async function getTier(): Promise<Tier> {
-  return callApi<Tier>("tier.get");
+  const userId = await getCurrentUserId();
+  const { data, error } = await supabase
+    .from("agent_profiles")
+    .select("tier")
+    .eq("agent_id", userId)
+    .single();
+  if (error) throw new Error(error.message);
+  return (data?.tier as Tier) ?? "paid";
 }
 
-// Dev-only convenience — a real production build should remove the
-// tier.set action from the backend switch, since a client should never be
-// able to grant itself "paid".
 export async function setTier(tier: Tier): Promise<void> {
-  await callApi("tier.set", { tier });
+  if (import.meta.env.PROD) throw new Error("tier.set is not available in production");
+  const userId = await getCurrentUserId();
+  const { error } = await supabase
+    .from("agent_profiles")
+    .update({ tier })
+    .eq("agent_id", userId);
+  if (error) throw new Error(error.message);
 }

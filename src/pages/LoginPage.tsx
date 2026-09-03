@@ -43,7 +43,7 @@ export default function LoginPage() {
               Sign in
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2.25 }}>
-              Enter your WhatsApp number and we'll send you a 6-digit code.
+              Enter your WhatsApp number and we'll send you a 4-digit code.
             </Typography>
             <TextField
               fullWidth
@@ -63,12 +63,12 @@ export default function LoginPage() {
               Check WhatsApp
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2.25 }}>
-              We sent a 6-digit code to {phone}.
+              We sent a 4-digit code to {phone}.
             </Typography>
             <TextField
               fullWidth
-              label="6-digit code"
-              placeholder="______"
+              label="4-digit code"
+              placeholder="____"
               value={code}
               onChange={(e) => setCode(e.target.value)}
               inputMode="numeric"

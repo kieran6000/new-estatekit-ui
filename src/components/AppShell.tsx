@@ -18,6 +18,8 @@ import { tokens } from "../theme";
 import { useAuth } from "../hooks/useAuth";
 import { useIsOperator } from "../hooks/useAutomations";
 import { usePageviewTracking } from "../hooks/usePageviewTracking";
+import { useRealtimeSubscriptions } from "../hooks/useRealtime";
+import AccountSwitcher from "./AccountSwitcher";
 import DevTierToggle from "./DevTierToggle";
 import estateKitLogoWhite from "../assets/whitelogofull.png";
 
@@ -37,6 +39,7 @@ export default function AppShell() {
   const { data: isOperator } = useIsOperator();
   const section = activeSection(pathname);
   usePageviewTracking();
+  useRealtimeSubscriptions();
   const initial = useMemo(() => (user?.phone || "?")[0].toUpperCase(), [user]);
 
   const navItems = [
@@ -62,9 +65,10 @@ export default function AppShell() {
             },
           }}
         >
-          <Box sx={{ px: 1.5, pb: 2 }}>
+          <Box sx={{ px: 1.5, pb: 1 }}>
             <Box component="img" src={estateKitLogoWhite} alt="EstateKit" sx={{ height: 26, display: "block" }} />
           </Box>
+          {isOperator && <AccountSwitcher />}
           <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
             {navItems.map((item) => (
               <Box
