@@ -13,7 +13,7 @@ export async function getCurrentUserId(): Promise<string> {
   const {
     data: { session },
   } = await supabase.auth.getSession();
-  if (!session?.user) throw new Error("Not authenticated");
+  if (!session?.user) return "";
   return session.user.id;
 }
 
