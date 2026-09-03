@@ -18,7 +18,7 @@ export default function TicketDialog({ open, onClose }: { open: boolean; onClose
   async function submit() {
     if (!message.trim()) return;
     try {
-      const data = await send.mutateAsync({ type, priority, message: message.trim() });
+      await send.mutateAsync({ type, priority, message: message.trim() });
       posthog.capture("support_ticket_submitted", { type, priority });
       showSnack("Sent — we'll get back to you shortly");
       setMessage("");
