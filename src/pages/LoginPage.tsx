@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { Box, Button, Paper, TextField, Typography } from "@mui/material";
 import { tokens } from "../theme";
-import { useAuth, DEV_BYPASS_PHONE, DEV_BYPASS_CODE } from "../hooks/useAuth";
+import { useAuth } from "../hooks/useAuth";
 import estateKitLogo from "../assets/blue logo full.png";
 
 export default function LoginPage() {
-  const { requestCode, verifyCode, authMode } = useAuth();
+  const { requestCode, verifyCode } = useAuth();
   const [step, setStep] = useState<1 | 2>(1);
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
