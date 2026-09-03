@@ -53,7 +53,7 @@ export default function App() {
             <Route path="/leads" element={<LeadsPage />} />
             <Route path="/leads/:id" element={<LeadDetailPage />} />
             <Route path="/overview" element={<OverviewPage />} />
-            <Route path="/home" element={<HomePage />} />
+            {import.meta.env.DEV && <Route path="/home" element={<HomePage />} />}
             <Route path="/lead-page" element={<LeadPagePage />} />
             <Route path="/upgrade" element={<UpgradePage />} />
             <Route

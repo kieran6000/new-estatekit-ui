@@ -45,7 +45,7 @@ export default function AppShell() {
 
   const navItems = [
     { key: "leads" as const, label: "Leads", icon: <ViewListRoundedIcon />, to: "/leads" },
-    { key: "home" as const, label: "Home", icon: <HomeRoundedIcon />, to: "/home" },
+    ...(import.meta.env.DEV ? [{ key: "home" as const, label: "Home", icon: <HomeRoundedIcon />, to: "/home" }] : []),
     { key: "mypage" as const, label: "My Page", icon: <WebRoundedIcon />, to: "/lead-page" },
   ];
 
