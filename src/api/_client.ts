@@ -13,7 +13,7 @@ export async function getCurrentUserId(): Promise<string> {
   const {
     data: { session },
   } = await supabase.auth.getSession();
-  if (!session?.user) return "";
+  if (!session?.user) return "00000000-0000-0000-0000-000000000000";
   return session.user.id;
 }
 

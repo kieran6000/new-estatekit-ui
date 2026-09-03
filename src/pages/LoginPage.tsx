@@ -4,18 +4,30 @@ import { tokens } from "../theme";
 import { useAuth } from "../hooks/useAuth";
 import estateKitLogo from "../assets/blue logo full.png";
 
+function normalizePhone(raw: string): string {
+  const digits = raw.replace(/[\s\-()]/g, "");
+  if (digits.startsWith("0") && digits.length === 10) return "+27" + digits.slice(1);
+  if (digits.startsWith("27") && digits.length === 11) return "+" + digits;
+  if (digits.startsWith("+")) return digits;
+  if (/^\d{9,15}$/.test(digits)) return "+" + digits;
+  return digits;
+}
+
 export default function LoginPage() {
   const { requestCode, verifyCode } = useAuth();
   const [step, setStep] = useState<1 | 2>(1);
   const [phone, setPhone] = useState("");
+  const [normalizedPhone, setNormalizedPhone] = useState("");
   const [code, setCode] = useState("");
   const [hint, setHint] = useState("");
   const [busy, setBusy] = useState(false);
 
   async function sendCode() {
     if (!phone.trim()) return;
+    const normalized = normalizePhone(phone.trim());
+    setNormalizedPhone(normalized);
     setBusy(true);
-    const { error } = await requestCode(phone.trim());
+    const { error } = await requestCode(normalized);
     setBusy(false);
     if (error) return setHint(error);
     setHint("");
@@ -26,7 +38,7 @@ export default function LoginPage() {
     const c = code.replace(/\D/g, "");
     if (c.length < 4) return;
     setBusy(true);
-    const { error } = await verifyCode(phone.trim(), c);
+    const { error } = await verifyCode(normalizedPhone, c);
     setBusy(false);
     if (error) setHint(error);
   }
@@ -47,7 +59,7 @@ export default function LoginPage() {
             <TextField
               fullWidth
               label="WhatsApp number"
-              placeholder="+27 82 123 4567"
+              placeholder="082 123 4567"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               sx={{ mb: 1.75 }}
@@ -62,7 +74,7 @@ export default function LoginPage() {
               Check WhatsApp
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2.25 }}>
-              We sent a 4-digit code to {phone}.
+              We sent a 4-digit code to {normalizedPhone}.
             </Typography>
             <TextField
               fullWidth

@@ -21,15 +21,6 @@ export async function verifyCode(
   phone: string,
   code: string,
 ): Promise<{ error?: string; user?: MockUser }> {
-  if (phone === DEV_BYPASS_PHONE && code === DEV_BYPASS_CODE) {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: "dev@estatekit.co",
-      password: "temp-password-otp",
-    });
-    if (error) return { error: error.message };
-    return { user: { id: data.user.id, phone: data.user.phone || phone } };
-  }
-
   const { data, error } = await supabase.functions.invoke(
     "verify-whatsapp-otp",
     { body: { phone, code } },
