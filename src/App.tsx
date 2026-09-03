@@ -10,6 +10,7 @@ import HomePage from "./pages/HomePage";
 import LeadPagePage from "./pages/LeadPagePage";
 import UpgradePage from "./pages/UpgradePage";
 import AdminAutomationsPage from "./pages/AdminAutomationsPage";
+import AccountPage from "./pages/AccountPage";
 import LeadActionPage from "./pages/LeadActionPage";
 import LeadPagePreviewPage from "./pages/LeadPagePreviewPage";
 import ThankYouPage from "./pages/ThankYouPage";
@@ -59,6 +60,7 @@ export default function App() {
               path="/admin/automations"
               element={<AdminAutomationsPage />}
             />
+            <Route path="/account" element={<AccountPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/leads" replace />} />
         </>

@@ -14,6 +14,7 @@ import ViewListRoundedIcon from "@mui/icons-material/ViewListRounded";
 import HomeRoundedIcon from "@mui/icons-material/HomeRounded";
 import WebRoundedIcon from "@mui/icons-material/WebRounded";
 import SettingsSuggestRoundedIcon from "@mui/icons-material/SettingsSuggestRounded";
+import AccountCircleRoundedIcon from "@mui/icons-material/AccountCircleRounded";
 import { tokens } from "../theme";
 import { useAuth } from "../hooks/useAuth";
 import { useIsOperator } from "../hooks/useAutomations";
@@ -125,27 +126,30 @@ export default function AppShell() {
           )}
           <Box sx={{ flex: 1 }} />
           <Box
-            sx={{ display: "flex", alignItems: "center", gap: 1.25, p: "12px 10px", borderTop: "1px solid #2a3543", color: tokens.railInk, fontSize: 13 }}
+            component="button"
+            onClick={() => navigate("/account")}
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              gap: 1.25,
+              p: "12px 10px",
+              borderTop: "1px solid #2a3543",
+              color: pathname === "/account" ? "#fff" : tokens.railInk,
+              bgcolor: pathname === "/account" ? tokens.railActive : "transparent",
+              fontSize: 13,
+              border: 0,
+              width: "100%",
+              textAlign: "left",
+              cursor: "pointer",
+              borderRadius: "6px",
+              "&:hover": { bgcolor: tokens.railHover, color: "#fff" },
+            }}
           >
             <Avatar sx={{ width: 30, height: 30, bgcolor: tokens.primary, fontSize: 14 }}>{initial}</Avatar>
             <Typography variant="body2" sx={{ color: "inherit", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {user?.phone || "Agent"}
             </Typography>
-            <Box
-              component="button"
-              onClick={() => signOut()}
-              sx={{
-                ml: "auto",
-                border: 0,
-                bgcolor: "transparent",
-                color: "#8a97a8",
-                fontSize: 12,
-                textTransform: "uppercase",
-                cursor: "pointer",
-              }}
-            >
-              Sign out
-            </Box>
+            <AccountCircleRoundedIcon sx={{ ml: "auto", fontSize: 18, opacity: 0.6 }} />
           </Box>
         </Drawer>
       )}

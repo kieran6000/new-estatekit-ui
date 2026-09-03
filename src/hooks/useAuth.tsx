@@ -5,15 +5,10 @@ import * as authApi from "../api/auth";
 import * as tierApi from "../api/tier";
 import type { MockUser } from "../api/auth";
 
-export const DEV_BYPASS_PHONE = authApi.DEV_BYPASS_PHONE;
-export const DEV_BYPASS_CODE = authApi.DEV_BYPASS_CODE;
-
 interface AuthContextValue {
   user: MockUser | null;
   loading: boolean;
-  authMode: "dev_bypass";
-  requestCode: (phone: string) => Promise<{ error?: string }>;
-  verifyCode: (phone: string, code: string) => Promise<{ error?: string }>;
+  signIn: (phone: string, password: string) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
 }
 
@@ -42,12 +37,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  async function requestCode(phone: string): Promise<{ error?: string }> {
-    return authApi.requestCode(phone);
-  }
-
-  async function verifyCode(phone: string, code: string): Promise<{ error?: string }> {
-    const { error, user: signedInUser } = await authApi.verifyCode(phone, code);
+  async function signIn(phone: string, password: string): Promise<{ error?: string }> {
+    const { error, user: signedInUser } = await authApi.signIn(phone, password);
     if (error) return { error };
     setUser(signedInUser ?? null);
     if (signedInUser) {
@@ -68,7 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, authMode: "dev_bypass", requestCode, verifyCode, signOut }}>
+    <AuthContext.Provider value={{ user, loading, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   );

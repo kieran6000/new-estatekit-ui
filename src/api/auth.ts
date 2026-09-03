@@ -5,36 +5,22 @@ export interface MockUser {
   phone: string;
 }
 
-export const DEV_BYPASS_PHONE = "+10000000000";
-export const DEV_BYPASS_CODE = "0000";
-
-export async function requestCode(phone: string): Promise<{ error?: string }> {
-  if (phone === DEV_BYPASS_PHONE) return {};
-  const { error } = await supabase.functions.invoke("request-whatsapp-otp", {
-    body: { phone },
-  });
-  if (error) return { error: error.message };
-  return {};
+function phoneToEmail(phone: string): string {
+  return phone.replace(/\+/g, "") + "@estatekit.app";
 }
 
-export async function verifyCode(
+export async function signIn(
   phone: string,
-  code: string,
+  password: string,
 ): Promise<{ error?: string; user?: MockUser }> {
-  const { data, error } = await supabase.functions.invoke(
-    "verify-whatsapp-otp",
-    { body: { phone, code } },
-  );
+  const email = phoneToEmail(phone);
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
   if (error) return { error: error.message };
-  if (data?.error) return { error: data.error };
-
-  const { access_token, refresh_token, user } = data;
-  if (!access_token || !refresh_token || !user) {
-    return { error: "Invalid response from server" };
-  }
-
-  await supabase.auth.setSession({ access_token, refresh_token });
-  return { user: { id: user.id, phone: user.phone || phone } };
+  if (!data.user) return { error: "Sign-in failed" };
+  return { user: { id: data.user.id, phone: data.user.phone || phone } };
 }
 
 export async function getSession(): Promise<MockUser | null> {

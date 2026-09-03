@@ -14,85 +14,56 @@ function normalizePhone(raw: string): string {
 }
 
 export default function LoginPage() {
-  const { requestCode, verifyCode } = useAuth();
-  const [step, setStep] = useState<1 | 2>(1);
+  const { signIn } = useAuth();
   const [phone, setPhone] = useState("");
-  const [normalizedPhone, setNormalizedPhone] = useState("");
-  const [code, setCode] = useState("");
+  const [password, setPassword] = useState("");
   const [hint, setHint] = useState("");
   const [busy, setBusy] = useState(false);
 
-  async function sendCode() {
-    if (!phone.trim()) return;
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!phone.trim() || !password) return;
     const normalized = normalizePhone(phone.trim());
-    setNormalizedPhone(normalized);
     setBusy(true);
-    const { error } = await requestCode(normalized);
-    setBusy(false);
-    if (error) return setHint(error);
-    setHint("");
-    setStep(2);
-  }
-
-  async function verify() {
-    const c = code.replace(/\D/g, "");
-    if (c.length < 4) return;
-    setBusy(true);
-    const { error } = await verifyCode(normalizedPhone, c);
+    const { error } = await signIn(normalized, password);
     setBusy(false);
     if (error) setHint(error);
   }
 
   return (
     <Box sx={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", p: 2.5, bgcolor: "background.default" }}>
-      <Paper sx={{ width: "100%", maxWidth: 380, borderRadius: "8px", p: "28px 24px 24px", borderTop: `4px solid ${tokens.primary}` }}>
+      <Paper
+        component="form"
+        onSubmit={handleSubmit}
+        sx={{ width: "100%", maxWidth: 380, borderRadius: "8px", p: "28px 24px 24px", borderTop: `4px solid ${tokens.primary}` }}
+      >
         <Box component="img" src={estateKitLogo} alt="EstateKit" sx={{ height: 28, display: "block", mb: 0.5 }} />
 
-        {step === 1 ? (
-          <>
-            <Typography variant="h6" sx={{ fontWeight: 500, mt: 1.75, mb: 0.25 }}>
-              Sign in
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2.25 }}>
-              Enter your WhatsApp number and we'll send you a 4-digit code.
-            </Typography>
-            <TextField
-              fullWidth
-              label="WhatsApp number"
-              placeholder="082 123 4567"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              sx={{ mb: 1.75 }}
-            />
-            <Button fullWidth variant="contained" disabled={busy} onClick={sendCode}>
-              Send me a code
-            </Button>
-          </>
-        ) : (
-          <>
-            <Typography variant="h6" sx={{ fontWeight: 500, mt: 1.75, mb: 0.25 }}>
-              Check WhatsApp
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2.25 }}>
-              We sent a 4-digit code to {normalizedPhone}.
-            </Typography>
-            <TextField
-              fullWidth
-              label="4-digit code"
-              placeholder="____"
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              inputMode="numeric"
-              sx={{ mb: 1.75 }}
-            />
-            <Button fullWidth variant="contained" disabled={busy} onClick={verify}>
-              Sign in
-            </Button>
-            <Button fullWidth sx={{ mt: 0.75 }} onClick={() => setStep(1)}>
-              Use a different number
-            </Button>
-          </>
-        )}
+        <Typography variant="h6" sx={{ fontWeight: 500, mt: 1.75, mb: 0.25 }}>
+          Sign in
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2.25 }}>
+          Enter your phone number and password.
+        </Typography>
+        <TextField
+          fullWidth
+          label="Phone number"
+          placeholder="082 123 4567"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          sx={{ mb: 1.5 }}
+        />
+        <TextField
+          fullWidth
+          type="password"
+          label="Password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          sx={{ mb: 1.75 }}
+        />
+        <Button fullWidth variant="contained" type="submit" disabled={busy}>
+          Sign in
+        </Button>
         {hint && (
           <Typography variant="caption" color="error" sx={{ display: "block", textAlign: "center", mt: 1.75 }}>
             {hint}
