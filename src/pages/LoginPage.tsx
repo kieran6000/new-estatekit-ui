@@ -7,7 +7,7 @@ import estateKitLogo from "../assets/blue logo full.png";
 export default function LoginPage() {
   const { requestCode, verifyCode, authMode } = useAuth();
   const [step, setStep] = useState<1 | 2>(1);
-  const [phone, setPhone] = useState(authMode === "dev_bypass" ? DEV_BYPASS_PHONE : "");
+  const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [hint, setHint] = useState("");
   const [busy, setBusy] = useState(false);
@@ -20,7 +20,6 @@ export default function LoginPage() {
     if (error) return setHint(error);
     setHint("");
     setStep(2);
-    if (authMode === "dev_bypass") setCode(DEV_BYPASS_CODE);
   }
 
   async function verify() {
@@ -85,11 +84,6 @@ export default function LoginPage() {
         {hint && (
           <Typography variant="caption" color="error" sx={{ display: "block", textAlign: "center", mt: 1.75 }}>
             {hint}
-          </Typography>
-        )}
-        {authMode === "dev_bypass" && (
-          <Typography variant="caption" sx={{ display: "block", textAlign: "center", mt: 1.75, color: "text.disabled" }}>
-            Dev bypass active — code is pre-filled.
           </Typography>
         )}
       </Paper>
