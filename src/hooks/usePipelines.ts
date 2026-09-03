@@ -19,3 +19,11 @@ export function useAddPipeline() {
     onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
   });
 }
+
+export function useSyncPipelineSheet() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (pipelineId: string) => pipelinesApi.syncPipelineSheet(pipelineId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
+  });
+}

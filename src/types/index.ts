@@ -27,6 +27,7 @@ export interface Pipeline {
   id: string;
   name: string;
   kind: PipelineKind;
+  sheet_url: string | null;
 }
 
 export const DEAD_STAGES: Stage[] = ["Lost", "Invalid Number"];

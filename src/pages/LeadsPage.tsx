@@ -33,12 +33,13 @@ import NotificationsIcon from "@mui/icons-material/Notifications";
 import CallIcon from "@mui/icons-material/Call";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
+import TableChartIcon from "@mui/icons-material/TableChart";
 import { usePostHog } from "@posthog/react";
 import { tokens } from "../theme";
 import { DEAD_STAGES, PIPELINE_KIND_LABEL, PIPELINE_STAGES, type LeadRow, type OutcomeStep, type Pipeline, type PipelineKind, type Stage } from "../types";
 import { dueLeads, pipelineKindFor, sortLeadsForList, STEP_FOR_STAGE } from "../lib/stageLogic";
 import { useLeads, useUpdateLeadStage } from "../hooks/useLeads";
-import { useAddPipeline, usePipelines } from "../hooks/usePipelines";
+import { useAddPipeline, usePipelines, useSyncPipelineSheet } from "../hooks/usePipelines";
 import { useSnack } from "../hooks/useSnack";
 import StageMenu from "../components/StageMenu";
 import OutcomeSheet from "../components/OutcomeSheet";
@@ -49,6 +50,7 @@ export default function LeadsPage() {
   const { data: leads = [], isLoading: leadsLoading } = useLeads();
   const { data: pipelines = [], isLoading: pipelinesLoading } = usePipelines();
   const updateStage = useUpdateLeadStage();
+  const syncSheet = useSyncPipelineSheet();
   const showSnack = useSnack();
 
   const [searchOpen, setSearchOpen] = useState(false);
@@ -197,6 +199,34 @@ export default function LeadsPage() {
             setAddPipelineOpen(true);
           }}
         />
+        {activePipeline.sheet_url ? (
+          <Box
+            component="a"
+            href={activePipeline.sheet_url}
+            target="_blank"
+            rel="noopener"
+            sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, fontSize: 13, color: "#0f9d58", fontWeight: 500, textDecoration: "none", "&:hover": { textDecoration: "underline" } }}
+          >
+            <TableChartIcon sx={{ fontSize: 16 }} /> Open spreadsheet
+          </Box>
+        ) : (
+          <Box
+            component="button"
+            onClick={() => {
+              syncSheet.mutate(activePipeline.id, {
+                onSuccess: (url) => {
+                  showSnack("Spreadsheet created");
+                  window.open(url, "_blank");
+                },
+                onError: () => showSnack("Failed to create spreadsheet"),
+              });
+            }}
+            disabled={syncSheet.isPending}
+            sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, border: `1px solid ${tokens.divider}`, borderRadius: "4px", bgcolor: "#fff", fontSize: 13, color: "text.secondary", p: "7px 12px", cursor: "pointer", "&:hover": { color: "#0f9d58" }, "&:disabled": { opacity: 0.5, cursor: "default" } }}
+          >
+            <TableChartIcon sx={{ fontSize: 16 }} /> {syncSheet.isPending ? "Creating…" : "Create spreadsheet"}
+          </Box>
+        )}
       </Box>
 
       <Box sx={{ display: "flex", gap: 1, p: "10px 16px", overflowX: "auto", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>

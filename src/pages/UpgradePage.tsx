@@ -57,7 +57,7 @@ export default function UpgradePage() {
       <Box sx={{ p: "20px 16px 0" }}>
         <Box
           component="a"
-          href="https://estatekit.co"
+          href="https://whop.com/estatekit-1a6c/estatekit-seller-attraction-system"
           target="_blank"
           rel="noopener"
           sx={{

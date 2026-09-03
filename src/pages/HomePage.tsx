@@ -132,7 +132,7 @@ export default function HomePage() {
         </Box>
         <Box
           component="a"
-          href="https://estatekit.co"
+          href="https://whop.com/estatekit-1a6c/estatekit-seller-attraction-system"
           target="_blank"
           rel="noopener"
           sx={{ flex: 1, bgcolor: "#fff", p: "14px", textAlign: "center", color: tokens.primary, fontWeight: 500, fontSize: 13, textTransform: "uppercase", display: "flex", alignItems: "center", justifyContent: "center", gap: 1, textDecoration: "none", "&:hover": { bgcolor: tokens.primaryBg } }}

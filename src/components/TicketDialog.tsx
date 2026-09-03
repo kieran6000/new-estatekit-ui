@@ -20,7 +20,7 @@ export default function TicketDialog({ open, onClose }: { open: boolean; onClose
     try {
       const data = await send.mutateAsync({ type, priority, message: message.trim() });
       posthog.capture("support_ticket_submitted", { type, priority });
-      showSnack(data?.emailed ? "Sent — we'll reply by email" : "Saved — email may be delayed");
+      showSnack("Sent — we'll get back to you shortly");
       setMessage("");
       onClose();
     } catch {
@@ -33,7 +33,7 @@ export default function TicketDialog({ open, onClose }: { open: boolean; onClose
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="xs">
       <DialogTitle sx={{ fontSize: 18, fontWeight: 500, pb: 0.5 }}>Message us</DialogTitle>
       <Typography variant="body2" color="text.secondary" sx={{ px: 3, pb: 1.5 }}>
-        Goes to support@estatekit.co — we reply by email.
+        Goes straight to our support team — we'll get back to you.
       </Typography>
       <DialogContent sx={{ pt: 0 }}>
         <TextField select fullWidth label="What do you need?" value={type} onChange={(e) => setType(e.target.value)} sx={{ mt: 1.5 }}>
