@@ -146,7 +146,14 @@ export async function listFbForms(fbPageId: string): Promise<FbForm[]> {
   const { data, error } = await supabase.functions.invoke("list-fb-forms", {
     body: { pageId: fbPageId },
   });
-  if (error) throw new Error(error.message);
+  if (error) {
+    console.error("list-fb-forms error:", error, "data:", data);
+    throw new Error(data?.error || error.message);
+  }
+  if (data?.error) {
+    console.error("list-fb-forms API error:", data.error);
+    throw new Error(data.error);
+  }
   return data?.forms || [];
 }
 

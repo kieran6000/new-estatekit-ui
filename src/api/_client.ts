@@ -17,10 +17,22 @@ export async function getCurrentUserId(): Promise<string> {
   return session.user.id;
 }
 
-let _activeAgentId: string | null = null;
+const ACTIVE_AGENT_KEY = "estatekit_active_agent";
+
+let _activeAgentId: string | null = (() => {
+  try { return localStorage.getItem(ACTIVE_AGENT_KEY); } catch { return null; }
+})();
 
 export function setActiveAgent(id: string | null): void {
   _activeAgentId = id;
+  try {
+    if (id) localStorage.setItem(ACTIVE_AGENT_KEY, id);
+    else localStorage.removeItem(ACTIVE_AGENT_KEY);
+  } catch { /* private browsing */ }
+}
+
+export function getActiveAgentIdSync(): string | null {
+  return _activeAgentId;
 }
 
 export async function getActiveAgentId(): Promise<string> {

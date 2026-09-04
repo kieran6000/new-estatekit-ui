@@ -505,6 +505,7 @@ function AddPageDialog({
   const [fbForms, setFbForms] = useState<FbForm[]>([]);
   const [fbFormId, setFbFormId] = useState("");
   const [loadingForms, setLoadingForms] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
   const addPage = useAddLeadPage();
   const posthog = usePostHog();
 
@@ -515,20 +516,25 @@ function AddPageDialog({
       setPipelineId(pipelines[0]?.id ?? "");
       setFbForms([]);
       setFbFormId("");
+      setFormError(null);
     }
   }, [open, pipelines]);
 
   useEffect(() => {
     if (sourceType !== "fb_form" || !open) return;
-    if (!fbPageId) { setFbForms([]); return; }
+    if (!fbPageId) { setFbForms([]); setFormError(null); return; }
     let cancelled = false;
     (async () => {
       setLoadingForms(true);
+      setFormError(null);
       try {
         const forms = await listFbForms(fbPageId);
         if (!cancelled) setFbForms(forms);
-      } catch {
-        if (!cancelled) setFbForms([]);
+      } catch (err) {
+        if (!cancelled) {
+          setFbForms([]);
+          setFormError(err instanceof Error ? err.message : "Failed to load forms");
+        }
       }
       if (!cancelled) setLoadingForms(false);
     })();
@@ -604,8 +610,12 @@ function AddPageDialog({
               </TextField>
             ) : (
               <Box sx={{ py: 1 }}>
-                <Typography sx={{ fontSize: 13, color: "text.secondary", mb: 1 }}>
-                  {fbPageId ? "No forms found on this Facebook page." : "No Facebook page linked to this account."}
+                <Typography sx={{ fontSize: 13, color: formError ? "error.main" : "text.secondary", mb: 1 }}>
+                  {formError
+                    ? `Error: ${formError}`
+                    : fbPageId
+                      ? "No forms found on this Facebook page."
+                      : "No Facebook page linked to this account."}
                 </Typography>
                 <Button
                   size="small"

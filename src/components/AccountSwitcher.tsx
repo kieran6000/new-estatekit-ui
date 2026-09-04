@@ -13,13 +13,13 @@ import {
   Typography,
 } from "@mui/material";
 import UnfoldMoreIcon from "@mui/icons-material/UnfoldMore";
-import { listAgentProfiles, setActiveAgent } from "../api/_client";
+import { listAgentProfiles, setActiveAgent, getActiveAgentIdSync } from "../api/_client";
 import { useAuth } from "../hooks/useAuth";
 
 export default function AccountSwitcher({ variant = "dark" }: { variant?: "dark" | "light" }) {
   const { user } = useAuth();
   const qc = useQueryClient();
-  const [active, setActive] = useState(user?.id ?? "");
+  const [active, setActive] = useState(getActiveAgentIdSync() || user?.id || "");
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [search, setSearch] = useState("");
 
