@@ -73,7 +73,33 @@ export default function LeadPagePage() {
   const pipeline: Pipeline | undefined = pipelines.find((p) => p.id === page?.pipelineId);
 
   if (pagesLoading || pipelinesLoading) return <LeadPagePageSkeleton />;
-  if (!page || !pipeline) return null;
+  if (!page || !pipeline) return (
+    <Box>
+      <AppBar position="sticky">
+        <Toolbar sx={{ height: 56, minHeight: "56px !important" }}>
+          <Typography sx={{ fontSize: 18, fontWeight: 500 }}>My Page</Typography>
+        </Toolbar>
+      </AppBar>
+      <Box sx={{ maxWidth: 460, mx: "auto", mt: 6, px: 2, textAlign: "center" }}>
+        <Typography sx={{ fontSize: 16, fontWeight: 600, mb: 1 }}>No lead sources yet</Typography>
+        <Typography sx={{ fontSize: 14, color: "text.secondary", mb: 3 }}>
+          Create a lead page or connect a Facebook instant form to start capturing leads.
+        </Typography>
+        <Button variant="contained" startIcon={<AddIcon />} onClick={() => setAddPageOpen(true)}>
+          Add lead source
+        </Button>
+      </Box>
+      <AddPageDialog
+        open={addPageOpen}
+        pipelines={pipelines}
+        onClose={() => setAddPageOpen(false)}
+        onCreated={(id) => {
+          setPageId(id);
+          showSnack("Page created");
+        }}
+      />
+    </Box>
+  );
 
   function update(patch: Partial<Omit<LeadPage, "id" | "pipelineId">>) {
     updatePage.mutate({ id: page!.id, patch });
