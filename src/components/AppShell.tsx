@@ -5,6 +5,11 @@ import {
   Box,
   Divider,
   Drawer,
+  List,
+  ListItem,
+  ListItemButton,
+  ListItemIcon,
+  ListItemText,
   Typography,
   useMediaQuery,
   BottomNavigation,
@@ -29,21 +34,6 @@ import estateKitLogoWhite from "../assets/whitelogofull.png";
 
 const RAIL_WIDTH = 240;
 
-const NAV_ITEM_SX = {
-  display: "flex",
-  alignItems: "center",
-  gap: 1.5,
-  px: 1.5,
-  py: 1,
-  borderRadius: "6px",
-  border: 0,
-  width: "100%",
-  textAlign: "left" as const,
-  fontSize: 13.5,
-  fontWeight: 500,
-  cursor: "pointer",
-  transition: "background 0.15s, color 0.15s",
-};
 
 function activeSection(pathname: string): string {
   if (pathname.startsWith("/lead-page")) return "mypage";
@@ -99,12 +89,10 @@ export default function AppShell() {
             },
           }}
         >
-          {/* Logo */}
           <Box sx={{ px: 2, py: 1.75 }}>
             <Box component="img" src={estateKitLogoWhite} alt="EstateKit" sx={{ height: 24, display: "block" }} />
           </Box>
 
-          {/* Account switcher */}
           {isOperator && (
             <Box sx={{ px: 1.25 }}>
               <AccountSwitcher />
@@ -113,93 +101,88 @@ export default function AppShell() {
 
           <Divider sx={{ borderColor: "#1f2937", mx: 1.25, my: 0.75 }} />
 
-          {/* Main nav */}
-          <Box sx={{ px: 1.25, display: "flex", flexDirection: "column", gap: 0.25 }}>
+          <List disablePadding sx={{ px: 1.25 }}>
             {mainNav.map((item) => {
               const active = section === item.key;
               return (
-                <Box
-                  key={item.key}
-                  component="button"
-                  onClick={() => navigate(item.to)}
-                  sx={{
-                    ...NAV_ITEM_SX,
-                    color: active ? "#fff" : "#9ca3af",
-                    bgcolor: active ? "#2563eb" : "transparent",
-                    "&:hover": {
-                      bgcolor: active ? "#2563eb" : "#1f2937",
-                      color: "#fff",
-                    },
-                  }}
-                >
-                  {item.icon}
-                  {item.label}
-                </Box>
+                <ListItem key={item.key} disablePadding>
+                  <ListItemButton
+                    selected={active}
+                    onClick={() => navigate(item.to)}
+                    sx={{
+                      borderRadius: "6px",
+                      py: 0.75,
+                      mb: 0.25,
+                      color: active ? "#fff" : "#9ca3af",
+                      "&.Mui-selected": { bgcolor: "#2563eb", color: "#fff", "&:hover": { bgcolor: "#2563eb" } },
+                      "&:hover": { bgcolor: "#1f2937", color: "#fff" },
+                    }}
+                  >
+                    <ListItemIcon sx={{ minWidth: 32, color: "inherit" }}>{item.icon}</ListItemIcon>
+                    <ListItemText primary={item.label} slotProps={{ primary: { sx: { fontSize: 13.5, fontWeight: 500 } } }} />
+                  </ListItemButton>
+                </ListItem>
               );
             })}
-          </Box>
+          </List>
 
-          {/* Tools section */}
           {toolsNav.length > 0 && (
             <>
               <Divider sx={{ borderColor: "#1f2937", mx: 1.25, my: 0.75 }} />
-              <Box sx={{ px: 1.25, display: "flex", flexDirection: "column", gap: 0.25 }}>
+              <List disablePadding sx={{ px: 1.25 }}>
                 {toolsNav.map((item) => {
                   const active = section === item.key;
                   return (
-                    <Box
-                      key={item.key}
-                      component="button"
-                      onClick={() => navigate(item.to)}
-                      sx={{
-                        ...NAV_ITEM_SX,
-                        color: active ? "#fff" : "#9ca3af",
-                        bgcolor: active ? "#2563eb" : "transparent",
-                        "&:hover": {
-                          bgcolor: active ? "#2563eb" : "#1f2937",
-                          color: "#fff",
-                        },
-                      }}
-                    >
-                      {item.icon}
-                      {item.label}
-                    </Box>
+                    <ListItem key={item.key} disablePadding>
+                      <ListItemButton
+                        selected={active}
+                        onClick={() => navigate(item.to)}
+                        sx={{
+                          borderRadius: "6px",
+                          py: 0.75,
+                          mb: 0.25,
+                          color: active ? "#fff" : "#9ca3af",
+                          "&.Mui-selected": { bgcolor: "#2563eb", color: "#fff", "&:hover": { bgcolor: "#2563eb" } },
+                          "&:hover": { bgcolor: "#1f2937", color: "#fff" },
+                        }}
+                      >
+                        <ListItemIcon sx={{ minWidth: 32, color: "inherit" }}>{item.icon}</ListItemIcon>
+                        <ListItemText primary={item.label} slotProps={{ primary: { sx: { fontSize: 13.5, fontWeight: 500 } } }} />
+                      </ListItemButton>
+                    </ListItem>
                   );
                 })}
-              </Box>
+              </List>
             </>
           )}
 
           <Box sx={{ flex: 1 }} />
 
-          {/* Account button at bottom */}
           <Divider sx={{ borderColor: "#1f2937" }} />
-          <Box
-            component="button"
-            onClick={() => navigate("/account")}
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              gap: 1.25,
-              p: "10px 14px",
-              color: section === "account" ? "#fff" : "#9ca3af",
-              bgcolor: section === "account" ? "#2563eb" : "transparent",
-              fontSize: 13,
-              border: 0,
-              width: "100%",
-              textAlign: "left",
-              cursor: "pointer",
-              "&:hover": { bgcolor: section === "account" ? "#2563eb" : "#1f2937", color: "#fff" },
-            }}
-          >
-            <Avatar sx={{ width: 28, height: 28, bgcolor: "#374151", fontSize: 13, fontWeight: 600 }}>{initial}</Avatar>
-            <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Typography sx={{ fontSize: 13, fontWeight: 500, color: "inherit", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {user?.phone || "Agent"}
-              </Typography>
-            </Box>
-            <AccountCircleRoundedIcon sx={{ fontSize: 18, opacity: 0.5 }} />
-          </Box>
+          <List disablePadding>
+            <ListItem disablePadding>
+              <ListItemButton
+                selected={section === "account"}
+                onClick={() => navigate("/account")}
+                sx={{
+                  py: 1.25,
+                  px: 1.75,
+                  color: section === "account" ? "#fff" : "#9ca3af",
+                  "&.Mui-selected": { bgcolor: "#2563eb", color: "#fff", "&:hover": { bgcolor: "#2563eb" } },
+                  "&:hover": { bgcolor: "#1f2937", color: "#fff" },
+                }}
+              >
+                <ListItemIcon sx={{ minWidth: 36, color: "inherit" }}>
+                  <Avatar sx={{ width: 28, height: 28, bgcolor: "#374151", fontSize: 13, fontWeight: 600 }}>{initial}</Avatar>
+                </ListItemIcon>
+                <ListItemText
+                  primary={user?.phone || "Agent"}
+                  slotProps={{ primary: { sx: { fontSize: 13, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } } }}
+                />
+                <AccountCircleRoundedIcon sx={{ fontSize: 18, opacity: 0.5 }} />
+              </ListItemButton>
+            </ListItem>
+          </List>
         </Drawer>
       )}
 

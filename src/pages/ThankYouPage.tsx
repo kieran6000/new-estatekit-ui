@@ -4,22 +4,22 @@ import { Box, Skeleton, Typography } from "@mui/material";
 import CallIcon from "@mui/icons-material/Call";
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutlined";
 import { tokens } from "../theme";
-import { getLeadPagePublic } from "../api/leadPages";
+import { getLeadPageBySlug } from "../api/leadPages";
 import { HeaderBrand } from "../components/LeadCaptureForm";
 import type { LeadPage } from "../types";
 
 export default function ThankYouPage() {
   const [params] = useSearchParams();
-  const pageId = params.get("p");
+  const slug = params.get("p");
   const name = params.get("n") || "there";
 
   const { data: page, isLoading } = useQuery({
-    queryKey: ["publicPage", pageId],
-    queryFn: () => getLeadPagePublic(pageId!),
-    enabled: !!pageId,
+    queryKey: ["publicPageSlug", slug],
+    queryFn: () => getLeadPageBySlug(slug!),
+    enabled: !!slug,
   });
 
-  if (!pageId) return <GenericThankYou />;
+  if (!slug) return <GenericThankYou />;
 
   if (isLoading) {
     return (

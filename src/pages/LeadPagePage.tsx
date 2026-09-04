@@ -33,8 +33,8 @@ import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import PlaceIcon from "@mui/icons-material/PlaceOutlined";
 import { usePostHog } from "@posthog/react";
 import { tokens } from "../theme";
+import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import { PIPELINE_KIND_LABEL, type CustomQuestion, type LeadPage, type Pipeline, type PipelineKind, type QuestionType } from "../types";
-import { shortLinkFor } from "../api/leadPages";
 import { useAddLeadPage, useLeadPages, useSubmitMockLead, useUpdateLeadPage } from "../hooks/useLeadPages";
 import { usePipelines } from "../hooks/usePipelines";
 import {
@@ -135,18 +135,54 @@ export default function LeadPagePage() {
             <TextField label="Headline" value={page.headline} onChange={(e) => update({ headline: e.target.value })} fullWidth multiline minRows={2} />
             <TextField label="Suburb / area" value={page.suburb} onChange={(e) => update({ suburb: e.target.value })} fullWidth />
             <TextField label="Phone" value={page.phone} onChange={(e) => update({ phone: e.target.value })} fullWidth />
-            <Box sx={{ display: "flex", gap: 1 }}>
-              <Button variant="outlined" component="label" size="small">
-                {page.logoDataUrl ? "Change logo" : "Upload logo"}
-                <input type="file" hidden accept="image/*" onChange={(e) => onLogoChange(e.target.files?.[0] ?? null)} />
-              </Button>
-              <Button variant="outlined" component="label" size="small">
-                {page.profilePhotoDataUrl ? "Change profile photo" : "Upload profile photo"}
-                <input type="file" hidden accept="image/*" onChange={(e) => onPhotoChange(e.target.files?.[0] ?? null)} />
-              </Button>
+            <Box sx={{ display: "flex", gap: 2 }}>
+              <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0.75 }}>
+                <Box
+                  component="label"
+                  sx={{
+                    width: 64, height: 64, borderRadius: "8px", border: `2px dashed ${page.logoDataUrl ? tokens.primary : tokens.divider}`,
+                    display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", overflow: "hidden",
+                    bgcolor: page.logoDataUrl ? "transparent" : tokens.bg, position: "relative",
+                    "&:hover": { borderColor: tokens.primary },
+                  }}
+                >
+                  {page.logoDataUrl ? (
+                    <>
+                      <Box component="img" src={page.logoDataUrl} alt="" sx={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                      <CheckCircleIcon sx={{ position: "absolute", bottom: -4, right: -4, fontSize: 18, color: tokens.primary, bgcolor: "#fff", borderRadius: "50%" }} />
+                    </>
+                  ) : (
+                    <AddIcon sx={{ fontSize: 20, color: "text.disabled" }} />
+                  )}
+                  <input type="file" hidden accept="image/*" onChange={(e) => onLogoChange(e.target.files?.[0] ?? null)} />
+                </Box>
+                <Typography sx={{ fontSize: 11, color: "text.secondary" }}>Logo</Typography>
+              </Box>
+              <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0.75 }}>
+                <Box
+                  component="label"
+                  sx={{
+                    width: 64, height: 64, borderRadius: "50%", border: `2px dashed ${page.profilePhotoDataUrl ? tokens.primary : tokens.divider}`,
+                    display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", overflow: "hidden",
+                    bgcolor: page.profilePhotoDataUrl ? "transparent" : tokens.bg, position: "relative",
+                    "&:hover": { borderColor: tokens.primary },
+                  }}
+                >
+                  {page.profilePhotoDataUrl ? (
+                    <>
+                      <Box component="img" src={page.profilePhotoDataUrl} alt="" sx={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      <CheckCircleIcon sx={{ position: "absolute", bottom: -2, right: -2, fontSize: 18, color: tokens.primary, bgcolor: "#fff", borderRadius: "50%" }} />
+                    </>
+                  ) : (
+                    <AddIcon sx={{ fontSize: 20, color: "text.disabled" }} />
+                  )}
+                  <input type="file" hidden accept="image/*" onChange={(e) => onPhotoChange(e.target.files?.[0] ?? null)} />
+                </Box>
+                <Typography sx={{ fontSize: 11, color: "text.secondary" }}>Profile photo</Typography>
+              </Box>
             </Box>
             <Typography sx={{ fontSize: 12, color: "text.secondary", mt: -1 }}>
-              Logo shows in the page's top navbar. Profile photo (optional) shows on the thank-you screen — without one, a call animation takes its place.
+              Logo shows in the page header. Profile photo shows on the thank-you screen.
             </Typography>
 
             <Box>
@@ -198,11 +234,19 @@ export default function LeadPagePage() {
           <Section title="Tracking">
             <TextField
               label="Facebook Pixel ID"
-              placeholder="e.g. 1234567890123456"
+              placeholder="Paste pixel ID or the full code snippet from Facebook"
               value={page.fbPixelId}
-              onChange={(e) => update({ fbPixelId: e.target.value })}
-              helperText="For custom conversion events — mock only, no pixel actually fires here"
+              onChange={(e) => {
+                let val = e.target.value;
+                const match = val.match(/fbq\s*\(\s*['"]init['"]\s*,\s*['"](\d+)['"]\s*\)/);
+                if (match) val = match[1];
+                update({ fbPixelId: val });
+              }}
+              helperText="Paste just the ID (e.g. 1234567890123456) or the full pixel code — we'll extract the ID automatically"
               fullWidth
+              multiline
+              minRows={1}
+              maxRows={3}
             />
           </Section>
 
@@ -227,7 +271,7 @@ export default function LeadPagePage() {
             action={
               <Typography
                 component="a"
-                href={`/p/${page.id}`}
+                href={`/p/${page.slug}`}
                 target="_blank"
                 rel="noopener"
                 sx={{ display: "flex", alignItems: "center", gap: 0.4, fontSize: 12.5, color: tokens.primary, textDecoration: "none", textTransform: "none", fontWeight: 500, "&:hover": { textDecoration: "underline" } }}
@@ -287,20 +331,21 @@ function UpgradeNudge({ onUpgrade }: { onUpgrade: () => void }) {
 
 function ShareSection({ page }: { page: LeadPage }) {
   const showSnack = useSnack();
-  const shareUrl = shortLinkFor(page);
+  const baseUrl = window.location.origin;
+  const shareUrl = `${baseUrl}/p/${page.slug}`;
 
   function copyLink() {
-    navigator.clipboard.writeText(`https://${shareUrl}`);
+    navigator.clipboard.writeText(shareUrl);
     showSnack("Link copied");
   }
 
   async function shareLink() {
-    const shareData = { title: page.agentName || page.name, text: page.headline, url: `https://${shareUrl}` };
+    const shareData = { title: page.agentName || page.name, text: page.headline, url: shareUrl };
     if (navigator.share) {
       try {
         await navigator.share(shareData);
       } catch {
-        // user cancelled the share sheet — nothing to do
+        // user cancelled the share sheet
       }
     } else {
       copyLink();
@@ -314,7 +359,7 @@ function ShareSection({ page }: { page: LeadPage }) {
         Share this link anywhere — every submission lands straight in your Leads tab.
       </Typography>
       <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-        <TextField value={`https://${shareUrl}`} fullWidth size="small" slotProps={{ input: { readOnly: true } }} />
+        <TextField value={shareUrl} fullWidth size="small" slotProps={{ input: { readOnly: true } }} />
         <Button variant="outlined" startIcon={<ContentCopyIcon fontSize="small" />} onClick={copyLink}>
           Copy
         </Button>

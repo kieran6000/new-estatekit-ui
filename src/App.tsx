@@ -40,7 +40,7 @@ export default function App() {
     <Routes>
       {/* Public routes — no login required */}
       <Route path="/l/:leadId" element={<LeadActionPage />} />
-      <Route path="/p/:pageId" element={<LeadPagePreviewPage />} />
+      <Route path="/p/:slug" element={<LeadPagePreviewPage />} />
       <Route path="/thank-you" element={<ThankYouPage />} />
       <Route path="/privacy" element={<PrivacyPolicyPage />} />
 

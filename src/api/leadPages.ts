@@ -3,6 +3,7 @@ import type { FormAnswer, LeadPage, PipelineKind } from "../types";
 
 interface LeadPageRow {
   id: string;
+  slug: string;
   pipeline_id: string;
   agent_name: string;
   name: string;
@@ -24,6 +25,7 @@ interface LeadPageRow {
 function rowToPage(r: LeadPageRow): LeadPage {
   return {
     id: r.id,
+    slug: r.slug,
     pipelineId: r.pipeline_id,
     agentName: r.agent_name,
     name: r.name,
@@ -44,7 +46,7 @@ function rowToPage(r: LeadPageRow): LeadPage {
 }
 
 function patchToRow(
-  p: Partial<Omit<LeadPage, "id" | "pipelineId">>,
+  p: Partial<Omit<LeadPage, "id" | "pipelineId" | "slug">>,
 ): Record<string, unknown> {
   const m: Record<string, unknown> = {};
   if (p.agentName !== undefined) m.agent_name = p.agentName;
@@ -79,6 +81,16 @@ export async function listLeadPages(): Promise<LeadPage[]> {
   return (data as LeadPageRow[]).map(rowToPage);
 }
 
+export async function getLeadPageBySlug(slug: string): Promise<LeadPage | null> {
+  const { data, error } = await supabase
+    .from("lead_pages")
+    .select("*")
+    .eq("slug", slug)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? rowToPage(data as LeadPageRow) : null;
+}
+
 export async function getLeadPagePublic(pageId: string): Promise<LeadPage | null> {
   const { data, error } = await supabase
     .from("lead_pages")
@@ -95,9 +107,14 @@ export async function addLeadPage(
   _kind: PipelineKind,
 ): Promise<LeadPage> {
   const agentId = await getCurrentUserId();
+  const slug = name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "") || "page";
   const { data, error } = await supabase
     .from("lead_pages")
-    .insert({ agent_id: agentId, pipeline_id: pipelineId, name })
+    .insert({ agent_id: agentId, pipeline_id: pipelineId, name, slug })
     .select("*")
     .single();
   if (error) throw new Error(error.message);
@@ -106,7 +123,7 @@ export async function addLeadPage(
 
 export async function updateLeadPage(
   id: string,
-  patch: Partial<Omit<LeadPage, "id" | "pipelineId">>,
+  patch: Partial<Omit<LeadPage, "id" | "pipelineId" | "slug">>,
 ): Promise<void> {
   const row = patchToRow(patch);
   if (Object.keys(row).length === 0) return;
@@ -115,17 +132,6 @@ export async function updateLeadPage(
     .update(row)
     .eq("id", id);
   if (error) throw new Error(error.message);
-}
-
-export function shortLinkFor(
-  page: Pick<LeadPage, "name" | "agentName">,
-): string {
-  const slug = (page.agentName || page.name)
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
-  return "ek.co/p/" + (slug || "agent");
 }
 
 export async function submitMockLead(

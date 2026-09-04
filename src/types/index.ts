@@ -128,6 +128,7 @@ export const DEFAULT_ACCENT_COLOR = "#1976d2";
  */
 export interface LeadPage {
   id: string;
+  slug: string;
   name: string;
   pipelineId: string;
   agentName: string;
@@ -150,7 +151,6 @@ export interface LeadPage {
   /** Shown after submit, in place of the form. `{name}` is replaced with what they typed. */
   thankYouHeadline: string;
   thankYouSubtext: string;
-  /** Mock only — no pixel actually fires. A place to store the id for when this connects to a real backend. */
   fbPixelId: string;
 }
 
