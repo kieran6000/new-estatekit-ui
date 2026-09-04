@@ -1,4 +1,4 @@
-import { supabase, getCurrentUserId } from "./_client";
+import { supabase, getCurrentUserId, getActiveAgentId } from "./_client";
 
 export interface AgentProfile {
   agentId: string;
@@ -57,7 +57,7 @@ function rowToProfile(r: ProfileRow): AgentProfile {
 }
 
 export async function getMyProfile(): Promise<AgentProfile | null> {
-  const userId = await getCurrentUserId();
+  const userId = await getActiveAgentId();
   const { data, error } = await supabase
     .from("agent_profiles")
     .select("*")

@@ -19,7 +19,7 @@ export const PIPELINE_STAGES: Record<PipelineKind, Stage[]> = {
   buyer: ["New Lead", "No Answer", "Contacted", "Viewing Booked", "Offer Made", "Bought", "Lost", "Invalid Number"],
 };
 
-export const PIPELINE_KIND_LABEL: Record<PipelineKind, string> = { seller: "Seller-style", buyer: "Buyer-style" };
+export const PIPELINE_KIND_LABEL: Record<PipelineKind, string> = { seller: "Seller", buyer: "Buyer" };
 
 /** A named pipeline instance. `kind` fixes its stage list — adding a pipeline
  * only ever means picking a preset + a name, never authoring stages. */

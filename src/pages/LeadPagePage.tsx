@@ -486,11 +486,6 @@ function AddPageDialog({
       setLoadingForms(true);
       try {
         const profile = await getMyProfile();
-        if (!profile?.fbAdAccountId && !cancelled) {
-          setFbForms([]);
-          setLoadingForms(false);
-          return;
-        }
         const pageId = profile?.fbPageId;
         if (!pageId) { setFbForms([]); setLoadingForms(false); return; }
         const forms = await listFbForms(pageId);
@@ -572,7 +567,7 @@ function AddPageDialog({
               </TextField>
             ) : (
               <Typography sx={{ fontSize: 13, color: "text.secondary", py: 1 }}>
-                No Facebook page linked. Set your FB Page ID in the admin settings first.
+                No forms found. Make sure a Facebook page is linked in admin settings.
               </Typography>
             )}
           </Box>
