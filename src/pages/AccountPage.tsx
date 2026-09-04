@@ -50,6 +50,8 @@ export default function AccountPage() {
     renewalDate: "",
     sidebarColor: "#111827",
     sidebarLogoUrl: null as string | null,
+    fbPageId: "",
+    fbAdAccountId: "",
   });
 
   useEffect(() => {
@@ -63,6 +65,8 @@ export default function AccountPage() {
         renewalDate: profile.renewalDate ?? "",
         sidebarColor: profile.sidebarColor || "#111827",
         sidebarLogoUrl: profile.sidebarLogoUrl,
+        fbPageId: profile.fbPageId ?? "",
+        fbAdAccountId: profile.fbAdAccountId ?? "",
       });
     }
   }, [profile]);
@@ -258,6 +262,30 @@ export default function AccountPage() {
                 </Box>
               </CardContent>
             </Card>
+
+            {isOperator && (
+              <Card variant="outlined" sx={{ mb: 3 }}>
+                <CardContent sx={{ display: "flex", flexDirection: "column", gap: 2.5 }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                    Facebook
+                  </Typography>
+                  <TextField
+                    label="FB Page ID"
+                    value={form.fbPageId}
+                    onChange={(e) => update("fbPageId", e.target.value)}
+                    fullWidth
+                    placeholder="e.g. 102676318479700"
+                  />
+                  <TextField
+                    label="FB Ad Account ID"
+                    value={form.fbAdAccountId}
+                    onChange={(e) => update("fbAdAccountId", e.target.value)}
+                    fullWidth
+                    placeholder="e.g. 1913367189267353"
+                  />
+                </CardContent>
+              </Card>
+            )}
 
             {isOperator && profile && (
               <Card

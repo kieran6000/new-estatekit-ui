@@ -81,6 +81,8 @@ export async function upsertProfile(
   if (patch.renewalDate !== undefined) row.renewal_date = patch.renewalDate;
   if (patch.sidebarColor !== undefined) row.sidebar_color = patch.sidebarColor;
   if (patch.sidebarLogoUrl !== undefined) row.sidebar_logo_url = patch.sidebarLogoUrl;
+  if (patch.fbPageId !== undefined) row.fb_page_id = patch.fbPageId;
+  if (patch.fbAdAccountId !== undefined) row.fb_ad_account_id = patch.fbAdAccountId;
 
   const { error } = await supabase
     .from("agent_profiles")

@@ -43,6 +43,7 @@ import { useAddLeadPage, useLeadPages, useSubmitMockLead, useUpdateLeadPage } fr
 import { usePipelines } from "../hooks/usePipelines";
 import { listFbForms, type FbForm } from "../api/leadPages";
 import { getMyProfile } from "../api/agentProfile";
+import { useQuery } from "@tanstack/react-query";
 import {
   useAddCustomQuestion,
   useCustomQuestions,
@@ -61,6 +62,7 @@ export default function LeadPagePage() {
   const { data: isOperator } = useIsOperator();
   const { data: pages = [], isLoading: pagesLoading } = useLeadPages();
   const { data: pipelines = [], isLoading: pipelinesLoading } = usePipelines();
+  const { data: profile } = useQuery({ queryKey: ["myProfile"], queryFn: getMyProfile });
   const updatePage = useUpdateLeadPage();
   const showSnack = useSnack();
   const posthog = usePostHog();
@@ -92,6 +94,7 @@ export default function LeadPagePage() {
       <AddPageDialog
         open={addPageOpen}
         pipelines={pipelines}
+        fbPageId={profile?.fbPageId || null}
         onClose={() => setAddPageOpen(false)}
         onCreated={(id) => {
           setPageId(id);
@@ -360,6 +363,7 @@ export default function LeadPagePage() {
       <AddPageDialog
         open={addPageOpen}
         pipelines={pipelines}
+        fbPageId={profile?.fbPageId || null}
         onClose={() => setAddPageOpen(false)}
         onCreated={(id) => {
           setPageId(id);
@@ -452,11 +456,13 @@ function ShareSection({ page }: { page: LeadPage }) {
 function AddPageDialog({
   open,
   pipelines,
+  fbPageId,
   onClose,
   onCreated,
 }: {
   open: boolean;
   pipelines: Pipeline[];
+  fbPageId: string | null;
   onClose: () => void;
   onCreated: (id: string) => void;
 }) {
@@ -481,14 +487,12 @@ function AddPageDialog({
 
   useEffect(() => {
     if (sourceType !== "fb_form" || !open) return;
+    if (!fbPageId) { setFbForms([]); return; }
     let cancelled = false;
     (async () => {
       setLoadingForms(true);
       try {
-        const profile = await getMyProfile();
-        const pageId = profile?.fbPageId;
-        if (!pageId) { setFbForms([]); setLoadingForms(false); return; }
-        const forms = await listFbForms(pageId);
+        const forms = await listFbForms(fbPageId);
         if (!cancelled) setFbForms(forms);
       } catch {
         if (!cancelled) setFbForms([]);
@@ -496,7 +500,7 @@ function AddPageDialog({
       if (!cancelled) setLoadingForms(false);
     })();
     return () => { cancelled = true; };
-  }, [sourceType, open]);
+  }, [sourceType, open, fbPageId]);
 
   const selectedForm = fbForms.find((f) => f.id === fbFormId);
 
