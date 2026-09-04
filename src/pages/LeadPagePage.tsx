@@ -40,10 +40,10 @@ import { tokens } from "../theme";
 import { PIPELINE_KIND_LABEL, type CustomQuestion, type LeadPage, type Pipeline, type PipelineKind, type QuestionType } from "../types";
 import { useAddLeadPage, useDeleteLeadPage, useLeadPages, useSubmitMockLead, useUpdateLeadPage } from "../hooks/useLeadPages";
 import { usePipelines } from "../hooks/usePipelines";
-import { getFbForm, listFbForms, type FbForm } from "../api/leadPages";
+import { getFbForm, listFbForms, syncFbLeads, type FbForm } from "../api/leadPages";
 import FbFormPreview from "../components/FbFormPreview";
 import { getMyProfile } from "../api/agentProfile";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   useAddCustomQuestion,
   useCustomQuestions,
@@ -508,13 +508,44 @@ function FbFormSource({
   const form = data?.form;
   const fbName = data?.page?.name || pageName;
   const fbAvatar = data?.page?.picture || avatarUrl;
+  const qc = useQueryClient();
+  const showSnack = useSnack();
+  const [syncing, setSyncing] = useState(false);
+
+  async function syncNow() {
+    if (!page.fbFormId) return;
+    setSyncing(true);
+    try {
+      const { totalInserted } = await syncFbLeads({ formId: page.fbFormId });
+      await qc.invalidateQueries({ queryKey: ["leads"] });
+      showSnack(totalInserted > 0 ? `${totalInserted} new lead${totalInserted === 1 ? "" : "s"} pulled in` : "You're up to date — no new leads");
+    } catch (e) {
+      showSnack(e instanceof Error ? e.message : "Sync failed");
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   const CONTACT = new Set(["FULL_NAME", "EMAIL", "PHONE", "FIRST_NAME", "LAST_NAME", "STREET_ADDRESS", "CITY", "ZIP", "COUNTRY", "PROVINCE", "STATE"]);
 
   return (
     <Box sx={{ display: "flex", flexDirection: { xs: "column", md: "row" }, gap: 3, p: 2, maxWidth: 1000, mx: "auto", alignItems: "flex-start" }}>
       <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3, width: "100%" }}>
-        <Section title="Form questions">
+        <Section
+          title="Form questions"
+          action={
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={syncNow}
+              disabled={syncing}
+              startIcon={syncing ? <CircularProgress size={14} /> : undefined}
+              sx={{ textTransform: "none", fontSize: 12.5 }}
+            >
+              {syncing ? "Syncing…" : "Sync leads now"}
+            </Button>
+          }
+        >
           {isLoading ? (
             <Skeleton variant="rounded" height={160} sx={{ borderRadius: "8px" }} />
           ) : error ? (

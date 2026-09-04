@@ -228,6 +228,15 @@ export async function updateLeadPage(
   if (error) throw new Error(error.message);
 }
 
+export async function syncFbLeads(opts?: { agentId?: string; formId?: string }): Promise<{ totalInserted: number }> {
+  const { data, error } = await supabase.functions.invoke("sync-fb-leads", {
+    body: { agentId: opts?.agentId, formId: opts?.formId },
+  });
+  if (error) throw new Error(data?.error || error.message);
+  if (data?.error) throw new Error(data.error);
+  return { totalInserted: data?.totalInserted ?? 0 };
+}
+
 export async function deleteLeadPage(id: string): Promise<void> {
   const { error } = await supabase.from("lead_pages").delete().eq("id", id);
   if (error) throw new Error(error.message);

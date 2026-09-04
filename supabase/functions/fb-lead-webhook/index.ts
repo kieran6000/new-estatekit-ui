@@ -4,17 +4,39 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const FB_VERIFY_TOKEN = Deno.env.get("FB_VERIFY_TOKEN") || "estatekit_webhook_2024";
-let _fbToken: string | null = null;
-async function getFbToken(): Promise<string> {
-  if (_fbToken) return _fbToken;
-  const envToken = Deno.env.get("FB_ACCESS_TOKEN");
-  if (envToken) { _fbToken = envToken; return envToken; }
-  const { data } = await supabase.rpc("get_secret", { secret_name: "FB_ACCESS_TOKEN" });
-  _fbToken = data || "";
-  return _fbToken;
-}
+const TOKEN_NAMES = ["FB_ACCESS_TOKEN", "FB_ACCESS_TOKEN_2"];
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+let _tokens: string[] | null = null;
+async function getTokens(): Promise<string[]> {
+  if (_tokens) return _tokens;
+  const out: string[] = [];
+  const env = Deno.env.get("FB_ACCESS_TOKEN");
+  if (env) out.push(env);
+  for (const name of TOKEN_NAMES) {
+    const { data } = await supabase.rpc("get_secret", { secret_name: name });
+    if (data && !out.includes(data)) out.push(data);
+  }
+  _tokens = out;
+  return out;
+}
+
+async function getPageToken(pageId: string): Promise<string | null> {
+  const tokens = await getTokens();
+  for (const userToken of tokens) {
+    let url: string | null = `https://graph.facebook.com/v21.0/me/accounts?fields=id,access_token&limit=200&access_token=${userToken}`;
+    while (url) {
+      const res = await fetch(url);
+      const data = await res.json();
+      if (!res.ok || data.error) break;
+      const match = (data.data || []).find((p: { id: string }) => p.id === pageId);
+      if (match?.access_token) return match.access_token as string;
+      url = data.paging?.next ?? null;
+    }
+  }
+  return null;
+}
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -27,13 +49,11 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: CORS });
   }
 
-  // GET = Facebook webhook verification challenge
   if (req.method === "GET") {
     const url = new URL(req.url);
     const mode = url.searchParams.get("hub.mode");
     const token = url.searchParams.get("hub.verify_token");
     const challenge = url.searchParams.get("hub.challenge");
-
     if (mode === "subscribe" && token === FB_VERIFY_TOKEN) {
       console.log("Webhook verified");
       return new Response(challenge, { status: 200, headers: CORS });
@@ -41,89 +61,99 @@ Deno.serve(async (req) => {
     return new Response("Forbidden", { status: 403, headers: CORS });
   }
 
-  // POST = incoming lead event from Facebook
   if (req.method === "POST") {
     try {
       const body = await req.json();
       console.log("FB webhook received:", JSON.stringify(body));
-
       if (body.object !== "page") {
         return new Response("Not a page event", { status: 200, headers: CORS });
       }
 
       for (const entry of body.entry || []) {
         const pageId = String(entry.id);
-
         for (const change of entry.changes || []) {
           if (change.field !== "leadgen") continue;
-
           const leadgenId = change.value?.leadgen_id;
           const formId = change.value?.form_id;
           if (!leadgenId) continue;
 
           console.log(`Lead ${leadgenId} from page ${pageId} form ${formId}`);
 
-          // Look up which agent owns this page
-          const { data: agent } = await supabase
-            .from("agent_profiles")
-            .select("agent_id, display_name")
-            .eq("fb_page_id", pageId)
-            .maybeSingle();
+          // Attribute by form -> lead_page -> agent (correct for shared pages).
+          let agentId: string | null = null;
+          let agentName = "";
+          let linkedPipelineId: string | null = null;
+          let sourcePageRowId: string | null = null;
 
-          if (!agent) {
-            console.warn(`No agent found for page ${pageId}`);
+          if (formId) {
+            const { data: linkedPage } = await supabase
+              .from("lead_pages")
+              .select("id, agent_id, pipeline_id")
+              .eq("fb_form_id", String(formId))
+              .limit(1)
+              .maybeSingle();
+            if (linkedPage) {
+              agentId = linkedPage.agent_id;
+              linkedPipelineId = linkedPage.pipeline_id;
+              sourcePageRowId = linkedPage.id;
+            }
+          }
+
+          if (!agentId) {
+            const { data: agents } = await supabase
+              .from("agent_profiles")
+              .select("agent_id, display_name")
+              .eq("fb_page_id", pageId)
+              .limit(1);
+            if (agents && agents.length) {
+              agentId = agents[0].agent_id;
+              agentName = agents[0].display_name;
+            }
+          }
+
+          if (!agentId) {
+            console.warn(`No agent found for page ${pageId} / form ${formId}`);
             continue;
           }
 
-          // Fetch the actual lead data from Facebook
-          const leadData = await fetchFbLead(leadgenId);
+          const { data: existing } = await supabase
+            .from("leads")
+            .select("id")
+            .eq("fb_lead_id", String(leadgenId))
+            .limit(1)
+            .maybeSingle();
+          if (existing) {
+            console.log(`Lead ${leadgenId} already imported, skipping`);
+            continue;
+          }
+
+          const leadData = await fetchFbLead(leadgenId, pageId);
           if (!leadData) {
             console.error(`Failed to fetch lead ${leadgenId} from FB`);
             continue;
           }
 
-          // Extract fields from FB lead data
           const fields = extractFields(leadData.field_data || []);
           const name = fields.name || fields.full_name || `${fields.first_name || ""} ${fields.last_name || ""}`.trim() || "Unknown";
           const phone = fields.phone_number || fields.phone || "";
           const email = fields.email || "";
 
-          // Detect buyer vs seller from FB form name
-          // Check if this form is explicitly linked to a pipeline via lead_pages
-          let linkedPipelineId: string | null = null;
-          if (formId) {
-            const { data: linkedPage } = await supabase
-              .from("lead_pages")
-              .select("pipeline_id")
-              .eq("fb_form_id", String(formId))
-              .maybeSingle();
-            if (linkedPage) {
-              linkedPipelineId = linkedPage.pipeline_id;
-              console.log(`Form ${formId} explicitly linked to pipeline ${linkedPipelineId}`);
-            }
-          }
-
-          // Fallback: detect buyer vs seller from FB form name
           let pipelineKind = "seller";
           if (!linkedPipelineId && formId) {
-            const formName = await fetchFbFormName(formId);
-            if (formName && /buyer|buy|purchase|viewing/i.test(formName)) {
-              pipelineKind = "buyer";
-            }
-            console.log(`Form "${formName}" -> ${pipelineKind} pipeline (auto-detected)`);
+            const formName = await fetchFbFormName(formId, pageId);
+            if (formName && /buyer|buy|purchase|viewing/i.test(formName)) pipelineKind = "buyer";
           }
 
           const { data: pipelines } = await supabase
             .from("pipelines")
             .select("id, kind")
-            .eq("agent_id", agent.agent_id)
+            .eq("agent_id", agentId)
             .order("created_at", { ascending: true });
 
           const pipeline = linkedPipelineId
             ? pipelines?.find((p) => p.id === linkedPipelineId) || pipelines?.[0]
             : pipelines?.find((p) => p.kind === pipelineKind) || pipelines?.[0];
 
-          // Build form_answers from all FB fields
           const formAnswers = (leadData.field_data || [])
             .filter((f: { name: string }) => !["full_name", "first_name", "last_name", "phone_number", "email"].includes(f.name))
             .map((f: { name: string; values: string[] }) => ({
@@ -131,9 +161,8 @@ Deno.serve(async (req) => {
               a: f.values?.[0] || "",
             }));
 
-          // Insert the lead
           const { error } = await supabase.from("leads").insert({
-            agent_id: agent.agent_id,
+            agent_id: agentId,
             name,
             phone,
             email,
@@ -142,13 +171,12 @@ Deno.serve(async (req) => {
             due: true,
             form_answers: formAnswers,
             pipeline_id: pipeline?.id || null,
+            source_page_id: sourcePageRowId,
+            fb_lead_id: String(leadgenId),
           });
 
-          if (error) {
-            console.error(`Failed to insert lead: ${error.message}`);
-          } else {
-            console.log(`Lead created for agent ${agent.display_name}: ${name} (${phone})`);
-          }
+          if (error) console.error(`Failed to insert lead: ${error.message}`);
+          else console.log(`Lead created for agent ${agentName || agentId}: ${name} (${phone})`);
         }
       }
 
@@ -162,36 +190,38 @@ Deno.serve(async (req) => {
   return new Response("Method not allowed", { status: 405, headers: CORS });
 });
 
-async function fetchFbLead(leadgenId: string) {
-  const token = await getFbToken();
-  if (!token) {
-    console.error("No FB_ACCESS_TOKEN configured");
-    return null;
-  }
-  try {
-    const res = await fetch(
-      `https://graph.facebook.com/v21.0/${leadgenId}?access_token=${token}`,
-    );
-    if (!res.ok) {
-      console.error(`FB API error ${res.status}: ${await res.text()}`);
-      return null;
+async function fetchFbLead(leadgenId: string, pageId: string) {
+  const pageToken = await getPageToken(pageId);
+  const tokens = await getTokens();
+  const candidates = pageToken ? [pageToken, ...tokens] : tokens;
+  for (const token of candidates) {
+    try {
+      const res = await fetch(`https://graph.facebook.com/v21.0/${leadgenId}?fields=id,created_time,field_data&access_token=${token}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (!data.error) return data;
+      }
+    } catch (err) {
+      console.error("FB fetch error:", err);
     }
-    return await res.json();
-  } catch (err) {
-    console.error("FB fetch error:", err);
-    return null;
   }
+  return null;
 }
 
-async function fetchFbFormName(formId: string): Promise<string | null> {
-  const token = await getFbToken();
-  if (!token) return null;
-  try {
-    const res = await fetch(`https://graph.facebook.com/v21.0/${formId}?fields=name&access_token=${token}`);
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data.name || null;
-  } catch { return null; }
+async function fetchFbFormName(formId: string, pageId: string): Promise<string | null> {
+  const pageToken = await getPageToken(pageId);
+  const tokens = await getTokens();
+  const candidates = pageToken ? [pageToken, ...tokens] : tokens;
+  for (const token of candidates) {
+    try {
+      const res = await fetch(`https://graph.facebook.com/v21.0/${formId}?fields=name&access_token=${token}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (!data.error) return data.name || null;
+      }
+    } catch { /* try next */ }
+  }
+  return null;
 }
 
 function extractFields(fieldData: Array<{ name: string; values: string[] }>) {
@@ -199,7 +229,6 @@ function extractFields(fieldData: Array<{ name: string; values: string[] }>) {
   for (const f of fieldData) {
     const key = f.name.toLowerCase().replace(/\s+/g, "_");
     out[key] = f.values?.[0] || "";
-    // Build combined name field
     if (key === "full_name") out.name = f.values?.[0] || "";
   }
   if (!out.name && (out.first_name || out.last_name)) {
