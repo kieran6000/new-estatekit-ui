@@ -218,7 +218,7 @@ export default function LeadsPage() {
                   showSnack("Spreadsheet created");
                   window.open(url, "_blank");
                 },
-                onError: () => showSnack("Failed to create spreadsheet"),
+                onError: (err) => showSnack(err.message.includes("service account") ? "Google Sheets not configured — contact admin" : "Failed to create spreadsheet"),
               });
             }}
             disabled={syncSheet.isPending}

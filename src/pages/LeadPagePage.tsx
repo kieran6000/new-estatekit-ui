@@ -24,6 +24,7 @@ import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import ShareIcon from "@mui/icons-material/Share";
 import LockIcon from "@mui/icons-material/Lock";
 import AddIcon from "@mui/icons-material/Add";
+import CloseIcon from "@mui/icons-material/Close";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlineRounded";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
@@ -33,7 +34,6 @@ import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import PlaceIcon from "@mui/icons-material/PlaceOutlined";
 import { usePostHog } from "@posthog/react";
 import { tokens } from "../theme";
-import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import { PIPELINE_KIND_LABEL, type CustomQuestion, type LeadPage, type Pipeline, type PipelineKind, type QuestionType } from "../types";
 import { useAddLeadPage, useLeadPages, useSubmitMockLead, useUpdateLeadPage } from "../hooks/useLeadPages";
 import { usePipelines } from "../hooks/usePipelines";
@@ -72,16 +72,18 @@ export default function LeadPagePage() {
   }
 
   function onLogoChange(file: File | null) {
-    if (!file) return update({ logoDataUrl: null });
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) { showSnack("Image must be under 2 MB"); return; }
     const reader = new FileReader();
-    reader.onload = () => update({ logoDataUrl: reader.result as string });
+    reader.onload = () => { update({ logoDataUrl: reader.result as string }); showSnack("Logo uploaded"); };
     reader.readAsDataURL(file);
   }
 
   function onPhotoChange(file: File | null) {
-    if (!file) return update({ profilePhotoDataUrl: null });
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) { showSnack("Image must be under 2 MB"); return; }
     const reader = new FileReader();
-    reader.onload = () => update({ profilePhotoDataUrl: reader.result as string });
+    reader.onload = () => { update({ profilePhotoDataUrl: reader.result as string }); showSnack("Profile photo uploaded"); };
     reader.readAsDataURL(file);
   }
 
@@ -137,46 +139,56 @@ export default function LeadPagePage() {
             <TextField label="Phone" value={page.phone} onChange={(e) => update({ phone: e.target.value })} fullWidth />
             <Box sx={{ display: "flex", gap: 2 }}>
               <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0.75 }}>
-                <Box
-                  component="label"
-                  sx={{
-                    width: 64, height: 64, borderRadius: "8px", border: `2px dashed ${page.logoDataUrl ? tokens.primary : tokens.divider}`,
-                    display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", overflow: "hidden",
-                    bgcolor: page.logoDataUrl ? "transparent" : tokens.bg, position: "relative",
-                    "&:hover": { borderColor: tokens.primary },
-                  }}
-                >
-                  {page.logoDataUrl ? (
-                    <>
+                <Box sx={{ position: "relative" }}>
+                  <Box
+                    component="label"
+                    sx={{
+                      width: 64, height: 64, borderRadius: "8px", border: `2px dashed ${page.logoDataUrl ? tokens.primary : tokens.divider}`,
+                      display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", overflow: "hidden",
+                      bgcolor: page.logoDataUrl ? "transparent" : tokens.bg,
+                      "&:hover": { borderColor: tokens.primary },
+                    }}
+                  >
+                    {page.logoDataUrl ? (
                       <Box component="img" src={page.logoDataUrl} alt="" sx={{ width: "100%", height: "100%", objectFit: "contain" }} />
-                      <CheckCircleIcon sx={{ position: "absolute", bottom: -4, right: -4, fontSize: 18, color: tokens.primary, bgcolor: "#fff", borderRadius: "50%" }} />
-                    </>
-                  ) : (
-                    <AddIcon sx={{ fontSize: 20, color: "text.disabled" }} />
+                    ) : (
+                      <AddIcon sx={{ fontSize: 20, color: "text.disabled" }} />
+                    )}
+                    <input type="file" hidden accept="image/*" onChange={(e) => onLogoChange(e.target.files?.[0] ?? null)} />
+                  </Box>
+                  {page.logoDataUrl && (
+                    <IconButton size="small" onClick={() => { update({ logoDataUrl: null }); showSnack("Logo removed"); }}
+                      sx={{ position: "absolute", top: -8, right: -8, width: 20, height: 20, bgcolor: "#e0e0e0", "&:hover": { bgcolor: "#bdbdbd" } }}>
+                      <CloseIcon sx={{ fontSize: 12 }} />
+                    </IconButton>
                   )}
-                  <input type="file" hidden accept="image/*" onChange={(e) => onLogoChange(e.target.files?.[0] ?? null)} />
                 </Box>
                 <Typography sx={{ fontSize: 11, color: "text.secondary" }}>Logo</Typography>
               </Box>
               <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0.75 }}>
-                <Box
-                  component="label"
-                  sx={{
-                    width: 64, height: 64, borderRadius: "50%", border: `2px dashed ${page.profilePhotoDataUrl ? tokens.primary : tokens.divider}`,
-                    display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", overflow: "hidden",
-                    bgcolor: page.profilePhotoDataUrl ? "transparent" : tokens.bg, position: "relative",
-                    "&:hover": { borderColor: tokens.primary },
-                  }}
-                >
-                  {page.profilePhotoDataUrl ? (
-                    <>
+                <Box sx={{ position: "relative" }}>
+                  <Box
+                    component="label"
+                    sx={{
+                      width: 64, height: 64, borderRadius: "50%", border: `2px dashed ${page.profilePhotoDataUrl ? tokens.primary : tokens.divider}`,
+                      display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", overflow: "hidden",
+                      bgcolor: page.profilePhotoDataUrl ? "transparent" : tokens.bg,
+                      "&:hover": { borderColor: tokens.primary },
+                    }}
+                  >
+                    {page.profilePhotoDataUrl ? (
                       <Box component="img" src={page.profilePhotoDataUrl} alt="" sx={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                      <CheckCircleIcon sx={{ position: "absolute", bottom: -2, right: -2, fontSize: 18, color: tokens.primary, bgcolor: "#fff", borderRadius: "50%" }} />
-                    </>
-                  ) : (
-                    <AddIcon sx={{ fontSize: 20, color: "text.disabled" }} />
+                    ) : (
+                      <AddIcon sx={{ fontSize: 20, color: "text.disabled" }} />
+                    )}
+                    <input type="file" hidden accept="image/*" onChange={(e) => onPhotoChange(e.target.files?.[0] ?? null)} />
+                  </Box>
+                  {page.profilePhotoDataUrl && (
+                    <IconButton size="small" onClick={() => { update({ profilePhotoDataUrl: null }); showSnack("Photo removed"); }}
+                      sx={{ position: "absolute", top: -4, right: -4, width: 20, height: 20, bgcolor: "#e0e0e0", "&:hover": { bgcolor: "#bdbdbd" } }}>
+                      <CloseIcon sx={{ fontSize: 12 }} />
+                    </IconButton>
                   )}
-                  <input type="file" hidden accept="image/*" onChange={(e) => onPhotoChange(e.target.files?.[0] ?? null)} />
                 </Box>
                 <Typography sx={{ fontSize: 11, color: "text.secondary" }}>Profile photo</Typography>
               </Box>
