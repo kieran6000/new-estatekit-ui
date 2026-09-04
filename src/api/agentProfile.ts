@@ -12,6 +12,7 @@ export interface AgentProfile {
   tier: string;
   adspendBalance: number;
   billingType: "card" | "prepaid";
+  fbAdAccountId: string;
 }
 
 interface ProfileRow {
@@ -26,6 +27,7 @@ interface ProfileRow {
   tier: string;
   adspend_balance: number;
   billing_type: "card" | "prepaid";
+  fb_ad_account_id: string;
 }
 
 function rowToProfile(r: ProfileRow): AgentProfile {
@@ -41,6 +43,7 @@ function rowToProfile(r: ProfileRow): AgentProfile {
     tier: r.tier,
     adspendBalance: r.adspend_balance,
     billingType: r.billing_type,
+    fbAdAccountId: r.fb_ad_account_id,
   };
 }
 

@@ -17,7 +17,7 @@ import UnfoldMoreIcon from "@mui/icons-material/UnfoldMore";
 import { listAgentProfiles, setActiveAgent } from "../api/_client";
 import { useAuth } from "../hooks/useAuth";
 
-export default function AccountSwitcher() {
+export default function AccountSwitcher({ variant = "dark" }: { variant?: "dark" | "light" }) {
   const { user } = useAuth();
   const qc = useQueryClient();
   const [active, setActive] = useState(user?.id ?? "");
@@ -61,19 +61,19 @@ export default function AccountSwitcher() {
           gap: 1,
           width: "100%",
           p: "8px 10px",
-          bgcolor: "#1f2937",
-          border: "1px solid #374151",
+          bgcolor: variant === "dark" ? "#1f2937" : "#f3f4f6",
+          border: variant === "dark" ? "1px solid #374151" : "1px solid #d1d5db",
           borderRadius: "6px",
           cursor: "pointer",
           textAlign: "left",
-          "&:hover": { borderColor: "#4b5563" },
+          "&:hover": { borderColor: variant === "dark" ? "#4b5563" : "#9ca3af" },
         }}
       >
         <Avatar sx={{ width: 28, height: 28, bgcolor: "#6366f1", fontSize: 13, fontWeight: 700 }}>
           {activeInitial}
         </Avatar>
         <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Typography sx={{ fontSize: 13, fontWeight: 600, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <Typography sx={{ fontSize: 13, fontWeight: 600, color: variant === "dark" ? "#fff" : "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {activeName}
           </Typography>
         </Box>

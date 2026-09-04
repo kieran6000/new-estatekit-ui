@@ -21,6 +21,7 @@ import { useAuth } from "../hooks/useAuth";
 import { getMyProfile, upsertProfile } from "../api/agentProfile";
 import { useIsOperator } from "../hooks/useAutomations";
 import { useSnack } from "../hooks/useSnack";
+import AccountSwitcher from "../components/AccountSwitcher";
 
 export default function AccountPage() {
   const { user, signOut } = useAuth();
@@ -87,6 +88,17 @@ export default function AccountPage() {
           <Skeleton variant="rounded" height={400} sx={{ borderRadius: "8px" }} />
         ) : (
           <>
+            {isOperator && (
+              <Card variant="outlined" sx={{ mb: 3 }}>
+                <CardContent sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                    Switch account
+                  </Typography>
+                  <AccountSwitcher variant="light" />
+                </CardContent>
+              </Card>
+            )}
+
             <Card variant="outlined" sx={{ mb: 3 }}>
               <CardContent sx={{ display: "flex", flexDirection: "column", gap: 2.5 }}>
                 <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
