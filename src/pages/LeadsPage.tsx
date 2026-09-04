@@ -9,6 +9,7 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  CircularProgress,
   IconButton,
   InputBase,
   Menu,
@@ -32,7 +33,8 @@ import NotificationsIcon from "@mui/icons-material/Notifications";
 import CallIcon from "@mui/icons-material/Call";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
-import TableChartIcon from "@mui/icons-material/TableChart";
+import RefreshIcon from "@mui/icons-material/Refresh";
+import { useQueryClient } from "@tanstack/react-query";
 import { usePostHog } from "@posthog/react";
 import { tokens } from "../theme";
 import { DEAD_STAGES, PIPELINE_KIND_LABEL, PIPELINE_STAGES, type LeadRow, type OutcomeStep, type Pipeline, type PipelineKind, type Stage } from "../types";
@@ -41,6 +43,9 @@ import { timeAgo } from "../lib/timeAgo";
 import { useLeads, useUpdateLeadStage } from "../hooks/useLeads";
 import { useAddPipeline, usePipelines, useSyncPipelineSheet } from "../hooks/usePipelines";
 import { useSnack } from "../hooks/useSnack";
+import { syncFbLeads } from "../api/leadPages";
+import { getActiveAgentIdSync } from "../api/_client";
+import GSheetIcon from "../components/GSheetIcon";
 import StageMenu from "../components/StageMenu";
 import OutcomeSheet from "../components/OutcomeSheet";
 import FocusCallModal from "../components/FocusCallModal";
@@ -52,10 +57,16 @@ export default function LeadsPage() {
   const updateStage = useUpdateLeadStage();
   const syncSheet = useSyncPipelineSheet();
   const showSnack = useSnack();
+  const qc = useQueryClient();
+
+  const pipelineStorageKey = `estatekit_last_pipeline_${getActiveAgentIdSync() || "me"}`;
 
   const [searchOpen, setSearchOpen] = useState(false);
   const [q, setQ] = useState("");
-  const [pipelineId, setPipelineId] = useState<string | null>(null);
+  const [pipelineId, setPipelineId] = useState<string | null>(() => {
+    try { return localStorage.getItem(pipelineStorageKey); } catch { return null; }
+  });
+  const [reloading, setReloading] = useState(false);
   const [pipelineMenuAnchor, setPipelineMenuAnchor] = useState<HTMLElement | null>(null);
   const [addPipelineOpen, setAddPipelineOpen] = useState(false);
   const [filter, setFilter] = useState<"All" | Stage>("All");
@@ -106,8 +117,22 @@ export default function LeadsPage() {
 
   function selectPipeline(id: string) {
     setPipelineId(id);
+    try { localStorage.setItem(pipelineStorageKey, id); } catch { /* private browsing */ }
     setFilter("All");
     setPipelineMenuAnchor(null);
+  }
+
+  async function reloadLeads() {
+    setReloading(true);
+    try {
+      await syncFbLeads({ agentId: getActiveAgentIdSync() || undefined });
+      await qc.invalidateQueries({ queryKey: ["leads"] });
+    } catch {
+      // still refetch what's in the DB even if the FB pull failed
+      await qc.invalidateQueries({ queryKey: ["leads"] });
+    } finally {
+      setReloading(false);
+    }
   }
 
   if (leadsLoading || pipelinesLoading) return <LeadsPageSkeleton />;
@@ -199,34 +224,34 @@ export default function LeadsPage() {
             setAddPipelineOpen(true);
           }}
         />
-        {activePipeline.sheet_url ? (
-          <Box
-            component="a"
-            href={activePipeline.sheet_url}
-            target="_blank"
-            rel="noopener"
-            sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, fontSize: 13, color: "#0f9d58", fontWeight: 500, textDecoration: "none", "&:hover": { textDecoration: "underline" } }}
-          >
-            <TableChartIcon sx={{ fontSize: 16 }} /> Open spreadsheet
-          </Box>
-        ) : (
-          <Box
-            component="button"
-            onClick={() => {
-              syncSheet.mutate(activePipeline.id, {
-                onSuccess: (url) => {
-                  showSnack("Spreadsheet created");
-                  window.open(url, "_blank");
-                },
-                onError: (err) => showSnack(err.message.includes("service account") ? "Google Sheets not configured — contact admin" : "Failed to create spreadsheet"),
-              });
-            }}
-            disabled={syncSheet.isPending}
-            sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, border: `1px solid ${tokens.divider}`, borderRadius: "4px", bgcolor: "#fff", fontSize: 13, color: "text.secondary", p: "7px 12px", cursor: "pointer", "&:hover": { color: "#0f9d58" }, "&:disabled": { opacity: 0.5, cursor: "default" } }}
-          >
-            <TableChartIcon sx={{ fontSize: 16 }} /> {syncSheet.isPending ? "Creating…" : "Create spreadsheet"}
-          </Box>
-        )}
+        <Box sx={{ flex: 1 }} />
+
+        <IconButton
+          onClick={reloadLeads}
+          disabled={reloading}
+          title="Reload leads"
+          sx={{ border: `1px solid ${tokens.divider}`, borderRadius: "4px", width: 34, height: 34 }}
+        >
+          <RefreshIcon sx={{ fontSize: 18, color: "text.secondary", animation: reloading ? "spin 0.8s linear infinite" : "none", "@keyframes spin": { to: { transform: "rotate(360deg)" } } }} />
+        </IconButton>
+
+        <IconButton
+          onClick={() => {
+            if (activePipeline.sheet_url) {
+              window.open(activePipeline.sheet_url, "_blank");
+              return;
+            }
+            syncSheet.mutate(activePipeline.id, {
+              onSuccess: (url) => { showSnack("Spreadsheet created"); window.open(url, "_blank"); },
+              onError: (err) => showSnack(err.message.includes("service account") ? "Google Sheets not configured — contact admin" : "Failed to create spreadsheet"),
+            });
+          }}
+          disabled={syncSheet.isPending}
+          title={activePipeline.sheet_url ? "Open Google Sheet" : "Create Google Sheet"}
+          sx={{ border: `1px solid ${tokens.divider}`, borderRadius: "4px", width: 34, height: 34 }}
+        >
+          {syncSheet.isPending ? <CircularProgress size={16} /> : <GSheetIcon size={18} />}
+        </IconButton>
       </Box>
 
       <Box sx={{ p: "10px 16px", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
