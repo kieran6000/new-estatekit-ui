@@ -9,6 +9,7 @@ export function usePipelines(opts?: { enabled?: boolean }) {
     queryKey: KEY,
     queryFn: pipelinesApi.listPipelines,
     enabled: opts?.enabled,
+    staleTime: 5 * 60_000,
   });
 }
 

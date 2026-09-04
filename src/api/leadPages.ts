@@ -52,9 +52,10 @@ function rowToPage(r: LeadPageRow): LeadPage {
 }
 
 function patchToRow(
-  p: Partial<Omit<LeadPage, "id" | "pipelineId" | "slug">>,
+  p: Partial<Omit<LeadPage, "id" | "pipelineId">>,
 ): Record<string, unknown> {
   const m: Record<string, unknown> = {};
+  if (p.slug !== undefined) m.slug = p.slug;
   if (p.agentName !== undefined) m.agent_name = p.agentName;
   if (p.name !== undefined) m.name = p.name;
   if (p.headline !== undefined) m.headline = p.headline;
@@ -151,7 +152,7 @@ export async function listFbForms(fbPageId: string): Promise<FbForm[]> {
 
 export async function updateLeadPage(
   id: string,
-  patch: Partial<Omit<LeadPage, "id" | "pipelineId" | "slug">>,
+  patch: Partial<Omit<LeadPage, "id" | "pipelineId">>,
 ): Promise<void> {
   const row = patchToRow(patch);
   if (Object.keys(row).length === 0) return;

@@ -62,7 +62,7 @@ export default function LeadPagePage() {
   const { data: isOperator } = useIsOperator();
   const { data: pages = [], isLoading: pagesLoading } = useLeadPages();
   const { data: pipelines = [], isLoading: pipelinesLoading } = usePipelines();
-  const { data: profile } = useQuery({ queryKey: ["myProfile"], queryFn: getMyProfile });
+  const { data: profile } = useQuery({ queryKey: ["myProfile"], queryFn: getMyProfile, staleTime: 5 * 60_000 });
   const updatePage = useUpdateLeadPage();
   const showSnack = useSnack();
   const posthog = usePostHog();
@@ -355,7 +355,7 @@ export default function LeadPagePage() {
               <PreviewAndSubmit page={page} pipelineKind={pipeline.kind} />
             </Section>
 
-            <ShareSection page={page} />
+            <ShareSection page={page} onUpdateSlug={(slug) => updatePage.mutate({ id: page.id, patch: { slug } })} />
           </Box>
         </Box>
       )}
@@ -403,8 +403,10 @@ function UpgradeNudge({ onUpgrade }: { onUpgrade: () => void }) {
   );
 }
 
-function ShareSection({ page }: { page: LeadPage }) {
+function ShareSection({ page, onUpdateSlug }: { page: LeadPage; onUpdateSlug: (slug: string) => void }) {
   const showSnack = useSnack();
+  const [editingSlug, setEditingSlug] = useState(false);
+  const [slugDraft, setSlugDraft] = useState(page.slug);
   const baseUrl = window.location.origin;
   const shareUrl = `${baseUrl}/p/${page.slug}`;
 
@@ -427,13 +429,44 @@ function ShareSection({ page }: { page: LeadPage }) {
     }
   }
 
+  function saveSlug() {
+    const clean = slugDraft.toLowerCase().trim().replace(/[^a-z0-9-]+/g, "-").replace(/(^-|-$)/g, "");
+    if (clean && clean !== page.slug) {
+      onUpdateSlug(clean);
+      showSnack("URL updated");
+    }
+    setEditingSlug(false);
+  }
+
   return (
     <Section title="Start capturing leads">
       <Typography sx={{ fontSize: 13.5, color: "text.secondary", mt: -1 }}>
         Share this link anywhere — every submission lands straight in your Leads tab.
       </Typography>
       <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-        <TextField value={shareUrl} fullWidth size="small" slotProps={{ input: { readOnly: true } }} />
+        {editingSlug ? (
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, flex: 1 }}>
+            <Typography sx={{ fontSize: 13, color: "text.secondary", whiteSpace: "nowrap" }}>{baseUrl}/p/</Typography>
+            <TextField
+              value={slugDraft}
+              onChange={(e) => setSlugDraft(e.target.value)}
+              size="small"
+              autoFocus
+              onBlur={saveSlug}
+              onKeyDown={(e) => { if (e.key === "Enter") saveSlug(); if (e.key === "Escape") setEditingSlug(false); }}
+              sx={{ flex: 1 }}
+            />
+          </Box>
+        ) : (
+          <TextField
+            value={shareUrl}
+            fullWidth
+            size="small"
+            slotProps={{ input: { readOnly: true } }}
+            onClick={() => { setSlugDraft(page.slug); setEditingSlug(true); }}
+            sx={{ cursor: "pointer" }}
+          />
+        )}
         <Button variant="outlined" startIcon={<ContentCopyIcon fontSize="small" />} onClick={copyLink}>
           Copy
         </Button>
@@ -570,9 +603,25 @@ function AddPageDialog({
                 ))}
               </TextField>
             ) : (
-              <Typography sx={{ fontSize: 13, color: "text.secondary", py: 1 }}>
-                No forms found. Make sure a Facebook page is linked in admin settings.
-              </Typography>
+              <Box sx={{ py: 1 }}>
+                <Typography sx={{ fontSize: 13, color: "text.secondary", mb: 1 }}>
+                  {fbPageId ? "No forms found on this Facebook page." : "No Facebook page linked to this account."}
+                </Typography>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<OpenInNewIcon sx={{ fontSize: 14 }} />}
+                  onClick={() => window.open(
+                    fbPageId
+                      ? `https://www.facebook.com/${fbPageId}/publishing_tools/?section=INSTANT_FORMS`
+                      : "https://business.facebook.com/latest/leads_center/forms",
+                    "_blank"
+                  )}
+                  sx={{ textTransform: "none", fontSize: 12.5 }}
+                >
+                  {fbPageId ? "Create a form in Ads Manager" : "Set up in Ads Manager"}
+                </Button>
+              </Box>
             )}
           </Box>
         )}

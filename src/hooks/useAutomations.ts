@@ -9,6 +9,7 @@ export function useIsOperator() {
   return useQuery({
     queryKey: ["isOperator"],
     queryFn: automationsApi.getIsOperator,
+    staleTime: 30 * 60_000,
   });
 }
 

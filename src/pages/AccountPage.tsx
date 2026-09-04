@@ -12,6 +12,7 @@ import {
   TextField,
   Toolbar,
   Typography,
+  useMediaQuery,
 } from "@mui/material";
 import LogoutIcon from "@mui/icons-material/Logout";
 import AccountBalanceWalletIcon from "@mui/icons-material/AccountBalanceWallet";
@@ -33,6 +34,7 @@ export default function AccountPage() {
   const queryClient = useQueryClient();
   const showSnack = useSnack();
   const { data: isOperator } = useIsOperator();
+  const isDesktop = useMediaQuery("(min-width:900px)");
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const { data: profile, isLoading } = useQuery({
@@ -119,7 +121,7 @@ export default function AccountPage() {
           <Skeleton variant="rounded" height={400} sx={{ borderRadius: "8px" }} />
         ) : (
           <>
-            {isOperator && (
+            {isOperator && !isDesktop && (
               <Card variant="outlined" sx={{ mb: 3 }}>
                 <CardContent sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
                   <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
@@ -235,9 +237,9 @@ export default function AccountPage() {
                   label="Renewal date"
                   type="date"
                   value={form.renewalDate}
-                  onChange={(e) => update("renewalDate", e.target.value)}
+                  onChange={(e) => isOperator && update("renewalDate", e.target.value)}
                   fullWidth
-                  slotProps={{ inputLabel: { shrink: true } }}
+                  slotProps={{ inputLabel: { shrink: true }, input: { readOnly: !isOperator } }}
                 />
 
                 <Box>

@@ -254,10 +254,6 @@ export default function LeadsPage() {
         onStagePick={handleStagePick}
       />
 
-      <Typography variant="caption" sx={{ display: "block", p: "12px 16px", color: "text.disabled" }}>
-        Tap a name to open the lead. Tap CALL, then log what happened — we set the reminder for you.
-      </Typography>
-
       <OutcomeSheet
         lead={outcomeLead}
         pipelineKind={outcomeLeadKind}

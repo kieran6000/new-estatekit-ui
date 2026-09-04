@@ -9,6 +9,7 @@ export function useLeadPages(opts?: { enabled?: boolean }) {
     queryKey: KEY,
     queryFn: leadPagesApi.listLeadPages,
     enabled: opts?.enabled,
+    staleTime: 2 * 60_000,
   });
 }
 
@@ -20,7 +21,7 @@ export function useAddLeadPage() {
       sourceType?: "website" | "fb_form"; fbFormId?: string; fbFormName?: string;
     }) =>
       leadPagesApi.addLeadPage(name, pipelineId, kind, { sourceType, fbFormId, fbFormName }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
+    onSuccess: async () => { await qc.invalidateQueries({ queryKey: KEY }); },
   });
 }
 

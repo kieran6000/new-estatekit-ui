@@ -41,13 +41,22 @@ import estateKitLogoWhite from "../assets/whitelogofull.png";
 
 const RAIL_WIDTH = 240;
 
-function isLightColor(hex: string): boolean {
+function sRGBtoLin(c: number): number {
+  const s = c / 255;
+  return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+}
+
+function relativeLuminance(hex: string): number {
   const c = hex.replace("#", "");
-  if (c.length < 6) return false;
-  const r = parseInt(c.slice(0, 2), 16);
-  const g = parseInt(c.slice(2, 4), 16);
-  const b = parseInt(c.slice(4, 6), 16);
-  return (r * 299 + g * 587 + b * 114) / 1000 > 150;
+  if (c.length < 6) return 0;
+  const r = sRGBtoLin(parseInt(c.slice(0, 2), 16));
+  const g = sRGBtoLin(parseInt(c.slice(2, 4), 16));
+  const b = sRGBtoLin(parseInt(c.slice(4, 6), 16));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+function isLightColor(hex: string): boolean {
+  return relativeLuminance(hex) > 0.179;
 }
 
 function activeSection(pathname: string): string {
@@ -68,18 +77,18 @@ export default function AppShell() {
   const section = activeSection(pathname);
   usePageviewTracking();
   useRealtimeSubscriptions();
-  const { data: profile } = useQuery({ queryKey: ["myProfile"], queryFn: getMyProfile, enabled: !!user });
+  const { data: profile } = useQuery({ queryKey: ["myProfile"], queryFn: getMyProfile, enabled: !!user, staleTime: 5 * 60_000 });
   const initial = useMemo(() => (user?.phone || "?")[0].toUpperCase(), [user]);
 
   const sidebarBg = profile?.sidebarColor || "#111827";
   const light = isLightColor(sidebarBg);
-  const textColor = light ? "#1a1a1a" : "#f1f1f1";
-  const mutedColor = light ? "#71717a" : "#a1a1aa";
-  const dividerColor = light ? "rgba(0,0,0,0.1)" : "rgba(255,255,255,0.08)";
-  const hoverBg = light ? "rgba(0,0,0,0.06)" : "rgba(255,255,255,0.06)";
-  const activeBg = light ? "rgba(0,0,0,0.10)" : "rgba(255,255,255,0.12)";
-  const avatarBg = light ? "rgba(0,0,0,0.12)" : "rgba(255,255,255,0.12)";
-  const sectionLabel = light ? "rgba(0,0,0,0.4)" : "rgba(255,255,255,0.35)";
+  const textColor = light ? "#111827" : "#ffffff";
+  const mutedColor = light ? "#4b5563" : "#d1d5db";
+  const dividerColor = light ? "rgba(0,0,0,0.12)" : "rgba(255,255,255,0.1)";
+  const hoverBg = light ? "rgba(0,0,0,0.06)" : "rgba(255,255,255,0.08)";
+  const activeBg = light ? "rgba(0,0,0,0.10)" : "rgba(255,255,255,0.14)";
+  const avatarBg = light ? "rgba(0,0,0,0.12)" : "rgba(255,255,255,0.15)";
+  const sectionLabel = light ? "rgba(0,0,0,0.45)" : "rgba(255,255,255,0.4)";
   const logoSrc = profile?.sidebarLogoUrl || estateKitLogoWhite;
 
   const SZ = 20;
@@ -196,8 +205,8 @@ export default function AppShell() {
                   <Avatar sx={{ width: 28, height: 28, bgcolor: avatarBg, fontSize: 13, fontWeight: 600, color: textColor }}>{initial}</Avatar>
                 </ListItemIcon>
                 <ListItemText
-                  primary={user?.phone || "Agent"}
-                  slotProps={{ primary: { sx: { fontSize: 13, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } } }}
+                  primary="Settings"
+                  slotProps={{ primary: { sx: { fontSize: 13, fontWeight: 500 } } }}
                 />
                 {section === "account" ? (
                   <AccountCircleIcon sx={{ fontSize: 18, opacity: 0.5 }} />
