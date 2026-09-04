@@ -13,6 +13,8 @@ export interface AgentProfile {
   adspendBalance: number;
   billingType: "card" | "prepaid";
   fbAdAccountId: string;
+  sidebarColor: string;
+  sidebarLogoUrl: string | null;
 }
 
 interface ProfileRow {
@@ -28,6 +30,8 @@ interface ProfileRow {
   adspend_balance: number;
   billing_type: "card" | "prepaid";
   fb_ad_account_id: string;
+  sidebar_color: string;
+  sidebar_logo_url: string | null;
 }
 
 function rowToProfile(r: ProfileRow): AgentProfile {
@@ -44,6 +48,8 @@ function rowToProfile(r: ProfileRow): AgentProfile {
     adspendBalance: r.adspend_balance,
     billingType: r.billing_type,
     fbAdAccountId: r.fb_ad_account_id,
+    sidebarColor: r.sidebar_color || "#111827",
+    sidebarLogoUrl: r.sidebar_logo_url,
   };
 }
 
@@ -70,6 +76,8 @@ export async function upsertProfile(
   if (patch.company !== undefined) row.company = patch.company;
   if (patch.contractPdfUrl !== undefined) row.contract_pdf_url = patch.contractPdfUrl;
   if (patch.renewalDate !== undefined) row.renewal_date = patch.renewalDate;
+  if (patch.sidebarColor !== undefined) row.sidebar_color = patch.sidebarColor;
+  if (patch.sidebarLogoUrl !== undefined) row.sidebar_logo_url = patch.sidebarLogoUrl;
 
   const { error } = await supabase
     .from("agent_profiles")

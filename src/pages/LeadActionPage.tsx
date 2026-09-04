@@ -91,7 +91,6 @@ function LeadActionUI({
 
   const pipelineKind = lead ? pipelineKindFor(lead, pipelines) : "seller";
   const digits = lead?.phone.replace(/\D/g, "") ?? "";
-  const firstName = lead?.name.split(" ")[0] ?? "";
 
   return (
     <Box sx={{ minHeight: "100vh", display: "flex", flexDirection: "column", bgcolor: tokens.bg }}>

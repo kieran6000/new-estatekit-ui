@@ -10,29 +10,38 @@ import {
   ListItemButton,
   ListItemIcon,
   ListItemText,
-  Typography,
   useMediaQuery,
   BottomNavigation,
   BottomNavigationAction,
   Paper,
 } from "@mui/material";
+import { useQuery } from "@tanstack/react-query";
 import ViewListRoundedIcon from "@mui/icons-material/ViewListRounded";
 import HomeRoundedIcon from "@mui/icons-material/HomeRounded";
 import WebRoundedIcon from "@mui/icons-material/WebRounded";
 import SettingsSuggestRoundedIcon from "@mui/icons-material/SettingsSuggestRounded";
 import AccountCircleRoundedIcon from "@mui/icons-material/AccountCircleRounded";
 import DashboardRoundedIcon from "@mui/icons-material/DashboardRounded";
-import CampaignRoundedIcon from "@mui/icons-material/CampaignRounded";
 import { tokens } from "../theme";
 import { useAuth } from "../hooks/useAuth";
 import { useIsOperator } from "../hooks/useAutomations";
 import { usePageviewTracking } from "../hooks/usePageviewTracking";
 import { useRealtimeSubscriptions } from "../hooks/useRealtime";
+import { getMyProfile } from "../api/agentProfile";
 import AccountSwitcher from "./AccountSwitcher";
 import DevTierToggle from "./DevTierToggle";
 import estateKitLogoWhite from "../assets/whitelogofull.png";
 
 const RAIL_WIDTH = 240;
+
+function isLightColor(hex: string): boolean {
+  const c = hex.replace("#", "");
+  if (c.length < 6) return false;
+  const r = parseInt(c.slice(0, 2), 16);
+  const g = parseInt(c.slice(2, 4), 16);
+  const b = parseInt(c.slice(4, 6), 16);
+  return (r * 299 + g * 587 + b * 114) / 1000 > 150;
+}
 
 
 function activeSection(pathname: string): string {
@@ -53,7 +62,17 @@ export default function AppShell() {
   const section = activeSection(pathname);
   usePageviewTracking();
   useRealtimeSubscriptions();
+  const { data: profile } = useQuery({ queryKey: ["myProfile"], queryFn: getMyProfile, enabled: !!user });
   const initial = useMemo(() => (user?.phone || "?")[0].toUpperCase(), [user]);
+
+  const sidebarBg = profile?.sidebarColor || "#111827";
+  const light = isLightColor(sidebarBg);
+  const textColor = light ? "#111827" : "#fff";
+  const mutedColor = light ? "#6b7280" : "#9ca3af";
+  const dividerColor = light ? "#d1d5db" : "#1f2937";
+  const hoverBg = light ? "rgba(0,0,0,0.06)" : "#1f2937";
+  const avatarBg = light ? "#d1d5db" : "#374151";
+  const logoSrc = profile?.sidebarLogoUrl || estateKitLogoWhite;
 
   const mainNav = [
     ...(import.meta.env.DEV ? [{ key: "home", label: "Dashboard", icon: <HomeRoundedIcon sx={{ fontSize: 20 }} />, to: "/home" }] : []),
@@ -83,15 +102,15 @@ export default function AppShell() {
             "& .MuiDrawer-paper": {
               width: RAIL_WIDTH,
               boxSizing: "border-box",
-              bgcolor: "#111827",
-              borderRight: "1px solid #1f2937",
+              bgcolor: sidebarBg,
+              borderRight: `1px solid ${dividerColor}`,
               display: "flex",
               flexDirection: "column",
             },
           }}
         >
           <Box sx={{ px: 2, py: 1.75 }}>
-            <Box component="img" src={estateKitLogoWhite} alt="EstateKit" sx={{ height: 24, display: "block" }} />
+            <Box component="img" src={logoSrc} alt="EstateKit" sx={{ height: 24, display: "block", maxWidth: "100%", objectFit: "contain" }} />
           </Box>
 
           {isOperator && (
@@ -100,7 +119,7 @@ export default function AppShell() {
             </Box>
           )}
 
-          <Divider sx={{ borderColor: "#1f2937", mx: 1.25, my: 0.75 }} />
+          <Divider sx={{ borderColor: dividerColor, mx: 1.25, my: 0.75 }} />
 
           <List disablePadding sx={{ px: 1.25 }}>
             {mainNav.map((item) => {
@@ -114,9 +133,9 @@ export default function AppShell() {
                       borderRadius: "6px",
                       py: 0.75,
                       mb: 0.25,
-                      color: active ? "#fff" : "#9ca3af",
+                      color: active ? textColor : mutedColor,
                       "&.Mui-selected": { bgcolor: "#2563eb", color: "#fff", "&:hover": { bgcolor: "#2563eb" } },
-                      "&:hover": { bgcolor: "#1f2937", color: "#fff" },
+                      "&:hover": { bgcolor: hoverBg, color: textColor },
                     }}
                   >
                     <ListItemIcon sx={{ minWidth: 32, color: "inherit" }}>{item.icon}</ListItemIcon>
@@ -129,7 +148,7 @@ export default function AppShell() {
 
           {toolsNav.length > 0 && (
             <>
-              <Divider sx={{ borderColor: "#1f2937", mx: 1.25, my: 0.75 }} />
+              <Divider sx={{ borderColor: dividerColor, mx: 1.25, my: 0.75 }} />
               <List disablePadding sx={{ px: 1.25 }}>
                 {toolsNav.map((item) => {
                   const active = section === item.key;
@@ -142,9 +161,9 @@ export default function AppShell() {
                           borderRadius: "6px",
                           py: 0.75,
                           mb: 0.25,
-                          color: active ? "#fff" : "#9ca3af",
+                          color: active ? textColor : mutedColor,
                           "&.Mui-selected": { bgcolor: "#2563eb", color: "#fff", "&:hover": { bgcolor: "#2563eb" } },
-                          "&:hover": { bgcolor: "#1f2937", color: "#fff" },
+                          "&:hover": { bgcolor: hoverBg, color: textColor },
                         }}
                       >
                         <ListItemIcon sx={{ minWidth: 32, color: "inherit" }}>{item.icon}</ListItemIcon>
@@ -159,7 +178,7 @@ export default function AppShell() {
 
           <Box sx={{ flex: 1 }} />
 
-          <Divider sx={{ borderColor: "#1f2937" }} />
+          <Divider sx={{ borderColor: dividerColor }} />
           <List disablePadding>
             <ListItem disablePadding>
               <ListItemButton
@@ -168,13 +187,13 @@ export default function AppShell() {
                 sx={{
                   py: 1.25,
                   px: 1.75,
-                  color: section === "account" ? "#fff" : "#9ca3af",
+                  color: section === "account" ? textColor : mutedColor,
                   "&.Mui-selected": { bgcolor: "#2563eb", color: "#fff", "&:hover": { bgcolor: "#2563eb" } },
-                  "&:hover": { bgcolor: "#1f2937", color: "#fff" },
+                  "&:hover": { bgcolor: hoverBg, color: textColor },
                 }}
               >
                 <ListItemIcon sx={{ minWidth: 36, color: "inherit" }}>
-                  <Avatar sx={{ width: 28, height: 28, bgcolor: "#374151", fontSize: 13, fontWeight: 600 }}>{initial}</Avatar>
+                  <Avatar sx={{ width: 28, height: 28, bgcolor: avatarBg, fontSize: 13, fontWeight: 600 }}>{initial}</Avatar>
                 </ListItemIcon>
                 <ListItemText
                   primary={user?.phone || "Agent"}

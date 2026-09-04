@@ -88,14 +88,23 @@ Deno.serve(async (req) => {
           const phone = fields.phone_number || fields.phone || "";
           const email = fields.email || "";
 
-          // Find the agent's default pipeline (seller first, then any)
+          // Detect buyer vs seller from FB form name
+          let pipelineKind = "seller";
+          if (formId) {
+            const formName = await fetchFbFormName(formId);
+            if (formName && /buyer|buy|purchase|viewing/i.test(formName)) {
+              pipelineKind = "buyer";
+            }
+            console.log(`Form "${formName}" → ${pipelineKind} pipeline`);
+          }
+
           const { data: pipelines } = await supabase
             .from("pipelines")
             .select("id, kind")
             .eq("agent_id", agent.agent_id)
             .order("created_at", { ascending: true });
 
-          const pipeline = pipelines?.find((p) => p.kind === "seller") || pipelines?.[0];
+          const pipeline = pipelines?.find((p) => p.kind === pipelineKind) || pipelines?.[0];
 
           // Build form_answers from all FB fields
           const formAnswers = (leadData.field_data || [])
@@ -155,6 +164,17 @@ async function fetchFbLead(leadgenId: string) {
     console.error("FB fetch error:", err);
     return null;
   }
+}
+
+async function fetchFbFormName(formId: string): Promise<string | null> {
+  const token = await getFbToken();
+  if (!token) return null;
+  try {
+    const res = await fetch(`https://graph.facebook.com/v21.0/${formId}?fields=name&access_token=${token}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.name || null;
+  } catch { return null; }
 }
 
 function extractFields(fieldData: Array<{ name: string; values: string[] }>) {
