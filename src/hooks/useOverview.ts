@@ -124,7 +124,7 @@ function buildRows(leads: LeadRow[], dailySpend: Record<string, number>, from: s
 async function loadDailySpend(from: string | null): Promise<Record<string, number>> {
   try {
     const profile = await getMyProfile();
-    if (!profile.fbAdAccountId) return {};
+    if (!profile?.fbAdAccountId) return {};
     return await getFbAdInsights(profile.fbAdAccountId, from);
   } catch {
     return {};
