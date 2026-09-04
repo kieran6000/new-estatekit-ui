@@ -183,7 +183,9 @@ function LeadActionUI({
               bgcolor: "background.paper",
               borderTop: `1px solid ${tokens.divider}`,
               boxShadow: "0 -2px 8px rgba(0,0,0,.06)",
-              maxWidth: "100%",
+              maxWidth: 512,
+              mx: "auto",
+              width: "100%",
             }}
           >
             <Box

@@ -142,7 +142,7 @@ export default function AppShell() {
           }}
         >
           <Box sx={{ px: 2, py: 1.75 }}>
-            <Box component="img" src={logoSrc} alt="EstateKit" sx={{ height: 24, display: "block", maxWidth: "100%", objectFit: "contain" }} />
+            <Box component="img" src={logoSrc} alt="EstateKit" sx={{ height: 24, display: "block", maxWidth: "100%", objectFit: "contain", marginX: "auto" }} />
           </Box>
 
           {isOperator && (
@@ -269,6 +269,45 @@ export default function AppShell() {
       )}
 
       <Box component="main" sx={{ flex: 1, minWidth: 0, pb: isDesktop ? 0 : "56px" }}>
+        {!isDesktop && isManagingOther && (
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              px: 2,
+              py: 0.75,
+              bgcolor: "#fef3c7",
+              borderBottom: "1px solid #f59e0b66",
+            }}
+          >
+            <Typography sx={{ fontSize: 12, fontWeight: 600, color: "#92400e" }}>
+              Managing: {profile?.displayName || "another agent"}
+            </Typography>
+            <Box
+              component="button"
+              onClick={() => {
+                setActiveAgent(null);
+                queryClient.invalidateQueries();
+                window.location.reload();
+              }}
+              sx={{
+                fontSize: 11,
+                fontWeight: 600,
+                color: "#92400e",
+                bgcolor: "transparent",
+                border: "1px solid #f59e0b66",
+                borderRadius: "4px",
+                px: 1,
+                py: 0.25,
+                cursor: "pointer",
+                "&:hover": { bgcolor: "#fde68a" },
+              }}
+            >
+              Switch back
+            </Box>
+          </Box>
+        )}
         <Outlet />
       </Box>
 

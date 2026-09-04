@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   AppBar,
@@ -77,6 +77,38 @@ export default function LeadPagePage() {
 
   const page: LeadPage | undefined = pages.find((p) => p.id === pageId) ?? pages[0];
   const pipeline: Pipeline | undefined = pipelines.find((p) => p.id === page?.pipelineId);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  const [form, setForm] = useState({
+    agentName: "", headline: "", suburb: "", phone: "",
+    nameLabel: "", phoneLabel: "", ctaLabel: "",
+    thankYouHeadline: "", thankYouSubtext: "", fbPixelId: "",
+  });
+
+  useEffect(() => {
+    if (page) {
+      setForm({
+        agentName: page.agentName, headline: page.headline, suburb: page.suburb, phone: page.phone,
+        nameLabel: page.nameLabel, phoneLabel: page.phoneLabel, ctaLabel: page.ctaLabel,
+        thankYouHeadline: page.thankYouHeadline, thankYouSubtext: page.thankYouSubtext, fbPixelId: page.fbPixelId,
+      });
+    }
+  }, [page?.id]);
+
+  const debouncedUpdate = useCallback(
+    (patch: Partial<Omit<LeadPage, "id" | "pipelineId">>) => {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = setTimeout(() => {
+        updatePage.mutate({ id: page!.id, patch });
+      }, 600);
+    },
+    [page?.id, updatePage],
+  );
+
+  function fieldChange(field: keyof typeof form, value: string) {
+    setForm((prev) => ({ ...prev, [field]: value }));
+    debouncedUpdate({ [field]: value });
+  }
 
   if (pagesLoading || pipelinesLoading) return <LeadPagePageSkeleton />;
   if (!page || !pipeline) return (
@@ -218,10 +250,10 @@ export default function LeadPagePage() {
         <Box sx={{ display: "flex", flexDirection: { xs: "column", md: "row" }, gap: 3, p: 2, maxWidth: 1100, mx: "auto" }}>
           <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
             <Section title="Page details">
-              <TextField label="Agent name" value={page.agentName} onChange={(e) => update({ agentName: e.target.value })} fullWidth />
-              <TextField label="Headline" value={page.headline} onChange={(e) => update({ headline: e.target.value })} fullWidth multiline minRows={2} />
-              <TextField label="Suburb / area" value={page.suburb} onChange={(e) => update({ suburb: e.target.value })} fullWidth />
-              <TextField label="Phone" value={page.phone} onChange={(e) => update({ phone: e.target.value })} fullWidth />
+              <TextField label="Agent name" value={form.agentName} onChange={(e) => fieldChange("agentName", e.target.value)} fullWidth />
+              <TextField label="Headline" value={form.headline} onChange={(e) => fieldChange("headline", e.target.value)} fullWidth multiline minRows={2} />
+              <TextField label="Suburb / area" value={form.suburb} onChange={(e) => fieldChange("suburb", e.target.value)} fullWidth />
+              <TextField label="Phone" value={form.phone} onChange={(e) => fieldChange("phone", e.target.value)} fullWidth />
               <Box sx={{ display: "flex", gap: 2 }}>
                 <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0.75 }}>
                   <Box sx={{ position: "relative" }}>
@@ -317,15 +349,15 @@ export default function LeadPagePage() {
             </Section>
 
             <Section title="Submit &amp; thank you">
-              <TextField label="Submit button text" value={page.ctaLabel} onChange={(e) => update({ ctaLabel: e.target.value })} fullWidth />
+              <TextField label="Submit button text" value={form.ctaLabel} onChange={(e) => fieldChange("ctaLabel", e.target.value)} fullWidth />
               <TextField
                 label="Thank-you headline"
-                value={page.thankYouHeadline}
-                onChange={(e) => update({ thankYouHeadline: e.target.value })}
+                value={form.thankYouHeadline}
+                onChange={(e) => fieldChange("thankYouHeadline", e.target.value)}
                 helperText="{name} is replaced with what they typed"
                 fullWidth
               />
-              <TextField label="Thank-you subtext" value={page.thankYouSubtext} onChange={(e) => update({ thankYouSubtext: e.target.value })} fullWidth multiline minRows={2} />
+              <TextField label="Thank-you subtext" value={form.thankYouSubtext} onChange={(e) => fieldChange("thankYouSubtext", e.target.value)} fullWidth multiline minRows={2} />
             </Section>
 
             {isOperator && (
@@ -333,12 +365,12 @@ export default function LeadPagePage() {
                 <TextField
                   label="Facebook Pixel ID"
                   placeholder="Paste pixel ID or the full code snippet from Facebook"
-                  value={page.fbPixelId}
+                  value={form.fbPixelId}
                   onChange={(e) => {
                     let val = e.target.value;
                     const match = val.match(/fbq\s*\(\s*['"]init['"]\s*,\s*['"](\d+)['"]\s*\)/);
                     if (match) val = match[1];
-                    update({ fbPixelId: val });
+                    fieldChange("fbPixelId", val);
                   }}
                   helperText="Paste just the ID (e.g. 1234567890123456) or the full pixel code — we'll extract the ID automatically"
                   fullWidth
@@ -354,8 +386,8 @@ export default function LeadPagePage() {
                 Name, phone and email are always collected last, in that order, and can't be reordered or removed. Every other
                 question — including the address and timeline ones every page starts with — can be edited, reordered or removed.
               </Typography>
-              <TextField label="Name field question" value={page.nameLabel} onChange={(e) => update({ nameLabel: e.target.value })} fullWidth />
-              <TextField label="Phone field question" value={page.phoneLabel} onChange={(e) => update({ phoneLabel: e.target.value })} fullWidth />
+              <TextField label="Name field question" value={form.nameLabel} onChange={(e) => fieldChange("nameLabel", e.target.value)} fullWidth />
+              <TextField label="Phone field question" value={form.phoneLabel} onChange={(e) => fieldChange("phoneLabel", e.target.value)} fullWidth />
 
               <CustomQuestionEditor pageId={page.id} tier={tier} onUpgrade={() => {
                 posthog.capture("upgrade_clicked", { source: "lead_page_custom_questions" });
@@ -379,7 +411,7 @@ export default function LeadPagePage() {
                 </Typography>
               }
             >
-              <PreviewAndSubmit page={page} pipelineKind={pipeline.kind} />
+              <PreviewAndSubmit page={{ ...page, ...form }} pipelineKind={pipeline.kind} />
             </Section>
 
             <ShareSection page={page} onUpdateSlug={(slug) => updatePage.mutate({ id: page.id, patch: { slug } })} />
