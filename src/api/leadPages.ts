@@ -1,4 +1,4 @@
-import { supabase, getCurrentUserId, getActiveAgentId } from "./_client";
+import { supabase, getActiveAgentId } from "./_client";
 import type { FormAnswer, LeadPage, PipelineKind } from "../types";
 
 interface LeadPageRow {
