@@ -58,6 +58,7 @@ export default function AppShell() {
   const mainNav = [
     ...(import.meta.env.DEV ? [{ key: "home", label: "Dashboard", icon: <HomeRoundedIcon sx={{ fontSize: 20 }} />, to: "/home" }] : []),
     { key: "leads", label: "Leads", icon: <ViewListRoundedIcon sx={{ fontSize: 20 }} />, to: "/leads" },
+    ...(isOperator ? [{ key: "overview", label: "Overview", icon: <DashboardRoundedIcon sx={{ fontSize: 20 }} />, to: "/overview" }] : []),
     { key: "mypage", label: "Sites", icon: <WebRoundedIcon sx={{ fontSize: 20 }} />, to: "/lead-page" },
   ];
 

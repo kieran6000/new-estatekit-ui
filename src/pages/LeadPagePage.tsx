@@ -45,12 +45,14 @@ import {
   useUpdateCustomQuestion,
 } from "../hooks/useCustomQuestions";
 import { useTier } from "../hooks/useTier";
+import { useIsOperator } from "../hooks/useAutomations";
 import { useSnack } from "../hooks/useSnack";
 import LeadCaptureForm from "../components/LeadCaptureForm";
 
 export default function LeadPagePage() {
   const navigate = useNavigate();
   const { tier } = useTier();
+  const { data: isOperator } = useIsOperator();
   const { data: pages = [], isLoading: pagesLoading } = useLeadPages();
   const { data: pipelines = [], isLoading: pipelinesLoading } = usePipelines();
   const updatePage = useUpdateLeadPage();
@@ -243,24 +245,26 @@ export default function LeadPagePage() {
             <TextField label="Thank-you subtext" value={page.thankYouSubtext} onChange={(e) => update({ thankYouSubtext: e.target.value })} fullWidth multiline minRows={2} />
           </Section>
 
-          <Section title="Tracking">
-            <TextField
-              label="Facebook Pixel ID"
-              placeholder="Paste pixel ID or the full code snippet from Facebook"
-              value={page.fbPixelId}
-              onChange={(e) => {
-                let val = e.target.value;
-                const match = val.match(/fbq\s*\(\s*['"]init['"]\s*,\s*['"](\d+)['"]\s*\)/);
-                if (match) val = match[1];
-                update({ fbPixelId: val });
-              }}
-              helperText="Paste just the ID (e.g. 1234567890123456) or the full pixel code — we'll extract the ID automatically"
-              fullWidth
-              multiline
-              minRows={1}
-              maxRows={3}
-            />
-          </Section>
+          {isOperator && (
+            <Section title="Tracking">
+              <TextField
+                label="Facebook Pixel ID"
+                placeholder="Paste pixel ID or the full code snippet from Facebook"
+                value={page.fbPixelId}
+                onChange={(e) => {
+                  let val = e.target.value;
+                  const match = val.match(/fbq\s*\(\s*['"]init['"]\s*,\s*['"](\d+)['"]\s*\)/);
+                  if (match) val = match[1];
+                  update({ fbPixelId: val });
+                }}
+                helperText="Paste just the ID (e.g. 1234567890123456) or the full pixel code — we'll extract the ID automatically"
+                fullWidth
+                multiline
+                minRows={1}
+                maxRows={3}
+              />
+            </Section>
+          )}
 
           <Section title="Form questions">
             <Typography sx={{ fontSize: 12, color: "text.secondary" }}>

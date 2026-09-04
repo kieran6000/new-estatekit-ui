@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Box, Paper, Skeleton, TextField, Typography } from "@mui/material";
+import { Box, Skeleton, Typography } from "@mui/material";
 import CallIcon from "@mui/icons-material/Call";
 import WhatsAppIcon from "@mui/icons-material/WhatsApp";
+import LinkOffIcon from "@mui/icons-material/LinkOff";
 import { tokens } from "../theme";
 import { useAuth } from "../hooks/useAuth";
 import { useLeadWithStatus, useUpdateLeadNote } from "../hooks/useLeads";
 import { usePipelines } from "../hooks/usePipelines";
-import { useLeadPages } from "../hooks/useLeadPages";
 import { useSnack } from "../hooks/useSnack";
 import { pipelineKindFor } from "../lib/stageLogic";
 import { getLeadByToken } from "../api/leadActions";
@@ -59,7 +59,6 @@ function LeadActionUI({
   canEdit: boolean;
 }) {
   const { data: pipelines = [] } = usePipelines({ enabled: canEdit });
-  const { data: pages = [] } = useLeadPages({ enabled: canEdit });
   const updateNote = useUpdateLeadNote();
   const showSnack = useSnack();
 
@@ -91,128 +90,95 @@ function LeadActionUI({
   }
 
   const pipelineKind = lead ? pipelineKindFor(lead, pipelines) : "seller";
-  const sourcePage = lead?.source_page_id
-    ? pages.find((p) => p.id === lead.source_page_id)
-    : undefined;
   const digits = lead?.phone.replace(/\D/g, "") ?? "";
+  const firstName = lead?.name.split(" ")[0] ?? "";
 
   return (
-    <Box
-      sx={{
-        height: "100vh",
-        display: "flex",
-        flexDirection: "column",
-        bgcolor: tokens.bg,
-      }}
-    >
-      <Box
-        sx={{
-          flexShrink: 0,
-          display: "flex",
-          alignItems: "center",
-          p: "10px 16px",
-          bgcolor: "background.paper",
-          borderBottom: `1px solid ${tokens.divider}`,
-        }}
-      >
-        <Box
-          component="img"
-          src={estateKitLogo}
-          alt="EstateKit"
-          sx={{ height: 22 }}
-        />
+    <Box sx={{ minHeight: "100vh", display: "flex", flexDirection: "column", bgcolor: tokens.bg }}>
+      <Box sx={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", p: "12px 16px", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
+        <Box component="img" src={estateKitLogo} alt="EstateKit" sx={{ height: 22 }} />
       </Box>
 
       {isLoading ? (
-        <LeadActionSkeleton />
+        <Box sx={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", p: 2 }}>
+          <Box sx={{ width: "100%", maxWidth: 400 }}>
+            <Skeleton variant="rounded" height={200} sx={{ borderRadius: "12px" }} />
+          </Box>
+        </Box>
       ) : !lead ? (
-        <Box sx={{ p: 4 }}>
-          <Typography color="text.secondary">
-            This link isn't valid or has expired.
-          </Typography>
+        <Box sx={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", p: 3 }}>
+          <Box sx={{ textAlign: "center", maxWidth: 320 }}>
+            <LinkOffIcon sx={{ fontSize: 48, color: "text.disabled", mb: 2 }} />
+            <Typography sx={{ fontSize: 18, fontWeight: 600, mb: 1 }}>Link not valid</Typography>
+            <Typography sx={{ fontSize: 14, color: "text.secondary", lineHeight: 1.6 }}>
+              This link has expired or isn't valid. Ask your agent for a new one.
+            </Typography>
+          </Box>
         </Box>
       ) : (
         <>
-          <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
-            <Box sx={{ maxWidth: 720, mx: "auto", pb: 3 }}>
-              <Typography sx={{ fontSize: 19, fontWeight: 600, m: "16px 16px 0" }}>
-                {lead.name}
-              </Typography>
+          <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", justifyContent: "center", p: 2 }}>
+            <Box sx={{ width: "100%", maxWidth: 480 }}>
+              <Box sx={{ bgcolor: "background.paper", borderRadius: "12px", border: `1px solid ${tokens.divider}`, overflow: "hidden" }}>
+                <Box sx={{ bgcolor: tokens.primary, color: "#fff", p: "20px 20px 16px", textAlign: "center" }}>
+                  <Typography sx={{ fontSize: 22, fontWeight: 700 }}>{lead.name}</Typography>
+                  <Typography sx={{ fontSize: 14, opacity: 0.85, mt: 0.5 }}>{lead.phone}</Typography>
+                </Box>
 
-              <Section title="Contact">
-                <Row k="Phone" v={lead.phone} />
-                <Row k="Email" v={lead.email || ""} />
-                <Row k="Stage" v={lead.stage} />
-                <Row k="Next" v={lead.next_label} />
-                <Row
-                  k="Came from"
-                  v={sourcePage ? sourcePage.name : "Added manually"}
-                />
-              </Section>
+                <Box sx={{ p: "12px 16px" }}>
+                  {lead.email && <InfoRow label="Email" value={lead.email} />}
+                  <InfoRow label="Stage" value={lead.stage} />
+                  {lead.next_label && lead.next_label !== "—" && <InfoRow label="Next" value={lead.next_label} />}
+                  {lead.form_answers.length > 0 && lead.form_answers.map((r, i) => (
+                    <InfoRow key={i} label={r.q} value={r.a} />
+                  ))}
+                </Box>
 
-              <Section title="From their form">
-                {lead.form_answers.length ? (
-                  lead.form_answers.map((r, i) => (
-                    <Row key={i} k={r.q} v={r.a} />
-                  ))
-                ) : (
-                  <Row k="" v="No answers captured." />
+                {canEdit && (
+                  <Box sx={{ borderTop: `1px solid ${tokens.divider}`, p: "12px 16px" }}>
+                    <Typography sx={{ fontSize: 11, fontWeight: 600, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.05em", mb: 0.75 }}>Notes</Typography>
+                    <Box
+                      component="textarea"
+                      value={note}
+                      onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => onNoteChange(e.target.value)}
+                      onBlur={() => saveNote(note)}
+                      placeholder="Add a note…"
+                      rows={2}
+                      sx={{
+                        width: "100%", border: `1px solid ${tokens.divider}`, borderRadius: "6px",
+                        p: "8px 10px", fontSize: 13, fontFamily: "inherit", resize: "vertical",
+                        "&:focus": { outline: `2px solid ${tokens.primary}`, borderColor: "transparent" },
+                      }}
+                    />
+                    {saveState && <Typography sx={{ fontSize: 11, color: "text.disabled", mt: 0.5 }}>{saveState}</Typography>}
+                  </Box>
                 )}
-              </Section>
+              </Box>
 
               {canEdit && (
-                <Section title="Notes">
-                  <TextField
-                    multiline
-                    minRows={4}
-                    fullWidth
-                    placeholder="Add a note about this lead…"
-                    value={note}
-                    onChange={(e) => onNoteChange(e.target.value)}
-                    onBlur={() => saveNote(note)}
-                    sx={{ mx: 2, mt: 1, mb: 0.5, width: "calc(100% - 32px)" }}
-                  />
-                  <Typography
-                    variant="caption"
-                    sx={{
-                      color: "text.disabled",
-                      px: 2,
-                      pb: 1.75,
-                      display: "block",
-                      height: 18,
-                    }}
-                  >
-                    {saveState}
-                  </Typography>
-                </Section>
+                <Typography
+                  component="a"
+                  href="/leads"
+                  sx={{ display: "block", textAlign: "center", mt: 2, fontSize: 13, color: "text.disabled", textDecoration: "none", "&:hover": { color: tokens.primary } }}
+                >
+                  Go to dashboard
+                </Typography>
               )}
-
-              <Typography
-                component="a"
-                href="/leads"
-                sx={{
-                  display: "block",
-                  textAlign: "center",
-                  mt: 2,
-                  fontSize: 13,
-                  color: "text.disabled",
-                  textDecoration: "none",
-                  "&:hover": { color: tokens.primary },
-                }}
-              >
-                Go to dashboard
-              </Typography>
             </Box>
           </Box>
 
           <Box
             sx={{
               flexShrink: 0,
+              position: "sticky",
+              bottom: 0,
               display: "flex",
-              gap: 1.25,
+              gap: 1,
               p: "12px 16px",
               bgcolor: "background.paper",
               borderTop: `1px solid ${tokens.divider}`,
+              boxShadow: "0 -2px 8px rgba(0,0,0,.06)",
+              maxWidth: "100%",
             }}
           >
             <Box
@@ -221,22 +187,10 @@ function LeadActionUI({
               target="_blank"
               rel="noopener"
               sx={{
-                flex: 1,
-                bgcolor: "#fff",
-                color: "#25D366",
-                border: `1px solid ${tokens.divider}`,
-                borderRadius: "4px",
-                p: "14px",
-                fontWeight: 500,
-                fontSize: 14,
-                textTransform: "uppercase",
-                textAlign: "center",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 1,
-                textDecoration: "none",
-                "&:hover": { bgcolor: tokens.hover },
+                flex: 1, bgcolor: "#fff", color: "#25D366", border: `1px solid ${tokens.divider}`,
+                borderRadius: "8px", p: "14px", fontWeight: 600, fontSize: 14,
+                textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center",
+                gap: 1, textDecoration: "none", "&:hover": { bgcolor: "#f0fdf4" },
               }}
             >
               <WhatsAppIcon fontSize="small" /> WhatsApp
@@ -246,21 +200,10 @@ function LeadActionUI({
               href={`tel:${digits}`}
               onClick={() => canEdit && setTimeout(() => setOutcomeOpen(true), 150)}
               sx={{
-                flex: 1,
-                bgcolor: tokens.green,
-                color: "#fff",
-                borderRadius: "4px",
-                p: "14px",
-                fontWeight: 500,
-                fontSize: 14,
-                textTransform: "uppercase",
-                textAlign: "center",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 1,
-                textDecoration: "none",
-                "&:hover": { bgcolor: tokens.greenDark },
+                flex: 1, bgcolor: tokens.green, color: "#fff",
+                borderRadius: "8px", p: "14px", fontWeight: 600, fontSize: 14,
+                textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center",
+                gap: 1, textDecoration: "none", "&:hover": { bgcolor: tokens.greenDark },
               }}
             >
               <CallIcon fontSize="small" /> Call
@@ -282,68 +225,11 @@ function LeadActionUI({
   );
 }
 
-function LeadActionSkeleton() {
+function InfoRow({ label, value }: { label: string; value: string }) {
   return (
-    <Box sx={{ maxWidth: 720, mx: "auto", pb: 3, p: 2 }}>
-      <Skeleton variant="text" width={180} height={32} sx={{ mb: 1 }} />
-      <Skeleton
-        variant="rounded"
-        height={64}
-        sx={{ mb: 1.5, borderRadius: "6px" }}
-      />
-      <Skeleton
-        variant="rounded"
-        height={140}
-        sx={{ mb: 1.5, borderRadius: "6px" }}
-      />
-      <Skeleton variant="rounded" height={100} sx={{ borderRadius: "6px" }} />
-    </Box>
-  );
-}
-
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <Paper variant="outlined" sx={{ mt: 1.5, mx: 2, borderRadius: "6px" }}>
-      <Typography
-        sx={{
-          fontSize: 12,
-          fontWeight: 500,
-          color: "text.secondary",
-          textTransform: "uppercase",
-          letterSpacing: "0.06em",
-          p: "14px 16px 4px",
-        }}
-      >
-        {title}
-      </Typography>
-      {children}
-    </Paper>
-  );
-}
-
-function Row({ k, v }: { k: string; v: string }) {
-  return (
-    <Box
-      sx={{
-        display: "flex",
-        p: "10px 16px",
-        borderTop: `1px solid ${tokens.divider2}`,
-        gap: 1.5,
-        "&:first-of-type": { borderTop: 0 },
-      }}
-    >
-      {k && (
-        <Typography sx={{ color: "text.secondary", fontSize: 13, flex: "0 0 46%" }}>
-          {k}
-        </Typography>
-      )}
-      <Typography sx={{ fontSize: 14, flex: 1 }}>{v}</Typography>
+    <Box sx={{ display: "flex", py: "8px", borderBottom: `1px solid ${tokens.divider2}`, gap: 1, "&:last-child": { borderBottom: 0 } }}>
+      <Typography sx={{ color: "text.secondary", fontSize: 13, flex: "0 0 40%", wordBreak: "break-word" }}>{label}</Typography>
+      <Typography sx={{ fontSize: 14, flex: 1, wordBreak: "break-word" }}>{value}</Typography>
     </Box>
   );
 }

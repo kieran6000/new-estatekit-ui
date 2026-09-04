@@ -28,6 +28,7 @@ export function SnackProvider({ children }: { children: ReactNode }) {
         onClose={() => setOpen(false)}
         message={state?.msg}
         anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+        sx={{ mb: { xs: "56px", md: 0 } }}
         action={
           state?.undo ? (
             <Button

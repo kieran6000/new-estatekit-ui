@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { Box, CircularProgress } from "@mui/material";
 import { useAuth } from "./hooks/useAuth";
+import { useIsOperator } from "./hooks/useAutomations";
 import AppShell from "./components/AppShell";
 import LoginPage from "./pages/LoginPage";
 import LeadsPage from "./pages/LeadsPage";
@@ -31,6 +32,13 @@ function Splash() {
   );
 }
 
+function OperatorOnly({ children }: { children: React.ReactNode }) {
+  const { data: isOperator, isLoading } = useIsOperator();
+  if (isLoading) return <Splash />;
+  if (!isOperator) return <Navigate to="/leads" replace />;
+  return <>{children}</>;
+}
+
 export default function App() {
   const { user, loading } = useAuth();
 
@@ -52,7 +60,7 @@ export default function App() {
           <Route element={<AppShell />}>
             <Route path="/leads" element={<LeadsPage />} />
             <Route path="/leads/:id" element={<LeadDetailPage />} />
-            <Route path="/overview" element={<OverviewPage />} />
+            <Route path="/overview" element={<OperatorOnly><OverviewPage /></OperatorOnly>} />
             {import.meta.env.DEV && <Route path="/home" element={<HomePage />} />}
             <Route path="/lead-page" element={<LeadPagePage />} />
             <Route path="/upgrade" element={<UpgradePage />} />
