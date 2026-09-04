@@ -85,6 +85,29 @@ export default function LeadDetailPage() {
 
       <Box sx={{ maxWidth: 720, mx: "auto", pb: 3 }}>
         <Box sx={{ display: "flex", gap: 1.25, m: "14px 16px 0" }}>
+          <StageMenu current={lead.stage} stages={stagesForPipeline} onPick={handleStagePick}>
+            {(open) => (
+              <Box
+                component="button"
+                onClick={open}
+                sx={{
+                  flex: 1,
+                  bgcolor: "#fff",
+                  color: tokens.primary,
+                  border: `1px solid ${tokens.divider}`,
+                  borderRadius: "4px",
+                  p: "14px",
+                  fontWeight: 500,
+                  fontSize: 14,
+                  textTransform: "uppercase",
+                  cursor: "pointer",
+                  "&:hover": { bgcolor: tokens.primaryBg },
+                }}
+              >
+                Change stage
+              </Box>
+            )}
+          </StageMenu>
           <Box
             component="a"
             href={`tel:${lead.phone.replace(/\s/g, "")}`}
@@ -109,29 +132,6 @@ export default function LeadDetailPage() {
           >
             <CallIcon fontSize="small" /> Call
           </Box>
-          <StageMenu current={lead.stage} stages={stagesForPipeline} onPick={handleStagePick}>
-            {(open) => (
-              <Box
-                component="button"
-                onClick={open}
-                sx={{
-                  flex: 1,
-                  bgcolor: "#fff",
-                  color: tokens.primary,
-                  border: `1px solid ${tokens.divider}`,
-                  borderRadius: "4px",
-                  p: "14px",
-                  fontWeight: 500,
-                  fontSize: 14,
-                  textTransform: "uppercase",
-                  cursor: "pointer",
-                  "&:hover": { bgcolor: tokens.primaryBg },
-                }}
-              >
-                Change stage
-              </Box>
-            )}
-          </StageMenu>
         </Box>
 
         <Section title="Contact">

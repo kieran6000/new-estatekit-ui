@@ -34,6 +34,14 @@ export function useUpdateLeadPage() {
   });
 }
 
+export function useDeleteLeadPage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => leadPagesApi.deleteLeadPage(id),
+    onSuccess: async () => { await qc.invalidateQueries({ queryKey: KEY }); },
+  });
+}
+
 export function useSubmitMockLead() {
   return useMutation({
     mutationFn: async ({

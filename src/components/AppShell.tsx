@@ -16,7 +16,7 @@ import {
   BottomNavigationAction,
   Paper,
 } from "@mui/material";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import ViewListOutlinedIcon from "@mui/icons-material/ViewListOutlined";
 import ViewListIcon from "@mui/icons-material/ViewList";
 import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
@@ -35,6 +35,7 @@ import { useIsOperator } from "../hooks/useAutomations";
 import { usePageviewTracking } from "../hooks/usePageviewTracking";
 import { useRealtimeSubscriptions } from "../hooks/useRealtime";
 import { getMyProfile } from "../api/agentProfile";
+import { getActiveAgentIdSync, setActiveAgent } from "../api/_client";
 import AccountSwitcher from "./AccountSwitcher";
 import DevTierToggle from "./DevTierToggle";
 import estateKitLogoWhite from "../assets/whitelogofull.png";
@@ -73,8 +74,11 @@ export default function AppShell() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const { data: isOperator } = useIsOperator();
   const section = activeSection(pathname);
+  const activeAgentId = getActiveAgentIdSync();
+  const isManagingOther = !!activeAgentId && activeAgentId !== user?.id;
   usePageviewTracking();
   useRealtimeSubscriptions();
   const { data: profile } = useQuery({ queryKey: ["myProfile"], queryFn: getMyProfile, enabled: !!user, staleTime: 5 * 60_000 });
@@ -144,6 +148,51 @@ export default function AppShell() {
           {isOperator && (
             <Box sx={{ px: 1.25 }}>
               <AccountSwitcher />
+            </Box>
+          )}
+
+          {isManagingOther && (
+            <Box
+              sx={{
+                mx: 1.25,
+                mt: 0.75,
+                px: 1.25,
+                py: 0.75,
+                bgcolor: "#f59e0b22",
+                border: "1px solid #f59e0b66",
+                borderRadius: "6px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 1,
+              }}
+            >
+              <Typography sx={{ fontSize: 11, fontWeight: 600, color: "#f59e0b", lineHeight: 1.3 }}>
+                Managing: {profile?.displayName || "another agent"}
+              </Typography>
+              <Box
+                component="button"
+                onClick={() => {
+                  setActiveAgent(null);
+                  queryClient.invalidateQueries();
+                  window.location.reload();
+                }}
+                sx={{
+                  fontSize: 10,
+                  fontWeight: 600,
+                  color: "#f59e0b",
+                  bgcolor: "transparent",
+                  border: "1px solid #f59e0b66",
+                  borderRadius: "4px",
+                  px: 0.75,
+                  py: 0.25,
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                  "&:hover": { bgcolor: "#f59e0b22" },
+                }}
+              >
+                Back
+              </Box>
             </Box>
           )}
 

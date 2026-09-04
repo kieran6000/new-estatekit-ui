@@ -117,7 +117,7 @@ export async function addLeadPage(
   _kind: PipelineKind,
   opts?: { sourceType?: "website" | "fb_form"; fbFormId?: string; fbFormName?: string },
 ): Promise<LeadPage> {
-  const agentId = await getCurrentUserId();
+  const agentId = await getActiveAgentId();
   const slug = name
     .toLowerCase()
     .trim()
@@ -167,6 +167,11 @@ export async function updateLeadPage(
     .from("lead_pages")
     .update(row)
     .eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+export async function deleteLeadPage(id: string): Promise<void> {
+  const { error } = await supabase.from("lead_pages").delete().eq("id", id);
   if (error) throw new Error(error.message);
 }
 

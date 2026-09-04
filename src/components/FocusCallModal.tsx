@@ -76,7 +76,7 @@ export default function FocusCallModal({
         bgcolor: { xs: "#263238", sm: "rgba(0,0,0,.6)" },
       }}
     >
-    <Box sx={{ width: "100%", maxWidth: { xs: "100%", sm: 560 }, bgcolor: "#263238", display: "flex", flexDirection: "column", color: "#fff" }}>
+    <Box sx={{ width: "100%", maxWidth: { xs: "100%", sm: 560 }, maxHeight: { sm: "85vh" }, borderRadius: { sm: "12px" }, my: { sm: "auto" }, bgcolor: "#263238", display: "flex", flexDirection: "column", color: "#fff", overflow: "hidden" }}>
       <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, p: "12px 12px 12px 16px", bgcolor: "#1c272c", flexShrink: 0 }}>
         <Box sx={{ flex: 1, maxWidth: 280 }}>
           <LinearProgress

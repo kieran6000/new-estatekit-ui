@@ -39,7 +39,7 @@ import PlaceIcon from "@mui/icons-material/PlaceOutlined";
 import { usePostHog } from "@posthog/react";
 import { tokens } from "../theme";
 import { PIPELINE_KIND_LABEL, type CustomQuestion, type LeadPage, type Pipeline, type PipelineKind, type QuestionType } from "../types";
-import { useAddLeadPage, useLeadPages, useSubmitMockLead, useUpdateLeadPage } from "../hooks/useLeadPages";
+import { useAddLeadPage, useDeleteLeadPage, useLeadPages, useSubmitMockLead, useUpdateLeadPage } from "../hooks/useLeadPages";
 import { usePipelines } from "../hooks/usePipelines";
 import { listFbForms, type FbForm } from "../api/leadPages";
 import { getMyProfile } from "../api/agentProfile";
@@ -64,12 +64,16 @@ export default function LeadPagePage() {
   const { data: pipelines = [], isLoading: pipelinesLoading } = usePipelines();
   const { data: profile } = useQuery({ queryKey: ["myProfile"], queryFn: getMyProfile, staleTime: 5 * 60_000 });
   const updatePage = useUpdateLeadPage();
+  const deletePage = useDeleteLeadPage();
   const showSnack = useSnack();
   const posthog = usePostHog();
 
   const [pageId, setPageId] = useState<string | null>(null);
   const [pageMenuAnchor, setPageMenuAnchor] = useState<HTMLElement | null>(null);
   const [addPageOpen, setAddPageOpen] = useState(false);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [renameDialogId, setRenameDialogId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
 
   const page: LeadPage | undefined = pages.find((p) => p.id === pageId) ?? pages[0];
   const pipeline: Pipeline | undefined = pipelines.find((p) => p.id === page?.pipelineId);
@@ -151,7 +155,30 @@ export default function LeadPagePage() {
               sx={{ display: "flex", alignItems: "center", gap: 1 }}
             >
               {p.sourceType === "fb_form" ? <FacebookIcon sx={{ fontSize: 16, color: "#1877f2" }} /> : <LanguageIcon sx={{ fontSize: 16, color: "text.secondary" }} />}
-              {p.name}
+              <Box sx={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</Box>
+              <IconButton
+                size="small"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setPageMenuAnchor(null);
+                  setRenameDraft(p.name);
+                  setRenameDialogId(p.id);
+                }}
+                sx={{ ml: 0.5, p: 0.5 }}
+              >
+                <EditOutlinedIcon sx={{ fontSize: 15 }} />
+              </IconButton>
+              <IconButton
+                size="small"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setPageMenuAnchor(null);
+                  setDeleteConfirmId(p.id);
+                }}
+                sx={{ p: 0.5 }}
+              >
+                <DeleteOutlineIcon sx={{ fontSize: 15 }} />
+              </IconButton>
             </MenuItem>
           ))}
           <MenuItem
@@ -370,6 +397,68 @@ export default function LeadPagePage() {
           showSnack("Page created");
         }}
       />
+
+      <Dialog open={!!deleteConfirmId} onClose={() => setDeleteConfirmId(null)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontSize: 16, fontWeight: 600 }}>Delete this page?</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ fontSize: 14, color: "text.secondary" }}>
+            This will permanently remove the page and its URL. Leads already captured won't be affected.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteConfirmId(null)}>Cancel</Button>
+          <Button
+            color="error"
+            variant="contained"
+            onClick={async () => {
+              if (!deleteConfirmId) return;
+              await deletePage.mutateAsync(deleteConfirmId);
+              if (pageId === deleteConfirmId) setPageId(null);
+              setDeleteConfirmId(null);
+              showSnack("Page deleted");
+            }}
+          >
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={!!renameDialogId} onClose={() => setRenameDialogId(null)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontSize: 16, fontWeight: 600 }}>Rename page</DialogTitle>
+        <DialogContent>
+          <TextField
+            value={renameDraft}
+            onChange={(e) => setRenameDraft(e.target.value)}
+            fullWidth
+            autoFocus
+            label="Page name"
+            sx={{ mt: 1 }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && renameDraft.trim() && renameDialogId) {
+                updatePage.mutate({ id: renameDialogId, patch: { name: renameDraft.trim() } });
+                setRenameDialogId(null);
+                showSnack("Page renamed");
+              }
+            }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRenameDialogId(null)}>Cancel</Button>
+          <Button
+            variant="contained"
+            disabled={!renameDraft.trim()}
+            onClick={() => {
+              if (renameDialogId && renameDraft.trim()) {
+                updatePage.mutate({ id: renameDialogId, patch: { name: renameDraft.trim() } });
+                setRenameDialogId(null);
+                showSnack("Page renamed");
+              }
+            }}
+          >
+            Save
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

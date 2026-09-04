@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   Box,
   Button,
+  Dialog,
   Drawer,
   IconButton,
   List,
@@ -10,6 +11,7 @@ import {
   ListItemText,
   TextField,
   Typography,
+  useMediaQuery,
 } from "@mui/material";
 import { usePostHog } from "@posthog/react";
 import CloseIcon from "@mui/icons-material/Close";
@@ -61,6 +63,7 @@ export default function OutcomeSheet({
    * (e.g. "Viewing Booked" vs "Booked") — required whenever entryStep isn't "main". */
   entryStage?: Stage;
 }) {
+  const isDesktop = useMediaQuery("(min-width:600px)");
   const [step, setStep] = useState<OutcomeStep>(entryStep);
   const [targetStage, setTargetStage] = useState<Stage | null>(entryStage ?? null);
   const updateStage = useUpdateLeadStage();
@@ -119,17 +122,8 @@ export default function OutcomeSheet({
   const t = titles[step];
   const showBack = step !== entryStep;
 
-  return (
-    <Drawer
-      anchor="bottom"
-      open={open}
-      onClose={close}
-      // Above theme.zIndex.modal (1300) — Drawer defaults to zIndex.drawer
-      // (1200), which renders it behind full-screen overlays like
-      // FocusCallModal that this sheet can be opened on top of.
-      sx={{ zIndex: (theme) => theme.zIndex.modal + 1 }}
-      slotProps={{ paper: { sx: { borderRadius: "8px 8px 0 0", maxWidth: 480, mx: "auto" } } }}
-    >
+  const content = (
+    <>
       <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, p: "8px 8px 4px 16px" }}>
         {showBack && (
           <IconButton onClick={goBack}>
@@ -210,6 +204,32 @@ export default function OutcomeSheet({
           ))}
         </Box>
       )}
+    </>
+  );
+
+  if (isDesktop) {
+    return (
+      <Dialog
+        open={open}
+        onClose={close}
+        maxWidth="xs"
+        fullWidth
+        sx={{ zIndex: (theme) => theme.zIndex.modal + 1 }}
+      >
+        {content}
+      </Dialog>
+    );
+  }
+
+  return (
+    <Drawer
+      anchor="bottom"
+      open={open}
+      onClose={close}
+      sx={{ zIndex: (theme) => theme.zIndex.modal + 1 }}
+      slotProps={{ paper: { sx: { borderRadius: "8px 8px 0 0", maxWidth: 480, mx: "auto" } } }}
+    >
+      {content}
     </Drawer>
   );
 }

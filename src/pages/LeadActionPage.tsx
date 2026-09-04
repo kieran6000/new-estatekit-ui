@@ -26,13 +26,16 @@ export default function LeadActionPage() {
   const isToken = leadId ? isTokenFormat(leadId) : false;
   const isAuthed = !!user;
 
-  if (isToken || !isAuthed) {
-    return <TokenLeadActionPage token={leadId ?? ""} />;
+  if (isToken) {
+    return <TokenLeadActionPage token={leadId ?? ""} canEdit={isAuthed} />;
+  }
+  if (!isAuthed) {
+    return <LeadActionUI lead={null} isLoading={false} canEdit={false} />;
   }
   return <AuthedLeadActionPage leadId={leadId ?? ""} />;
 }
 
-function TokenLeadActionPage({ token }: { token: string }) {
+function TokenLeadActionPage({ token, canEdit }: { token: string; canEdit: boolean }) {
   const { data, isLoading } = useQuery({
     queryKey: ["leadByToken", token],
     queryFn: () => getLeadByToken(token),
@@ -41,7 +44,7 @@ function TokenLeadActionPage({ token }: { token: string }) {
 
   const lead = data?.lead ?? null;
 
-  return <LeadActionUI lead={lead} isLoading={isLoading} canEdit={false} />;
+  return <LeadActionUI lead={lead} isLoading={isLoading} canEdit={canEdit} />;
 }
 
 function AuthedLeadActionPage({ leadId }: { leadId: string }) {
@@ -119,19 +122,22 @@ function LeadActionUI({
           <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", justifyContent: "center", p: 2 }}>
             <Box sx={{ width: "100%", maxWidth: 480 }}>
               <Box sx={{ bgcolor: "background.paper", borderRadius: "12px", border: `1px solid ${tokens.divider}`, overflow: "hidden" }}>
-                <Box sx={{ bgcolor: tokens.primary, color: "#fff", p: "20px 20px 16px", textAlign: "center" }}>
-                  <Typography sx={{ fontSize: 22, fontWeight: 700 }}>{lead.name}</Typography>
-                  <Typography sx={{ fontSize: 14, opacity: 0.85, mt: 0.5 }}>{lead.phone}</Typography>
-                </Box>
-
                 <Box sx={{ p: "12px 16px" }}>
+                  <InfoRow label="Name" value={lead.name} />
+                  <InfoRow label="Phone" value={lead.phone} />
                   {lead.email && <InfoRow label="Email" value={lead.email} />}
                   <InfoRow label="Stage" value={lead.stage} />
                   {lead.next_label && lead.next_label !== "—" && <InfoRow label="Next" value={lead.next_label} />}
-                  {lead.form_answers.length > 0 && lead.form_answers.map((r, i) => (
-                    <InfoRow key={i} label={r.q} value={r.a} />
-                  ))}
                 </Box>
+
+                {lead.form_answers.length > 0 && (
+                  <Box sx={{ borderTop: `1px solid ${tokens.divider}`, p: "12px 16px" }}>
+                    <Typography sx={{ fontSize: 11, fontWeight: 600, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.05em", mb: 0.75 }}>From their form</Typography>
+                    {lead.form_answers.map((r, i) => (
+                      <InfoRow key={i} label={r.q} value={r.a} />
+                    ))}
+                  </Box>
+                )}
 
                 {canEdit && (
                   <Box sx={{ borderTop: `1px solid ${tokens.divider}`, p: "12px 16px" }}>

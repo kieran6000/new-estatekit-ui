@@ -229,20 +229,41 @@ export default function LeadsPage() {
         )}
       </Box>
 
-      <Box sx={{ display: "flex", gap: 1, p: "10px 16px", overflowX: "auto", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
-        {(["All", ...stagesForPipeline] as const).map((s) => (
-          <Chip
-            key={s}
-            label={s === "Mandate Signed" ? "Mandate" : s}
-            onClick={() => setFilter(s)}
-            variant={filter === s ? "filled" : "outlined"}
-            sx={
-              filter === s
-                ? { bgcolor: tokens.primaryBg, borderColor: tokens.primary, color: tokens.primaryDark, fontWeight: 500 }
-                : { borderColor: "#bdbdbd", color: "text.secondary" }
-            }
-          />
-        ))}
+      <Box sx={{ p: "10px 16px", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
+        <Typography sx={{ fontSize: 11, fontWeight: 600, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.05em", mb: 0.75 }}>
+          Filter by stage
+        </Typography>
+        <Box sx={{ display: "flex", gap: 0.75, overflowX: "auto" }}>
+          {(["All", ...stagesForPipeline] as const).map((s) => {
+            const active = filter === s;
+            const count = s === "All" ? leads.length : leads.filter((l) => l.stage === s).length;
+            return (
+              <Box
+                key={s}
+                component="button"
+                onClick={() => setFilter(s)}
+                sx={{
+                  display: "flex", alignItems: "center", gap: 0.5,
+                  border: `1px solid ${active ? tokens.primary : tokens.divider}`,
+                  borderRadius: "6px",
+                  bgcolor: active ? tokens.primaryBg : "#fff",
+                  color: active ? tokens.primaryDark : "text.secondary",
+                  fontWeight: active ? 600 : 400,
+                  fontSize: 12.5,
+                  p: "5px 10px",
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                  "&:hover": { borderColor: tokens.primary, color: tokens.primaryDark },
+                }}
+              >
+                {s === "Mandate Signed" ? "Mandate" : s}
+                <Box component="span" sx={{ fontSize: 11, color: active ? tokens.primary : "text.disabled", fontWeight: 600 }}>
+                  {count}
+                </Box>
+              </Box>
+            );
+          })}
+        </Box>
       </Box>
 
       <LeadsTable
@@ -253,6 +274,7 @@ export default function LeadsPage() {
         onCall={(id) => setOutcomeLeadId(id)}
         onStagePick={handleStagePick}
       />
+      
 
       <OutcomeSheet
         lead={outcomeLead}

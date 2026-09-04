@@ -18,6 +18,7 @@ import LogoutIcon from "@mui/icons-material/Logout";
 import AccountBalanceWalletIcon from "@mui/icons-material/AccountBalanceWallet";
 import CreditCardIcon from "@mui/icons-material/CreditCard";
 import AddIcon from "@mui/icons-material/Add";
+import UploadFileIcon from "@mui/icons-material/UploadFile";
 import CloseIcon from "@mui/icons-material/Close";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -26,7 +27,7 @@ import { getMyProfile, upsertProfile } from "../api/agentProfile";
 import { useIsOperator } from "../hooks/useAutomations";
 import { useSnack } from "../hooks/useSnack";
 import AccountSwitcher from "../components/AccountSwitcher";
-import { supabase } from "../api/_client";
+import { supabase, getActiveAgentIdSync } from "../api/_client";
 import { tokens } from "../theme";
 
 export default function AccountPage() {
@@ -100,6 +101,20 @@ export default function AccountPage() {
     const { data: urlData } = supabase.storage.from("logos").getPublicUrl(path);
     update("sidebarLogoUrl", urlData.publicUrl);
     showSnack("Logo uploaded");
+  }
+
+  async function onContractUpload(file: File | null) {
+    if (!file || !user) return;
+    if (!file.name.toLowerCase().endsWith(".pdf")) { showSnack("Only PDF files are allowed"); return; }
+    if (file.size > 10 * 1024 * 1024) { showSnack("File must be under 10 MB"); return; }
+    const agentId = getActiveAgentIdSync() || user.id;
+    const path = `${agentId}/contract-${Date.now()}.pdf`;
+    const { error } = await supabase.storage.from("logos").upload(path, file, { upsert: true });
+    if (error) { showSnack("Upload failed: " + error.message); return; }
+    const { data: urlData } = supabase.storage.from("logos").getPublicUrl(path);
+    await upsertProfile({ contractPdfUrl: urlData.publicUrl });
+    queryClient.invalidateQueries({ queryKey: ["myProfile"] });
+    showSnack("Contract uploaded");
   }
 
   if (!user) return null;
@@ -260,6 +275,18 @@ export default function AccountPage() {
                     <Typography variant="body2" color="text.disabled">
                       No contract uploaded
                     </Typography>
+                  )}
+                  {isOperator && (
+                    <Button
+                      component="label"
+                      variant="outlined"
+                      size="small"
+                      startIcon={<UploadFileIcon />}
+                      sx={{ mt: 1 }}
+                    >
+                      {profile?.contractPdfUrl ? "Replace PDF" : "Upload PDF"}
+                      <input type="file" hidden accept=".pdf,application/pdf" onChange={(e) => onContractUpload(e.target.files?.[0] ?? null)} />
+                    </Button>
                   )}
                 </Box>
               </CardContent>
