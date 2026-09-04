@@ -10,6 +10,8 @@ export interface AgentProfile {
   contractPdfUrl: string | null;
   renewalDate: string | null;
   tier: string;
+  adspendBalance: number;
+  billingType: "card" | "prepaid";
 }
 
 interface ProfileRow {
@@ -22,6 +24,8 @@ interface ProfileRow {
   contract_pdf_url: string | null;
   renewal_date: string | null;
   tier: string;
+  adspend_balance: number;
+  billing_type: "card" | "prepaid";
 }
 
 function rowToProfile(r: ProfileRow): AgentProfile {
@@ -35,6 +39,8 @@ function rowToProfile(r: ProfileRow): AgentProfile {
     contractPdfUrl: r.contract_pdf_url,
     renewalDate: r.renewal_date,
     tier: r.tier,
+    adspendBalance: r.adspend_balance,
+    billingType: r.billing_type,
   };
 }
 

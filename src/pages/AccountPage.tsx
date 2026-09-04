@@ -14,15 +14,19 @@ import {
 } from "@mui/material";
 import LogoutIcon from "@mui/icons-material/Logout";
 import SaveIcon from "@mui/icons-material/Save";
+import AccountBalanceWalletIcon from "@mui/icons-material/AccountBalanceWallet";
+import CreditCardIcon from "@mui/icons-material/CreditCard";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../hooks/useAuth";
 import { getMyProfile, upsertProfile } from "../api/agentProfile";
+import { useIsOperator } from "../hooks/useAutomations";
 import { useSnack } from "../hooks/useSnack";
 
 export default function AccountPage() {
   const { user, signOut } = useAuth();
   const queryClient = useQueryClient();
   const showSnack = useSnack();
+  const { data: isOperator } = useIsOperator();
 
   const { data: profile, isLoading } = useQuery({
     queryKey: ["myProfile"],
@@ -170,6 +174,39 @@ export default function AccountPage() {
                 </Box>
               </CardContent>
             </Card>
+
+            {isOperator && profile && (
+              <Card variant="outlined" sx={{ mb: 3 }}>
+                <CardContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                    Ad spend
+                  </Typography>
+
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+                    <Box sx={{ flex: 1 }}>
+                      <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>
+                        Balance
+                      </Typography>
+                      <Typography sx={{ fontSize: 28, fontWeight: 700 }}>
+                        R {profile.adspendBalance.toLocaleString("en-ZA", { minimumFractionDigits: 2 })}
+                      </Typography>
+                    </Box>
+                  </Box>
+
+                  <Box>
+                    <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>
+                      Billing method
+                    </Typography>
+                    <Chip
+                      icon={profile.billingType === "card" ? <CreditCardIcon /> : <AccountBalanceWalletIcon />}
+                      label={profile.billingType === "card" ? "Card" : "Prepaid"}
+                      color={profile.billingType === "card" ? "primary" : "warning"}
+                      size="small"
+                    />
+                  </Box>
+                </CardContent>
+              </Card>
+            )}
 
             <Button
               variant="contained"
