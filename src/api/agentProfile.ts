@@ -16,6 +16,14 @@ export async function getFbAdAccount(adAccountId: string): Promise<FbAdAccount> 
   return data as FbAdAccount;
 }
 
+/** Daily ad spend keyed by YYYY-MM-DD, from Meta insights. */
+export async function getFbAdInsights(adAccountId: string, since: string | null): Promise<Record<string, number>> {
+  const { data, error } = await supabase.functions.invoke("fb-ad-insights", { body: { adAccountId, since } });
+  if (error) throw new Error(data?.error || error.message);
+  if (data?.error) throw new Error(data.error);
+  return (data?.daily ?? {}) as Record<string, number>;
+}
+
 export interface AgentProfile {
   agentId: string;
   displayName: string;

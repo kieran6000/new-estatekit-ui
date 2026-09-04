@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
-import * as overviewApi from "../api/overview";
-import type { OverviewDailyRow } from "../types";
+import { listLeads } from "../api/leads";
+import { getMyProfile, getFbAdInsights } from "../api/agentProfile";
+import type { LeadRow, Stage } from "../types";
 
 export type OverviewPeriod = "This month" | "Last 30 days" | "Last 7 days" | "Lifetime";
 
@@ -72,29 +73,71 @@ export function computeDerived(raw: RawTotals): Omit<OverviewComputedRow, "date"
   };
 }
 
-function toComputed(r: OverviewDailyRow): OverviewComputedRow {
-  return {
-    date: r.date,
-    ...computeDerived({
-      spend: Number(r.spend),
-      leads: r.leads,
-      leadsReached: r.leads_reached,
-      appts: r.appts,
-      apptsHeld: r.appts_held,
-      mandates: r.mandates,
-      commExpected: Number(r.commission_expected),
-      commEarned: Number(r.commission_earned),
-    }),
-  };
+// Stage groupings — a lead's *current* stage tells us how far it got, so the
+// Overview reflects reality the moment a stage changes (no separate logging).
+const REACHED: Stage[] = ["Contacted", "Booked", "Mandate Signed", "Viewing Booked", "Offer Made", "Bought"];
+const APPTS: Stage[] = ["Booked", "Mandate Signed", "Viewing Booked", "Offer Made", "Bought"];
+const APPTS_HELD: Stage[] = ["Mandate Signed", "Offer Made", "Bought"];
+const WINS: Stage[] = ["Mandate Signed", "Bought"];
+
+function dateKey(iso: string): string {
+  return iso.slice(0, 10);
+}
+
+/** Build per-day Overview rows from the lead list, cohorted by the day each
+ *  lead came in, and merge in real daily ad spend from Meta. */
+function buildRows(leads: LeadRow[], dailySpend: Record<string, number>, from: string | null): OverviewComputedRow[] {
+  const raw: Record<string, {
+    spend: number; leads: number; leadsReached: number; appts: number;
+    apptsHeld: number; mandates: number; commExpected: number; commEarned: number;
+  }> = {};
+
+  const ensure = (d: string) => (raw[d] ??= { spend: 0, leads: 0, leadsReached: 0, appts: 0, apptsHeld: 0, mandates: 0, commExpected: 0, commEarned: 0 });
+
+  for (const l of leads) {
+    const d = dateKey(l.created_at);
+    if (from && d < from) continue;
+    const row = ensure(d);
+    row.leads += 1;
+    if (REACHED.includes(l.stage)) row.leadsReached += 1;
+    if (APPTS.includes(l.stage)) row.appts += 1;
+    if (APPTS_HELD.includes(l.stage)) row.apptsHeld += 1;
+    if (WINS.includes(l.stage)) {
+      row.mandates += 1;
+      row.commEarned += l.commission ?? 0;
+    }
+    if (l.commission && l.stage !== "Lost" && l.stage !== "Invalid Number") {
+      row.commExpected += l.commission;
+    }
+  }
+
+  for (const [d, spend] of Object.entries(dailySpend)) {
+    if (from && d < from) continue;
+    ensure(d).spend += spend;
+  }
+
+  return Object.entries(raw)
+    .map(([date, r]) => ({ date, ...computeDerived(r) }))
+    .sort((a, b) => (a.date < b.date ? 1 : -1));
+}
+
+async function loadDailySpend(from: string | null): Promise<Record<string, number>> {
+  try {
+    const profile = await getMyProfile();
+    if (!profile.fbAdAccountId) return {};
+    return await getFbAdInsights(profile.fbAdAccountId, from);
+  } catch {
+    return {};
+  }
 }
 
 export function useOverview(period: OverviewPeriod) {
   return useQuery({
     queryKey: ["overview", period],
     queryFn: async (): Promise<OverviewComputedRow[]> => {
-      const rows = await overviewApi.listOverviewDaily();
       const from = fromDateFor(period);
-      return rows.filter((r) => !from || r.date >= from).map(toComputed);
+      const [leads, dailySpend] = await Promise.all([listLeads(), loadDailySpend(from)]);
+      return buildRows(leads, dailySpend, from);
     },
   });
 }
@@ -107,14 +150,12 @@ export function useStatStripCpl() {
       const from = new Date();
       from.setDate(from.getDate() - 29);
       const fromStr = from.toISOString().slice(0, 10);
-      const rows = await overviewApi.listOverviewDaily();
-      let spend = 0;
-      let leads = 0;
-      rows.filter((r) => r.date >= fromStr).forEach((r) => {
-        spend += Number(r.spend);
-        leads += r.leads;
-      });
-      return leads ? Math.round(spend / leads) : 0;
+      const [leads, dailySpend] = await Promise.all([listLeads(), loadDailySpend(fromStr)]);
+      const leadCount = leads.filter((l) => dateKey(l.created_at) >= fromStr).length;
+      const spend = Object.entries(dailySpend)
+        .filter(([d]) => d >= fromStr)
+        .reduce((sum, [, v]) => sum + v, 0);
+      return leadCount ? Math.round(spend / leadCount) : 0;
     },
   });
 }

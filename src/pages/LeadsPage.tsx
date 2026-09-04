@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   AppBar,
@@ -79,6 +79,18 @@ export default function LeadsPage() {
   const activePipeline: Pipeline | undefined = pipelines.find((p) => p.id === pipelineId) ?? pipelines.find((p) => p.kind === "seller") ?? pipelines[0];
   const stagesForPipeline = activePipeline ? PIPELINE_STAGES[activePipeline.kind] : [];
 
+  // Restore this pipeline's remembered stage filter when it becomes active
+  // (initial load / switch). Falls back to "All" if the saved stage isn't
+  // valid for this pipeline.
+  useEffect(() => {
+    if (!activePipeline) return;
+    let saved: string | null = null;
+    try { saved = localStorage.getItem(`estatekit_pipeline_filter_${activePipeline.id}`); } catch { /* ignore */ }
+    const valid = saved && (saved === "All" || PIPELINE_STAGES[activePipeline.kind].includes(saved as Stage));
+    setFilter(valid ? (saved as "All" | Stage) : "All");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePipeline?.id]);
+
   const pipelineLeads = useMemo(
     () => (activePipeline ? leads.filter((l) => l.pipeline_id === activePipeline.id) : []),
     [leads, activePipeline],
@@ -117,11 +129,22 @@ export default function LeadsPage() {
     );
   }
 
+  function filterKey(pid: string) {
+    return `estatekit_pipeline_filter_${pid}`;
+  }
+
   function selectPipeline(id: string) {
     setPipelineId(id);
     try { localStorage.setItem(pipelineStorageKey, id); } catch { /* private browsing */ }
-    setFilter("All");
     setPipelineMenuAnchor(null);
+    // the effect on activePipeline.id restores this pipeline's saved filter
+  }
+
+  function pickFilter(s: "All" | Stage) {
+    setFilter(s);
+    if (activePipeline) {
+      try { localStorage.setItem(filterKey(activePipeline.id), s); } catch { /* private browsing */ }
+    }
   }
 
   async function reloadLeads() {
@@ -263,12 +286,12 @@ export default function LeadsPage() {
         <Box sx={{ display: "flex", gap: 0.75, overflowX: "auto" }}>
           {(["All", ...stagesForPipeline] as const).map((s) => {
             const active = filter === s;
-            const count = s === "All" ? leads.length : leads.filter((l) => l.stage === s).length;
+            const count = s === "All" ? pipelineLeads.length : pipelineLeads.filter((l) => l.stage === s).length;
             return (
               <Box
                 key={s}
                 component="button"
-                onClick={() => setFilter(s)}
+                onClick={() => pickFilter(s)}
                 sx={{
                   display: "flex", alignItems: "center", gap: 0.5,
                   border: `1px solid ${active ? tokens.primary : tokens.divider}`,
