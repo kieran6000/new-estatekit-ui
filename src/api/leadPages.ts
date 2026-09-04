@@ -142,6 +142,54 @@ export interface FbForm {
   status: string;
 }
 
+export interface FbFormQuestion {
+  key: string;
+  label: string;
+  type: string;
+  options?: { key: string; value: string }[];
+  id?: string;
+}
+
+export interface FbFormDetail {
+  id: string;
+  name: string;
+  locale?: string;
+  questions: FbFormQuestion[];
+  context_card?: {
+    title?: string;
+    content?: string[];
+    button_text?: string;
+    cover_photo?: string;
+  };
+  thank_you_page?: {
+    title?: string;
+    body?: string;
+    button_text?: string;
+    button_type?: string;
+    website_url?: string;
+    business_phone_number?: string;
+  };
+  legal_content?: {
+    privacy_policy?: { url: string; link_text: string };
+    custom_disclaimer?: unknown;
+  };
+}
+
+export async function getFbForm(fbPageId: string | null, formId: string): Promise<FbFormDetail> {
+  const { data, error } = await supabase.functions.invoke("get-fb-form", {
+    body: { pageId: fbPageId, formId },
+  });
+  if (error) {
+    console.error("get-fb-form error:", error, "data:", data);
+    throw new Error(data?.error || error.message);
+  }
+  if (data?.error) {
+    console.error("get-fb-form API error:", data.error);
+    throw new Error(data.error);
+  }
+  return data.form as FbFormDetail;
+}
+
 export async function listFbForms(fbPageId: string): Promise<FbForm[]> {
   const { data, error } = await supabase.functions.invoke("list-fb-forms", {
     body: { pageId: fbPageId },
