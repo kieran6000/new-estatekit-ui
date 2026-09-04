@@ -42,7 +42,9 @@ import { dueLeads, pipelineKindFor, sortLeadsForList, STEP_FOR_STAGE } from "../
 import { timeAgo } from "../lib/timeAgo";
 import { useLeads, useUpdateLeadStage } from "../hooks/useLeads";
 import { useAddPipeline, usePipelines, useSyncPipelineSheet } from "../hooks/usePipelines";
+import { useIsOperator } from "../hooks/useAutomations";
 import { useSnack } from "../hooks/useSnack";
+import { maskPhone } from "../lib/format";
 import { syncFbLeads } from "../api/leadPages";
 import { getActiveAgentIdSync } from "../api/_client";
 import GSheetIcon from "../components/GSheetIcon";
@@ -439,6 +441,7 @@ function LeadsTable({
   onStagePick: (id: string, stage: Stage) => void;
 }) {
   const isMobile = useMediaQuery("(max-width:639px)");
+  const { data: isOperator } = useIsOperator();
   if (isMobile) {
     return <MobileLeadsList leads={leads} stages={stages} filter={filter} onOpen={onOpen} onCall={onCall} onStagePick={onStagePick} />;
   }
@@ -458,7 +461,7 @@ function LeadsTable({
             {l.stage === "New Lead" && <Box component="span" sx={{ fontSize: 10, fontWeight: 700, color: tokens.green, ml: 0.75 }}>NEW</Box>}
           </Box>
           <Typography sx={{ color: "text.secondary", fontSize: 13, display: "block" }}>
-            {l.phone}
+            {isOperator ? l.phone : maskPhone(l.phone)}
             <Box component="span" sx={{ color: "text.disabled", mx: 0.75 }}>·</Box>
             {timeAgo(l.created_at)}
           </Typography>
@@ -557,6 +560,7 @@ function MobileLeadsList({
   onCall: (id: string) => void;
   onStagePick: (id: string, stage: Stage) => void;
 }) {
+  const { data: isOperator } = useIsOperator();
   if (leads.length === 0) {
     return <EmptyLeadsState filter={filter} />;
   }
@@ -577,7 +581,7 @@ function MobileLeadsList({
         {l.stage === "New Lead" && <Box component="span" sx={{ fontSize: 10, fontWeight: 700, color: tokens.green, ml: 0.75 }}>NEW</Box>}
       </Box>
       <Typography sx={{ color: "text.secondary", fontSize: 13 }}>
-        {l.phone}
+        {isOperator ? l.phone : maskPhone(l.phone)}
         <Box component="span" sx={{ color: "text.disabled", mx: 0.75 }}>·</Box>
         {timeAgo(l.created_at)}
       </Typography>

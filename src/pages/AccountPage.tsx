@@ -23,7 +23,8 @@ import CloseIcon from "@mui/icons-material/Close";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../hooks/useAuth";
-import { getMyProfile, upsertProfile } from "../api/agentProfile";
+import { getMyProfile, upsertProfile, getFbAdAccount } from "../api/agentProfile";
+import { panicStopAutomations } from "../api/automations";
 import { useIsOperator } from "../hooks/useAutomations";
 import { useSnack } from "../hooks/useSnack";
 import AccountSwitcher from "../components/AccountSwitcher";
@@ -43,6 +44,27 @@ export default function AccountPage() {
     queryFn: getMyProfile,
     enabled: !!user,
   });
+
+  const { data: adAccount } = useQuery({
+    queryKey: ["fbAdAccount", profile?.fbAdAccountId],
+    queryFn: () => getFbAdAccount(profile!.fbAdAccountId!),
+    enabled: !!isOperator && !!profile?.fbAdAccountId,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+
+  const [stopping, setStopping] = useState(false);
+  async function emergencyStop() {
+    setStopping(true);
+    try {
+      const { cancelled } = await panicStopAutomations();
+      showSnack(`Automations stopped — ${cancelled} queued message${cancelled === 1 ? "" : "s"} cancelled`);
+    } catch (e) {
+      showSnack(e instanceof Error ? e.message : "Failed to stop");
+    } finally {
+      setStopping(false);
+    }
+  }
 
   const [form, setForm] = useState({
     displayName: "",
@@ -330,13 +352,25 @@ export default function AccountPage() {
                     <OpenInNewIcon sx={{ fontSize: 16, color: "text.secondary" }} />
                   </Box>
 
-                  <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-                    <Box sx={{ flex: 1 }}>
+                  <Box sx={{ display: "flex", gap: 3 }}>
+                    <Box>
                       <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>
                         Balance
                       </Typography>
                       <Typography sx={{ fontSize: 28, fontWeight: 700 }}>
-                        R {profile.adspendBalance.toLocaleString("en-ZA", { minimumFractionDigits: 2 })}
+                        {adAccount?.balance != null
+                          ? `${adAccount.currency === "ZAR" ? "R" : adAccount.currency + " "}${adAccount.balance.toLocaleString("en-ZA", { minimumFractionDigits: 2 })}`
+                          : profile.fbAdAccountId ? "…" : "—"}
+                      </Typography>
+                    </Box>
+                    <Box>
+                      <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>
+                        Total spent
+                      </Typography>
+                      <Typography sx={{ fontSize: 28, fontWeight: 700 }}>
+                        {adAccount?.amountSpent != null
+                          ? `${adAccount.currency === "ZAR" ? "R" : adAccount.currency + " "}${adAccount.amountSpent.toLocaleString("en-ZA", { minimumFractionDigits: 2 })}`
+                          : profile.fbAdAccountId ? "…" : "—"}
                       </Typography>
                     </Box>
                   </Box>
@@ -353,8 +387,30 @@ export default function AccountPage() {
                     />
                   </Box>
                   <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
-                    Tap to open Ads Manager billing
+                    {profile.fbAdAccountId ? "Live from Meta · tap to open Ads Manager billing" : "Add an Ad Account ID above to see live balance"}
                   </Typography>
+                </CardContent>
+              </Card>
+            )}
+
+            {isOperator && (
+              <Card variant="outlined" sx={{ mb: 3, borderColor: "#fca5a5" }}>
+                <CardContent sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 600, color: "#b91c1c" }}>
+                    Emergency stop
+                  </Typography>
+                  <Typography sx={{ fontSize: 13, color: "text.secondary" }}>
+                    Instantly turns off all automations and cancels every queued message across all accounts.
+                  </Typography>
+                  <Button
+                    variant="contained"
+                    color="error"
+                    onClick={emergencyStop}
+                    disabled={stopping}
+                    fullWidth
+                  >
+                    {stopping ? "Stopping…" : "Stop all automations"}
+                  </Button>
                 </CardContent>
               </Card>
             )}

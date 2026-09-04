@@ -1,6 +1,14 @@
 import { supabase, getCurrentUserId } from "./_client";
 import type { AutomationRow, AutomationStepRow } from "../types/automations";
 
+/** Emergency stop: disable every automation and cancel all pending/in-flight runs. Operators only. */
+export async function panicStopAutomations(): Promise<{ cancelled: number }> {
+  const { data, error } = await supabase.functions.invoke("panic-automations", { body: {} });
+  if (error) throw new Error(data?.error || error.message);
+  if (data?.error) throw new Error(data.error);
+  return { cancelled: data?.cancelled ?? 0 };
+}
+
 export async function getIsOperator(): Promise<boolean> {
   const userId = await getCurrentUserId();
   const { data, error } = await supabase

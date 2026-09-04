@@ -4,6 +4,9 @@ import CloseIcon from "@mui/icons-material/Close";
 import CallIcon from "@mui/icons-material/Call";
 import * as leadsApi from "../api/leads";
 import { dueLeads, pipelineKindFor } from "../lib/stageLogic";
+import { prettyAnswer, maskPhone } from "../lib/format";
+import { timeAgo } from "../lib/timeAgo";
+import { useIsOperator } from "../hooks/useAutomations";
 import type { LeadRow, Pipeline } from "../types";
 import OutcomeSheet from "./OutcomeSheet";
 
@@ -21,6 +24,7 @@ export default function FocusCallModal({
   onSnack: (msg: string) => void;
 }) {
   const queue = useMemo(() => (open ? dueLeads(leads) : []), [open, leads]);
+  const { data: isOperator } = useIsOperator();
   const [qi, setQi] = useState(0);
   const [note, setNote] = useState("");
   const [outcomeOpen, setOutcomeOpen] = useState(false);
@@ -123,7 +127,8 @@ export default function FocusCallModal({
           <>
             <Box sx={{ flex: 1, overflow: "auto", px: 1.75, pb: 1.5 }}>
               <Typography sx={{ fontSize: 22, fontWeight: 500, textAlign: "center", pt: 1.75 }}>{lead.name}</Typography>
-              <Typography sx={{ color: "#b0bec5", fontSize: 15, textAlign: "center", mb: 2 }}>{lead.phone}</Typography>
+              <Typography sx={{ color: "#b0bec5", fontSize: 15, textAlign: "center" }}>{isOperator ? lead.phone : maskPhone(lead.phone)}</Typography>
+              <Typography sx={{ color: "#78909c", fontSize: 12.5, textAlign: "center", mb: 2 }}>Came in {timeAgo(lead.created_at)}</Typography>
               <Typography sx={{ color: "#90a4ae", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", m: "16px 4px 6px" }}>
                 From their form
               </Typography>
@@ -132,7 +137,7 @@ export default function FocusCallModal({
                   lead.form_answers.map((r, i) => (
                     <Box key={i} sx={{ p: "12px 14px", borderTop: i ? "1px solid #d5dbe0" : 0 }}>
                       <Typography sx={{ fontSize: 12, color: "#5a6577" }}>{r.q}</Typography>
-                      <Typography sx={{ fontSize: 16, fontWeight: 500, color: "#141b2e", mt: 0.25 }}>{r.a}</Typography>
+                      <Typography sx={{ fontSize: 16, fontWeight: 500, color: "#141b2e", mt: 0.25 }}>{prettyAnswer(r.a)}</Typography>
                     </Box>
                   ))
                 ) : (

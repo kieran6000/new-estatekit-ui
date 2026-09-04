@@ -11,6 +11,9 @@ import { useLeadWithStatus, useUpdateLeadNote } from "../hooks/useLeads";
 import { usePipelines } from "../hooks/usePipelines";
 import { useSnack } from "../hooks/useSnack";
 import { pipelineKindFor } from "../lib/stageLogic";
+import { prettyAnswer, maskPhone } from "../lib/format";
+import { timeAgo } from "../lib/timeAgo";
+import { useIsOperator } from "../hooks/useAutomations";
 import { getLeadByToken } from "../api/leadActions";
 import OutcomeSheet from "../components/OutcomeSheet";
 import estateKitLogo from "../assets/blue logo full.png";
@@ -62,6 +65,7 @@ function LeadActionUI({
   canEdit: boolean;
 }) {
   const { data: pipelines = [] } = usePipelines({ enabled: canEdit });
+  const { data: isOperator } = useIsOperator();
   const updateNote = useUpdateLeadNote();
   const showSnack = useSnack();
 
@@ -124,9 +128,10 @@ function LeadActionUI({
               <Box sx={{ bgcolor: "background.paper", borderRadius: "12px", border: `1px solid ${tokens.divider}`, overflow: "hidden" }}>
                 <Box sx={{ p: "12px 16px" }}>
                   <InfoRow label="Name" value={lead.name} />
-                  <InfoRow label="Phone" value={lead.phone} />
+                  <InfoRow label="Phone" value={isOperator ? lead.phone : maskPhone(lead.phone)} />
                   {lead.email && <InfoRow label="Email" value={lead.email} />}
                   <InfoRow label="Stage" value={lead.stage} />
+                  <InfoRow label="Received" value={timeAgo(lead.created_at)} />
                   {lead.next_label && lead.next_label !== "—" && <InfoRow label="Next" value={lead.next_label} />}
                 </Box>
 
@@ -134,7 +139,7 @@ function LeadActionUI({
                   <Box sx={{ borderTop: `1px solid ${tokens.divider}`, p: "12px 16px" }}>
                     <Typography sx={{ fontSize: 11, fontWeight: 600, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.05em", mb: 0.75 }}>From their form</Typography>
                     {lead.form_answers.map((r, i) => (
-                      <InfoRow key={i} label={r.q} value={r.a} />
+                      <InfoRow key={i} label={r.q} value={prettyAnswer(r.a)} />
                     ))}
                   </Box>
                 )}

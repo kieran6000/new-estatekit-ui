@@ -9,6 +9,9 @@ import { usePipelines } from "../hooks/usePipelines";
 import { useSnack } from "../hooks/useSnack";
 import { PIPELINE_STAGES } from "../types";
 import { pipelineKindFor, STEP_FOR_STAGE } from "../lib/stageLogic";
+import { prettyAnswer, maskPhone } from "../lib/format";
+import { timeAgo } from "../lib/timeAgo";
+import { useIsOperator } from "../hooks/useAutomations";
 import StageMenu from "../components/StageMenu";
 import OutcomeSheet from "../components/OutcomeSheet";
 import type { OutcomeStep, Stage } from "../types";
@@ -18,6 +21,7 @@ export default function LeadDetailPage() {
   const navigate = useNavigate();
   const lead = useLead(id);
   const { data: pipelines = [] } = usePipelines();
+  const { data: isOperator } = useIsOperator();
   const updateNote = useUpdateLeadNote();
   const updateStage = useUpdateLeadStage();
   const showSnack = useSnack();
@@ -135,15 +139,16 @@ export default function LeadDetailPage() {
         </Box>
 
         <Section title="Contact">
-          <Row k="Phone" v={lead.phone} />
+          <Row k="Phone" v={isOperator ? lead.phone : maskPhone(lead.phone)} />
           <Row k="Email" v={lead.email || ""} />
           <Row k="Stage" v={lead.stage} />
+          <Row k="Received" v={timeAgo(lead.created_at)} />
           <Row k="Next" v={lead.next_label} />
         </Section>
 
         <Section title="From their form">
           {lead.form_answers.length ? (
-            lead.form_answers.map((r, i) => <Row key={i} k={r.q} v={r.a} />)
+            lead.form_answers.map((r, i) => <Row key={i} k={r.q} v={prettyAnswer(r.a)} />)
           ) : (
             <Row k="" v="No answers captured." />
           )}

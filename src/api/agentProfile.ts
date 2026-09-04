@@ -1,5 +1,21 @@
 import { supabase, getCurrentUserId, getActiveAgentId } from "./_client";
 
+export interface FbAdAccount {
+  currency: string;
+  balance: number | null;
+  amountSpent: number | null;
+  spendCap: number | null;
+  name: string | null;
+  accountStatus: number | null;
+}
+
+export async function getFbAdAccount(adAccountId: string): Promise<FbAdAccount> {
+  const { data, error } = await supabase.functions.invoke("fb-ad-account", { body: { adAccountId } });
+  if (error) throw new Error(data?.error || error.message);
+  if (data?.error) throw new Error(data.error);
+  return data as FbAdAccount;
+}
+
 export interface AgentProfile {
   agentId: string;
   displayName: string;

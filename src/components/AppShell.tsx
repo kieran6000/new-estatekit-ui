@@ -120,6 +120,7 @@ export default function AppShell() {
   const mobileNav = [
     { key: "leads", label: "Leads", icon: <ViewListOutlinedIcon />, activeIcon: <ViewListIcon />, to: "/leads" },
     { key: "mypage", label: "Sites", icon: <WebOutlinedIcon />, activeIcon: <WebIcon />, to: "/lead-page" },
+    ...(isOperator ? [{ key: "overview", label: "Overview", icon: <DashboardOutlinedIcon />, activeIcon: <DashboardIcon />, to: "/overview" }] : []),
     { key: "account", label: "Account", icon: <AccountCircleOutlinedIcon />, activeIcon: <AccountCircleIcon />, to: "/account" },
   ];
 
@@ -269,43 +270,9 @@ export default function AppShell() {
       )}
 
       <Box component="main" sx={{ flex: 1, minWidth: 0, pb: isDesktop ? 0 : "56px" }}>
-        {!isDesktop && isManagingOther && (
-          <Box
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              px: 2,
-              py: 0.75,
-              bgcolor: "#fef3c7",
-              borderBottom: "1px solid #f59e0b66",
-            }}
-          >
-            <Typography sx={{ fontSize: 12, fontWeight: 600, color: "#92400e" }}>
-              Managing: {profile?.displayName || "another agent"}
-            </Typography>
-            <Box
-              component="button"
-              onClick={() => {
-                setActiveAgent(null);
-                queryClient.invalidateQueries();
-                window.location.reload();
-              }}
-              sx={{
-                fontSize: 11,
-                fontWeight: 600,
-                color: "#92400e",
-                bgcolor: "transparent",
-                border: "1px solid #f59e0b66",
-                borderRadius: "4px",
-                px: 1,
-                py: 0.25,
-                cursor: "pointer",
-                "&:hover": { bgcolor: "#fde68a" },
-              }}
-            >
-              Switch back
-            </Box>
+        {!isDesktop && isOperator && (
+          <Box sx={{ px: 1.5, py: 1, bgcolor: isManagingOther ? "#fef3c7" : "background.paper", borderBottom: `1px solid ${isManagingOther ? "#f59e0b66" : tokens.divider}` }}>
+            <AccountSwitcher variant="light" />
           </Box>
         )}
         <Outlet />
