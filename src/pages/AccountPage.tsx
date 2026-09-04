@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AppBar,
   Box,
@@ -7,39 +7,33 @@ import {
   CardContent,
   Chip,
   Divider,
+  IconButton,
   Skeleton,
   TextField,
   Toolbar,
   Typography,
 } from "@mui/material";
 import LogoutIcon from "@mui/icons-material/Logout";
-import SaveIcon from "@mui/icons-material/Save";
 import AccountBalanceWalletIcon from "@mui/icons-material/AccountBalanceWallet";
 import CreditCardIcon from "@mui/icons-material/CreditCard";
-import CloudUploadIcon from "@mui/icons-material/CloudUpload";
-import DeleteIcon from "@mui/icons-material/Delete";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import AddIcon from "@mui/icons-material/Add";
+import CloseIcon from "@mui/icons-material/Close";
+import OpenInNewIcon from "@mui/icons-material/OpenInNew";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../hooks/useAuth";
 import { getMyProfile, upsertProfile } from "../api/agentProfile";
 import { useIsOperator } from "../hooks/useAutomations";
 import { useSnack } from "../hooks/useSnack";
 import AccountSwitcher from "../components/AccountSwitcher";
 import { supabase } from "../api/_client";
-
-const PRESET_COLORS = [
-  "#111827", "#1e293b", "#0f172a", "#1a1a2e",
-  "#2563eb", "#1d4ed8", "#7c3aed", "#4f46e5",
-  "#059669", "#0d9488", "#0891b2", "#0284c7",
-  "#dc2626", "#e11d48", "#c026d3", "#9333ea",
-  "#f5f5f4", "#fafaf9", "#f8fafc", "#ffffff",
-];
+import { tokens } from "../theme";
 
 export default function AccountPage() {
   const { user, signOut } = useAuth();
   const queryClient = useQueryClient();
   const showSnack = useSnack();
   const { data: isOperator } = useIsOperator();
-  const logoInputRef = useRef<HTMLInputElement>(null);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const { data: profile, isLoading } = useQuery({
     queryKey: ["myProfile"],
@@ -54,11 +48,9 @@ export default function AccountPage() {
     area: "",
     company: "",
     renewalDate: "",
+    sidebarColor: "#111827",
+    sidebarLogoUrl: null as string | null,
   });
-  const [sidebarColor, setSidebarColor] = useState("#111827");
-  const [sidebarLogoUrl, setSidebarLogoUrl] = useState<string | null>(null);
-  const [dirty, setDirty] = useState(false);
-  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     if (profile) {
@@ -69,52 +61,46 @@ export default function AccountPage() {
         area: profile.area,
         company: profile.company,
         renewalDate: profile.renewalDate ?? "",
+        sidebarColor: profile.sidebarColor || "#111827",
+        sidebarLogoUrl: profile.sidebarLogoUrl,
       });
-      setSidebarColor(profile.sidebarColor || "#111827");
-      setSidebarLogoUrl(profile.sidebarLogoUrl);
-      setDirty(false);
     }
   }, [profile]);
 
-  const save = useMutation({
-    mutationFn: () => upsertProfile({ ...form, sidebarColor, sidebarLogoUrl }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["myProfile"] });
-      showSnack("Profile saved");
-      setDirty(false);
+  const autosave = useCallback(
+    (patch: Partial<typeof form>) => {
+      const next = { ...form, ...patch };
+      setForm(next);
+      clearTimeout(saveTimer.current);
+      saveTimer.current = setTimeout(async () => {
+        await upsertProfile(next);
+        queryClient.invalidateQueries({ queryKey: ["myProfile"] });
+      }, 600);
     },
-  });
+    [form, queryClient],
+  );
 
-  function update(field: keyof typeof form, value: string) {
-    setForm((f) => ({ ...f, [field]: value }));
-    setDirty(true);
+  function update(field: keyof typeof form, value: string | null) {
+    autosave({ [field]: value });
   }
 
-  async function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
+  async function onLogoUpload(file: File | null) {
     if (!file || !user) return;
-    setUploading(true);
+    if (file.size > 2 * 1024 * 1024) { showSnack("Image must be under 2 MB"); return; }
     const ext = file.name.split(".").pop() || "png";
     const path = `${user.id}/logo-${Date.now()}.${ext}`;
     const { error } = await supabase.storage.from("logos").upload(path, file, { upsert: true });
-    if (error) {
-      showSnack("Upload failed: " + error.message);
-      setUploading(false);
-      return;
-    }
+    if (error) { showSnack("Upload failed: " + error.message); return; }
     const { data: urlData } = supabase.storage.from("logos").getPublicUrl(path);
-    setSidebarLogoUrl(urlData.publicUrl);
-    setDirty(true);
-    setUploading(false);
+    update("sidebarLogoUrl", urlData.publicUrl);
     showSnack("Logo uploaded");
   }
 
-  function removeLogo() {
-    setSidebarLogoUrl(null);
-    setDirty(true);
-  }
-
   if (!user) return null;
+
+  const adsManagerUrl = profile?.fbAdAccountId
+    ? `https://business.facebook.com/billing_hub/payment_activity?asset_id=${profile.fbAdAccountId}`
+    : "https://business.facebook.com/billing_hub/payment_activity";
 
   return (
     <Box>
@@ -145,37 +131,11 @@ export default function AccountPage() {
                 <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
                   Profile
                 </Typography>
-                <TextField
-                  label="Full name"
-                  value={form.displayName}
-                  onChange={(e) => update("displayName", e.target.value)}
-                  fullWidth
-                />
-                <TextField
-                  label="Email"
-                  type="email"
-                  value={form.email}
-                  onChange={(e) => update("email", e.target.value)}
-                  fullWidth
-                />
-                <TextField
-                  label="WhatsApp number"
-                  value={form.whatsappNumber}
-                  onChange={(e) => update("whatsappNumber", e.target.value)}
-                  fullWidth
-                />
-                <TextField
-                  label="Area / region"
-                  value={form.area}
-                  onChange={(e) => update("area", e.target.value)}
-                  fullWidth
-                />
-                <TextField
-                  label="Company / agency"
-                  value={form.company}
-                  onChange={(e) => update("company", e.target.value)}
-                  fullWidth
-                />
+                <TextField label="Full name" value={form.displayName} onChange={(e) => update("displayName", e.target.value)} fullWidth />
+                <TextField label="Email" type="email" value={form.email} onChange={(e) => update("email", e.target.value)} fullWidth />
+                <TextField label="WhatsApp number" value={form.whatsappNumber} onChange={(e) => update("whatsappNumber", e.target.value)} fullWidth />
+                <TextField label="Area / region" value={form.area} onChange={(e) => update("area", e.target.value)} fullWidth />
+                <TextField label="Company / agency" value={form.company} onChange={(e) => update("company", e.target.value)} fullWidth />
               </CardContent>
             </Card>
 
@@ -186,83 +146,66 @@ export default function AccountPage() {
                 </Typography>
 
                 <Box>
-                  <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
-                    Background color
-                  </Typography>
-                  <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
-                    {PRESET_COLORS.map((c) => (
-                      <Box
-                        key={c}
-                        onClick={() => { setSidebarColor(c); setDirty(true); }}
-                        sx={{
-                          width: 32,
-                          height: 32,
-                          borderRadius: "6px",
-                          bgcolor: c,
-                          cursor: "pointer",
-                          border: sidebarColor === c ? "2.5px solid #2563eb" : "1px solid #d1d5db",
-                          transition: "border 0.15s",
-                          "&:hover": { transform: "scale(1.1)" },
-                        }}
-                      />
-                    ))}
-                  </Box>
-                  <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 1.5 }}>
-                    <Typography variant="body2" color="text.secondary">Custom:</Typography>
+                  <Typography sx={{ fontSize: 13, color: "text.secondary", mb: 1 }}>Accent color</Typography>
+                  <Box
+                    component="label"
+                    sx={{
+                      position: "relative",
+                      width: 36,
+                      height: 36,
+                      borderRadius: "50%",
+                      bgcolor: form.sidebarColor,
+                      outline: `1px solid ${tokens.divider}`,
+                      cursor: "pointer",
+                      display: "block",
+                      overflow: "hidden",
+                    }}
+                  >
                     <input
                       type="color"
-                      value={sidebarColor}
-                      onChange={(e) => { setSidebarColor(e.target.value); setDirty(true); }}
-                      style={{ width: 40, height: 32, border: "none", cursor: "pointer", borderRadius: 4 }}
+                      value={form.sidebarColor}
+                      onChange={(e) => update("sidebarColor", e.target.value)}
+                      style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer", border: 0, padding: 0 }}
                     />
-                    <Typography variant="body2" sx={{ fontFamily: "monospace", color: "text.secondary" }}>
-                      {sidebarColor}
-                    </Typography>
                   </Box>
                 </Box>
 
-                <Divider />
-
                 <Box>
-                  <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
-                    Logo
-                  </Typography>
-                  {sidebarLogoUrl ? (
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+                  <Typography sx={{ fontSize: 13, color: "text.secondary", mb: 1 }}>Logo</Typography>
+                  <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
+                    <Box sx={{ position: "relative" }}>
                       <Box
+                        component="label"
                         sx={{
-                          width: 160,
-                          height: 48,
-                          bgcolor: sidebarColor,
-                          borderRadius: "6px",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          p: 1,
+                          width: 64, height: 64, borderRadius: "8px",
+                          border: `2px dashed ${form.sidebarLogoUrl ? tokens.primary : tokens.divider}`,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          cursor: "pointer", overflow: "hidden",
+                          bgcolor: form.sidebarLogoUrl ? form.sidebarColor : tokens.bg,
+                          "&:hover": { borderColor: tokens.primary },
                         }}
                       >
-                        <Box component="img" src={sidebarLogoUrl} alt="Logo" sx={{ maxHeight: 32, maxWidth: 140, objectFit: "contain" }} />
+                        {form.sidebarLogoUrl ? (
+                          <Box component="img" src={form.sidebarLogoUrl} alt="" sx={{ width: "100%", height: "100%", objectFit: "contain", p: 0.5 }} />
+                        ) : (
+                          <AddIcon sx={{ fontSize: 20, color: "text.disabled" }} />
+                        )}
+                        <input type="file" hidden accept="image/*" onChange={(e) => onLogoUpload(e.target.files?.[0] ?? null)} />
                       </Box>
-                      <Button size="small" color="error" startIcon={<DeleteIcon />} onClick={removeLogo}>
-                        Remove
-                      </Button>
+                      {form.sidebarLogoUrl && (
+                        <IconButton
+                          size="small"
+                          onClick={() => { update("sidebarLogoUrl", null); showSnack("Logo removed"); }}
+                          sx={{ position: "absolute", top: -8, right: -8, width: 20, height: 20, bgcolor: "#e0e0e0", "&:hover": { bgcolor: "#bdbdbd" } }}
+                        >
+                          <CloseIcon sx={{ fontSize: 12 }} />
+                        </IconButton>
+                      )}
                     </Box>
-                  ) : (
-                    <Typography variant="body2" color="text.disabled" sx={{ mb: 1 }}>
-                      Using default EstateKit logo
+                    <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
+                      {form.sidebarLogoUrl ? "Click to replace" : "Upload your logo"}
                     </Typography>
-                  )}
-                  <input ref={logoInputRef} type="file" accept="image/*" hidden onChange={handleLogoUpload} />
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    startIcon={<CloudUploadIcon />}
-                    onClick={() => logoInputRef.current?.click()}
-                    disabled={uploading}
-                    sx={{ mt: 1 }}
-                  >
-                    {uploading ? "Uploading..." : "Upload logo"}
-                  </Button>
+                  </Box>
                 </Box>
               </CardContent>
             </Card>
@@ -317,11 +260,18 @@ export default function AccountPage() {
             </Card>
 
             {isOperator && profile && (
-              <Card variant="outlined" sx={{ mb: 3 }}>
+              <Card
+                variant="outlined"
+                sx={{ mb: 3, cursor: "pointer", "&:hover": { borderColor: "primary.main" } }}
+                onClick={() => window.open(adsManagerUrl, "_blank")}
+              >
                 <CardContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                    Ad spend
-                  </Typography>
+                  <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                      Ad spend
+                    </Typography>
+                    <OpenInNewIcon sx={{ fontSize: 16, color: "text.secondary" }} />
+                  </Box>
 
                   <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
                     <Box sx={{ flex: 1 }}>
@@ -345,20 +295,12 @@ export default function AccountPage() {
                       size="small"
                     />
                   </Box>
+                  <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
+                    Tap to open Ads Manager billing
+                  </Typography>
                 </CardContent>
               </Card>
             )}
-
-            <Button
-              variant="contained"
-              startIcon={<SaveIcon />}
-              onClick={() => save.mutate()}
-              disabled={!dirty || save.isPending}
-              fullWidth
-              sx={{ mb: 2 }}
-            >
-              Save changes
-            </Button>
 
             <Divider sx={{ mb: 2 }} />
 

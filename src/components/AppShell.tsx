@@ -10,18 +10,25 @@ import {
   ListItemButton,
   ListItemIcon,
   ListItemText,
+  Typography,
   useMediaQuery,
   BottomNavigation,
   BottomNavigationAction,
   Paper,
 } from "@mui/material";
 import { useQuery } from "@tanstack/react-query";
-import ViewListRoundedIcon from "@mui/icons-material/ViewListRounded";
-import HomeRoundedIcon from "@mui/icons-material/HomeRounded";
-import WebRoundedIcon from "@mui/icons-material/WebRounded";
-import SettingsSuggestRoundedIcon from "@mui/icons-material/SettingsSuggestRounded";
-import AccountCircleRoundedIcon from "@mui/icons-material/AccountCircleRounded";
-import DashboardRoundedIcon from "@mui/icons-material/DashboardRounded";
+import ViewListOutlinedIcon from "@mui/icons-material/ViewListOutlined";
+import ViewListIcon from "@mui/icons-material/ViewList";
+import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
+import HomeIcon from "@mui/icons-material/Home";
+import WebOutlinedIcon from "@mui/icons-material/WebOutlined";
+import WebIcon from "@mui/icons-material/Web";
+import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
+import SettingsIcon from "@mui/icons-material/Settings";
+import AccountCircleOutlinedIcon from "@mui/icons-material/AccountCircleOutlined";
+import AccountCircleIcon from "@mui/icons-material/AccountCircle";
+import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
+import DashboardIcon from "@mui/icons-material/Dashboard";
 import { tokens } from "../theme";
 import { useAuth } from "../hooks/useAuth";
 import { useIsOperator } from "../hooks/useAutomations";
@@ -42,7 +49,6 @@ function isLightColor(hex: string): boolean {
   const b = parseInt(c.slice(4, 6), 16);
   return (r * 299 + g * 587 + b * 114) / 1000 > 150;
 }
-
 
 function activeSection(pathname: string): string {
   if (pathname.startsWith("/lead-page")) return "mypage";
@@ -67,28 +73,41 @@ export default function AppShell() {
 
   const sidebarBg = profile?.sidebarColor || "#111827";
   const light = isLightColor(sidebarBg);
-  const textColor = light ? "#111827" : "#fff";
-  const mutedColor = light ? "#6b7280" : "#9ca3af";
-  const dividerColor = light ? "#d1d5db" : "#1f2937";
-  const hoverBg = light ? "rgba(0,0,0,0.06)" : "#1f2937";
-  const avatarBg = light ? "#d1d5db" : "#374151";
+  const textColor = light ? "#1a1a1a" : "#f1f1f1";
+  const mutedColor = light ? "#71717a" : "#a1a1aa";
+  const dividerColor = light ? "rgba(0,0,0,0.1)" : "rgba(255,255,255,0.08)";
+  const hoverBg = light ? "rgba(0,0,0,0.06)" : "rgba(255,255,255,0.06)";
+  const activeBg = light ? "rgba(0,0,0,0.10)" : "rgba(255,255,255,0.12)";
+  const avatarBg = light ? "rgba(0,0,0,0.12)" : "rgba(255,255,255,0.12)";
+  const sectionLabel = light ? "rgba(0,0,0,0.4)" : "rgba(255,255,255,0.35)";
   const logoSrc = profile?.sidebarLogoUrl || estateKitLogoWhite;
 
-  const mainNav = [
-    ...(import.meta.env.DEV ? [{ key: "home", label: "Dashboard", icon: <HomeRoundedIcon sx={{ fontSize: 20 }} />, to: "/home" }] : []),
-    { key: "leads", label: "Leads", icon: <ViewListRoundedIcon sx={{ fontSize: 20 }} />, to: "/leads" },
-    ...(isOperator ? [{ key: "overview", label: "Overview", icon: <DashboardRoundedIcon sx={{ fontSize: 20 }} />, to: "/overview" }] : []),
-    { key: "mypage", label: "Sites", icon: <WebRoundedIcon sx={{ fontSize: 20 }} />, to: "/lead-page" },
+  const SZ = 20;
+  const agentNav = [
+    ...(import.meta.env.DEV ? [{ key: "home", label: "Dashboard", icon: <HomeOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <HomeIcon sx={{ fontSize: SZ }} />, to: "/home" }] : []),
+    { key: "leads", label: "Leads", icon: <ViewListOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <ViewListIcon sx={{ fontSize: SZ }} />, to: "/leads" },
+    { key: "mypage", label: "Sites", icon: <WebOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <WebIcon sx={{ fontSize: SZ }} />, to: "/lead-page" },
   ];
 
-  const toolsNav = [
-    ...(isOperator ? [{ key: "automations", label: "Automations", icon: <SettingsSuggestRoundedIcon sx={{ fontSize: 20 }} />, to: "/admin/automations" }] : []),
+  const adminNav = [
+    { key: "overview", label: "Overview", icon: <DashboardOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <DashboardIcon sx={{ fontSize: SZ }} />, to: "/overview" },
+    { key: "automations", label: "Automations", icon: <SettingsOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <SettingsIcon sx={{ fontSize: SZ }} />, to: "/admin/automations" },
   ];
+
+  const navButtonSx = (active: boolean) => ({
+    borderRadius: "6px",
+    py: 0.75,
+    mb: 0.25,
+    color: active ? textColor : mutedColor,
+    fontWeight: active ? 600 : 400,
+    "&.Mui-selected": { bgcolor: activeBg, color: textColor, "&:hover": { bgcolor: activeBg } },
+    "&:hover": { bgcolor: hoverBg, color: textColor },
+  });
 
   const mobileNav = [
-    { key: "leads", label: "Leads", icon: <ViewListRoundedIcon />, to: "/leads" },
-    { key: "mypage", label: "Sites", icon: <WebRoundedIcon />, to: "/lead-page" },
-    { key: "account", label: "Account", icon: <AccountCircleRoundedIcon />, to: "/account" },
+    { key: "leads", label: "Leads", icon: <ViewListOutlinedIcon />, activeIcon: <ViewListIcon />, to: "/leads" },
+    { key: "mypage", label: "Sites", icon: <WebOutlinedIcon />, activeIcon: <WebIcon />, to: "/lead-page" },
+    { key: "account", label: "Account", icon: <AccountCircleOutlinedIcon />, activeIcon: <AccountCircleIcon />, to: "/account" },
   ];
 
   return (
@@ -122,52 +141,33 @@ export default function AppShell() {
           <Divider sx={{ borderColor: dividerColor, mx: 1.25, my: 0.75 }} />
 
           <List disablePadding sx={{ px: 1.25 }}>
-            {mainNav.map((item) => {
+            {agentNav.map((item) => {
               const active = section === item.key;
               return (
                 <ListItem key={item.key} disablePadding>
-                  <ListItemButton
-                    selected={active}
-                    onClick={() => navigate(item.to)}
-                    sx={{
-                      borderRadius: "6px",
-                      py: 0.75,
-                      mb: 0.25,
-                      color: active ? textColor : mutedColor,
-                      "&.Mui-selected": { bgcolor: "#2563eb", color: "#fff", "&:hover": { bgcolor: "#2563eb" } },
-                      "&:hover": { bgcolor: hoverBg, color: textColor },
-                    }}
-                  >
-                    <ListItemIcon sx={{ minWidth: 32, color: "inherit" }}>{item.icon}</ListItemIcon>
-                    <ListItemText primary={item.label} slotProps={{ primary: { sx: { fontSize: 13.5, fontWeight: 500 } } }} />
+                  <ListItemButton selected={active} onClick={() => navigate(item.to)} sx={navButtonSx(active)}>
+                    <ListItemIcon sx={{ minWidth: 32, color: "inherit" }}>{active ? item.activeIcon : item.icon}</ListItemIcon>
+                    <ListItemText primary={item.label} slotProps={{ primary: { sx: { fontSize: 13.5, fontWeight: active ? 600 : 500 } } }} />
                   </ListItemButton>
                 </ListItem>
               );
             })}
           </List>
 
-          {toolsNav.length > 0 && (
+          {isOperator && (
             <>
               <Divider sx={{ borderColor: dividerColor, mx: 1.25, my: 0.75 }} />
+              <Typography sx={{ fontSize: 10, fontWeight: 600, color: sectionLabel, textTransform: "uppercase", letterSpacing: "0.08em", px: 2.25, pt: 0.5, pb: 0.25 }}>
+                Admin
+              </Typography>
               <List disablePadding sx={{ px: 1.25 }}>
-                {toolsNav.map((item) => {
+                {adminNav.map((item) => {
                   const active = section === item.key;
                   return (
                     <ListItem key={item.key} disablePadding>
-                      <ListItemButton
-                        selected={active}
-                        onClick={() => navigate(item.to)}
-                        sx={{
-                          borderRadius: "6px",
-                          py: 0.75,
-                          mb: 0.25,
-                          color: active ? textColor : mutedColor,
-                          "&.Mui-selected": { bgcolor: "#2563eb", color: "#fff", "&:hover": { bgcolor: "#2563eb" } },
-                          "&:hover": { bgcolor: hoverBg, color: textColor },
-                        }}
-                      >
-                        <ListItemIcon sx={{ minWidth: 32, color: "inherit" }}>{item.icon}</ListItemIcon>
-                        <ListItemText primary={item.label} slotProps={{ primary: { sx: { fontSize: 13.5, fontWeight: 500 } } }} />
+                      <ListItemButton selected={active} onClick={() => navigate(item.to)} sx={navButtonSx(active)}>
+                        <ListItemIcon sx={{ minWidth: 32, color: "inherit" }}>{active ? item.activeIcon : item.icon}</ListItemIcon>
+                        <ListItemText primary={item.label} slotProps={{ primary: { sx: { fontSize: 13.5, fontWeight: active ? 600 : 500 } } }} />
                       </ListItemButton>
                     </ListItem>
                   );
@@ -188,18 +188,22 @@ export default function AppShell() {
                   py: 1.25,
                   px: 1.75,
                   color: section === "account" ? textColor : mutedColor,
-                  "&.Mui-selected": { bgcolor: "#2563eb", color: "#fff", "&:hover": { bgcolor: "#2563eb" } },
+                  "&.Mui-selected": { bgcolor: activeBg, color: textColor, "&:hover": { bgcolor: activeBg } },
                   "&:hover": { bgcolor: hoverBg, color: textColor },
                 }}
               >
                 <ListItemIcon sx={{ minWidth: 36, color: "inherit" }}>
-                  <Avatar sx={{ width: 28, height: 28, bgcolor: avatarBg, fontSize: 13, fontWeight: 600 }}>{initial}</Avatar>
+                  <Avatar sx={{ width: 28, height: 28, bgcolor: avatarBg, fontSize: 13, fontWeight: 600, color: textColor }}>{initial}</Avatar>
                 </ListItemIcon>
                 <ListItemText
                   primary={user?.phone || "Agent"}
                   slotProps={{ primary: { sx: { fontSize: 13, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } } }}
                 />
-                <AccountCircleRoundedIcon sx={{ fontSize: 18, opacity: 0.5 }} />
+                {section === "account" ? (
+                  <AccountCircleIcon sx={{ fontSize: 18, opacity: 0.5 }} />
+                ) : (
+                  <AccountCircleOutlinedIcon sx={{ fontSize: 18, opacity: 0.5 }} />
+                )}
               </ListItemButton>
             </ListItem>
           </List>
@@ -222,7 +226,12 @@ export default function AppShell() {
             sx={{ height: 56 }}
           >
             {mobileNav.map((item) => (
-              <BottomNavigationAction key={item.key} label={item.label} value={item.key} icon={item.icon} />
+              <BottomNavigationAction
+                key={item.key}
+                label={item.label}
+                value={item.key}
+                icon={section === item.key ? item.activeIcon : item.icon}
+              />
             ))}
           </BottomNavigation>
         </Paper>
