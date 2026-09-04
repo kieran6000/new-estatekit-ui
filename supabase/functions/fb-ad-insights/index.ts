@@ -56,7 +56,10 @@ Deno.serve(async (req) => {
       }
       if (ok) return json({ daily });
     }
-    return json({ error: lastErr || "Could not load insights" }, 502);
+    // Degrade gracefully: no spend data (e.g. account owner hasn't granted
+    // ads_read). The dashboard just shows no ad spend rather than erroring.
+    console.warn("fb-ad-insights: all tokens failed:", lastErr);
+    return json({ daily: {}, note: lastErr });
   } catch (err) {
     return json({ error: String(err) }, 500);
   }

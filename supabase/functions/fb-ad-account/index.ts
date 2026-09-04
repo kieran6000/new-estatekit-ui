@@ -52,7 +52,11 @@ Deno.serve(async (req) => {
       }
       lastErr = data.error?.message || `HTTP ${res.status}`;
     }
-    return json({ error: lastErr || "Could not load ad account" }, 502);
+    // Degrade gracefully: return empty figures + a note so the UI can show a
+    // "no access" state instead of erroring. Common cause: the ad account
+    // owner hasn't granted the app ads_read/ads_management.
+    console.warn("fb-ad-account: all tokens failed:", lastErr);
+    return json({ currency: "ZAR", balance: null, amountSpent: null, spendCap: null, name: null, accountStatus: null, note: lastErr });
   } catch (err) {
     return json({ error: String(err) }, 500);
   }

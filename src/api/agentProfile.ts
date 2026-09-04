@@ -7,6 +7,8 @@ export interface FbAdAccount {
   spendCap: number | null;
   name: string | null;
   accountStatus: number | null;
+  /** Present when Meta could not be read (e.g. missing ads_read permission). */
+  note?: string;
 }
 
 export async function getFbAdAccount(adAccountId: string): Promise<FbAdAccount> {

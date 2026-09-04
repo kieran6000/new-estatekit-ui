@@ -352,28 +352,35 @@ export default function AccountPage() {
                     <OpenInNewIcon sx={{ fontSize: 16, color: "text.secondary" }} />
                   </Box>
 
-                  <Box sx={{ display: "flex", gap: 3 }}>
-                    <Box>
-                      <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>
-                        Balance
-                      </Typography>
-                      <Typography sx={{ fontSize: 28, fontWeight: 700 }}>
-                        {adAccount?.balance != null
-                          ? `${adAccount.currency === "ZAR" ? "R" : adAccount.currency + " "}${adAccount.balance.toLocaleString("en-ZA", { minimumFractionDigits: 2 })}`
-                          : profile.fbAdAccountId ? "…" : "—"}
-                      </Typography>
+                  {adAccount?.note ? (
+                    <Typography sx={{ fontSize: 13, color: "warning.main" }}>
+                      Can't read this ad account from Meta. The account owner needs to grant this app
+                      ads access (ads_read). Balance and spend will appear once that's done.
+                    </Typography>
+                  ) : (
+                    <Box sx={{ display: "flex", gap: 3 }}>
+                      <Box>
+                        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>
+                          Balance
+                        </Typography>
+                        <Typography sx={{ fontSize: 28, fontWeight: 700 }}>
+                          {adAccount?.balance != null
+                            ? `${adAccount.currency === "ZAR" ? "R" : adAccount.currency + " "}${adAccount.balance.toLocaleString("en-ZA", { minimumFractionDigits: 2 })}`
+                            : profile.fbAdAccountId ? "…" : "—"}
+                        </Typography>
+                      </Box>
+                      <Box>
+                        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>
+                          Total spent
+                        </Typography>
+                        <Typography sx={{ fontSize: 28, fontWeight: 700 }}>
+                          {adAccount?.amountSpent != null
+                            ? `${adAccount.currency === "ZAR" ? "R" : adAccount.currency + " "}${adAccount.amountSpent.toLocaleString("en-ZA", { minimumFractionDigits: 2 })}`
+                            : profile.fbAdAccountId ? "…" : "—"}
+                        </Typography>
+                      </Box>
                     </Box>
-                    <Box>
-                      <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>
-                        Total spent
-                      </Typography>
-                      <Typography sx={{ fontSize: 28, fontWeight: 700 }}>
-                        {adAccount?.amountSpent != null
-                          ? `${adAccount.currency === "ZAR" ? "R" : adAccount.currency + " "}${adAccount.amountSpent.toLocaleString("en-ZA", { minimumFractionDigits: 2 })}`
-                          : profile.fbAdAccountId ? "…" : "—"}
-                      </Typography>
-                    </Box>
-                  </Box>
+                  )}
 
                   <Box>
                     <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>
