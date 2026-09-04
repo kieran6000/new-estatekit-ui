@@ -55,6 +55,17 @@ async function fetchForm(formId: string, token: string): Promise<Record<string, 
   return data;
 }
 
+async function fetchPage(pageId: string, token: string): Promise<{ name?: string; picture?: string } | null> {
+  try {
+    const res = await fetch(`${GRAPH}/${pageId}?fields=name,picture.width(160).height(160){url}&access_token=${token}`);
+    const data = await res.json();
+    if (!res.ok || data.error) return null;
+    return { name: data.name, picture: data.picture?.data?.url };
+  } catch {
+    return null;
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
 
@@ -82,7 +93,9 @@ Deno.serve(async (req) => {
 
       for (const t of candidates) {
         try {
-          return json({ form: await fetchForm(formId, t) });
+          const form = await fetchForm(formId, t);
+          const page = pageId ? await fetchPage(pageId, t) : null;
+          return json({ form, page });
         } catch (e) {
           attempts.push((e as { message?: string })?.message || String(e));
         }

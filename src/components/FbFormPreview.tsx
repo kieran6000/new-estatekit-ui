@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
-import { Box, Typography } from "@mui/material";
+import { Box, Chip, Typography } from "@mui/material";
+import FacebookIcon from "@mui/icons-material/Facebook";
 import ArrowBackIosNewIcon from "@mui/icons-material/ArrowBackIosNew";
 import ArrowForwardIosIcon from "@mui/icons-material/ArrowForwardIos";
+import { tokens } from "../theme";
 import type { FbFormDetail, FbFormQuestion } from "../api/leadPages";
 
 const FB_BLUE = "#1877f2";
@@ -40,10 +42,15 @@ export default function FbFormPreview({
   form,
   pageName,
   avatarUrl,
+  formName,
+  pipelineName,
 }: {
   form: FbFormDetail;
   pageName: string;
   avatarUrl?: string | null;
+  /** Shown in the merged header above the phone. */
+  formName?: string;
+  pipelineName?: string;
 }) {
   const steps = useMemo<Step[]>(() => {
     const custom = form.questions.filter((q) => !CONTACT_TYPES.has(q.type));
@@ -66,13 +73,18 @@ export default function FbFormPreview({
 
   return (
     <Box>
-      {/* FB preview chrome */}
-      <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, mb: 1 }}>
-        <Box sx={{ width: 20, height: 20, borderRadius: "50%", bgcolor: FB_BLUE, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: 13, fontFamily: "Georgia, serif" }}>f</Box>
-        <Box>
-          <Typography sx={{ fontSize: 11, color: "text.secondary", lineHeight: 1 }}>Facebook</Typography>
-          <Typography sx={{ fontSize: 12, fontWeight: 600, lineHeight: 1.2 }}>Instant form</Typography>
+      {/* Merged header: source info + FB chrome */}
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1.25, mb: 2 }}>
+        <FacebookIcon sx={{ fontSize: 30, color: FB_BLUE }} />
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography sx={{ fontSize: 14.5, fontWeight: 600, lineHeight: 1.25, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {formName || form.name}
+          </Typography>
+          <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
+            Facebook instant form{pipelineName ? <> · leads go to <b style={{ color: tokens.ink }}>{pipelineName}</b></> : null}
+          </Typography>
         </Box>
+        <Chip label="Connected" color="success" size="small" />
       </Box>
 
       {/* Phone frame */}
@@ -88,53 +100,34 @@ export default function FbFormPreview({
           display: "flex",
           flexDirection: "column",
           height: 560,
-          position: "relative",
         }}
       >
-        {/* Cover */}
-        <Box
-          sx={{
-            height: 120,
-            flexShrink: 0,
-            background: `linear-gradient(135deg, #3a5a40 0%, #a68a4e 55%, #d4b06a 100%)`,
-            position: "relative",
-          }}
-        >
-          <Box sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <Typography sx={{ color: "rgba(255,255,255,.9)", fontSize: 11, fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase" }}>
-              Ad cover image
-            </Typography>
-          </Box>
-        </Box>
-
         {/* Scrollable card area */}
-        <Box sx={{ flex: 1, overflowY: "auto", px: 1.5, pb: 1.5, mt: -3 }}>
-          <Box sx={{ bgcolor: "#fff", borderRadius: "12px", boxShadow: "0 1px 4px rgba(0,0,0,.12)", pt: 4, px: 2, pb: 2, position: "relative", minHeight: 320 }}>
+        <Box sx={{ flex: 1, overflowY: "auto", px: 1.5, pt: 2.5, pb: 1.5 }}>
+          <Box sx={{ bgcolor: "#fff", borderRadius: "12px", boxShadow: "0 1px 4px rgba(0,0,0,.12)", px: 2, pt: 2.5, pb: 2, minHeight: 340, display: "flex", flexDirection: "column", alignItems: "stretch" }}>
             {/* Avatar */}
             <Box
               sx={{
-                position: "absolute",
-                top: -26,
-                left: "50%",
-                transform: "translateX(-50%)",
-                width: 52,
-                height: 52,
+                width: 56,
+                height: 56,
                 borderRadius: "50%",
-                bgcolor: FB_BLUE,
-                border: "3px solid #fff",
+                bgcolor: avatarUrl ? "#e4e6eb" : FB_BLUE,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 color: "#fff",
                 fontWeight: 600,
-                fontSize: 20,
+                fontSize: 22,
                 overflow: "hidden",
+                alignSelf: "center",
+                mb: 1,
+                flexShrink: 0,
               }}
             >
               {avatarUrl ? <Box component="img" src={avatarUrl} alt="" sx={{ width: "100%", height: "100%", objectFit: "cover" }} /> : initial}
             </Box>
 
-            <Typography sx={{ textAlign: "center", fontSize: 12, color: "text.secondary", mb: 1.25 }}>{pageName}</Typography>
+            <Typography sx={{ textAlign: "center", fontSize: 12, color: "text.secondary", mb: 1.5 }}>{pageName}</Typography>
 
             {step.kind === "intro" && (
               <>

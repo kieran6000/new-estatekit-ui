@@ -175,7 +175,17 @@ export interface FbFormDetail {
   };
 }
 
-export async function getFbForm(fbPageId: string | null, formId: string): Promise<FbFormDetail> {
+export interface FbPageInfo {
+  name?: string;
+  picture?: string;
+}
+
+export interface FbFormResult {
+  form: FbFormDetail;
+  page: FbPageInfo | null;
+}
+
+export async function getFbForm(fbPageId: string | null, formId: string): Promise<FbFormResult> {
   const { data, error } = await supabase.functions.invoke("get-fb-form", {
     body: { pageId: fbPageId, formId },
   });
@@ -187,7 +197,7 @@ export async function getFbForm(fbPageId: string | null, formId: string): Promis
     console.error("get-fb-form API error:", data.error);
     throw new Error(data.error);
   }
-  return data.form as FbFormDetail;
+  return { form: data.form as FbFormDetail, page: (data.page ?? null) as FbPageInfo | null };
 }
 
 export async function listFbForms(fbPageId: string): Promise<FbForm[]> {

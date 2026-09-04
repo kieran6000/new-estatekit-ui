@@ -4,7 +4,6 @@ import {
   AppBar,
   Box,
   Button,
-  Chip,
   CircularProgress,
   Dialog,
   DialogActions,
@@ -41,7 +40,7 @@ import { tokens } from "../theme";
 import { PIPELINE_KIND_LABEL, type CustomQuestion, type LeadPage, type Pipeline, type PipelineKind, type QuestionType } from "../types";
 import { useAddLeadPage, useDeleteLeadPage, useLeadPages, useSubmitMockLead, useUpdateLeadPage } from "../hooks/useLeadPages";
 import { usePipelines } from "../hooks/usePipelines";
-import { getFbForm, listFbForms, type FbForm, type FbFormDetail } from "../api/leadPages";
+import { getFbForm, listFbForms, type FbForm } from "../api/leadPages";
 import FbFormPreview from "../components/FbFormPreview";
 import { getMyProfile } from "../api/agentProfile";
 import { useQuery } from "@tanstack/react-query";
@@ -499,35 +498,22 @@ function FbFormSource({
   pageName: string;
   avatarUrl: string | null;
 }) {
-  const { data: form, isLoading, error } = useQuery<FbFormDetail>({
+  const { data, isLoading, error } = useQuery({
     queryKey: ["fbForm", page.fbFormId],
     queryFn: () => getFbForm(fbPageId, page.fbFormId!),
     enabled: !!page.fbFormId,
     staleTime: 10 * 60_000,
     retry: false,
   });
+  const form = data?.form;
+  const fbName = data?.page?.name || pageName;
+  const fbAvatar = data?.page?.picture || avatarUrl;
 
   const CONTACT = new Set(["FULL_NAME", "EMAIL", "PHONE", "FIRST_NAME", "LAST_NAME", "STREET_ADDRESS", "CITY", "ZIP", "COUNTRY", "PROVINCE", "STATE"]);
 
   return (
     <Box sx={{ display: "flex", flexDirection: { xs: "column", md: "row" }, gap: 3, p: 2, maxWidth: 1000, mx: "auto", alignItems: "flex-start" }}>
       <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3, width: "100%" }}>
-        <Section title="Facebook instant form">
-          <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
-            <FacebookIcon sx={{ fontSize: 32, color: "#1877f2" }} />
-            <Box>
-              <Typography sx={{ fontSize: 15, fontWeight: 600 }}>{form?.name || page.fbFormName || page.name}</Typography>
-              <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
-                Leads from this form go to <b style={{ color: tokens.ink }}>{pipelineName}</b> pipeline
-              </Typography>
-            </Box>
-          </Box>
-          <Chip label="Connected" color="success" size="small" sx={{ alignSelf: "flex-start" }} />
-          <Typography sx={{ fontSize: 13, color: "text.secondary" }}>
-            When someone fills out this form on Facebook, the lead appears in your Leads tab automatically.
-          </Typography>
-        </Section>
-
         <Section title="Form questions">
           {isLoading ? (
             <Skeleton variant="rounded" height={160} sx={{ borderRadius: "8px" }} />
@@ -563,9 +549,15 @@ function FbFormSource({
       <Box sx={{ flex: 1, minWidth: 0, width: "100%", alignSelf: { md: "flex-start" }, position: { md: "sticky" }, top: { md: 72 } }}>
         <Section title="Live preview">
           {isLoading ? (
-            <Skeleton variant="rounded" height={560} sx={{ borderRadius: "12px" }} />
+            <Skeleton variant="rounded" height={620} sx={{ borderRadius: "12px" }} />
           ) : form ? (
-            <FbFormPreview form={form} pageName={pageName} avatarUrl={avatarUrl} />
+            <FbFormPreview
+              form={form}
+              pageName={fbName}
+              avatarUrl={fbAvatar}
+              formName={form.name || page.fbFormName || page.name}
+              pipelineName={pipelineName}
+            />
           ) : (
             <Typography sx={{ fontSize: 13, color: "text.secondary" }}>
               Preview unavailable — couldn't load the form from Facebook.
