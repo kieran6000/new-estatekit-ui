@@ -37,6 +37,7 @@ import { usePostHog } from "@posthog/react";
 import { tokens } from "../theme";
 import { DEAD_STAGES, PIPELINE_KIND_LABEL, PIPELINE_STAGES, type LeadRow, type OutcomeStep, type Pipeline, type PipelineKind, type Stage } from "../types";
 import { dueLeads, pipelineKindFor, sortLeadsForList, STEP_FOR_STAGE } from "../lib/stageLogic";
+import { timeAgo } from "../lib/timeAgo";
 import { useLeads, useUpdateLeadStage } from "../hooks/useLeads";
 import { useAddPipeline, usePipelines, useSyncPipelineSheet } from "../hooks/usePipelines";
 import { useSnack } from "../hooks/useSnack";
@@ -431,7 +432,11 @@ function LeadsTable({
             {l.name}
             {l.stage === "New Lead" && <Box component="span" sx={{ fontSize: 10, fontWeight: 700, color: tokens.green, ml: 0.75 }}>NEW</Box>}
           </Box>
-          <Typography sx={{ color: "text.secondary", fontSize: 13, display: "block" }}>{l.phone}</Typography>
+          <Typography sx={{ color: "text.secondary", fontSize: 13, display: "block" }}>
+            {l.phone}
+            <Box component="span" sx={{ color: "text.disabled", mx: 0.75 }}>·</Box>
+            {timeAgo(l.created_at)}
+          </Typography>
         </TableCell>
         <TableCell>
           <StageMenu current={l.stage} stages={stages} onPick={(s) => onStagePick(l.id, s)}>
@@ -546,7 +551,11 @@ function MobileLeadsList({
         {l.name}
         {l.stage === "New Lead" && <Box component="span" sx={{ fontSize: 10, fontWeight: 700, color: tokens.green, ml: 0.75 }}>NEW</Box>}
       </Box>
-      <Typography sx={{ color: "text.secondary", fontSize: 13 }}>{l.phone}</Typography>
+      <Typography sx={{ color: "text.secondary", fontSize: 13 }}>
+        {l.phone}
+        <Box component="span" sx={{ color: "text.disabled", mx: 0.75 }}>·</Box>
+        {timeAgo(l.created_at)}
+      </Typography>
       <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mt: 0.75 }}>
         <StageMenu current={l.stage} stages={stages} onPick={(s) => onStagePick(l.id, s)}>
           {(open) => (

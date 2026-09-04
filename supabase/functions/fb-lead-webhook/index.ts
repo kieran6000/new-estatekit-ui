@@ -173,6 +173,7 @@ Deno.serve(async (req) => {
             pipeline_id: pipeline?.id || null,
             source_page_id: sourcePageRowId,
             fb_lead_id: String(leadgenId),
+            created_at: leadData.created_time || undefined,
           });
 
           if (error) console.error(`Failed to insert lead: ${error.message}`);

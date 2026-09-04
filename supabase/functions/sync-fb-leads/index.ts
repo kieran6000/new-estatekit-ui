@@ -161,10 +161,18 @@ Deno.serve(async (req) => {
           pipeline_id: page.pipeline_id,
           source_page_id: page.id,
           fb_lead_id: l.id,
+          created_at: l.created_time || undefined,
         });
         // Unique violation on fb_lead_id => already imported; skip quietly.
         if (!insErr) inserted++;
-        else if (!insErr.message.includes("duplicate") && insErr.code !== "23505") {
+        else if (insErr.code === "23505" || insErr.message.includes("duplicate")) {
+          // Already imported. Backfill created_at to the real FB time if we
+          // stamped it with the import time on an earlier run. Updating a
+          // non-stage field does not re-trigger automations.
+          if (l.created_time) {
+            await supabase.from("leads").update({ created_at: l.created_time }).eq("fb_lead_id", l.id);
+          }
+        } else {
           console.error(`insert failed for lead ${l.id}: ${insErr.message}`);
         }
       }
