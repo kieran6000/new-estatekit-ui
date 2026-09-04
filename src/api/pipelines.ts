@@ -1,4 +1,4 @@
-import { supabase, getCurrentUserId, getActiveAgentId } from "./_client";
+import { supabase, getActiveAgentId } from "./_client";
 import type { Pipeline, PipelineKind } from "../types";
 
 export async function listPipelines(): Promise<Pipeline[]> {
@@ -26,7 +26,7 @@ export async function addPipeline(
   name: string,
   kind: PipelineKind,
 ): Promise<Pipeline> {
-  const agentId = await getCurrentUserId();
+  const agentId = await getActiveAgentId();
   const { data, error } = await supabase
     .from("pipelines")
     .insert({ agent_id: agentId, name, kind })

@@ -1,4 +1,4 @@
-import { supabase, getCurrentUserId } from "./_client";
+import { supabase, getActiveAgentId } from "./_client";
 import type { CustomQuestion, PipelineKind } from "../types";
 
 interface CqRow {
@@ -70,7 +70,7 @@ export async function addCustomQuestion(
   pageId: string,
   data: NewCustomQuestion,
 ): Promise<void> {
-  const agentId = await getCurrentUserId();
+  const agentId = await getActiveAgentId();
   const { data: maxRow } = await supabase
     .from("custom_questions")
     .select("sort_order")
