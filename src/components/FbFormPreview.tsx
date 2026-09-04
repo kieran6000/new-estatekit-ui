@@ -206,7 +206,11 @@ export default function FbFormPreview({
             <Box sx={{ height: "100%", width: `${((i + 1) / total) * 100}%`, bgcolor: "#42b72a", transition: "width .2s" }} />
           </Box>
           <Box
+            component="button"
+            onClick={() => setI((n) => (n >= total - 1 ? 0 : n + 1))}
             sx={{
+              width: "100%",
+              border: 0,
               bgcolor: FB_BLUE,
               color: "#fff",
               borderRadius: "8px",
@@ -214,6 +218,9 @@ export default function FbFormPreview({
               textAlign: "center",
               fontSize: 14,
               fontWeight: 600,
+              cursor: "pointer",
+              fontFamily: "inherit",
+              "&:hover": { bgcolor: "#166fe0" },
             }}
           >
             {ctaText}
