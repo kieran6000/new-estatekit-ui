@@ -12,47 +12,89 @@ const CORS = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, x-client-info, apikey",
 };
 
+const GRAPH = "https://graph.facebook.com/v21.0";
 const TOKEN_NAMES = ["FB_ACCESS_TOKEN", "FB_ACCESS_TOKEN_2"];
+
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...CORS, "Content-Type": "application/json" },
+  });
+}
+
+interface FbForm { id: string; name: string; status: string }
+
+async function fetchForms(pageId: string, token: string): Promise<FbForm[]> {
+  const res = await fetch(
+    `${GRAPH}/${pageId}/leadgen_forms?fields=id,name,status&limit=200&access_token=${token}`,
+  );
+  const data = await res.json();
+  if (!res.ok || data.error) {
+    throw data.error || { message: `HTTP ${res.status}` };
+  }
+  return (data.data || []).map((f: FbForm) => ({ id: f.id, name: f.name, status: f.status }));
+}
+
+// Get the page-specific access token for `pageId` from a user token's me/accounts.
+async function getPageToken(pageId: string, userToken: string): Promise<string | null> {
+  let url: string | null =
+    `${GRAPH}/me/accounts?fields=id,access_token&limit=200&access_token=${userToken}`;
+  while (url) {
+    const res = await fetch(url);
+    const data = await res.json();
+    if (!res.ok || data.error) return null;
+    const match = (data.data || []).find((p: { id: string }) => p.id === pageId);
+    if (match?.access_token) return match.access_token as string;
+    url = data.paging?.next ?? null;
+  }
+  return null;
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
 
   try {
     const { pageId } = await req.json();
-    if (!pageId) return new Response(JSON.stringify({ error: "pageId required" }), { status: 400, headers: { ...CORS, "Content-Type": "application/json" } });
+    if (!pageId) return json({ error: "pageId required" }, 400);
 
-    // Collect tokens from vault
     const tokens: string[] = [];
     for (const name of TOKEN_NAMES) {
-      const { data: tokenRow } = await supabase.rpc("get_secret", { secret_name: name });
-      const token = tokenRow || "";
-      if (token) tokens.push(token);
+      const { data } = await supabase.rpc("get_secret", { secret_name: name });
+      if (data) tokens.push(data);
     }
+    if (tokens.length === 0) return json({ error: "No FB token configured" }, 500);
 
-    if (tokens.length === 0) {
-      return new Response(JSON.stringify({ error: "No FB token configured" }), { status: 500, headers: { ...CORS, "Content-Type": "application/json" } });
-    }
+    const attempts: string[] = [];
 
-    // Try each token until one succeeds
     for (const token of tokens) {
-      const res = await fetch(
-        `https://graph.facebook.com/v21.0/${pageId}/leadgen_forms?fields=id,name,status&access_token=${token}`,
-      );
-      if (res.ok) {
-        const data = await res.json();
-        const forms = (data.data || []).map((f: { id: string; name: string; status: string }) => ({
-          id: f.id,
-          name: f.name,
-          status: f.status,
-        }));
-        return new Response(JSON.stringify({ forms }), { headers: { ...CORS, "Content-Type": "application/json" } });
+      // 1) Try the token directly (works if it's already a page token or a
+      //    user token with pages_read_engagement on that page).
+      try {
+        return json({ forms: await fetchForms(pageId, token) });
+      } catch (e) {
+        attempts.push(`direct: ${(e as { message?: string })?.message || String(e)}`);
       }
-      // If this token failed, try the next one
+
+      // 2) Exchange the user token for the page-specific token, then retry.
+      //    leadgen_forms almost always requires the PAGE access token.
+      const pageToken = await getPageToken(pageId, token);
+      if (pageToken) {
+        try {
+          return json({ forms: await fetchForms(pageId, pageToken) });
+        } catch (e) {
+          attempts.push(`page-token: ${(e as { message?: string })?.message || String(e)}`);
+        }
+      } else {
+        attempts.push("page-token: page not found in this token's me/accounts");
+      }
     }
 
-    // All tokens failed
-    return new Response(JSON.stringify({ error: "FB API error: all tokens failed for this page" }), { status: 502, headers: { ...CORS, "Content-Type": "application/json" } });
+    // Nothing worked — surface the real FB errors so we can diagnose.
+    return json(
+      { error: `Could not load forms for page ${pageId}. ${attempts.join(" | ")}` },
+      502,
+    );
   } catch (err) {
-    return new Response(JSON.stringify({ error: String(err) }), { status: 500, headers: { ...CORS, "Content-Type": "application/json" } });
+    return json({ error: String(err) }, 500);
   }
 });
