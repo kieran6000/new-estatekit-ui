@@ -4,6 +4,8 @@ import {
   AppBar,
   Box,
   Button,
+  Chip,
+  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
@@ -20,6 +22,8 @@ import {
   Toolbar,
   Typography,
 } from "@mui/material";
+import FacebookIcon from "@mui/icons-material/Facebook";
+import LanguageIcon from "@mui/icons-material/Language";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import ShareIcon from "@mui/icons-material/Share";
 import LockIcon from "@mui/icons-material/Lock";
@@ -37,6 +41,8 @@ import { tokens } from "../theme";
 import { PIPELINE_KIND_LABEL, type CustomQuestion, type LeadPage, type Pipeline, type PipelineKind, type QuestionType } from "../types";
 import { useAddLeadPage, useLeadPages, useSubmitMockLead, useUpdateLeadPage } from "../hooks/useLeadPages";
 import { usePipelines } from "../hooks/usePipelines";
+import { listFbForms, type FbForm } from "../api/leadPages";
+import { getMyProfile } from "../api/agentProfile";
 import {
   useAddCustomQuestion,
   useCustomQuestions,
@@ -113,7 +119,9 @@ export default function LeadPagePage() {
                 setPageId(p.id);
                 setPageMenuAnchor(null);
               }}
+              sx={{ display: "flex", alignItems: "center", gap: 1 }}
             >
+              {p.sourceType === "fb_form" ? <FacebookIcon sx={{ fontSize: 16, color: "#1877f2" }} /> : <LanguageIcon sx={{ fontSize: 16, color: "text.secondary" }} />}
               {p.name}
             </MenuItem>
           ))}
@@ -132,176 +140,196 @@ export default function LeadPagePage() {
         </Typography>
       </Box>
 
-      <Box sx={{ display: "flex", flexDirection: { xs: "column", md: "row" }, gap: 3, p: 2, maxWidth: 1100, mx: "auto" }}>
-        <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
-          <Section title="Page details">
-            <TextField label="Agent name" value={page.agentName} onChange={(e) => update({ agentName: e.target.value })} fullWidth />
-            <TextField label="Headline" value={page.headline} onChange={(e) => update({ headline: e.target.value })} fullWidth multiline minRows={2} />
-            <TextField label="Suburb / area" value={page.suburb} onChange={(e) => update({ suburb: e.target.value })} fullWidth />
-            <TextField label="Phone" value={page.phone} onChange={(e) => update({ phone: e.target.value })} fullWidth />
-            <Box sx={{ display: "flex", gap: 2 }}>
-              <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0.75 }}>
-                <Box sx={{ position: "relative" }}>
-                  <Box
-                    component="label"
-                    sx={{
-                      width: 64, height: 64, borderRadius: "8px", border: `2px dashed ${page.logoDataUrl ? tokens.primary : tokens.divider}`,
-                      display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", overflow: "hidden",
-                      bgcolor: page.logoDataUrl ? "transparent" : tokens.bg,
-                      "&:hover": { borderColor: tokens.primary },
-                    }}
-                  >
-                    {page.logoDataUrl ? (
-                      <Box component="img" src={page.logoDataUrl} alt="" sx={{ width: "100%", height: "100%", objectFit: "contain" }} />
-                    ) : (
-                      <AddIcon sx={{ fontSize: 20, color: "text.disabled" }} />
-                    )}
-                    <input type="file" hidden accept="image/*" onChange={(e) => onLogoChange(e.target.files?.[0] ?? null)} />
-                  </Box>
-                  {page.logoDataUrl && (
-                    <IconButton size="small" onClick={() => { update({ logoDataUrl: null }); showSnack("Logo removed"); }}
-                      sx={{ position: "absolute", top: -8, right: -8, width: 20, height: 20, bgcolor: "#e0e0e0", "&:hover": { bgcolor: "#bdbdbd" } }}>
-                      <CloseIcon sx={{ fontSize: 12 }} />
-                    </IconButton>
-                  )}
-                </Box>
-                <Typography sx={{ fontSize: 11, color: "text.secondary" }}>Logo</Typography>
-              </Box>
-              <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0.75 }}>
-                <Box sx={{ position: "relative" }}>
-                  <Box
-                    component="label"
-                    sx={{
-                      width: 64, height: 64, borderRadius: "50%", border: `2px dashed ${page.profilePhotoDataUrl ? tokens.primary : tokens.divider}`,
-                      display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", overflow: "hidden",
-                      bgcolor: page.profilePhotoDataUrl ? "transparent" : tokens.bg,
-                      "&:hover": { borderColor: tokens.primary },
-                    }}
-                  >
-                    {page.profilePhotoDataUrl ? (
-                      <Box component="img" src={page.profilePhotoDataUrl} alt="" sx={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                    ) : (
-                      <AddIcon sx={{ fontSize: 20, color: "text.disabled" }} />
-                    )}
-                    <input type="file" hidden accept="image/*" onChange={(e) => onPhotoChange(e.target.files?.[0] ?? null)} />
-                  </Box>
-                  {page.profilePhotoDataUrl && (
-                    <IconButton size="small" onClick={() => { update({ profilePhotoDataUrl: null }); showSnack("Photo removed"); }}
-                      sx={{ position: "absolute", top: -4, right: -4, width: 20, height: 20, bgcolor: "#e0e0e0", "&:hover": { bgcolor: "#bdbdbd" } }}>
-                      <CloseIcon sx={{ fontSize: 12 }} />
-                    </IconButton>
-                  )}
-                </Box>
-                <Typography sx={{ fontSize: 11, color: "text.secondary" }}>Profile photo</Typography>
-              </Box>
-            </Box>
-            <Typography sx={{ fontSize: 12, color: "text.secondary", mt: -1 }}>
-              Logo shows in the page header. Profile photo shows on the thank-you screen.
-            </Typography>
-
-            <Box>
-              <Typography sx={{ fontSize: 13, color: "text.secondary", mb: 1 }}>Accent color</Typography>
-              <Box
-                component="label"
-                sx={{
-                  position: "relative",
-                  width: 36,
-                  height: 36,
-                  borderRadius: "50%",
-                  bgcolor: page.accentColor,
-                  outline: `1px solid ${tokens.divider}`,
-                  cursor: "pointer",
-                  display: "block",
-                  overflow: "hidden",
-                }}
-              >
-                <input
-                  type="color"
-                  value={page.accentColor}
-                  onChange={(e) => update({ accentColor: e.target.value })}
-                  style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer", border: 0, padding: 0 }}
-                />
-              </Box>
-            </Box>
-
-            <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      {page.sourceType === "fb_form" ? (
+        <Box sx={{ maxWidth: 600, mx: "auto", p: 2 }}>
+          <Section title="Facebook instant form">
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+              <FacebookIcon sx={{ fontSize: 32, color: "#1877f2" }} />
               <Box>
-                <Typography sx={{ fontSize: 14, fontWeight: 500 }}>Show intro screen</Typography>
-                <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>Headline + Get Started, before Step 1</Typography>
+                <Typography sx={{ fontSize: 15, fontWeight: 600 }}>{page.fbFormName || page.name}</Typography>
+                <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
+                  Leads from this form go to <b style={{ color: tokens.ink }}>{pipeline.name}</b> pipeline
+                </Typography>
               </Box>
-              <Switch checked={page.showIntro} onChange={(e) => update({ showIntro: e.target.checked })} />
             </Box>
-          </Section>
-
-          <Section title="Submit &amp; thank you">
-            <TextField label="Submit button text" value={page.ctaLabel} onChange={(e) => update({ ctaLabel: e.target.value })} fullWidth />
-            <TextField
-              label="Thank-you headline"
-              value={page.thankYouHeadline}
-              onChange={(e) => update({ thankYouHeadline: e.target.value })}
-              helperText="{name} is replaced with what they typed"
-              fullWidth
-            />
-            <TextField label="Thank-you subtext" value={page.thankYouSubtext} onChange={(e) => update({ thankYouSubtext: e.target.value })} fullWidth multiline minRows={2} />
-          </Section>
-
-          {isOperator && (
-            <Section title="Tracking">
-              <TextField
-                label="Facebook Pixel ID"
-                placeholder="Paste pixel ID or the full code snippet from Facebook"
-                value={page.fbPixelId}
-                onChange={(e) => {
-                  let val = e.target.value;
-                  const match = val.match(/fbq\s*\(\s*['"]init['"]\s*,\s*['"](\d+)['"]\s*\)/);
-                  if (match) val = match[1];
-                  update({ fbPixelId: val });
-                }}
-                helperText="Paste just the ID (e.g. 1234567890123456) or the full pixel code — we'll extract the ID automatically"
-                fullWidth
-                multiline
-                minRows={1}
-                maxRows={3}
-              />
-            </Section>
-          )}
-
-          <Section title="Form questions">
-            <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
-              Name, phone and email are always collected last, in that order, and can't be reordered or removed. Every other
-              question — including the address and timeline ones every page starts with — can be edited, reordered or removed.
+            <Chip label="Connected" color="success" size="small" sx={{ alignSelf: "flex-start" }} />
+            <Typography sx={{ fontSize: 13, color: "text.secondary" }}>
+              When someone fills out this form on Facebook, the lead appears in your Leads tab automatically.
             </Typography>
-            <TextField label="Name field question" value={page.nameLabel} onChange={(e) => update({ nameLabel: e.target.value })} fullWidth />
-            <TextField label="Phone field question" value={page.phoneLabel} onChange={(e) => update({ phoneLabel: e.target.value })} fullWidth />
-
-            <CustomQuestionEditor pageId={page.id} tier={tier} onUpgrade={() => {
-              posthog.capture("upgrade_clicked", { source: "lead_page_custom_questions" });
-              navigate("/upgrade");
-            }} />
           </Section>
         </Box>
-
-        <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2, alignSelf: "flex-start", position: { md: "sticky" }, top: { md: 72 } }}>
-          <Section
-            title="Live preview"
-            action={
-              <Typography
-                component="a"
-                href={`/p/${page.slug}`}
-                target="_blank"
-                rel="noopener"
-                sx={{ display: "flex", alignItems: "center", gap: 0.4, fontSize: 12.5, color: tokens.primary, textDecoration: "none", textTransform: "none", fontWeight: 500, "&:hover": { textDecoration: "underline" } }}
-              >
-                Open live preview <OpenInNewIcon sx={{ fontSize: 14 }} />
+      ) : (
+        <Box sx={{ display: "flex", flexDirection: { xs: "column", md: "row" }, gap: 3, p: 2, maxWidth: 1100, mx: "auto" }}>
+          <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
+            <Section title="Page details">
+              <TextField label="Agent name" value={page.agentName} onChange={(e) => update({ agentName: e.target.value })} fullWidth />
+              <TextField label="Headline" value={page.headline} onChange={(e) => update({ headline: e.target.value })} fullWidth multiline minRows={2} />
+              <TextField label="Suburb / area" value={page.suburb} onChange={(e) => update({ suburb: e.target.value })} fullWidth />
+              <TextField label="Phone" value={page.phone} onChange={(e) => update({ phone: e.target.value })} fullWidth />
+              <Box sx={{ display: "flex", gap: 2 }}>
+                <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0.75 }}>
+                  <Box sx={{ position: "relative" }}>
+                    <Box
+                      component="label"
+                      sx={{
+                        width: 64, height: 64, borderRadius: "8px", border: `2px dashed ${page.logoDataUrl ? tokens.primary : tokens.divider}`,
+                        display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", overflow: "hidden",
+                        bgcolor: page.logoDataUrl ? "transparent" : tokens.bg,
+                        "&:hover": { borderColor: tokens.primary },
+                      }}
+                    >
+                      {page.logoDataUrl ? (
+                        <Box component="img" src={page.logoDataUrl} alt="" sx={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                      ) : (
+                        <AddIcon sx={{ fontSize: 20, color: "text.disabled" }} />
+                      )}
+                      <input type="file" hidden accept="image/*" onChange={(e) => onLogoChange(e.target.files?.[0] ?? null)} />
+                    </Box>
+                    {page.logoDataUrl && (
+                      <IconButton size="small" onClick={() => { update({ logoDataUrl: null }); showSnack("Logo removed"); }}
+                        sx={{ position: "absolute", top: -8, right: -8, width: 20, height: 20, bgcolor: "#e0e0e0", "&:hover": { bgcolor: "#bdbdbd" } }}>
+                        <CloseIcon sx={{ fontSize: 12 }} />
+                      </IconButton>
+                    )}
+                  </Box>
+                  <Typography sx={{ fontSize: 11, color: "text.secondary" }}>Logo</Typography>
+                </Box>
+                <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0.75 }}>
+                  <Box sx={{ position: "relative" }}>
+                    <Box
+                      component="label"
+                      sx={{
+                        width: 64, height: 64, borderRadius: "50%", border: `2px dashed ${page.profilePhotoDataUrl ? tokens.primary : tokens.divider}`,
+                        display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", overflow: "hidden",
+                        bgcolor: page.profilePhotoDataUrl ? "transparent" : tokens.bg,
+                        "&:hover": { borderColor: tokens.primary },
+                      }}
+                    >
+                      {page.profilePhotoDataUrl ? (
+                        <Box component="img" src={page.profilePhotoDataUrl} alt="" sx={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      ) : (
+                        <AddIcon sx={{ fontSize: 20, color: "text.disabled" }} />
+                      )}
+                      <input type="file" hidden accept="image/*" onChange={(e) => onPhotoChange(e.target.files?.[0] ?? null)} />
+                    </Box>
+                    {page.profilePhotoDataUrl && (
+                      <IconButton size="small" onClick={() => { update({ profilePhotoDataUrl: null }); showSnack("Photo removed"); }}
+                        sx={{ position: "absolute", top: -4, right: -4, width: 20, height: 20, bgcolor: "#e0e0e0", "&:hover": { bgcolor: "#bdbdbd" } }}>
+                        <CloseIcon sx={{ fontSize: 12 }} />
+                      </IconButton>
+                    )}
+                  </Box>
+                  <Typography sx={{ fontSize: 11, color: "text.secondary" }}>Profile photo</Typography>
+                </Box>
+              </Box>
+              <Typography sx={{ fontSize: 12, color: "text.secondary", mt: -1 }}>
+                Logo shows in the page header. Profile photo shows on the thank-you screen.
               </Typography>
-            }
-          >
-            <PreviewAndSubmit page={page} pipelineKind={pipeline.kind} />
-          </Section>
 
-          <ShareSection page={page} />
+              <Box>
+                <Typography sx={{ fontSize: 13, color: "text.secondary", mb: 1 }}>Accent color</Typography>
+                <Box
+                  component="label"
+                  sx={{
+                    position: "relative",
+                    width: 36,
+                    height: 36,
+                    borderRadius: "50%",
+                    bgcolor: page.accentColor,
+                    outline: `1px solid ${tokens.divider}`,
+                    cursor: "pointer",
+                    display: "block",
+                    overflow: "hidden",
+                  }}
+                >
+                  <input
+                    type="color"
+                    value={page.accentColor}
+                    onChange={(e) => update({ accentColor: e.target.value })}
+                    style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer", border: 0, padding: 0 }}
+                  />
+                </Box>
+              </Box>
+
+              <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <Box>
+                  <Typography sx={{ fontSize: 14, fontWeight: 500 }}>Show intro screen</Typography>
+                  <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>Headline + Get Started, before Step 1</Typography>
+                </Box>
+                <Switch checked={page.showIntro} onChange={(e) => update({ showIntro: e.target.checked })} />
+              </Box>
+            </Section>
+
+            <Section title="Submit &amp; thank you">
+              <TextField label="Submit button text" value={page.ctaLabel} onChange={(e) => update({ ctaLabel: e.target.value })} fullWidth />
+              <TextField
+                label="Thank-you headline"
+                value={page.thankYouHeadline}
+                onChange={(e) => update({ thankYouHeadline: e.target.value })}
+                helperText="{name} is replaced with what they typed"
+                fullWidth
+              />
+              <TextField label="Thank-you subtext" value={page.thankYouSubtext} onChange={(e) => update({ thankYouSubtext: e.target.value })} fullWidth multiline minRows={2} />
+            </Section>
+
+            {isOperator && (
+              <Section title="Tracking">
+                <TextField
+                  label="Facebook Pixel ID"
+                  placeholder="Paste pixel ID or the full code snippet from Facebook"
+                  value={page.fbPixelId}
+                  onChange={(e) => {
+                    let val = e.target.value;
+                    const match = val.match(/fbq\s*\(\s*['"]init['"]\s*,\s*['"](\d+)['"]\s*\)/);
+                    if (match) val = match[1];
+                    update({ fbPixelId: val });
+                  }}
+                  helperText="Paste just the ID (e.g. 1234567890123456) or the full pixel code — we'll extract the ID automatically"
+                  fullWidth
+                  multiline
+                  minRows={1}
+                  maxRows={3}
+                />
+              </Section>
+            )}
+
+            <Section title="Form questions">
+              <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
+                Name, phone and email are always collected last, in that order, and can't be reordered or removed. Every other
+                question — including the address and timeline ones every page starts with — can be edited, reordered or removed.
+              </Typography>
+              <TextField label="Name field question" value={page.nameLabel} onChange={(e) => update({ nameLabel: e.target.value })} fullWidth />
+              <TextField label="Phone field question" value={page.phoneLabel} onChange={(e) => update({ phoneLabel: e.target.value })} fullWidth />
+
+              <CustomQuestionEditor pageId={page.id} tier={tier} onUpgrade={() => {
+                posthog.capture("upgrade_clicked", { source: "lead_page_custom_questions" });
+                navigate("/upgrade");
+              }} />
+            </Section>
+          </Box>
+
+          <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2, alignSelf: "flex-start", position: { md: "sticky" }, top: { md: 72 } }}>
+            <Section
+              title="Live preview"
+              action={
+                <Typography
+                  component="a"
+                  href={`/p/${page.slug}`}
+                  target="_blank"
+                  rel="noopener"
+                  sx={{ display: "flex", alignItems: "center", gap: 0.4, fontSize: 12.5, color: tokens.primary, textDecoration: "none", textTransform: "none", fontWeight: 500, "&:hover": { textDecoration: "underline" } }}
+                >
+                  Open live preview <OpenInNewIcon sx={{ fontSize: 14 }} />
+                </Typography>
+              }
+            >
+              <PreviewAndSubmit page={page} pipelineKind={pipeline.kind} />
+            </Section>
+
+            <ShareSection page={page} />
+          </Box>
         </Box>
-      </Box>
+      )}
 
       <AddPageDialog
         open={addPageOpen}
@@ -406,32 +434,124 @@ function AddPageDialog({
   onClose: () => void;
   onCreated: (id: string) => void;
 }) {
+  const [sourceType, setSourceType] = useState<"website" | "fb_form">("website");
   const [name, setName] = useState("");
   const [pipelineId, setPipelineId] = useState("");
+  const [fbForms, setFbForms] = useState<FbForm[]>([]);
+  const [fbFormId, setFbFormId] = useState("");
+  const [loadingForms, setLoadingForms] = useState(false);
   const addPage = useAddLeadPage();
   const posthog = usePostHog();
 
   useEffect(() => {
     if (open) {
       setName("");
+      setSourceType("website");
       setPipelineId(pipelines[0]?.id ?? "");
+      setFbForms([]);
+      setFbFormId("");
     }
   }, [open, pipelines]);
 
+  useEffect(() => {
+    if (sourceType !== "fb_form" || !open) return;
+    let cancelled = false;
+    (async () => {
+      setLoadingForms(true);
+      try {
+        const profile = await getMyProfile();
+        if (!profile?.fbAdAccountId && !cancelled) {
+          setFbForms([]);
+          setLoadingForms(false);
+          return;
+        }
+        const pageId = profile?.fbPageId;
+        if (!pageId) { setFbForms([]); setLoadingForms(false); return; }
+        const forms = await listFbForms(pageId);
+        if (!cancelled) setFbForms(forms);
+      } catch {
+        if (!cancelled) setFbForms([]);
+      }
+      if (!cancelled) setLoadingForms(false);
+    })();
+    return () => { cancelled = true; };
+  }, [sourceType, open]);
+
+  const selectedForm = fbForms.find((f) => f.id === fbFormId);
+
   async function create() {
     const pipeline = pipelines.find((p) => p.id === pipelineId);
-    if (!pipeline || !name.trim()) return;
-    const p = await addPage.mutateAsync({ name: name.trim(), pipelineId: pipeline.id, kind: pipeline.kind });
-    posthog.capture("lead_page_added", { preset: pipeline.kind });
+    if (!pipeline) return;
+    if (sourceType === "website" && !name.trim()) return;
+    if (sourceType === "fb_form" && !selectedForm) return;
+
+    const pageName = sourceType === "fb_form" ? (selectedForm?.name || "FB Form") : name.trim();
+    const p = await addPage.mutateAsync({
+      name: pageName,
+      pipelineId: pipeline.id,
+      kind: pipeline.kind,
+      sourceType,
+      fbFormId: selectedForm?.id,
+      fbFormName: selectedForm?.name,
+    });
+    posthog.capture("lead_page_added", { preset: pipeline.kind, sourceType });
     onClose();
     onCreated(p.id);
   }
 
+  const canCreate = sourceType === "website" ? !!name.trim() && !!pipelineId : !!fbFormId && !!pipelineId;
+
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="xs">
-      <DialogTitle sx={{ fontSize: 18, fontWeight: 500 }}>Add a lead page</DialogTitle>
+      <DialogTitle sx={{ fontSize: 18, fontWeight: 500 }}>Add lead source</DialogTitle>
       <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-        <TextField label="Page name" value={name} onChange={(e) => setName(e.target.value)} fullWidth autoFocus />
+        <Box>
+          <Typography sx={{ fontSize: 13, color: "text.secondary", mb: 0.5 }}>Source type</Typography>
+          <RadioGroup row value={sourceType} onChange={(e) => setSourceType(e.target.value as "website" | "fb_form")}>
+            <FormControlLabel value="website" control={<Radio />} label={
+              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                <LanguageIcon sx={{ fontSize: 16 }} /> Lead page
+              </Box>
+            } />
+            <FormControlLabel value="fb_form" control={<Radio />} label={
+              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                <FacebookIcon sx={{ fontSize: 16, color: "#1877f2" }} /> Instant form
+              </Box>
+            } />
+          </RadioGroup>
+        </Box>
+
+        {sourceType === "website" ? (
+          <TextField label="Page name" value={name} onChange={(e) => setName(e.target.value)} fullWidth autoFocus />
+        ) : (
+          <Box>
+            {loadingForms ? (
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1, py: 1 }}>
+                <CircularProgress size={18} />
+                <Typography sx={{ fontSize: 13, color: "text.secondary" }}>Loading forms from Facebook...</Typography>
+              </Box>
+            ) : fbForms.length > 0 ? (
+              <TextField
+                select
+                label="Select a form"
+                value={fbFormId}
+                onChange={(e) => setFbFormId(e.target.value)}
+                fullWidth
+              >
+                {fbForms.map((f) => (
+                  <MenuItem key={f.id} value={f.id}>
+                    {f.name}
+                  </MenuItem>
+                ))}
+              </TextField>
+            ) : (
+              <Typography sx={{ fontSize: 13, color: "text.secondary", py: 1 }}>
+                No Facebook page linked. Set your FB Page ID in the admin settings first.
+              </Typography>
+            )}
+          </Box>
+        )}
+
         <Box>
           <Typography sx={{ fontSize: 13, color: "text.secondary", mb: 0.5 }}>Which pipeline should this feed?</Typography>
           <RadioGroup value={pipelineId} onChange={(e) => setPipelineId(e.target.value)}>
@@ -443,7 +563,7 @@ function AddPageDialog({
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>
-        <Button variant="contained" disabled={!name.trim() || !pipelineId} onClick={create}>
+        <Button variant="contained" disabled={!canCreate} onClick={create}>
           Create
         </Button>
       </DialogActions>

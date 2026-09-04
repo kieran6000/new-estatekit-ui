@@ -89,13 +89,28 @@ Deno.serve(async (req) => {
           const email = fields.email || "";
 
           // Detect buyer vs seller from FB form name
-          let pipelineKind = "seller";
+          // Check if this form is explicitly linked to a pipeline via lead_pages
+          let linkedPipelineId: string | null = null;
           if (formId) {
+            const { data: linkedPage } = await supabase
+              .from("lead_pages")
+              .select("pipeline_id")
+              .eq("fb_form_id", String(formId))
+              .maybeSingle();
+            if (linkedPage) {
+              linkedPipelineId = linkedPage.pipeline_id;
+              console.log(`Form ${formId} explicitly linked to pipeline ${linkedPipelineId}`);
+            }
+          }
+
+          // Fallback: detect buyer vs seller from FB form name
+          let pipelineKind = "seller";
+          if (!linkedPipelineId && formId) {
             const formName = await fetchFbFormName(formId);
             if (formName && /buyer|buy|purchase|viewing/i.test(formName)) {
               pipelineKind = "buyer";
             }
-            console.log(`Form "${formName}" → ${pipelineKind} pipeline`);
+            console.log(`Form "${formName}" -> ${pipelineKind} pipeline (auto-detected)`);
           }
 
           const { data: pipelines } = await supabase
@@ -104,7 +119,9 @@ Deno.serve(async (req) => {
             .eq("agent_id", agent.agent_id)
             .order("created_at", { ascending: true });
 
-          const pipeline = pipelines?.find((p) => p.kind === pipelineKind) || pipelines?.[0];
+          const pipeline = linkedPipelineId
+            ? pipelines?.find((p) => p.id === linkedPipelineId) || pipelines?.[0]
+            : pipelines?.find((p) => p.kind === pipelineKind) || pipelines?.[0];
 
           // Build form_answers from all FB fields
           const formAnswers = (leadData.field_data || [])

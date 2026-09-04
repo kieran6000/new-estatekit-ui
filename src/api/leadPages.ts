@@ -20,6 +20,9 @@ interface LeadPageRow {
   thank_you_headline: string;
   thank_you_subtext: string;
   fb_pixel_id: string;
+  source_type: string;
+  fb_form_id: string | null;
+  fb_form_name: string | null;
 }
 
 function rowToPage(r: LeadPageRow): LeadPage {
@@ -42,6 +45,9 @@ function rowToPage(r: LeadPageRow): LeadPage {
     thankYouHeadline: r.thank_you_headline,
     thankYouSubtext: r.thank_you_subtext,
     fbPixelId: r.fb_pixel_id,
+    sourceType: (r.source_type as "website" | "fb_form") || "website",
+    fbFormId: r.fb_form_id,
+    fbFormName: r.fb_form_name,
   };
 }
 
@@ -67,6 +73,9 @@ function patchToRow(
   if (p.thankYouSubtext !== undefined)
     m.thank_you_subtext = p.thankYouSubtext;
   if (p.fbPixelId !== undefined) m.fb_pixel_id = p.fbPixelId;
+  if (p.sourceType !== undefined) m.source_type = p.sourceType;
+  if (p.fbFormId !== undefined) m.fb_form_id = p.fbFormId;
+  if (p.fbFormName !== undefined) m.fb_form_name = p.fbFormName;
   return m;
 }
 
@@ -105,6 +114,7 @@ export async function addLeadPage(
   name: string,
   pipelineId: string,
   _kind: PipelineKind,
+  opts?: { sourceType?: "website" | "fb_form"; fbFormId?: string; fbFormName?: string },
 ): Promise<LeadPage> {
   const agentId = await getCurrentUserId();
   const slug = name
@@ -112,13 +122,31 @@ export async function addLeadPage(
     .trim()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "") || "page";
+  const row: Record<string, unknown> = { agent_id: agentId, pipeline_id: pipelineId, name, slug };
+  if (opts?.sourceType) row.source_type = opts.sourceType;
+  if (opts?.fbFormId) row.fb_form_id = opts.fbFormId;
+  if (opts?.fbFormName) row.fb_form_name = opts.fbFormName;
   const { data, error } = await supabase
     .from("lead_pages")
-    .insert({ agent_id: agentId, pipeline_id: pipelineId, name, slug })
+    .insert(row)
     .select("*")
     .single();
   if (error) throw new Error(error.message);
   return rowToPage(data as LeadPageRow);
+}
+
+export interface FbForm {
+  id: string;
+  name: string;
+  status: string;
+}
+
+export async function listFbForms(fbPageId: string): Promise<FbForm[]> {
+  const { data, error } = await supabase.functions.invoke("list-fb-forms", {
+    body: { pageId: fbPageId },
+  });
+  if (error) throw new Error(error.message);
+  return data?.forms || [];
 }
 
 export async function updateLeadPage(

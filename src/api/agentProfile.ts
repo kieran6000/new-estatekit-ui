@@ -13,6 +13,7 @@ export interface AgentProfile {
   adspendBalance: number;
   billingType: "card" | "prepaid";
   fbAdAccountId: string;
+  fbPageId: string | null;
   sidebarColor: string;
   sidebarLogoUrl: string | null;
 }
@@ -30,6 +31,7 @@ interface ProfileRow {
   adspend_balance: number;
   billing_type: "card" | "prepaid";
   fb_ad_account_id: string;
+  fb_page_id: string | null;
   sidebar_color: string;
   sidebar_logo_url: string | null;
 }
@@ -48,6 +50,7 @@ function rowToProfile(r: ProfileRow): AgentProfile {
     adspendBalance: r.adspend_balance,
     billingType: r.billing_type,
     fbAdAccountId: r.fb_ad_account_id,
+    fbPageId: r.fb_page_id,
     sidebarColor: r.sidebar_color || "#111827",
     sidebarLogoUrl: r.sidebar_logo_url,
   };

@@ -15,8 +15,11 @@ export function useLeadPages(opts?: { enabled?: boolean }) {
 export function useAddLeadPage() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ name, pipelineId, kind }: { name: string; pipelineId: string; kind: PipelineKind }) =>
-      leadPagesApi.addLeadPage(name, pipelineId, kind),
+    mutationFn: async ({ name, pipelineId, kind, sourceType, fbFormId, fbFormName }: {
+      name: string; pipelineId: string; kind: PipelineKind;
+      sourceType?: "website" | "fb_form"; fbFormId?: string; fbFormName?: string;
+    }) =>
+      leadPagesApi.addLeadPage(name, pipelineId, kind, { sourceType, fbFormId, fbFormName }),
     onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
   });
 }

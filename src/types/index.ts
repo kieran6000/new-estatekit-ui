@@ -152,6 +152,9 @@ export interface LeadPage {
   thankYouHeadline: string;
   thankYouSubtext: string;
   fbPixelId: string;
+  sourceType: "website" | "fb_form";
+  fbFormId: string | null;
+  fbFormName: string | null;
 }
 
 /** "address" behaves like short_text but keeps the location-pin icon and an
