@@ -10,6 +10,7 @@ import {
   DialogContent,
   DialogTitle,
   IconButton,
+  InputAdornment,
   Menu,
   MenuItem,
   Radio,
@@ -638,34 +639,37 @@ function ShareSection({ page, onUpdateSlug }: { page: LeadPage; onUpdateSlug: (s
       <Typography sx={{ fontSize: 13.5, color: "text.secondary", mt: -1 }}>
         Share this link anywhere — every submission lands straight in your Leads tab.
       </Typography>
-      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
         {editingSlug ? (
-          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, flex: 1 }}>
-            <Typography sx={{ fontSize: 13, color: "text.secondary", whiteSpace: "nowrap" }}>{baseUrl}/p/</Typography>
-            <TextField
-              value={slugDraft}
-              onChange={(e) => setSlugDraft(e.target.value)}
-              size="small"
-              autoFocus
-              onBlur={saveSlug}
-              onKeyDown={(e) => { if (e.key === "Enter") saveSlug(); if (e.key === "Escape") setEditingSlug(false); }}
-              sx={{ flex: 1 }}
-            />
-          </Box>
+          <TextField
+            value={slugDraft}
+            onChange={(e) => setSlugDraft(e.target.value)}
+            size="small"
+            autoFocus
+            onBlur={saveSlug}
+            onKeyDown={(e) => { if (e.key === "Enter") saveSlug(); if (e.key === "Escape") setEditingSlug(false); }}
+            slotProps={{ input: { startAdornment: <InputAdornment position="start" sx={{ mr: 0 }}><Box component="span" sx={{ fontSize: 13, color: "text.disabled" }}>/p/</Box></InputAdornment> } }}
+            sx={{ flex: "1 1 180px", minWidth: 0 }}
+          />
         ) : (
           <TextField
             value={shareUrl}
-            fullWidth
             size="small"
-            slotProps={{ input: { readOnly: true } }}
+            slotProps={{ input: { readOnly: true, sx: { fontSize: 13 } } }}
             onClick={() => { setSlugDraft(page.slug); setEditingSlug(true); }}
-            sx={{ cursor: "pointer" }}
+            title="Click to edit the link"
+            sx={{ flex: "1 1 180px", minWidth: 0, cursor: "pointer" }}
           />
         )}
-        <Button variant="outlined" startIcon={<ContentCopyIcon fontSize="small" />} onClick={copyLink}>
+        <Button variant="outlined" startIcon={<ContentCopyIcon fontSize="small" />} onClick={copyLink} sx={{ flexShrink: 0 }}>
           Copy
         </Button>
       </Box>
+      {editingSlug && (
+        <Typography sx={{ fontSize: 11.5, color: "text.secondary", mt: -0.5 }}>
+          Editing the link — press Enter to save. Full link: {baseUrl}/p/{slugDraft || page.slug}
+        </Typography>
+      )}
       <Button variant="contained" startIcon={<ShareIcon fontSize="small" />} onClick={shareLink} sx={{ alignSelf: "flex-start" }}>
         Share
       </Button>

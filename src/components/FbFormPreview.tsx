@@ -94,17 +94,18 @@ export default function FbFormPreview({
           maxWidth: 340,
           mx: "auto",
           bgcolor: "#e4e6eb",
-          borderRadius: "18px",
+          borderRadius: "10px",
           overflow: "hidden",
           border: "1px solid #d0d3d9",
           display: "flex",
           flexDirection: "column",
           height: 560,
+          pt: 2.5,
         }}
       >
         {/* Scrollable card area */}
-        <Box sx={{ flex: 1, overflowY: "auto", px: 1.5, pt: 2.5, pb: 1.5 }}>
-          <Box sx={{ bgcolor: "#fff", borderRadius: "12px", boxShadow: "0 1px 4px rgba(0,0,0,.12)", px: 2, pt: 2.5, pb: 2, minHeight: 340, display: "flex", flexDirection: "column", alignItems: "stretch" }}>
+        <Box sx={{ flex: 1, px: 1.5, pt: 2.5, pb: 1.5 }}>
+          <Box sx={{ bgcolor: "#fff", borderRadius: "12px", boxShadow: "0 1px 4px rgba(0,0,0,.12)", px: 2, pt: 2.5, pb: 2, minHeight: "fit-content", display: "flex", flexDirection: "column", alignItems: "stretch" }}>
             {/* Avatar */}
             <Box
               sx={{
@@ -121,6 +122,7 @@ export default function FbFormPreview({
                 overflow: "hidden",
                 alignSelf: "center",
                 mb: 1,
+                mt: -5,
                 flexShrink: 0,
               }}
             >
@@ -203,7 +205,7 @@ export default function FbFormPreview({
         {/* Sticky CTA */}
         <Box sx={{ flexShrink: 0, bgcolor: "#fff", borderTop: "1px solid #e4e6eb", p: 1.25 }}>
           <Box sx={{ height: 3, borderRadius: 2, bgcolor: "#e4e6eb", mb: 1.25, overflow: "hidden" }}>
-            <Box sx={{ height: "100%", width: `${((i + 1) / total) * 100}%`, bgcolor: "#42b72a", transition: "width .2s" }} />
+            <Box sx={{ height: "100%", width: `${((i + 1) / total) * 100}%`, bgcolor: "#2c841b", transition: "width .2s" }} />
           </Box>
           <Box
             component="button"
