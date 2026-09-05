@@ -262,7 +262,7 @@ export default function LeadCaptureForm({
  * — never the profile photo, which is reserved for the thank-you screen. */
 export function HeaderBrand({ page }: { page: LeadPage }) {
   return page.logoDataUrl ? (
-    <Box component="img" src={page.logoDataUrl} alt="" sx={{ height: 34, width: "auto", display: "inline-block", verticalAlign: "middle" }} />
+    <Box component="img" src={page.logoDataUrl} alt="" sx={{ height: 50, width: "auto", display: "inline-block", verticalAlign: "middle" }} />
   ) : (
     <Typography sx={{ fontSize: 14, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>
       {page.agentName || page.name}

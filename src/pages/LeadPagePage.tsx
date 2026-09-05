@@ -45,7 +45,9 @@ import { usePipelines } from "../hooks/usePipelines";
 import { getFbForm, listFbForms, type FbForm } from "../api/leadPages";
 import FbFormPreview from "../components/FbFormPreview";
 import { getMyProfile } from "../api/agentProfile";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { supabase, getActiveAgentIdSync } from "../api/_client";
+import { listMySoldListings, addSoldListing, deleteSoldListing } from "../api/soldListings";
 import {
   useAddCustomQuestion,
   useCustomQuestions,
@@ -393,6 +395,12 @@ export default function LeadPagePage() {
                 navigate("/upgrade");
               }} />
             </Section>
+
+            {isOperator && (
+              <Section title="Recent sales (social proof)">
+                <RecentSalesEditor />
+              </Section>
+            )}
           </Box>
 
           <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2, alignSelf: "flex-start", position: { md: "sticky" }, top: { md: 72 } }}>
@@ -878,6 +886,75 @@ function LeadPagePageSkeleton() {
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Skeleton variant="rounded" height={340} sx={{ borderRadius: "8px" }} />
         </Box>
+      </Box>
+    </Box>
+  );
+}
+
+function RecentSalesEditor() {
+  const qc = useQueryClient();
+  const showSnack = useSnack();
+  const { data: listings = [] } = useQuery({ queryKey: ["mySold"], queryFn: listMySoldListings });
+  const [address, setAddress] = useState("");
+  const [price, setPrice] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function onImage(file: File | null) {
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { showSnack("Image must be under 5 MB"); return; }
+    if (!address.trim()) { showSnack("Add the address first"); return; }
+    setBusy(true);
+    try {
+      const agentId = getActiveAgentIdSync() || "agent";
+      const ext = file.name.split(".").pop() || "jpg";
+      const path = `${agentId}/sale-${Date.now()}.${ext}`;
+      const { error } = await supabase.storage.from("logos").upload(path, file, { upsert: true });
+      if (error) { showSnack("Upload failed: " + error.message); setBusy(false); return; }
+      const { data: urlData } = supabase.storage.from("logos").getPublicUrl(path);
+      await addSoldListing({ imageUrl: urlData.publicUrl, address: address.trim(), price: price ? Number(price.replace(/\D/g, "")) : null });
+      await qc.invalidateQueries({ queryKey: ["mySold"] });
+      await qc.invalidateQueries({ queryKey: ["publicSold"] });
+      setAddress("");
+      setPrice("");
+      showSnack("Sale added");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove(id: string) {
+    await deleteSoldListing(id);
+    await qc.invalidateQueries({ queryKey: ["mySold"] });
+    await qc.invalidateQueries({ queryKey: ["publicSold"] });
+    showSnack("Removed");
+  }
+
+  return (
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+      <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
+        Sold homes shown under the form and on the thank-you page as social proof. Add the address and price, then pick a photo.
+      </Typography>
+
+      {listings.map((l) => (
+        <Box key={l.id} sx={{ display: "flex", alignItems: "center", gap: 1.25, p: "8px 10px", border: `1px solid ${tokens.divider}`, borderRadius: "6px" }}>
+          {l.imageUrl && <Box component="img" src={l.imageUrl} alt="" sx={{ width: 48, height: 40, objectFit: "cover", borderRadius: "4px", flexShrink: 0 }} />}
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography sx={{ fontSize: 13.5, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.address}</Typography>
+            {l.price != null && <Typography sx={{ fontSize: 12, color: "text.secondary" }}>Sold for R{l.price.toLocaleString("en-ZA")}</Typography>}
+          </Box>
+          <IconButton size="small" onClick={() => remove(l.id)}>
+            <DeleteOutlineIcon fontSize="small" />
+          </IconButton>
+        </Box>
+      ))}
+
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 1, p: "12px", border: `1px dashed ${tokens.divider}`, borderRadius: "6px" }}>
+        <TextField label="Address" size="small" value={address} onChange={(e) => setAddress(e.target.value)} fullWidth placeholder="e.g. 12 Protea Drive, Midrand" />
+        <TextField label="Sold price (R)" size="small" value={price} onChange={(e) => setPrice(e.target.value.replace(/\D/g, ""))} fullWidth placeholder="e.g. 1970000" inputMode="numeric" />
+        <Button component="label" variant="contained" size="small" disabled={busy || !address.trim()} startIcon={busy ? <CircularProgress size={14} /> : <AddIcon fontSize="small" />} sx={{ alignSelf: "flex-start" }}>
+          {busy ? "Adding…" : "Add sale (pick photo)"}
+          <input type="file" hidden accept="image/*" onChange={(e) => onImage(e.target.files?.[0] ?? null)} />
+        </Button>
       </Box>
     </Box>
   );

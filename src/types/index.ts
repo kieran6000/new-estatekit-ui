@@ -131,6 +131,8 @@ export interface LeadPage {
   slug: string;
   name: string;
   pipelineId: string;
+  /** The owning agent's user id — used to load their sold-listings social proof. */
+  agentId: string;
   agentName: string;
   headline: string;
   suburb: string;

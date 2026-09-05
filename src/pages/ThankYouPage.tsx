@@ -6,7 +6,9 @@ import CallIcon from "@mui/icons-material/Call";
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutlined";
 import { tokens } from "../theme";
 import { getLeadPageBySlug } from "../api/leadPages";
+import { listSoldListingsForAgent } from "../api/soldListings";
 import { HeaderBrand } from "../components/LeadCaptureForm";
+import { SoldList } from "../components/SoldListings";
 import { initPixel, trackPixel } from "../lib/fbPixel";
 import type { LeadPage } from "../types";
 
@@ -55,8 +57,23 @@ export default function ThankYouPage() {
               <BrandedThankYou page={page} name={name} />
             </Box>
           </Box>
+          <SoldListingsSection agentId={page.agentId} />
         </Box>
       </Box>
+    </Box>
+  );
+}
+
+function SoldListingsSection({ agentId }: { agentId: string }) {
+  const { data: listings = [] } = useQuery({
+    queryKey: ["publicSold", agentId],
+    queryFn: () => listSoldListingsForAgent(agentId),
+    enabled: !!agentId,
+  });
+  if (!listings.length) return null;
+  return (
+    <Box sx={{ mt: 2 }}>
+      <SoldList listings={listings} />
     </Box>
   );
 }

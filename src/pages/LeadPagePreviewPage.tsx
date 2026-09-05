@@ -9,6 +9,8 @@ import { getPipelinePublic } from "../api/pipelines";
 import { listCustomQuestionsPublic } from "../api/customQuestions";
 import LeadCaptureForm, { HeaderBrand } from "../components/LeadCaptureForm";
 import { initPixel, trackPixel } from "../lib/fbPixel";
+import { listSoldListingsForAgent } from "../api/soldListings";
+import { SoldStrip } from "../components/SoldListings";
 
 export default function LeadPagePreviewPage() {
   const { slug } = useParams<{ slug: string }>();
@@ -31,6 +33,12 @@ export default function LeadPagePreviewPage() {
     queryKey: ["publicQuestions", page?.id],
     queryFn: () => listCustomQuestionsPublic(page!.id),
     enabled: !!page?.id,
+  });
+
+  const { data: soldListings = [] } = useQuery({
+    queryKey: ["publicSold", page?.agentId],
+    queryFn: () => listSoldListingsForAgent(page!.agentId),
+    enabled: !!page?.agentId,
   });
 
   useEffect(() => {
@@ -69,6 +77,13 @@ export default function LeadPagePreviewPage() {
                   navigate(`/thank-you?p=${page.slug}&n=${encodeURIComponent(name.split(" ")[0] || "there")}`);
                 }}
               />
+
+              {soldListings.length > 0 && (
+                <Box sx={{ mt: 2.5 }}>
+                  <SoldStrip listings={soldListings} area={page.suburb} accent={page.accentColor} />
+                </Box>
+              )}
+
               <Typography sx={{ fontSize: 11, color: "text.disabled", lineHeight: 1.5, mt: 2, textAlign: "center", px: 1 }}>
                 By submitting this form, you agree to be contacted by{" "}
                 {page.agentName || "our team"} via phone, email, and SMS

@@ -5,6 +5,7 @@ interface LeadPageRow {
   id: string;
   slug: string;
   pipeline_id: string;
+  agent_id: string;
   agent_name: string;
   name: string;
   headline: string;
@@ -31,6 +32,7 @@ function rowToPage(r: LeadPageRow): LeadPage {
     id: r.id,
     slug: r.slug,
     pipelineId: r.pipeline_id,
+    agentId: r.agent_id,
     agentName: r.agent_name,
     name: r.name,
     headline: r.headline,
