@@ -12,6 +12,7 @@ import {
   TableCell,
   TableHead,
   TableRow,
+  TextField,
   ToggleButton,
   ToggleButtonGroup,
   Toolbar,
@@ -21,7 +22,7 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { tokens } from "../theme";
 import { computeDerived, useOverview, type OverviewComputedRow, type OverviewPeriod } from "../hooks/useOverview";
 
-const PERIODS: OverviewPeriod[] = ["This month", "Last 30 days", "Last 7 days", "Lifetime"];
+const PERIODS: OverviewPeriod[] = ["This month", "Last 30 days", "Last 7 days", "Lifetime", "Custom"];
 
 type Mode = "simple" | "advanced";
 type ColKey = keyof OverviewComputedRow;
@@ -75,7 +76,10 @@ export default function OverviewPage() {
   const [mode, setMode] = useState<Mode>("simple");
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [sort, setSort] = useState<{ k: ColKey; dir: 1 | -1 }>({ k: "date", dir: -1 });
-  const { data = [], isLoading } = useOverview(period);
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const [fromDate, setFromDate] = useState(() => new Date(Date.now() - 29 * 864e5).toISOString().slice(0, 10));
+  const [toDate, setToDate] = useState(todayStr);
+  const { data = [], isLoading } = useOverview(period, { from: fromDate, to: toDate });
   const cols = mode === "simple" ? SIMPLE_COLS : ADVANCED_COLS;
 
   const totals = useMemo(() => {
@@ -143,6 +147,28 @@ export default function OverviewPage() {
             </MenuItem>
           ))}
         </Menu>
+
+        {period === "Custom" && (
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            <TextField
+              type="date"
+              size="small"
+              label="From"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: toDate } }}
+            />
+            <Typography sx={{ color: "text.disabled", fontSize: 13 }}>→</Typography>
+            <TextField
+              type="date"
+              size="small"
+              label="To"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: fromDate, max: todayStr } }}
+            />
+          </Box>
+        )}
 
         <ToggleButtonGroup
           size="small"

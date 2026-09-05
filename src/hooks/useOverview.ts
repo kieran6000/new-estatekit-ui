@@ -3,7 +3,8 @@ import { listLeads } from "../api/leads";
 import { getMyProfile, getFbAdInsights } from "../api/agentProfile";
 import type { LeadRow, Stage } from "../types";
 
-export type OverviewPeriod = "This month" | "Last 30 days" | "Last 7 days" | "Lifetime";
+export type OverviewPeriod = "This month" | "Last 30 days" | "Last 7 days" | "Lifetime" | "Custom";
+export interface DateRange { from: string; to: string }
 
 function fromDateFor(period: OverviewPeriod): string | null {
   const today = new Date();
@@ -86,7 +87,7 @@ function dateKey(iso: string): string {
 
 /** Build per-day Overview rows from the lead list, cohorted by the day each
  *  lead came in, and merge in real daily ad spend from Meta. */
-function buildRows(leads: LeadRow[], dailySpend: Record<string, number>, from: string | null): OverviewComputedRow[] {
+function buildRows(leads: LeadRow[], dailySpend: Record<string, number>, from: string | null, to: string | null = null): OverviewComputedRow[] {
   const raw: Record<string, {
     spend: number; leads: number; leadsReached: number; appts: number;
     apptsHeld: number; mandates: number; commExpected: number; commEarned: number;
@@ -97,6 +98,7 @@ function buildRows(leads: LeadRow[], dailySpend: Record<string, number>, from: s
   for (const l of leads) {
     const d = dateKey(l.created_at);
     if (from && d < from) continue;
+    if (to && d > to) continue;
     const row = ensure(d);
     row.leads += 1;
     if (REACHED.includes(l.stage)) row.leadsReached += 1;
@@ -113,6 +115,7 @@ function buildRows(leads: LeadRow[], dailySpend: Record<string, number>, from: s
 
   for (const [d, spend] of Object.entries(dailySpend)) {
     if (from && d < from) continue;
+    if (to && d > to) continue;
     ensure(d).spend += spend;
   }
 
@@ -131,13 +134,16 @@ async function loadDailySpend(from: string | null): Promise<Record<string, numbe
   }
 }
 
-export function useOverview(period: OverviewPeriod) {
+export function useOverview(period: OverviewPeriod, range?: DateRange) {
+  const from = period === "Custom" ? (range?.from || null) : fromDateFor(period);
+  const to = period === "Custom" ? (range?.to || null) : null;
   return useQuery({
-    queryKey: ["overview", period],
+    queryKey: ["overview", period, from, to],
+    // For a custom range, wait until both ends are set.
+    enabled: period !== "Custom" || (!!range?.from && !!range?.to),
     queryFn: async (): Promise<OverviewComputedRow[]> => {
-      const from = fromDateFor(period);
       const [leads, dailySpend] = await Promise.all([listLeads(), loadDailySpend(from)]);
-      return buildRows(leads, dailySpend, from);
+      return buildRows(leads, dailySpend, from, to);
     },
   });
 }
