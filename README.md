@@ -38,132 +38,140 @@ reachable only by their own URL):**
 - `/l/:leadId` — the page a WhatsApp lead-action link opens: read a
   lead's details, then Call / Change Stage at the bottom, same
   popup-after-call flow as the dashboard. See `LeadActionPage.tsx`.
-- `/p/:pageId` — the real page a "My Page" share link opens: the
-  branded `LeadCaptureForm`, full-page, with a real (not demo) submit.
-  Reachable from My Page's "Open live preview ↗" link. See
-  `LeadPagePreviewPage.tsx`.
+# EstateKit
 
-## Pipelines — Seller vs Buyer
+EstateKit is a Vite + React + TypeScript real-estate lead operations app.
+It gives agents a simple way to manage leads, pipelines, branded lead-capture
+pages, follow-up automations, sales reporting, and support.
 
-Every lead belongs to a `Pipeline` (`src/api/pipelines.ts`), and every
-pipeline is one of exactly two presets — there is no stage editor:
+This repository contains the current frontend, a local-storage mock API for
+safe product demos, a Google Apps Script backend, and Supabase Edge Function
+integrations. The frontend can be run without credentials; production mode
+uses the typed API modules under `src/api/`.
 
-- **Seller-style**: New Lead → No Answer → Contacted → Booked → Mandate
-  Signed → Lost / Invalid Number
-- **Buyer-style**: New Lead → No Answer → Contacted → Viewing Booked →
-  Offer Made → Bought → Lost / Invalid Number
+## Quick start
 
-A dropdown at the top of Leads switches between pipelines (default:
-Seller). "+ Add pipeline" is tucked in that same menu — picking a preset
-and naming it is the entire flow. `OutcomeSheet`'s "how did it go?" list
-and stage-menu contents are pipeline-aware (see `MAIN_OUTCOME_OPTIONS` /
-`PIPELINE_STAGES` in [src/lib/stageLogic.ts](src/lib/stageLogic.ts)) so
-Seller and Buyer leads get correctly-worded outcomes from the same
-components.
+Requirements: Node.js 20+ and npm.
 
-## My Page — one or more lead-capture pages, each feeding a pipeline
+```bash
+npm install
+npm run dev
+```
 
-`/lead-page` supports **multiple pages** (`src/api/leadPages.ts`), each
-with its own branding, switched via a dropdown at the top (same pattern
-as the Pipelines switcher). "+ Add page" asks for a name and which
-pipeline it feeds — that link is picked once at creation and never
-edited in place; make a new page if leads need to go somewhere else.
+Open the URL printed by Vite. The mock login uses phone `+10000000000` and
+code `000000`; both are pre-filled in the login screen.
 
-Which pipeline a page feeds decides its one fixed template (no builder):
-a Seller-linked page asks property address + timeline, a Buyer-linked
-page asks area + budget (`src/lib/leadFormTemplate.ts`). Every
-`LeadRow.source_page_id` records which page a lead came through, shown
-as "Came from" on the lead-action page and lead detail — `null` for the
-hand-seeded demo leads.
+Available scripts:
 
-Per page, an agent controls: branding (name, headline, suburb, phone,
-logo, accent color — pulled through into the form's header bar and
-buttons), whether an intro/headline screen shows before Step 1, the
-submit button's text, the thank-you headline/subtext shown after submit
-(`{name}` is replaced with what the visitor typed), and a Facebook Pixel
-ID field (mock only — nothing actually fires). Paid tier additionally
-gets a custom-question editor; each custom question becomes its own
-step, and multiple-choice/yes-no questions auto-advance on tap — no
-"Next" click needed.
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start the Vite development server |
+| `npm run build` | Type-check and create the production build |
+| `npm run lint` | Run Oxlint |
+| `npm run preview` | Serve the production build locally |
 
-## Tiers — Free vs Paid
+There is no `npm run start` script in this Vite project.
 
-A `tier: 'free' | 'paid'` flag (see [src/api/tier.ts](src/api/tier.ts))
-gates exactly one thing now: the custom form-question editor on My Page
-(and the `/upgrade` nudge that guards it). The course is plain Whop
-outlinks with no locks. There's no shared-lead-pool / expiring-lead
-concept anywhere — every lead belongs to the signed-in agent regardless
-of tier.
+## Product areas
 
-**Dev toggle:** a floating "DEV · TIER" pill (bottom-right, rendered by
-[src/components/DevTierToggle.tsx](src/components/DevTierToggle.tsx)) lets
-you flip Free/Paid from any screen to demo both. It's deliberately styled
-as a debug overlay, not part of the app's real UI.
+- **Leads**: pipeline-aware lead list, lead detail, notes, stage changes,
+  call workflow, and public lead-action links.
+- **Pipelines**: seller and buyer presets with separate stages and outcomes.
+- **My Page**: multiple branded lead-capture pages, fixed seller/buyer form
+  templates, custom questions, thank-you screens, and Facebook Pixel settings.
+- **Overview**: simple and advanced performance reporting.
+- **Home**: course and learning links.
+- **Automations**: operator-only WhatsApp automation management and previews.
+- **Support and account**: support tickets, account settings, and tier flow.
 
-## `src/api/` — where the backend seams are
+## Routes
 
-Every data access in the app goes through one of these typed modules.
-Each function is a one-line `// TODO: connect backend` away from a real
-implementation — swap the body, keep the signature, and the hooks/pages
-above it need no changes.
+Authenticated dashboard routes include `/leads`, `/leads/:id`, `/overview`,
+`/home`, `/lead-page`, `/upgrade`, and `/admin/automations`.
 
-| file | stands in for |
-|---|---|
-| `auth.ts` | WhatsApp-OTP request/verify + session (see `web-react`'s real implementation for the production flow) |
-| `leads.ts` | `leads` table: list, stage/note updates, form-submission inserts |
-| `pipelines.ts` | `pipelines` table |
-| `leadPages.ts` | `lead_pages` table + a page's public-form submit handler (routes to its own `pipelineId`) |
-| `customQuestions.ts` | per-page custom form questions (paid tier), scoped by `pageId` |
-| `overview.ts` | `overview_daily` table (spend, leads, reach, appts, held, mandates, expected/earned commission) |
-| `support.ts` | `call_questions` insert, `send-ticket-email` edge function |
-| `automations.ts` | `automations` / `automation_steps` tables + `agent_profiles.is_operator` |
-| `tier.ts` | a real subscription/plan lookup |
+Public share routes are:
 
-`src/api/_store.ts` is the only actually-mock piece — a generic
-`localStorage`-JSON store all the above sit on. Delete it (and swap each
-module's body) when wiring up a real backend; nothing else in the app
-needs to change since hooks (`src/hooks/*`) and pages consume the `src/api/*`
-function signatures, not `localStorage` directly.
+- `/l/:leadId`: lead-action page with Call and Change Stage actions.
+- `/p/:pageId`: branded public lead-capture form and real form submission.
 
-## Notable differences from `web-react`
+Vercel and other static hosts should rewrite all paths to `index.html`; the
+included `vercel.json` provides that rewrite for Vercel.
 
-- No `@supabase/supabase-js` dependency, no `.env`, no keys.
-- Auth is a mock: any session persists in `localStorage`, accepts only the
-  fixed dev phone/code (mirrors `web-react`'s existing `dev_bypass` mode).
-- "Launchpad" is renamed "Home" (`/home`). The course is a "Your course"
-  Whop banner + a "Watch & learn" two-card grid — every card just opens a
-  mock Whop URL in a new tab. No hosted player, no per-module locking, no
-  setup-checklist gating.
-- Overview (`/overview`) has a Simple ⇄ Advanced toggle. Simple is the
-  day-to-day 7-column table; Advanced adds reach, show-rate, expected vs.
-  actual commission, cost/mandate, profit and ROI (19 columns, horizontal
-  scroll). Shows a skeleton while loading rather than a flash of zeros.
-- Admin Automations (`/admin/automations`) renders a 1:1 WhatsApp chat
-  bubble preview for every `send_whatsapp` step **without needing to
-  expand the card** — merge fields filled from a real seeded lead, and
-  the short lead-action link is a real, clickable `/l/:leadId` link, not
-  decorative text. Expanding still gets you the plain edit form — no
-  canvas.
-- Upgrade screen (`/upgrade`) — free-vs-paid comparison, reachable from
-  every lock/nudge.
-- Empty/loading states are deliberately sparse, not decorative: a
-  skeleton where a page would otherwise flash blank while its mock
-  "query" resolves (Leads, My Page, Overview, the public lead-action
-  page), and a plain-language empty message when a pipeline or filter
-  has zero leads — nothing added where the UI is already self-evident.
+## Local mock mode
 
-## What's verified
+The default API modules use browser `localStorage` seeded with demo data.
+This makes the app safe for demos and UI work without touching production
+data. Hooks and pages depend on typed functions in `src/api/`, so replacing
+the mock implementations does not require changing the UI layer.
 
-Type-checks and builds clean (`npm run build`). Walked through end-to-end
-in a headless browser, including cross-page effects: Leads (pipeline
-switcher + add-pipeline, empty states, stage-menu sub-steps with back
-button, mobile card layout, focus-mode call flow with Skip) → My Page
-(multi-page switcher + add-page, per-page branding incl. accent-colored
-header, multistep live preview with validation and auto-advance,
-thank-you screen, "Open live preview" → `/p/:pageId` submitting a real
-lead) → that lead showing up correctly in Leads and on its own
-`/l/:leadId` page (CTAs at the bottom, correct "Came from" page
-attribution) in a **separate, never-logged-in browser context** →
-Overview (Simple/Advanced, sorting) → Admin Automations (always-visible
-WhatsApp preview, clickable lead-action link) → Home → Upgrade. No
-console errors, page errors, or failed requests anywhere in that pass.
+The dev tier toggle can switch between Free and Paid states. Paid mode gates
+the custom-question editor; it is a demo control and is not a production
+authorization mechanism.
+
+## Google Sheets backend
+
+`estatekit-sheets-backend/` contains a deployable Google Apps Script backend:
+
+- `backend/Code.gs` is the API and automation worker.
+- `src/api/*.ts` contains backend-connected API replacements with the same
+  function signatures as the mock modules.
+- Each client receives a separate spreadsheet with pipeline, lead-page,
+  overview, automation, support, and profile tabs.
+
+Follow [estatekit-sheets-backend/SETUP.md](estatekit-sheets-backend/SETUP.md)
+to create the control spreadsheet, configure Script Properties, install the
+time trigger, deploy the Apps Script web app, and connect the frontend.
+
+The backend supports the development OTP number above without sending a real
+message. Other phone numbers use the configured TextMeBot integration.
+
+## Supabase integrations
+
+The `supabase/functions/` directory contains Edge Functions for the Supabase
+deployment path:
+
+`create-agent`, `fb-ad-account`, `fb-ad-insights`, `fb-lead-webhook`,
+`get-fb-form`, `list-fb-forms`, `panic-automations`, `sync-fb-leads`, and
+`sync-pipeline-sheet`.
+
+These functions cover agent creation, Facebook lead/form/ad integrations,
+automation controls, and pipeline-sheet synchronization. Deploy and configure
+them with the Supabase CLI and project secrets for the target environment.
+
+## Environment variables
+
+Copy `.env.example` to `.env` when using hosted services:
+
+```dotenv
+VITE_API_URL=https://your-api-endpoint.example.com
+VITE_PUBLIC_POSTHOG_KEY=
+VITE_PUBLIC_POSTHOG_HOST=
+```
+
+Do not commit `.env` or credentials. `VITE_*` values are exposed to the
+browser, so only use public client configuration there.
+
+## Project structure
+
+```text
+src/api/        Typed data-access modules
+src/components/ Shared UI and workflow components
+src/hooks/      Query, auth, tier, and realtime hooks
+src/lib/        Formatting, stage, pixel, and form helpers
+src/pages/      Route-level screens
+src/types/      Shared TypeScript types
+supabase/       Supabase Edge Functions
+estatekit-sheets-backend/  Google Apps Script backend and API replacements
+```
+
+## Verification
+
+Before pushing changes, run:
+
+```bash
+npm run lint
+npm run build
+```
+
+The production build is written to `dist/`, which is generated output and is
+not part of the source changes.
