@@ -1,13 +1,12 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Box, Typography } from "@mui/material";
+import { Box, Button, LinearProgress, Paper, TextField, Typography } from "@mui/material";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { tokens } from "../theme";
 import { useAuth } from "../hooks/useAuth";
 import { getMyProfile, upsertProfile } from "../api/agentProfile";
 import { updatePassword } from "../api/auth";
 import { useSnack } from "../hooks/useSnack";
-import AuthField from "../components/AuthField";
-import AuthButton from "../components/AuthButton";
 import estateKitLogo from "../assets/blue logo full.png";
 
 export default function WelcomePage() {
@@ -15,7 +14,7 @@ export default function WelcomePage() {
   const { user } = useAuth();
   const qc = useQueryClient();
   const showSnack = useSnack();
-  const { data: profile } = useQuery({ queryKey: ["myProfile"], queryFn: getMyProfile, enabled: !!user });
+  const { data: profile, isLoading } = useQuery({ queryKey: ["myProfile"], queryFn: getMyProfile, enabled: !!user });
 
   const [stepIdx, setStepIdx] = useState(0);
   const [displayName, setDisplayName] = useState("");
@@ -25,7 +24,7 @@ export default function WelcomePage() {
   const [pw2, setPw2] = useState("");
   const [busy, setBusy] = useState(false);
 
-  // Already onboarded → straight to the app.
+  // Already onboarded → straight into the app.
   useEffect(() => {
     if (profile?.onboarded) navigate("/leads", { replace: true });
   }, [profile?.onboarded, navigate]);
@@ -39,6 +38,7 @@ export default function WelcomePage() {
   }, [profile]);
 
   const firstName = (displayName || profile?.displayName || "there").trim().split(" ")[0];
+  const TOTAL = 3;
 
   async function finish() {
     if (pw && pw !== pw2) { showSnack("Passwords don't match"); return; }
@@ -59,62 +59,58 @@ export default function WelcomePage() {
     }
   }
 
-  const TOTAL = 3;
+  if (isLoading) {
+    return (
+      <Box sx={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <LinearProgress sx={{ width: 160 }} />
+      </Box>
+    );
+  }
 
   return (
-    <Box sx={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", p: 2.5, background: "linear-gradient(180deg, #eff4ff 0%, #f6f8fb 40%, #f6f8fb 100%)" }}>
-      <Box sx={{ width: "100%", maxWidth: 420 }}>
-        {/* progress dots */}
-        <Box sx={{ display: "flex", justifyContent: "center", gap: 0.75, mb: 3 }}>
-          {Array.from({ length: TOTAL }).map((_, i) => (
-            <Box key={i} sx={{ width: i === stepIdx ? 24 : 8, height: 8, borderRadius: 4, bgcolor: i <= stepIdx ? "#2563eb" : "#d1d5db", transition: "all .2s" }} />
-          ))}
-        </Box>
-
-        <Box sx={{ bgcolor: "#fff", borderRadius: "16px", border: "1px solid #eceef1", boxShadow: "0 8px 30px rgba(17,24,39,0.06)", p: "28px 24px" }}>
+    <Box sx={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", p: 2.5, bgcolor: "background.default" }}>
+      <Paper elevation={2} sx={{ width: "100%", maxWidth: 400, borderRadius: "8px", overflow: "hidden", borderTop: `4px solid ${tokens.primary}` }}>
+        <LinearProgress variant="determinate" value={((stepIdx + 1) / TOTAL) * 100} sx={{ height: 4 }} />
+        <Box sx={{ p: "24px" }}>
           {stepIdx === 0 && (
             <Box sx={{ textAlign: "center" }}>
-              <Box component="img" src={estateKitLogo} alt="EstateKit" sx={{ height: 30, mb: 3 }} />
-              <Typography sx={{ fontSize: 24, fontWeight: 700, color: "#111827", letterSpacing: "-0.02em", mb: 1 }}>
-                Welcome, {firstName} 👋
-              </Typography>
-              <Typography sx={{ fontSize: 15, color: "#6b7280", lineHeight: 1.6, mb: 3.5 }}>
+              <Box component="img" src={estateKitLogo} alt="EstateKit" sx={{ height: 30, mb: 2.5 }} />
+              <Typography variant="h6" sx={{ fontWeight: 600, mb: 1 }}>Welcome, {firstName} 👋</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6, mb: 3 }}>
                 This is where every Facebook lead lands, ready for you to call. Let's take 30 seconds to set up your account.
               </Typography>
-              <AuthButton onClick={() => setStepIdx(1)}>Get started</AuthButton>
+              <Button fullWidth size="large" variant="contained" onClick={() => setStepIdx(1)}>Get started</Button>
             </Box>
           )}
 
           {stepIdx === 1 && (
             <Box>
-              <Typography sx={{ fontSize: 20, fontWeight: 700, color: "#111827", mb: 0.5 }}>Your details</Typography>
-              <Typography sx={{ fontSize: 14, color: "#6b7280", mb: 3 }}>Confirm how you'll appear to your leads.</Typography>
-              <AuthField label="Full name" value={displayName} onChange={setDisplayName} placeholder="Your name" autoFocus />
-              <AuthField label="Agency" value={company} onChange={setCompany} placeholder="Your agency" />
-              <AuthField label="Area you work" value={area} onChange={setArea} placeholder="e.g. Midrand" />
-              <Box sx={{ display: "flex", gap: 1.5, mt: 1 }}>
-                <AuthButton variant="ghost" onClick={() => setStepIdx(0)}>Back</AuthButton>
-                <AuthButton onClick={() => setStepIdx(2)} disabled={!displayName.trim()}>Continue</AuthButton>
+              <Typography variant="h6" sx={{ fontWeight: 600, mb: 0.5 }}>Your details</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>Confirm how you'll appear to your leads.</Typography>
+              <TextField fullWidth label="Full name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} sx={{ mb: 2 }} />
+              <TextField fullWidth label="Agency" value={company} onChange={(e) => setCompany(e.target.value)} sx={{ mb: 2 }} />
+              <TextField fullWidth label="Area you work" value={area} onChange={(e) => setArea(e.target.value)} placeholder="e.g. Midrand" sx={{ mb: 2.5 }} />
+              <Box sx={{ display: "flex", gap: 1.5 }}>
+                <Button fullWidth variant="outlined" onClick={() => setStepIdx(0)}>Back</Button>
+                <Button fullWidth variant="contained" onClick={() => setStepIdx(2)} disabled={!displayName.trim()}>Continue</Button>
               </Box>
             </Box>
           )}
 
           {stepIdx === 2 && (
             <Box>
-              <Typography sx={{ fontSize: 20, fontWeight: 700, color: "#111827", mb: 0.5 }}>Set your password</Typography>
-              <Typography sx={{ fontSize: 14, color: "#6b7280", mb: 3 }}>Choose a password only you know. You'll use it to sign in from now on.</Typography>
-              <AuthField label="New password" value={pw} onChange={setPw} type="password" placeholder="At least 6 characters" autoComplete="new-password" autoFocus />
-              <AuthField label="Confirm password" value={pw2} onChange={setPw2} type="password" placeholder="Type it again" autoComplete="new-password" onEnter={finish} />
-              <Box sx={{ display: "flex", gap: 1.5, mt: 1 }}>
-                <AuthButton variant="ghost" onClick={() => setStepIdx(1)}>Back</AuthButton>
-                <AuthButton onClick={finish} busy={busy} disabled={!pw || !pw2}>
-                  {busy ? "Finishing…" : "Finish"}
-                </AuthButton>
+              <Typography variant="h6" sx={{ fontWeight: 600, mb: 0.5 }}>Set your password</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>Choose a password only you know — you'll use it to sign in from now on.</Typography>
+              <TextField fullWidth type="password" label="New password" value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="new-password" placeholder="At least 6 characters" sx={{ mb: 2 }} />
+              <TextField fullWidth type="password" label="Confirm password" value={pw2} onChange={(e) => setPw2(e.target.value)} autoComplete="new-password" sx={{ mb: 2.5 }} />
+              <Box sx={{ display: "flex", gap: 1.5 }}>
+                <Button fullWidth variant="outlined" onClick={() => setStepIdx(1)} disabled={busy}>Back</Button>
+                <Button fullWidth variant="contained" onClick={finish} disabled={busy || !pw || !pw2}>{busy ? "Finishing…" : "Finish"}</Button>
               </Box>
             </Box>
           )}
         </Box>
-      </Box>
+      </Paper>
     </Box>
   );
 }

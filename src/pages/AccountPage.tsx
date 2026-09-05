@@ -270,14 +270,16 @@ export default function AccountPage() {
                   />
                 </Box>
 
-                <TextField
-                  label="Renewal date"
-                  type="date"
-                  value={form.renewalDate}
-                  onChange={(e) => isOperator && update("renewalDate", e.target.value)}
-                  fullWidth
-                  slotProps={{ inputLabel: { shrink: true }, input: { readOnly: !isOperator } }}
-                />
+                {isOperator && (
+                  <TextField
+                    label="Renewal date"
+                    type="date"
+                    value={form.renewalDate}
+                    onChange={(e) => update("renewalDate", e.target.value)}
+                    fullWidth
+                    slotProps={{ inputLabel: { shrink: true } }}
+                  />
+                )}
 
                 <Box>
                   <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>

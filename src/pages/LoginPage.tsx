@@ -1,8 +1,7 @@
 import { useState } from "react";
-import { Box, Typography } from "@mui/material";
+import { Box, Button, Paper, TextField, Typography } from "@mui/material";
+import { tokens } from "../theme";
 import { useAuth } from "../hooks/useAuth";
-import AuthField from "../components/AuthField";
-import AuthButton from "../components/AuthButton";
 import estateKitLogo from "../assets/blue logo full.png";
 
 function normalizePhone(raw: string): string {
@@ -21,7 +20,8 @@ export default function LoginPage() {
   const [hint, setHint] = useState("");
   const [busy, setBusy] = useState(false);
 
-  async function submit() {
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
     if (!phone.trim() || !password) return;
     setHint("");
     setBusy(true);
@@ -31,69 +31,53 @@ export default function LoginPage() {
   }
 
   return (
-    <Box
-      sx={{
-        minHeight: "100vh",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        p: 2.5,
-        background: "linear-gradient(180deg, #eff4ff 0%, #f6f8fb 40%, #f6f8fb 100%)",
-      }}
-    >
-      <Box sx={{ width: "100%", maxWidth: 400 }}>
-        <Box sx={{ textAlign: "center", mb: 3 }}>
-          <Box component="img" src={estateKitLogo} alt="EstateKit" sx={{ height: 34, mb: 3 }} />
-          <Typography sx={{ fontSize: 26, fontWeight: 700, color: "#111827", letterSpacing: "-0.02em" }}>
-            Welcome back
-          </Typography>
-          <Typography sx={{ fontSize: 15, color: "#6b7280", mt: 0.5 }}>
-            Sign in to your leads dashboard
-          </Typography>
-        </Box>
+    <Box sx={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", p: 2.5, bgcolor: "background.default" }}>
+      <Paper
+        component="form"
+        onSubmit={handleSubmit}
+        elevation={2}
+        sx={{ width: "100%", maxWidth: 380, borderRadius: "8px", p: "28px 24px 24px", borderTop: `4px solid ${tokens.primary}` }}
+      >
+        <Box component="img" src={estateKitLogo} alt="EstateKit" sx={{ height: 28, display: "block", mb: 0.5 }} />
 
-        <Box
-          sx={{
-            bgcolor: "#fff",
-            borderRadius: "16px",
-            border: "1px solid #eceef1",
-            boxShadow: "0 8px 30px rgba(17,24,39,0.06)",
-            p: "24px 22px",
-          }}
-        >
-          <AuthField
-            label="Phone number"
-            value={phone}
-            onChange={setPhone}
-            placeholder="082 123 4567"
-            inputMode="tel"
-            autoComplete="tel"
-            autoFocus
-          />
-          <AuthField
-            label="Password"
-            value={password}
-            onChange={setPassword}
-            type="password"
-            placeholder="Your password"
-            autoComplete="current-password"
-            onEnter={submit}
-          />
-          {hint && (
-            <Typography sx={{ fontSize: 13, color: "#dc2626", mb: 1.5, textAlign: "center" }}>
-              {hint}
-            </Typography>
-          )}
-          <AuthButton type="button" onClick={submit} busy={busy} disabled={!phone.trim() || !password}>
-            {busy ? "Signing in…" : "Sign in"}
-          </AuthButton>
-        </Box>
-
-        <Typography sx={{ fontSize: 13, color: "#9ca3af", textAlign: "center", mt: 2.5 }}>
-          New agent? Your admin will set up your account and send you your login.
+        <Typography variant="h6" sx={{ fontWeight: 500, mt: 1.75, mb: 0.25 }}>
+          Sign in
         </Typography>
-      </Box>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2.25 }}>
+          Enter your phone number and password.
+        </Typography>
+
+        <TextField
+          fullWidth
+          label="Phone number"
+          placeholder="082 123 4567"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          autoComplete="tel"
+          sx={{ mb: 1.75 }}
+        />
+        <TextField
+          fullWidth
+          type="password"
+          label="Password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          autoComplete="current-password"
+          sx={{ mb: 2 }}
+        />
+        <Button fullWidth size="large" variant="contained" type="submit" disabled={busy || !phone.trim() || !password}>
+          {busy ? "Signing in…" : "Sign in"}
+        </Button>
+        {hint && (
+          <Typography variant="caption" color="error" sx={{ display: "block", textAlign: "center", mt: 1.75 }}>
+            {hint}
+          </Typography>
+        )}
+
+        <Typography variant="caption" color="text.disabled" sx={{ display: "block", textAlign: "center", mt: 2.5 }}>
+          New agent? Your admin sets up your account and sends your login.
+        </Typography>
+      </Paper>
     </Box>
   );
 }
