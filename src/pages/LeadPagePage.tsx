@@ -15,6 +15,7 @@ import {
   MenuItem,
   Radio,
   RadioGroup,
+  Checkbox,
   FormControlLabel,
   Skeleton,
   Switch,
@@ -1007,18 +1008,31 @@ function EditQuestionRow({ pageId, question, onDone }: { pageId: string; questio
   const [helperText, setHelperText] = useState(question.helperText ?? "");
   const [required, setRequired] = useState(question.required);
   const [optionsText, setOptionsText] = useState((question.options ?? []).join(", "));
+  const [disqualify, setDisqualify] = useState<string[]>(question.disqualifyAnswers ?? []);
+
+  const isChoice = question.type === "multiple_choice" || question.type === "yes_no";
+  const currentOptions =
+    question.type === "yes_no"
+      ? ["Yes", "No"]
+      : optionsText.split(",").map((o) => o.trim()).filter(Boolean);
+
+  function toggleDisqualify(opt: string) {
+    setDisqualify((d) => (d.includes(opt) ? d.filter((x) => x !== opt) : [...d, opt]));
+  }
 
   async function save() {
     if (!label.trim()) return;
+    const options = question.type === "multiple_choice"
+      ? optionsText.split(",").map((o) => o.trim()).filter(Boolean)
+      : question.options;
     await updateQuestion.mutateAsync({
       id: question.id,
       patch: {
         label: label.trim(),
         required,
         ...(question.type === "address" ? { helperText: helperText.trim() } : {}),
-        ...(question.type === "multiple_choice"
-          ? { options: optionsText.split(",").map((o) => o.trim()).filter(Boolean) }
-          : {}),
+        ...(question.type === "multiple_choice" ? { options } : {}),
+        ...(isChoice ? { disqualifyAnswers: disqualify.filter((o) => currentOptions.includes(o)) } : {}),
       },
     });
     onDone();
@@ -1033,6 +1047,26 @@ function EditQuestionRow({ pageId, question, onDone }: { pageId: string; questio
       {question.type === "multiple_choice" && (
         <TextField label="Options (comma-separated)" size="small" value={optionsText} onChange={(e) => setOptionsText(e.target.value)} fullWidth />
       )}
+
+      {isChoice && currentOptions.length > 0 && (
+        <Box sx={{ bgcolor: "#fafafa", border: `1px solid ${tokens.divider2}`, borderRadius: "6px", p: "10px 12px" }}>
+          <Typography sx={{ fontSize: 12.5, fontWeight: 600, color: "text.secondary", mb: 0.5 }}>
+            Which answers mean it's NOT a good lead?
+          </Typography>
+          <Typography sx={{ fontSize: 11.5, color: "text.secondary", mb: 1 }}>
+            If someone picks a ticked answer, they see a polite "not a fit" page and don't become a lead.
+          </Typography>
+          {currentOptions.map((opt) => (
+            <FormControlLabel
+              key={opt}
+              control={<Checkbox size="small" checked={disqualify.includes(opt)} onChange={() => toggleDisqualify(opt)} />}
+              label={<Typography sx={{ fontSize: 13.5 }}>{opt}</Typography>}
+              sx={{ display: "flex", m: 0 }}
+            />
+          ))}
+        </Box>
+      )}
+
       <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <Typography sx={{ fontSize: 13 }}>Required</Typography>
         <Switch size="small" checked={required} onChange={(e) => setRequired(e.target.checked)} />

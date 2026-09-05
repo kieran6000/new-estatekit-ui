@@ -170,6 +170,9 @@ export interface CustomQuestion {
   label: string;
   type: QuestionType;
   options?: string[];
+  /** Choice answers that mark a lead as NOT a good fit. Picking one sends the
+   * visitor to a polite "not a fit" screen and does NOT create a lead. */
+  disqualifyAnswers?: string[];
   /** Small example/caption text shown under the question — mainly for "address". */
   helperText?: string;
   /** Blocks "Next Step" until answered. Choice-type questions already can't

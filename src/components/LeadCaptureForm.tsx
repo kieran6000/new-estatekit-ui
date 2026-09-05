@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Box, Button, InputAdornment, LinearProgress, TextField, Typography } from "@mui/material";
+import { Box, Button, FormControlLabel, InputAdornment, LinearProgress, Radio, RadioGroup, TextField, Typography } from "@mui/material";
 import EventNoteIcon from "@mui/icons-material/EventNote";
 import PlaceIcon from "@mui/icons-material/Place";
 import PersonOutlineIcon from "@mui/icons-material/PersonOutlineOutlined";
@@ -58,6 +58,7 @@ export default function LeadCaptureForm({
   const [email, setEmail] = useState("");
   const [errors, setErrors] = useState<FieldErrors>({});
   const [submittedName, setSubmittedName] = useState("");
+  const [disqualified, setDisqualified] = useState(false);
 
   const steps: StepDef[] = [...customQuestions.map((question) => ({ kind: "question" as const, question })), { kind: "contact" }];
   const [stepIndex, setStepIndex] = useState(0);
@@ -105,8 +106,14 @@ export default function LeadCaptureForm({
 
   function pickChoice(questionId: string, value: string) {
     setAnswers((a) => ({ ...a, [questionId]: value }));
-    // Auto-advance: a tap on a choice is itself the "next" action — no extra button press.
     setErrors({});
+    // A "not a good lead" answer ends the flow on a polite screen — no lead created.
+    if (step.kind === "question" && step.question.disqualifyAnswers?.includes(value)) {
+      setDisqualified(true);
+      setPhase("done");
+      return;
+    }
+    // Auto-advance: a tap on a choice is itself the "next" action — no extra button press.
     if (isLast) submit();
     else setStepIndex((i) => i + 1);
   }
@@ -244,7 +251,7 @@ export default function LeadCaptureForm({
             </>
           )}
 
-          {phase === "done" && <ThankYouScreen page={page} name={submittedName} />}
+          {phase === "done" && (disqualified ? <DisqualifiedScreen page={page} /> : <ThankYouScreen page={page} name={submittedName} />)}
         </Box>
       </Box>
     </Box>
@@ -337,55 +344,50 @@ function ThankYouScreen({ page, name }: { page: LeadPage; name: string }) {
   );
 }
 
+/** Shown when a visitor picks a "not a good lead" answer — polite, no lead saved. */
+function DisqualifiedScreen({ page }: { page: LeadPage }) {
+  return (
+    <Box sx={{ textAlign: "center", m: "auto 0" }}>
+      <Box sx={{ width: 72, height: 72, borderRadius: "50%", bgcolor: `${page.accentColor}14`, display: "flex", alignItems: "center", justifyContent: "center", mx: "auto", mb: 2.5 }}>
+        <Typography sx={{ fontSize: 34 }}>🙏</Typography>
+      </Box>
+      <Typography sx={{ fontSize: 20, fontWeight: 700 }}>Thanks for your interest!</Typography>
+      <Typography sx={{ fontSize: 14, color: "text.secondary", mt: 1, lineHeight: 1.6 }}>
+        Based on your answers, this might not be the right time for a valuation. If anything changes,
+        we'd love to help down the line.
+      </Typography>
+    </Box>
+  );
+}
+
 function ChoiceStep({ question, options, value, onPick, accent }: { question: string; options: string[]; value: string; onPick: (v: string) => void; accent: string }) {
   return (
     <Box sx={{ mt: 1.5 }}>
-      <Typography sx={{ fontSize: 18, fontWeight: 600, mb: 1.5 }}>{question}</Typography>
-      <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-        {options.map((opt) => {
+      <Typography sx={{ fontSize: 18, fontWeight: 600, mb: 1 }}>{question}</Typography>
+      <RadioGroup value={value} onChange={(_e, v) => onPick(v)}>
+        {options.map((opt, i) => {
           const selected = value === opt;
           return (
-            <Box
+            <FormControlLabel
               key={opt}
-              component="button"
-              type="button"
+              value={opt}
               onClick={() => onPick(opt)}
+              control={<Radio sx={{ color: "#9aa0a6", "&.Mui-checked": { color: accent } }} />}
+              label={opt}
               sx={{
-                display: "flex",
-                alignItems: "center",
-                gap: 1.5,
-                width: "100%",
-                textAlign: "left",
-                cursor: "pointer",
-                fontFamily: "inherit",
-                border: `1.5px solid ${selected ? accent : "#d5d8dc"}`,
-                bgcolor: selected ? `${accent}0f` : "#fff",
-                borderRadius: "10px",
-                p: "14px 16px",
-                transition: "border-color .12s, background-color .12s",
-                "&:hover": { borderColor: accent },
+                m: 0,
+                mt: i ? 1 : 0,
+                borderRadius: "8px",
+                border: `1px solid ${selected ? accent : "#dadce0"}`,
+                bgcolor: selected ? `${accent}0a` : "#fff",
+                py: 0.5,
+                pr: 1.5,
+                "& .MuiFormControlLabel-label": { fontSize: 15.5 },
               }}
-            >
-              {/* radio dial */}
-              <Box
-                sx={{
-                  flexShrink: 0,
-                  width: 20,
-                  height: 20,
-                  borderRadius: "50%",
-                  border: `2px solid ${selected ? accent : "#b8bcc2"}`,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                {selected && <Box sx={{ width: 10, height: 10, borderRadius: "50%", bgcolor: accent }} />}
-              </Box>
-              <Typography sx={{ fontSize: 15.5, fontWeight: 500, color: "#1c1e21" }}>{opt}</Typography>
-            </Box>
+            />
           );
         })}
-      </Box>
+      </RadioGroup>
     </Box>
   );
 }
