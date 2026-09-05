@@ -75,6 +75,8 @@ function LeadActionUI({
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => setNote(lead?.note ?? ""), [lead?.id]);
+  // Always open at the top — no mysterious mid-page scroll on load.
+  useEffect(() => { window.scrollTo(0, 0); }, [lead?.id, isLoading]);
 
   function saveNote(value: string) {
     if (!lead || !canEdit) return;
@@ -100,19 +102,19 @@ function LeadActionUI({
   const digits = lead?.phone.replace(/\D/g, "") ?? "";
 
   return (
-    <Box sx={{ minHeight: "100vh", display: "flex", flexDirection: "column", bgcolor: tokens.bg }}>
-      <Box sx={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", p: "12px 16px", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
+    <Box sx={{ minHeight: "100dvh", bgcolor: tokens.bg, pb: lead && !isLoading ? "78px" : 0 }}>
+      <Box sx={{ position: "sticky", top: 0, zIndex: 2, display: "flex", alignItems: "center", justifyContent: "center", p: "10px 16px", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
         <Box component="img" src={estateKitLogo} alt="EstateKit" sx={{ height: 22 }} />
       </Box>
 
       {isLoading ? (
-        <Box sx={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", p: 2 }}>
-          <Box sx={{ width: "100%", maxWidth: 400 }}>
+        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", p: 2, minHeight: "60vh" }}>
+          <Box sx={{ width: "100%", maxWidth: 460 }}>
             <Skeleton variant="rounded" height={200} sx={{ borderRadius: "12px" }} />
           </Box>
         </Box>
       ) : !lead ? (
-        <Box sx={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", p: 3 }}>
+        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", p: 3, minHeight: "70vh" }}>
           <Box sx={{ textAlign: "center", maxWidth: 320 }}>
             <LinkOffIcon sx={{ fontSize: 48, color: "text.disabled", mb: 2 }} />
             <Typography sx={{ fontSize: 18, fontWeight: 600, mb: 1 }}>Link not valid</Typography>
@@ -123,102 +125,103 @@ function LeadActionUI({
         </Box>
       ) : (
         <>
-          <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", justifyContent: "center", p: 2 }}>
-            <Box sx={{ width: "100%", maxWidth: 480 }}>
-              <Box sx={{ bgcolor: "background.paper", borderRadius: "12px", border: `1px solid ${tokens.divider}`, overflow: "hidden" }}>
-                <Box sx={{ p: "12px 16px" }}>
-                  <InfoRow label="Name" value={lead.name} />
-                  <InfoRow label="Phone" value={isOperator ? lead.phone : maskPhone(lead.phone)} />
-                  {lead.email && <InfoRow label="Email" value={lead.email} />}
-                  <InfoRow label="Stage" value={lead.stage} />
-                  <InfoRow label="Received" value={timeAgo(lead.created_at)} />
-                  {lead.next_label && lead.next_label !== "—" && <InfoRow label="Next" value={lead.next_label} />}
-                </Box>
-
-                {lead.form_answers.length > 0 && (
-                  <Box sx={{ borderTop: `1px solid ${tokens.divider}`, p: "12px 16px" }}>
-                    <Typography sx={{ fontSize: 11, fontWeight: 600, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.05em", mb: 0.75 }}>From their form</Typography>
-                    {lead.form_answers.map((r, i) => (
-                      <InfoRow key={i} label={r.q} value={prettyAnswer(r.a)} />
-                    ))}
-                  </Box>
-                )}
-
-                {canEdit && (
-                  <Box sx={{ borderTop: `1px solid ${tokens.divider}`, p: "12px 16px" }}>
-                    <Typography sx={{ fontSize: 11, fontWeight: 600, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.05em", mb: 0.75 }}>Notes</Typography>
-                    <Box
-                      component="textarea"
-                      value={note}
-                      onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => onNoteChange(e.target.value)}
-                      onBlur={() => saveNote(note)}
-                      placeholder="Add a note…"
-                      rows={2}
-                      sx={{
-                        width: "100%", border: `1px solid ${tokens.divider}`, borderRadius: "6px",
-                        p: "8px 10px", fontSize: 13, fontFamily: "inherit", resize: "vertical",
-                        "&:focus": { outline: `2px solid ${tokens.primary}`, borderColor: "transparent" },
-                      }}
-                    />
-                    {saveState && <Typography sx={{ fontSize: 11, color: "text.disabled", mt: 0.5 }}>{saveState}</Typography>}
-                  </Box>
-                )}
+          <Box sx={{ maxWidth: 480, mx: "auto", p: "12px 12px 0" }}>
+            <Box sx={{ bgcolor: "background.paper", borderRadius: "12px", border: `1px solid ${tokens.divider}`, overflow: "hidden" }}>
+              <Box sx={{ p: "4px 14px" }}>
+                <InfoRow label="Name" value={lead.name} />
+                <InfoRow label="Phone" value={isOperator ? lead.phone : maskPhone(lead.phone)} />
+                {lead.email && <InfoRow label="Email" value={lead.email} />}
+                <InfoRow label="Stage" value={lead.stage} />
+                <InfoRow label="Received" value={timeAgo(lead.created_at)} />
+                {lead.next_label && lead.next_label !== "—" && <InfoRow label="Next" value={lead.next_label} />}
               </Box>
 
+              {lead.form_answers.length > 0 && (
+                <Box sx={{ borderTop: `1px solid ${tokens.divider}`, p: "10px 14px" }}>
+                  <Typography sx={{ fontSize: 11, fontWeight: 600, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.05em", mb: 0.5 }}>From their form</Typography>
+                  {lead.form_answers.map((r, i) => (
+                    <InfoRow key={i} label={r.q} value={prettyAnswer(r.a)} />
+                  ))}
+                </Box>
+              )}
+
               {canEdit && (
-                <Typography
-                  component="a"
-                  href="/leads"
-                  sx={{ display: "block", textAlign: "center", mt: 2, fontSize: 13, color: "text.disabled", textDecoration: "none", "&:hover": { color: tokens.primary } }}
-                >
-                  Go to dashboard
-                </Typography>
+                <Box sx={{ borderTop: `1px solid ${tokens.divider}`, p: "10px 14px" }}>
+                  <Typography sx={{ fontSize: 11, fontWeight: 600, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.05em", mb: 0.5 }}>Notes</Typography>
+                  <Box
+                    component="textarea"
+                    value={note}
+                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => onNoteChange(e.target.value)}
+                    onBlur={() => saveNote(note)}
+                    placeholder="Add a note…"
+                    rows={2}
+                    sx={{
+                      width: "100%", boxSizing: "border-box", border: `1px solid ${tokens.divider}`, borderRadius: "6px",
+                      p: "8px 10px", fontSize: 13, fontFamily: "inherit", resize: "none",
+                      "&:focus": { outline: `2px solid ${tokens.primary}`, borderColor: "transparent" },
+                    }}
+                  />
+                  {saveState && <Typography sx={{ fontSize: 11, color: "text.disabled", mt: 0.25 }}>{saveState}</Typography>}
+                </Box>
               )}
             </Box>
+
+            {canEdit && (
+              <Typography
+                component="a"
+                href="/leads"
+                sx={{ display: "block", textAlign: "center", mt: 1.25, fontSize: 13, color: "text.disabled", textDecoration: "none", "&:hover": { color: tokens.primary } }}
+              >
+                Go to dashboard
+              </Typography>
+            )}
           </Box>
 
+          {/* Fixed action bar — always visible, page flows above it. */}
           <Box
             sx={{
-              flexShrink: 0,
-              position: "sticky",
+              position: "fixed",
               bottom: 0,
+              left: 0,
+              right: 0,
+              zIndex: 3,
               display: "flex",
               gap: 1,
-              p: "12px 16px",
+              p: "10px 12px",
               bgcolor: "background.paper",
               borderTop: `1px solid ${tokens.divider}`,
               boxShadow: "0 -2px 8px rgba(0,0,0,.06)",
-              maxWidth: 512,
-              mx: "auto",
-              width: "100%",
+              pb: "calc(10px + env(safe-area-inset-bottom))",
             }}
           >
-            <Box
-              component="a"
-              href={`https://wa.me/${digits}`}
-              target="_blank"
-              rel="noopener"
-              sx={{
-                flex: 1, bgcolor: "#fff", color: "#25D366", border: `1px solid ${tokens.divider}`,
-                borderRadius: "8px", p: "14px", fontWeight: 600, fontSize: 14,
-                textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center",
-                gap: 1, textDecoration: "none", "&:hover": { bgcolor: "#f0fdf4" },
-              }}
-            >
-              <WhatsAppIcon fontSize="small" /> WhatsApp
-            </Box>
-            <Box
-              component="a"
-              href={`tel:${digits}`}
-              onClick={() => canEdit && setTimeout(() => setOutcomeOpen(true), 150)}
-              sx={{
-                flex: 1, bgcolor: tokens.green, color: "#fff",
-                borderRadius: "8px", p: "14px", fontWeight: 600, fontSize: 14,
-                textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center",
-                gap: 1, textDecoration: "none", "&:hover": { bgcolor: tokens.greenDark },
-              }}
-            >
-              <CallIcon fontSize="small" /> Call
+            <Box sx={{ display: "flex", gap: 1, maxWidth: 480, mx: "auto", width: "100%" }}>
+              <Box
+                component="a"
+                href={`https://wa.me/${digits}`}
+                target="_blank"
+                rel="noopener"
+                sx={{
+                  flex: 1, bgcolor: "#fff", color: "#25D366", border: `1px solid ${tokens.divider}`,
+                  borderRadius: "8px", p: "13px", fontWeight: 600, fontSize: 14,
+                  textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center",
+                  gap: 1, textDecoration: "none", "&:hover": { bgcolor: "#f0fdf4" },
+                }}
+              >
+                <WhatsAppIcon fontSize="small" /> WhatsApp
+              </Box>
+              <Box
+                component="a"
+                href={`tel:${digits}`}
+                onClick={() => canEdit && setTimeout(() => setOutcomeOpen(true), 150)}
+                sx={{
+                  flex: 1, bgcolor: tokens.green, color: "#fff",
+                  borderRadius: "8px", p: "13px", fontWeight: 600, fontSize: 14,
+                  textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center",
+                  gap: 1, textDecoration: "none", "&:hover": { bgcolor: tokens.greenDark },
+                }}
+              >
+                <CallIcon fontSize="small" /> Call
+              </Box>
             </Box>
           </Box>
 
@@ -239,8 +242,8 @@ function LeadActionUI({
 
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
-    <Box sx={{ display: "flex", py: "8px", borderBottom: `1px solid ${tokens.divider2}`, gap: 1, "&:last-child": { borderBottom: 0 } }}>
-      <Typography sx={{ color: "text.secondary", fontSize: 13, flex: "0 0 40%", wordBreak: "break-word" }}>{label}</Typography>
+    <Box sx={{ display: "flex", py: "6.5px", borderBottom: `1px solid ${tokens.divider2}`, gap: 1, "&:last-child": { borderBottom: 0 } }}>
+      <Typography sx={{ color: "text.secondary", fontSize: 13, flex: "0 0 38%", wordBreak: "break-word" }}>{label}</Typography>
       <Typography sx={{ fontSize: 14, flex: 1, wordBreak: "break-word" }}>{value}</Typography>
     </Box>
   );
