@@ -146,10 +146,17 @@ Deno.serve(async (req) => {
         continue;
       }
 
+      // Pipeline name (once per form) for richer activity cards.
+      let pipelineName: string | undefined;
+      if (page.pipeline_id) {
+        const { data: pl } = await supabase.from("pipelines").select("name").eq("id", page.pipeline_id).maybeSingle();
+        pipelineName = pl?.name;
+      }
+
       let inserted = 0;
       for (const l of fbLeads) {
         const { name, phone, email, answers } = extract(l.field_data || []);
-        const { error: insErr } = await supabase.from("leads").insert({
+        const { data: newLead, error: insErr } = await supabase.from("leads").insert({
           agent_id: page.agent_id,
           name,
           phone,
@@ -162,9 +169,18 @@ Deno.serve(async (req) => {
           source_page_id: page.id,
           fb_lead_id: l.id,
           created_at: l.created_time || undefined,
-        });
+        }).select("id").single();
         // Unique violation on fb_lead_id => already imported; skip quietly.
-        if (!insErr) inserted++;
+        if (!insErr) {
+          inserted++;
+          const address = answers.find((a) => /address/i.test(a.q))?.a;
+          try {
+            await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/track-activity`, {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ event: "new_lead", agentId: page.agent_id, lead: { id: newLead?.id, name, phone, address, pipeline: pipelineName, source: "Facebook form" } }),
+            });
+          } catch { /* best-effort */ }
+        }
         else if (insErr.code === "23505" || insErr.message.includes("duplicate")) {
           // Already imported. Backfill created_at to the real FB time if we
           // stamped it with the import time on an earlier run. Updating a

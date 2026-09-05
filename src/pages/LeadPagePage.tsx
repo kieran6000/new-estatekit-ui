@@ -48,6 +48,7 @@ import { getMyProfile } from "../api/agentProfile";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase, getActiveAgentIdSync } from "../api/_client";
 import { listMySoldListings, addSoldListing, deleteSoldListing } from "../api/soldListings";
+import { trackActivity } from "../lib/activity";
 import {
   useAddCustomQuestion,
   useCustomQuestions,
@@ -911,7 +912,9 @@ function RecentSalesEditor() {
       const { error } = await supabase.storage.from("logos").upload(path, file, { upsert: true });
       if (error) { showSnack("Upload failed: " + error.message); setBusy(false); return; }
       const { data: urlData } = supabase.storage.from("logos").getPublicUrl(path);
-      await addSoldListing({ imageUrl: urlData.publicUrl, address: address.trim(), price: price ? Number(price.replace(/\D/g, "")) : null });
+      const priceNum = price ? Number(price.replace(/\D/g, "")) : null;
+      await addSoldListing({ imageUrl: urlData.publicUrl, address: address.trim(), price: priceNum });
+      trackActivity("sold_listing_added", { sale: { address: address.trim(), price: priceNum ?? undefined } });
       await qc.invalidateQueries({ queryKey: ["mySold"] });
       await qc.invalidateQueries({ queryKey: ["publicSold"] });
       setAddress("");

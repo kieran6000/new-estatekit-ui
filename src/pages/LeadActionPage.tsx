@@ -14,6 +14,7 @@ import { useSnack } from "../hooks/useSnack";
 import { pipelineKindFor } from "../lib/stageLogic";
 import { prettyAnswer } from "../lib/format";
 import { timeAgo } from "../lib/timeAgo";
+import { trackActivity } from "../lib/activity";
 import { getLeadByToken } from "../api/leadActions";
 import OutcomeSheet from "../components/OutcomeSheet";
 import estateKitLogo from "../assets/blue logo full.png";
@@ -228,7 +229,11 @@ function LeadActionUI({
               <Box
                 component="a"
                 href={`tel:${digits}`}
-                onClick={() => canEdit && setTimeout(() => setOutcomeOpen(true), 150)}
+                onClick={() => {
+                  if (!canEdit || !lead) return;
+                  trackActivity("call_started", { lead: { id: lead.id, name: lead.name, phone: lead.phone, stage: lead.stage } });
+                  setTimeout(() => setOutcomeOpen(true), 150);
+                }}
                 sx={{
                   flex: 1, bgcolor: tokens.green, color: "#fff",
                   borderRadius: "8px", p: "13px", fontWeight: 600, fontSize: 14,

@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as leadPagesApi from "../api/leadPages";
+import { trackActivity } from "../lib/activity";
 import type { FormAnswer, LeadPage, PipelineKind } from "../types";
 
 const KEY = ["leadPages"] as const;
@@ -21,7 +22,10 @@ export function useAddLeadPage() {
       sourceType?: "website" | "fb_form"; fbFormId?: string; fbFormName?: string;
     }) =>
       leadPagesApi.addLeadPage(name, pipelineId, kind, { sourceType, fbFormId, fbFormName }),
-    onSuccess: async () => { await qc.invalidateQueries({ queryKey: KEY }); },
+    onSuccess: async (page) => {
+      trackActivity("lead_page_created", { page: { name: page.name, slug: page.slug } });
+      await qc.invalidateQueries({ queryKey: KEY });
+    },
   });
 }
 
@@ -38,7 +42,10 @@ export function useDeleteLeadPage() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => leadPagesApi.deleteLeadPage(id),
-    onSuccess: async () => { await qc.invalidateQueries({ queryKey: KEY }); },
+    onSuccess: async () => {
+      trackActivity("lead_page_deleted", {});
+      await qc.invalidateQueries({ queryKey: KEY });
+    },
   });
 }
 

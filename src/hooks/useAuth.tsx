@@ -3,6 +3,7 @@ import { usePostHog } from "@posthog/react";
 import { supabase } from "../api/_client";
 import * as authApi from "../api/auth";
 import * as tierApi from "../api/tier";
+import { trackActivity } from "../lib/activity";
 import type { MockUser } from "../api/auth";
 
 interface AuthContextValue {
@@ -48,6 +49,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch {
         posthog.identify(signedInUser.id, { phone: signedInUser.phone });
       }
+      // PostHog needs a beat to establish the session id before we log in.
+      setTimeout(() => trackActivity("login", { agentId: signedInUser.id }), 400);
     }
     return {};
   }

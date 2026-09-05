@@ -24,6 +24,7 @@ import RequestQuoteIcon from "@mui/icons-material/RequestQuote";
 import BlockIcon from "@mui/icons-material/Block";
 import CloseFullscreenIcon from "@mui/icons-material/CallEnd";
 import { defaultReminderISO, MAIN_OUTCOME_OPTIONS, STEP_FOR_STAGE, type MainOutcomeOption } from "../lib/stageLogic";
+import { trackActivity } from "../lib/activity";
 import { useUpdateLeadStage } from "../hooks/useLeads";
 import type { LeadRow, OutcomeStep, PipelineKind, Stage, StageChangeExtra } from "../types";
 
@@ -93,6 +94,9 @@ export default function OutcomeSheet({
   }
   function commitStage(toStage: Stage, extra?: StageChangeExtra | number) {
     posthog.capture("lead_stage_changed", { pipeline: pipelineKind, from: lead!.stage, to: toStage });
+    trackActivity("stage_change", {
+      lead: { id: lead!.id, name: lead!.name, phone: lead!.phone, fromStage: lead!.stage, toStage, pipeline: pipelineKind },
+    });
     updateStage.mutate({ id: lead!.id, stage: toStage, extra });
     finish(outcomeSnack(toStage));
   }

@@ -9,6 +9,7 @@ import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import CallIcon from "@mui/icons-material/Call";
 import { LEAD_FORM_TEMPLATE } from "../lib/leadFormTemplate";
+import { trackActivity } from "../lib/activity";
 import type { CustomQuestion, LeadPage, PipelineKind } from "../types";
 
 type Phase = "intro" | "steps" | "done";
@@ -109,6 +110,7 @@ export default function LeadCaptureForm({
     setErrors({});
     // A "not a good lead" answer ends the flow on a polite screen — no lead created.
     if (step.kind === "question" && step.question.disqualifyAnswers?.includes(value)) {
+      trackActivity("lead_disqualified", { agentId: page.agentId, lead: { name: name || "Visitor", reason: `${step.question.label}: ${value}`, pipeline: pipelineKind } });
       setDisqualified(true);
       setPhase("done");
       return;
