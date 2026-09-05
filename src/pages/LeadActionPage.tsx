@@ -5,15 +5,15 @@ import { Box, Skeleton, Typography } from "@mui/material";
 import CallIcon from "@mui/icons-material/Call";
 import WhatsAppIcon from "@mui/icons-material/WhatsApp";
 import LinkOffIcon from "@mui/icons-material/LinkOff";
+import ViewListIcon from "@mui/icons-material/ViewList";
 import { tokens } from "../theme";
 import { useAuth } from "../hooks/useAuth";
 import { useLeadWithStatus, useUpdateLeadNote } from "../hooks/useLeads";
 import { usePipelines } from "../hooks/usePipelines";
 import { useSnack } from "../hooks/useSnack";
 import { pipelineKindFor } from "../lib/stageLogic";
-import { prettyAnswer, maskPhone } from "../lib/format";
+import { prettyAnswer } from "../lib/format";
 import { timeAgo } from "../lib/timeAgo";
-import { useIsOperator } from "../hooks/useAutomations";
 import { getLeadByToken } from "../api/leadActions";
 import OutcomeSheet from "../components/OutcomeSheet";
 import estateKitLogo from "../assets/blue logo full.png";
@@ -65,7 +65,6 @@ function LeadActionUI({
   canEdit: boolean;
 }) {
   const { data: pipelines = [] } = usePipelines({ enabled: canEdit });
-  const { data: isOperator } = useIsOperator();
   const updateNote = useUpdateLeadNote();
   const showSnack = useSnack();
 
@@ -100,6 +99,10 @@ function LeadActionUI({
 
   const pipelineKind = lead ? pipelineKindFor(lead, pipelines) : "seller";
   const digits = lead?.phone.replace(/\D/g, "") ?? "";
+  // Surface the property address right under the phone; keep it out of the
+  // generic "From their form" list so it isn't shown twice.
+  const addressAnswer = lead?.form_answers.find((a) => /address/i.test(a.q)) ?? null;
+  const otherAnswers = lead ? lead.form_answers.filter((a) => a !== addressAnswer) : [];
 
   return (
     <Box sx={{ minHeight: "100dvh", bgcolor: tokens.bg, pb: lead && !isLoading ? "78px" : 0 }}>
@@ -127,26 +130,34 @@ function LeadActionUI({
         <>
           <Box sx={{ maxWidth: 480, mx: "auto", p: "12px 12px 0" }}>
             <Box sx={{ bgcolor: "background.paper", borderRadius: "12px", border: `1px solid ${tokens.divider}`, overflow: "hidden" }}>
-              <Box sx={{ p: "4px 14px" }}>
-                <InfoRow label="Name" value={lead.name} />
-                <InfoRow label="Phone" value={isOperator ? lead.phone : maskPhone(lead.phone)} />
-                {lead.email && <InfoRow label="Email" value={lead.email} />}
-                <InfoRow label="Stage" value={lead.stage} />
-                <InfoRow label="Received" value={timeAgo(lead.created_at)} />
+              {/* Header: who + status, scannable at a glance */}
+              <Box sx={{ p: "14px 16px 12px", borderBottom: `1px solid ${tokens.divider}` }}>
+                <Typography sx={{ fontSize: 22, fontWeight: 700, lineHeight: 1.15 }}>{lead.name}</Typography>
+                <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 1 }}>
+                  <StageChip stage={lead.stage} />
+                  <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>· came in {timeAgo(lead.created_at)}</Typography>
+                </Box>
+              </Box>
+
+              {/* Contact — phone + address first, both prominent */}
+              <Box sx={{ p: "6px 16px" }}>
+                <InfoRow label="Phone" value={lead.phone} href={`tel:${digits}`} strong />
+                {addressAnswer && <InfoRow label="Address" value={addressAnswer.a} strong />}
+                {lead.email && <InfoRow label="Email" value={lead.email} href={`mailto:${lead.email}`} />}
                 {lead.next_label && lead.next_label !== "—" && <InfoRow label="Next" value={lead.next_label} />}
               </Box>
 
-              {lead.form_answers.length > 0 && (
-                <Box sx={{ borderTop: `1px solid ${tokens.divider}`, p: "10px 14px" }}>
+              {otherAnswers.length > 0 && (
+                <Box sx={{ borderTop: `1px solid ${tokens.divider}`, p: "10px 16px" }}>
                   <Typography sx={{ fontSize: 11, fontWeight: 600, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.05em", mb: 0.5 }}>From their form</Typography>
-                  {lead.form_answers.map((r, i) => (
+                  {otherAnswers.map((r, i) => (
                     <InfoRow key={i} label={r.q} value={prettyAnswer(r.a)} />
                   ))}
                 </Box>
               )}
 
               {canEdit && (
-                <Box sx={{ borderTop: `1px solid ${tokens.divider}`, p: "10px 14px" }}>
+                <Box sx={{ borderTop: `1px solid ${tokens.divider}`, p: "10px 16px" }}>
                   <Typography sx={{ fontSize: 11, fontWeight: 600, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.05em", mb: 0.5 }}>Notes</Typography>
                   <Box
                     component="textarea"
@@ -167,13 +178,18 @@ function LeadActionUI({
             </Box>
 
             {canEdit && (
-              <Typography
+              <Box
                 component="a"
                 href="/leads"
-                sx={{ display: "block", textAlign: "center", mt: 1.25, fontSize: 13, color: "text.disabled", textDecoration: "none", "&:hover": { color: tokens.primary } }}
+                sx={{
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 0.75,
+                  mt: 1.25, p: "12px", borderRadius: "8px", border: `1px solid ${tokens.divider}`,
+                  bgcolor: "#fff", color: tokens.primaryDark, fontSize: 14, fontWeight: 600,
+                  textDecoration: "none", "&:hover": { bgcolor: tokens.primaryBg },
+                }}
               >
-                Go to dashboard
-              </Typography>
+                <ViewListIcon sx={{ fontSize: 18 }} /> View all my leads
+              </Box>
             )}
           </Box>
 
@@ -240,11 +256,39 @@ function LeadActionUI({
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
+function InfoRow({ label, value, href, strong }: { label: string; value: string; href?: string; strong?: boolean }) {
   return (
-    <Box sx={{ display: "flex", py: "6.5px", borderBottom: `1px solid ${tokens.divider2}`, gap: 1, "&:last-child": { borderBottom: 0 } }}>
-      <Typography sx={{ color: "text.secondary", fontSize: 13, flex: "0 0 38%", wordBreak: "break-word" }}>{label}</Typography>
-      <Typography sx={{ fontSize: 14, flex: 1, wordBreak: "break-word" }}>{value}</Typography>
+    <Box sx={{ display: "flex", py: "7px", borderBottom: `1px solid ${tokens.divider2}`, gap: 1, alignItems: "baseline", "&:last-child": { borderBottom: 0 } }}>
+      <Typography sx={{ color: "text.secondary", fontSize: 13, flex: "0 0 34%", wordBreak: "break-word" }}>{label}</Typography>
+      {href ? (
+        <Typography component="a" href={href} sx={{ fontSize: strong ? 15 : 14, fontWeight: strong ? 700 : 500, flex: 1, wordBreak: "break-word", color: tokens.primaryDark, textDecoration: "none" }}>
+          {value}
+        </Typography>
+      ) : (
+        <Typography sx={{ fontSize: strong ? 15 : 14, fontWeight: strong ? 700 : 400, flex: 1, wordBreak: "break-word" }}>{value}</Typography>
+      )}
+    </Box>
+  );
+}
+
+const STAGE_CHIP: Record<string, { bg: string; fg: string }> = {
+  "New Lead": { bg: "#e6f4ea", fg: "#1e7e34" },
+  "No Answer": { bg: "#fef3c7", fg: "#92400e" },
+  "Contacted": { bg: "#e0f2fe", fg: "#075985" },
+  "Booked": { bg: "#ede9fe", fg: "#5b21b6" },
+  "Viewing Booked": { bg: "#ede9fe", fg: "#5b21b6" },
+  "Mandate Signed": { bg: "#dcfce7", fg: "#166534" },
+  "Offer Made": { bg: "#dcfce7", fg: "#166534" },
+  "Bought": { bg: "#dcfce7", fg: "#166534" },
+  "Lost": { bg: "#f3f4f6", fg: "#6b7280" },
+  "Invalid Number": { bg: "#f3f4f6", fg: "#6b7280" },
+};
+
+function StageChip({ stage }: { stage: string }) {
+  const c = STAGE_CHIP[stage] ?? { bg: "#f3f4f6", fg: "#374151" };
+  return (
+    <Box sx={{ display: "inline-flex", alignItems: "center", bgcolor: c.bg, color: c.fg, fontSize: 12, fontWeight: 700, borderRadius: "999px", px: 1.25, py: 0.35 }}>
+      {stage}
     </Box>
   );
 }
