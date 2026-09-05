@@ -58,7 +58,17 @@ export default function LeadPagePreviewPage() {
       <Box sx={{ display: "flex", justifyContent: "center", p: 2 }}>
         <Box sx={{ width: "100%", maxWidth: 480, mt: loading || !page ? 0 : 2.5 }}>
           {loading ? (
-            <Skeleton variant="rounded" height={420} sx={{ borderRadius: "8px" }} />
+            <Box sx={{ border: "1px solid #e0e0e0", borderRadius: "8px", overflow: "hidden", bgcolor: "#fff" }}>
+              <Skeleton variant="rectangular" animation="wave" height={4} />
+              <Box sx={{ p: "28px 24px" }}>
+                <Skeleton variant="text" animation="wave" width={90} height={16} sx={{ mb: 2 }} />
+                <Skeleton variant="text" animation="wave" width="80%" height={28} sx={{ mb: 2.5 }} />
+                {[0, 1, 2].map((i) => (
+                  <Skeleton key={i} variant="rounded" animation="wave" height={52} sx={{ borderRadius: "8px", mb: 1.25 }} />
+                ))}
+                <Skeleton variant="rounded" animation="wave" height={48} sx={{ borderRadius: "8px", mt: 2 }} />
+              </Box>
+            </Box>
           ) : !page || !pipeline ? (
             <Box sx={{ bgcolor: "background.paper", borderRadius: "8px", p: 4, textAlign: "center" }}>
               <Typography color="text.secondary">This page isn't available.</Typography>
@@ -70,8 +80,12 @@ export default function LeadPagePreviewPage() {
                 pipelineKind={pipeline.kind}
                 customQuestions={customQuestions}
                 showHeader={false}
-                onSubmit={async ({ name, phone, email, answers }) => {
-                  await submitMockLead(page.id, name, phone, answers, email);
+                onSubmit={({ name, phone, email, answers }) => {
+                  // Fire the pixel + navigate to /thank-you IMMEDIATELY (most pixels
+                  // trigger on the thank-you route). The DB insert runs in the
+                  // background — client-side nav doesn't unload the page, so the
+                  // request completes without blocking the visitor.
+                  void submitMockLead(page.id, name, phone, answers, email).catch(() => {});
                   trackPixel("Lead");
                   posthog.capture("lead_page_form_submitted", { pipeline: pipeline.kind });
                   navigate(`/thank-you?p=${page.slug}&n=${encodeURIComponent(name.split(" ")[0] || "there")}`);

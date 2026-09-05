@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Box, Skeleton, Typography } from "@mui/material";
 import CallIcon from "@mui/icons-material/Call";
+import WhatsAppIcon from "@mui/icons-material/WhatsApp";
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutlined";
 import { tokens } from "../theme";
 import { getLeadPageBySlug } from "../api/leadPages";
@@ -140,6 +141,28 @@ function BrandedThankYou({ page, name }: { page: LeadPage; name: string }) {
       </Box>
       <Typography sx={{ fontSize: 20, fontWeight: 700 }}>{page.thankYouHeadline.replace("{name}", name)}</Typography>
       <Typography sx={{ fontSize: 14, color: "text.secondary", mt: 1 }}>{page.thankYouSubtext}</Typography>
+
+      {(() => {
+        const digits = (page.phone || "").replace(/\D/g, "");
+        if (!digits) return null;
+        const msg = `Hi${page.agentName ? " " + page.agentName : ""}, I just filled in your form and I'd love to hear more.`;
+        return (
+          <Box
+            component="a"
+            href={`https://wa.me/${digits}?text=${encodeURIComponent(msg)}`}
+            target="_blank"
+            rel="noopener"
+            sx={{
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 1,
+              mt: 3, mx: "auto", maxWidth: 340, bgcolor: "#25D366", color: "#fff",
+              borderRadius: "10px", p: "14px 18px", fontSize: 16, fontWeight: 700,
+              textDecoration: "none", "&:hover": { bgcolor: "#1FB457" },
+            }}
+          >
+            <WhatsAppIcon /> Message us on WhatsApp
+          </Box>
+        );
+      })()}
     </Box>
   );
 }

@@ -41,11 +41,11 @@ export async function getActiveAgentId(): Promise<string> {
 }
 
 export async function listAgentProfiles(): Promise<
-  { agent_id: string; display_name: string | null; whatsapp_number: string | null }[]
+  { agent_id: string; display_name: string | null; whatsapp_number: string | null; area: string | null; company: string | null; sidebar_logo_url: string | null }[]
 > {
   const { data, error } = await supabase
     .from("agent_profiles")
-    .select("agent_id, display_name, whatsapp_number")
+    .select("agent_id, display_name, whatsapp_number, area, company, sidebar_logo_url")
     .order("display_name", { ascending: true });
   if (error) throw new Error(error.message);
   return data ?? [];

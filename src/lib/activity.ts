@@ -14,11 +14,18 @@ interface ActivityPayload {
 
 interface PostHogLike { get_session_id?: () => string; get_distinct_id?: () => string }
 
+// The @posthog/react provider doesn't reliably put the instance on window, so
+// a component registers it here for us to read session ids from.
+let registeredPh: PostHogLike | null = null;
+export function registerActivityPostHog(ph: PostHogLike): void {
+  registeredPh = ph;
+}
+
 /** Fire-and-forget world-class activity ping to the Discord webhook (via the
  *  track-activity edge function). Never blocks or throws in the UI. */
 export function trackActivity(event: ActivityEvent, payload: ActivityPayload = {}): void {
   try {
-    const ph = (window as unknown as { posthog?: PostHogLike }).posthog;
+    const ph = registeredPh ?? (window as unknown as { posthog?: PostHogLike }).posthog;
     let sessionId: string | undefined;
     let distinctId: string | undefined;
     try { sessionId = ph?.get_session_id?.(); } catch { /* ignore */ }

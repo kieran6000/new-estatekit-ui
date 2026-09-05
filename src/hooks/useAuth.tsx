@@ -3,7 +3,7 @@ import { usePostHog } from "@posthog/react";
 import { supabase } from "../api/_client";
 import * as authApi from "../api/auth";
 import * as tierApi from "../api/tier";
-import { trackActivity } from "../lib/activity";
+import { trackActivity, registerActivityPostHog } from "../lib/activity";
 import type { MockUser } from "../api/auth";
 
 interface AuthContextValue {
@@ -19,6 +19,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<MockUser | null>(null);
   const [loading, setLoading] = useState(true);
   const posthog = usePostHog();
+
+  useEffect(() => {
+    if (posthog) registerActivityPostHog(posthog as unknown as { get_session_id?: () => string; get_distinct_id?: () => string });
+  }, [posthog]);
 
   useEffect(() => {
     authApi.getSession().then((session) => {

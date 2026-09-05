@@ -44,6 +44,8 @@ export default function AccountSwitcher({ variant = "dark" }: { variant?: "dark"
   const activeProfile = profiles.find((p) => p.agent_id === active);
   const activeName = activeProfile ? name(activeProfile) : "Select account";
   const activeInitial = activeName[0].toUpperCase();
+  const activeArea = activeProfile?.area || activeProfile?.company || "";
+  const activePfp = activeProfile?.sidebar_logo_url || null;
 
   const filtered = search
     ? profiles.filter((p) => name(p).toLowerCase().includes(search.toLowerCase()))
@@ -68,13 +70,18 @@ export default function AccountSwitcher({ variant = "dark" }: { variant?: "dark"
           "&:hover": { borderColor: variant === "dark" ? "#fcfdff8e" : "#fcfdff8e" },
         }}
       >
-        <Avatar sx={{ width: 28, height: 28, bgcolor: "#6366f1", fontSize: 13, fontWeight: 700 }}>
+        <Avatar src={activePfp ?? undefined} sx={{ width: 30, height: 30, bgcolor: "#6366f1", fontSize: 13, fontWeight: 700 }}>
           {activeInitial}
         </Avatar>
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Typography sx={{ fontSize: 13, fontWeight: 600, color: variant === "dark" ? "#fff" : "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {activeName}
           </Typography>
+          {activeArea && (
+            <Typography sx={{ fontSize: 11, color: variant === "dark" ? "rgba(255,255,255,.6)" : "#6b7280", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {activeArea}
+            </Typography>
+          )}
         </Box>
         <UnfoldMoreIcon sx={{ color: "#6b7280", fontSize: 18 }} />
       </Box>
@@ -112,14 +119,14 @@ export default function AccountSwitcher({ variant = "dark" }: { variant?: "dark"
                 onClick={() => handleSelect(p.agent_id)}
                 sx={{ py: 1, px: 2 }}
               >
-                <ListItemAvatar sx={{ minWidth: 40 }}>
-                  <Avatar sx={{ width: 32, height: 32, bgcolor: isActive ? "#6366f1" : "#e0e0e0", color: isActive ? "#fff" : "#666", fontSize: 14, fontWeight: 700 }}>
+                <ListItemAvatar sx={{ minWidth: 44 }}>
+                  <Avatar src={p.sidebar_logo_url ?? undefined} sx={{ width: 34, height: 34, bgcolor: isActive ? "#6366f1" : "#e0e0e0", color: isActive ? "#fff" : "#666", fontSize: 14, fontWeight: 700 }}>
                     {pName[0].toUpperCase()}
                   </Avatar>
                 </ListItemAvatar>
                 <ListItemText
                   primary={pName}
-                  secondary={p.agent_id === user?.id ? "You" : null}
+                  secondary={[p.agent_id === user?.id ? "You" : null, p.area || p.company].filter(Boolean).join(" · ") || null}
                   slotProps={{
                     primary: { sx: { fontSize: 14, fontWeight: 500 } },
                     secondary: { sx: { fontSize: 12 } },

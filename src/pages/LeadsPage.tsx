@@ -363,11 +363,30 @@ function LeadsPageSkeleton() {
           <Typography sx={{ fontSize: 18, fontWeight: 500, flex: 1 }}>Leads</Typography>
         </Toolbar>
       </AppBar>
-      <Box sx={{ p: 2, display: "flex", flexDirection: "column", gap: 1.5 }}>
-        <Skeleton variant="rounded" height={64} sx={{ borderRadius: "6px" }} />
-        <Skeleton variant="rounded" height={40} width={180} sx={{ borderRadius: "4px" }} />
-        <Skeleton variant="rounded" height={72} sx={{ borderRadius: "6px" }} />
-        <Skeleton variant="rounded" height={72} sx={{ borderRadius: "6px" }} />
+      {/* pipeline bar */}
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1, p: "8px 16px", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
+        <Skeleton variant="rounded" animation="wave" width={150} height={34} sx={{ borderRadius: "6px" }} />
+        <Box sx={{ flex: 1 }} />
+        <Skeleton variant="rounded" animation="wave" width={34} height={34} sx={{ borderRadius: "6px" }} />
+        <Skeleton variant="rounded" animation="wave" width={34} height={34} sx={{ borderRadius: "6px" }} />
+      </Box>
+      {/* filter chips */}
+      <Box sx={{ display: "flex", gap: 0.75, p: "10px 16px", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
+        {[54, 78, 70, 64].map((w, i) => (
+          <Skeleton key={i} variant="rounded" animation="wave" width={w} height={28} sx={{ borderRadius: "6px" }} />
+        ))}
+      </Box>
+      {/* lead rows — shaped like the real list */}
+      <Box sx={{ bgcolor: "background.paper" }}>
+        {Array.from({ length: 6 }).map((_, i) => (
+          <Box key={i} sx={{ display: "flex", alignItems: "center", gap: 1.5, p: "12px 16px", borderBottom: `1px solid ${tokens.divider2}` }}>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Skeleton variant="text" animation="wave" width={`${45 + (i % 3) * 12}%`} height={20} />
+              <Skeleton variant="text" animation="wave" width={`${30 + (i % 2) * 10}%`} height={16} />
+            </Box>
+            <Skeleton variant="rounded" animation="wave" width={72} height={34} sx={{ borderRadius: "6px" }} />
+          </Box>
+        ))}
       </Box>
     </Box>
   );
