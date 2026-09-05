@@ -34,3 +34,9 @@ export async function getSession(): Promise<MockUser | null> {
 export async function signOut(): Promise<void> {
   await supabase.auth.signOut();
 }
+
+export async function updatePassword(password: string): Promise<{ error?: string }> {
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) return { error: error.message };
+  return {};
+}

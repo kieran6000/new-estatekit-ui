@@ -42,6 +42,7 @@ export interface AgentProfile {
   fbPageId: string | null;
   sidebarColor: string;
   sidebarLogoUrl: string | null;
+  onboarded: boolean;
 }
 
 interface ProfileRow {
@@ -60,6 +61,7 @@ interface ProfileRow {
   fb_page_id: string | null;
   sidebar_color: string;
   sidebar_logo_url: string | null;
+  onboarded: boolean;
 }
 
 function rowToProfile(r: ProfileRow): AgentProfile {
@@ -79,6 +81,7 @@ function rowToProfile(r: ProfileRow): AgentProfile {
     fbPageId: r.fb_page_id,
     sidebarColor: r.sidebar_color || "#111827",
     sidebarLogoUrl: r.sidebar_logo_url,
+    onboarded: r.onboarded,
   };
 }
 
@@ -91,6 +94,19 @@ export async function getMyProfile(): Promise<AgentProfile | null> {
     .maybeSingle();
   if (error) throw new Error(error.message);
   return data ? rowToProfile(data as ProfileRow) : null;
+}
+
+/** Whether the *logged-in* user (not the active/managed agent) has finished
+ *  onboarding. Defaults to true on any error so no one gets trapped. */
+export async function amIOnboarded(): Promise<boolean> {
+  const uid = await getCurrentUserId();
+  const { data, error } = await supabase
+    .from("agent_profiles")
+    .select("onboarded")
+    .eq("agent_id", uid)
+    .maybeSingle();
+  if (error) return true;
+  return data?.onboarded ?? true;
 }
 
 export async function upsertProfile(
@@ -109,6 +125,7 @@ export async function upsertProfile(
   if (patch.sidebarLogoUrl !== undefined) row.sidebar_logo_url = patch.sidebarLogoUrl;
   if (patch.fbPageId !== undefined) row.fb_page_id = patch.fbPageId;
   if (patch.fbAdAccountId !== undefined) row.fb_ad_account_id = patch.fbAdAccountId;
+  if (patch.onboarded !== undefined) row.onboarded = patch.onboarded;
 
   const { error } = await supabase
     .from("agent_profiles")

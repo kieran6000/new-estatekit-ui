@@ -1,9 +1,12 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { Box, CircularProgress } from "@mui/material";
+import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "./hooks/useAuth";
 import { useIsOperator } from "./hooks/useAutomations";
+import { amIOnboarded } from "./api/agentProfile";
 import AppShell from "./components/AppShell";
 import LoginPage from "./pages/LoginPage";
+import WelcomePage from "./pages/WelcomePage";
 import LeadsPage from "./pages/LeadsPage";
 import LeadDetailPage from "./pages/LeadDetailPage";
 import OverviewPage from "./pages/OverviewPage";
@@ -39,6 +42,15 @@ function OperatorOnly({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function OnboardingGate({ children }: { children: React.ReactNode }) {
+  // Checks the logged-in user's own onboarding — not the active/managed agent,
+  // so an operator viewing a not-yet-onboarded agent isn't sent to /welcome.
+  const { data: onboarded, isLoading } = useQuery({ queryKey: ["amIOnboarded"], queryFn: amIOnboarded });
+  if (isLoading) return <Splash />;
+  if (onboarded === false) return <Navigate to="/welcome" replace />;
+  return <>{children}</>;
+}
+
 export default function App() {
   const { user, loading } = useAuth();
 
@@ -57,7 +69,8 @@ export default function App() {
       ) : (
         <>
           <Route path="/login" element={<Navigate to="/leads" replace />} />
-          <Route element={<AppShell />}>
+          <Route path="/welcome" element={<WelcomePage />} />
+          <Route element={<OnboardingGate><AppShell /></OnboardingGate>}>
             <Route path="/leads" element={<LeadsPage />} />
             <Route path="/leads/:id" element={<LeadDetailPage />} />
             <Route path="/overview" element={<OperatorOnly><OverviewPage /></OperatorOnly>} />
