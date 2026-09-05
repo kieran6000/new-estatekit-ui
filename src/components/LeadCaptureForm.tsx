@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Box, Button, InputAdornment, LinearProgress, List, ListItemButton, ListItemText, TextField, Typography } from "@mui/material";
+import { Box, Button, InputAdornment, LinearProgress, TextField, Typography } from "@mui/material";
 import EventNoteIcon from "@mui/icons-material/EventNote";
 import PlaceIcon from "@mui/icons-material/Place";
 import PersonOutlineIcon from "@mui/icons-material/PersonOutlineOutlined";
@@ -91,7 +91,7 @@ export default function LeadCaptureForm({
     if (step.kind === "contact") {
       const nextErrors: FieldErrors = {};
       if (name.trim().length < 2) nextErrors.name = "Please enter your full name.";
-      if (!emailIsValid(email.trim())) nextErrors.email = "Please enter a valid email address.";
+      if (page.collectEmail && !emailIsValid(email.trim())) nextErrors.email = "Please enter a valid email address.";
       if (!phoneIsValid(phone)) nextErrors.phone = "Please enter a valid WhatsApp number.";
       if (Object.keys(nextErrors).length) {
         setErrors(nextErrors);
@@ -168,6 +168,7 @@ export default function LeadCaptureForm({
                   question={step.question}
                   value={answers[step.question.id] ?? ""}
                   error={errors.question}
+                  accent={page.accentColor}
                   onChange={(v) => setAnswers((a) => ({ ...a, [step.question.id]: v }))}
                   onPickChoice={(v) => pickChoice(step.question.id, v)}
                 />
@@ -188,18 +189,20 @@ export default function LeadCaptureForm({
                       slotProps={{ input: { startAdornment: <InputAdornment position="start"><PersonOutlineIcon fontSize="small" sx={{ color: "text.disabled" }} /></InputAdornment> } }}
                     />
                   </Box>
-                  <Box>
-                    <Typography sx={{ fontSize: 18, fontWeight: 600, mb: 1 }}>Email address</Typography>
-                    <TextField
-                      placeholder="you@example.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      fullWidth
-                      error={!!errors.email}
-                      helperText={errors.email}
-                      slotProps={{ input: { startAdornment: <InputAdornment position="start"><EmailOutlinedIcon fontSize="small" sx={{ color: "text.disabled" }} /></InputAdornment> } }}
-                    />
-                  </Box>
+                  {page.collectEmail && (
+                    <Box>
+                      <Typography sx={{ fontSize: 18, fontWeight: 600, mb: 1 }}>Email address</Typography>
+                      <TextField
+                        placeholder="you@example.com"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        fullWidth
+                        error={!!errors.email}
+                        helperText={errors.email}
+                        slotProps={{ input: { startAdornment: <InputAdornment position="start"><EmailOutlinedIcon fontSize="small" sx={{ color: "text.disabled" }} /></InputAdornment> } }}
+                      />
+                    </Box>
+                  )}
                   <Box>
                     <Typography sx={{ fontSize: 18, fontWeight: 600, mb: 1 }}>{phoneLabel}</Typography>
                     <TextField
@@ -252,7 +255,7 @@ export default function LeadCaptureForm({
  * — never the profile photo, which is reserved for the thank-you screen. */
 export function HeaderBrand({ page }: { page: LeadPage }) {
   return page.logoDataUrl ? (
-    <Box component="img" src={page.logoDataUrl} alt="" sx={{ height: 28, borderRadius: "4px" }} />
+    <Box component="img" src={page.logoDataUrl} alt="" sx={{ height: 34, width: "auto", display: "inline-block", verticalAlign: "middle" }} />
   ) : (
     <Typography sx={{ fontSize: 14, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>
       {page.agentName || page.name}
@@ -334,17 +337,55 @@ function ThankYouScreen({ page, name }: { page: LeadPage; name: string }) {
   );
 }
 
-function ChoiceStep({ question, options, value, onPick }: { question: string; options: string[]; value: string; onPick: (v: string) => void }) {
+function ChoiceStep({ question, options, value, onPick, accent }: { question: string; options: string[]; value: string; onPick: (v: string) => void; accent: string }) {
   return (
     <Box sx={{ mt: 1.5 }}>
       <Typography sx={{ fontSize: 18, fontWeight: 600, mb: 1.5 }}>{question}</Typography>
-      <List disablePadding sx={{ border: "1px solid #e0e0e0", borderRadius: "6px", overflow: "hidden" }}>
-        {options.map((opt, i) => (
-          <ListItemButton key={opt} selected={value === opt} onClick={() => onPick(opt)} sx={{ borderTop: i ? "1px solid #eee" : 0, py: 1.5 }}>
-            <ListItemText primary={opt} />
-          </ListItemButton>
-        ))}
-      </List>
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+        {options.map((opt) => {
+          const selected = value === opt;
+          return (
+            <Box
+              key={opt}
+              component="button"
+              type="button"
+              onClick={() => onPick(opt)}
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                gap: 1.5,
+                width: "100%",
+                textAlign: "left",
+                cursor: "pointer",
+                fontFamily: "inherit",
+                border: `1.5px solid ${selected ? accent : "#d5d8dc"}`,
+                bgcolor: selected ? `${accent}0f` : "#fff",
+                borderRadius: "10px",
+                p: "14px 16px",
+                transition: "border-color .12s, background-color .12s",
+                "&:hover": { borderColor: accent },
+              }}
+            >
+              {/* radio dial */}
+              <Box
+                sx={{
+                  flexShrink: 0,
+                  width: 20,
+                  height: 20,
+                  borderRadius: "50%",
+                  border: `2px solid ${selected ? accent : "#b8bcc2"}`,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                {selected && <Box sx={{ width: 10, height: 10, borderRadius: "50%", bgcolor: accent }} />}
+              </Box>
+              <Typography sx={{ fontSize: 15.5, fontWeight: 500, color: "#1c1e21" }}>{opt}</Typography>
+            </Box>
+          );
+        })}
+      </Box>
     </Box>
   );
 }
@@ -353,20 +394,22 @@ function QuestionStep({
   question,
   value,
   error,
+  accent,
   onChange,
   onPickChoice,
 }: {
   question: CustomQuestion;
   value: string;
   error?: string;
+  accent: string;
   onChange: (v: string) => void;
   onPickChoice: (v: string) => void;
 }) {
   if (question.type === "multiple_choice") {
-    return <ChoiceStep question={question.label} options={question.options ?? []} value={value} onPick={onPickChoice} />;
+    return <ChoiceStep question={question.label} options={question.options ?? []} value={value} onPick={onPickChoice} accent={accent} />;
   }
   if (question.type === "yes_no") {
-    return <ChoiceStep question={question.label} options={["Yes", "No"]} value={value} onPick={onPickChoice} />;
+    return <ChoiceStep question={question.label} options={["Yes", "No"]} value={value} onPick={onPickChoice} accent={accent} />;
   }
   const isAddress = question.type === "address";
   return (

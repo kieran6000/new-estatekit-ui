@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Box, Skeleton, Typography } from "@mui/material";
@@ -6,6 +7,7 @@ import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutlined";
 import { tokens } from "../theme";
 import { getLeadPageBySlug } from "../api/leadPages";
 import { HeaderBrand } from "../components/LeadCaptureForm";
+import { initPixel, trackPixel } from "../lib/fbPixel";
 import type { LeadPage } from "../types";
 
 export default function ThankYouPage() {
@@ -18,6 +20,15 @@ export default function ThankYouPage() {
     queryFn: () => getLeadPageBySlug(slug!),
     enabled: !!slug,
   });
+
+  // Fire the agent's pixel on the thank-you page too (covers direct hits and
+  // gives Meta a clean Lead event on the confirmation view).
+  useEffect(() => {
+    if (page?.fbPixelId) {
+      initPixel(page.fbPixelId);
+      trackPixel("Lead");
+    }
+  }, [page?.fbPixelId]);
 
   if (!slug) return <GenericThankYou />;
 

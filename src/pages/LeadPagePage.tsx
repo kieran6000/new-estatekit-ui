@@ -374,11 +374,18 @@ export default function LeadPagePage() {
 
             <Section title="Form questions">
               <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
-                Name, phone and email are always collected last, in that order, and can't be reordered or removed. Every other
+                Name and phone are always collected last. Email is optional (toggle below). Every other
                 question — including the address and timeline ones every page starts with — can be edited, reordered or removed.
               </Typography>
               <TextField label="Name field question" value={form.nameLabel} onChange={(e) => fieldChange("nameLabel", e.target.value)} fullWidth />
               <TextField label="Phone field question" value={form.phoneLabel} onChange={(e) => fieldChange("phoneLabel", e.target.value)} fullWidth />
+              <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <Box>
+                  <Typography sx={{ fontSize: 14, fontWeight: 500 }}>Ask for email address</Typography>
+                  <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>Turn off to collect only name + phone</Typography>
+                </Box>
+                <Switch checked={page.collectEmail} onChange={(e) => update({ collectEmail: e.target.checked })} />
+              </Box>
 
               <CustomQuestionEditor pageId={page.id} tier={tier} onUpgrade={() => {
                 posthog.capture("upgrade_clicked", { source: "lead_page_custom_questions" });

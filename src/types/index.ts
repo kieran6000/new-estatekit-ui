@@ -146,6 +146,8 @@ export interface LeadPage {
    * fixed order (Name → Email → Phone), and never reordered/removable. */
   nameLabel: string;
   phoneLabel: string;
+  /** Whether the contact step asks for an email address. Name + phone are always collected. */
+  collectEmail: boolean;
   /** The final step's submit button text (e.g. "Get my free estimate"). */
   ctaLabel: string;
   /** Shown after submit, in place of the form. `{name}` is replaced with what they typed. */

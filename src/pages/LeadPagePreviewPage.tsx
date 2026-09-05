@@ -8,32 +8,7 @@ import { getLeadPageBySlug, submitMockLead } from "../api/leadPages";
 import { getPipelinePublic } from "../api/pipelines";
 import { listCustomQuestionsPublic } from "../api/customQuestions";
 import LeadCaptureForm, { HeaderBrand } from "../components/LeadCaptureForm";
-
-function injectFbPixel(pixelId: string) {
-  if (!pixelId || document.getElementById("fb-pixel-script")) return;
-  const script = document.createElement("script");
-  script.id = "fb-pixel-script";
-  script.innerHTML = `
-    !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
-    n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
-    n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
-    t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}
-    (window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
-    fbq('init','${pixelId.replace(/'/g, "")}');
-    fbq('track','PageView');
-  `;
-  document.head.appendChild(script);
-  const noscript = document.createElement("noscript");
-  noscript.id = "fb-pixel-noscript";
-  noscript.innerHTML = `<img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=${encodeURIComponent(pixelId)}&ev=PageView&noscript=1"/>`;
-  document.head.appendChild(noscript);
-}
-
-function fireFbLead() {
-  if (typeof (window as any).fbq === "function") {
-    (window as any).fbq("track", "Lead");
-  }
-}
+import { initPixel, trackPixel } from "../lib/fbPixel";
 
 export default function LeadPagePreviewPage() {
   const { slug } = useParams<{ slug: string }>();
@@ -59,10 +34,7 @@ export default function LeadPagePreviewPage() {
   });
 
   useEffect(() => {
-    if (page?.fbPixelId) {
-      const pixelId = page.fbPixelId.replace(/\D/g, "");
-      if (pixelId) injectFbPixel(pixelId);
-    }
+    if (page?.fbPixelId) initPixel(page.fbPixelId);
   }, [page?.fbPixelId]);
 
   const loading = pageLoading || pipelineLoading;
@@ -92,7 +64,7 @@ export default function LeadPagePreviewPage() {
                 showHeader={false}
                 onSubmit={async ({ name, phone, email, answers }) => {
                   await submitMockLead(page.id, name, phone, answers, email);
-                  fireFbLead();
+                  trackPixel("Lead");
                   posthog.capture("lead_page_form_submitted", { pipeline: pipeline.kind });
                   navigate(`/thank-you?p=${page.slug}&n=${encodeURIComponent(name.split(" ")[0] || "there")}`);
                 }}

@@ -17,6 +17,7 @@ interface LeadPageRow {
   name_label: string;
   phone_label: string;
   cta_label: string;
+  collect_email: boolean;
   thank_you_headline: string;
   thank_you_subtext: string;
   fb_pixel_id: string;
@@ -41,6 +42,7 @@ function rowToPage(r: LeadPageRow): LeadPage {
     showIntro: r.show_intro,
     nameLabel: r.name_label,
     phoneLabel: r.phone_label,
+    collectEmail: r.collect_email ?? true,
     ctaLabel: r.cta_label,
     thankYouHeadline: r.thank_you_headline,
     thankYouSubtext: r.thank_you_subtext,
@@ -68,6 +70,7 @@ function patchToRow(
   if (p.showIntro !== undefined) m.show_intro = p.showIntro;
   if (p.nameLabel !== undefined) m.name_label = p.nameLabel;
   if (p.phoneLabel !== undefined) m.phone_label = p.phoneLabel;
+  if (p.collectEmail !== undefined) m.collect_email = p.collectEmail;
   if (p.ctaLabel !== undefined) m.cta_label = p.ctaLabel;
   if (p.thankYouHeadline !== undefined)
     m.thank_you_headline = p.thankYouHeadline;
