@@ -3,7 +3,6 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const GOOGLE_SERVICE_ACCOUNT_KEY = Deno.env.get("GOOGLE_SERVICE_ACCOUNT_KEY");
 
 const PIPELINE_STAGES: Record<string, string[]> = {
   seller: ["New Lead", "No Answer", "Contacted", "Booked", "Mandate Signed", "Lost", "Invalid Number"],
@@ -140,12 +139,19 @@ Deno.serve(async (req) => {
   }
 
   try {
-    if (!GOOGLE_SERVICE_ACCOUNT_KEY) {
-      return new Response(JSON.stringify({ error: "Google service account not configured. Set GOOGLE_SERVICE_ACCOUNT_KEY secret." }), { status: 500, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
-    }
-
     const authHeader = req.headers.get("Authorization")!;
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+    // Service-account JSON: env var first, else the vault secret (so it can be
+    // configured without dashboard access).
+    let GOOGLE_SERVICE_ACCOUNT_KEY = Deno.env.get("GOOGLE_SERVICE_ACCOUNT_KEY");
+    if (!GOOGLE_SERVICE_ACCOUNT_KEY) {
+      const { data } = await supabase.rpc("get_secret", { secret_name: "GOOGLE_SERVICE_ACCOUNT_KEY" });
+      GOOGLE_SERVICE_ACCOUNT_KEY = data || undefined;
+    }
+    if (!GOOGLE_SERVICE_ACCOUNT_KEY) {
+      return new Response(JSON.stringify({ error: "Google Sheets not configured — service account key missing." }), { status: 500, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
+    }
     const userClient = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_ANON_KEY")!, {
       global: { headers: { Authorization: authHeader } },
     });
