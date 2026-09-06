@@ -7,9 +7,9 @@ import EmailOutlinedIcon from "@mui/icons-material/EmailOutlined";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import CallIcon from "@mui/icons-material/Call";
+import PlaceIcon from "@mui/icons-material/Place";
 import { LEAD_FORM_TEMPLATE } from "../lib/leadFormTemplate";
 import { trackActivity } from "../lib/activity";
-import AddressAutocomplete from "./AddressAutocomplete";
 import type { CustomQuestion, LeadPage, PipelineKind } from "../types";
 
 type Phase = "intro" | "steps" | "done";
@@ -423,19 +423,17 @@ function QuestionStep({
         {question.required && !isAddress && <Box component="span" sx={{ color: "error.main" }}> *</Box>}
       </Typography>
       {question.helperText && <Typography sx={{ fontSize: 13, color: "text.secondary", mt: 0.25 }}>{question.helperText}</Typography>}
-      {isAddress ? (
-        <AddressAutocomplete value={value} onChange={onChange} error={error} placeholder="Start typing your address…" accent={accent} />
-      ) : (
-        <TextField
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          fullWidth
-          autoFocus
-          error={!!error}
-          helperText={error}
-          sx={{ mt: 1.5 }}
-        />
-      )}
+      <TextField
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={isAddress ? "Enter your full property address" : undefined}
+        fullWidth
+        autoFocus
+        error={!!error}
+        helperText={error}
+        slotProps={isAddress ? { input: { startAdornment: <InputAdornment position="start"><PlaceIcon fontSize="small" sx={{ color: accent }} /></InputAdornment> } } : undefined}
+        sx={{ mt: 1.5 }}
+      />
     </Box>
   );
 }
