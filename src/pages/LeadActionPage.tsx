@@ -15,6 +15,7 @@ import { pipelineKindFor } from "../lib/stageLogic";
 import { prettyAnswer } from "../lib/format";
 import { timeAgo } from "../lib/timeAgo";
 import { trackActivity } from "../lib/activity";
+import { armPendingCall, clearPendingCall } from "../lib/pendingCall";
 import { getLeadByToken } from "../api/leadActions";
 import OutcomeSheet from "../components/OutcomeSheet";
 import estateKitLogo from "../assets/blue logo full.png";
@@ -73,6 +74,56 @@ function LeadActionUI({
   const [saveState, setSaveState] = useState("");
   const [outcomeOpen, setOutcomeOpen] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  // "It waited for you": we don't ask how the call went up front (useless once
+  // they've left for the dialer). We arm on tap, then open the outcome sheet the
+  // moment they come back to this tab.
+  const awaitingReturn = useRef(false);
+  const didHide = useRef(false);
+  const tapTime = useRef(0);
+  const fallbackTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const RETURN_MIN_MS = 3000; // shorter than this = they backed out, no call happened
+
+  function onCallTap() {
+    if (!canEdit || !lead) return;
+    trackActivity("call_started", { lead: { id: lead.id, name: lead.name, phone: lead.phone, stage: lead.stage } });
+    armPendingCall({ leadId: lead.id, name: lead.name, phone: lead.phone, startedAt: Date.now() });
+    awaitingReturn.current = true;
+    didHide.current = false;
+    tapTime.current = Date.now();
+    clearTimeout(fallbackTimer.current);
+    // Desktop / handlers that don't background the tab: behave like before and
+    // just open the sheet shortly after the tap. Guarded so it never fires on
+    // mobile (where the tab goes hidden well within this window).
+    fallbackTimer.current = setTimeout(() => {
+      if (awaitingReturn.current && !didHide.current && document.visibilityState === "visible") {
+        awaitingReturn.current = false;
+        setOutcomeOpen(true);
+      }
+    }, 1500);
+  }
+
+  useEffect(() => {
+    function onVis() {
+      if (document.visibilityState === "hidden") {
+        if (awaitingReturn.current) didHide.current = true;
+        return;
+      }
+      if (!awaitingReturn.current || !didHide.current) return;
+      const away = Date.now() - tapTime.current;
+      awaitingReturn.current = false;
+      if (away >= RETURN_MIN_MS) {
+        setOutcomeOpen(true); // a real call happened → ask how it went
+      } else {
+        clearPendingCall(); // backed out of the dialer immediately → no call
+      }
+    }
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      clearTimeout(fallbackTimer.current);
+    };
+  }, []);
 
   useEffect(() => setNote(lead?.note ?? ""), [lead?.id]);
   // Always open at the top — no mysterious mid-page scroll on load.
@@ -233,11 +284,7 @@ function LeadActionUI({
               <Box
                 component="a"
                 href={`tel:${digits}`}
-                onClick={() => {
-                  if (!canEdit || !lead) return;
-                  trackActivity("call_started", { lead: { id: lead.id, name: lead.name, phone: lead.phone, stage: lead.stage } });
-                  setTimeout(() => setOutcomeOpen(true), 150);
-                }}
+                onClick={onCallTap}
                 sx={{
                   flex: 1, bgcolor: tokens.green, color: "#fff",
                   borderRadius: "8px", p: "15px", fontWeight: 700, fontSize: 16,
@@ -256,6 +303,7 @@ function LeadActionUI({
               pipelineKind={pipelineKind}
               open={outcomeOpen}
               onClose={() => setOutcomeOpen(false)}
+              onLogged={clearPendingCall}
               onSnack={showSnack}
             />
           )}

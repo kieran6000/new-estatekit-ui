@@ -34,6 +34,8 @@ import CallIcon from "@mui/icons-material/Call";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
 import RefreshIcon from "@mui/icons-material/Refresh";
+import CloseIcon from "@mui/icons-material/Close";
+import PhoneCallbackIcon from "@mui/icons-material/PhoneCallback";
 import { useQueryClient } from "@tanstack/react-query";
 import { usePostHog } from "@posthog/react";
 import { tokens } from "../theme";
@@ -45,6 +47,7 @@ import { useAddPipeline, usePipelines, useSyncPipelineSheet } from "../hooks/use
 import { useIsOperator } from "../hooks/useAutomations";
 import { useSnack } from "../hooks/useSnack";
 import { maskPhone } from "../lib/format";
+import { getPendingCall, clearPendingCall, type PendingCall } from "../lib/pendingCall";
 import { syncFbLeads } from "../api/leadPages";
 import { getActiveAgentIdSync } from "../api/_client";
 import GSheetIcon from "../components/GSheetIcon";
@@ -75,6 +78,24 @@ export default function LeadsPage() {
   const [outcomeLeadId, setOutcomeLeadId] = useState<string | null>(null);
   const [focusOpen, setFocusOpen] = useState(false);
   const [stageSheet, setStageSheet] = useState<{ leadId: string; step: OutcomeStep; stage: Stage } | null>(null);
+
+  // A call started elsewhere (dialer/WhatsApp) whose outcome was never logged —
+  // surfaced as a one-tap "log it now" row so nothing slips through.
+  const [pending, setPending] = useState<PendingCall | null>(() => getPendingCall());
+  useEffect(() => {
+    const refresh = () => setPending(getPendingCall());
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, []);
+  const pendingLead = pending ? leads.find((l) => l.id === pending.leadId) : undefined;
+  function dismissPending() {
+    clearPendingCall();
+    setPending(null);
+  }
 
   // Default to the pipeline holding the most recent lead, so the agent lands
   // where the newest action is — unless they've explicitly picked one before
@@ -187,6 +208,26 @@ export default function LeadsPage() {
           <Avatar sx={{ width: 32, height: 32, bgcolor: tokens.primary, fontSize: 14, ml: 0.5 }}>K</Avatar>
         </Toolbar>
       </AppBar>
+
+      {pendingLead && (
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1.25, p: "12px 12px 12px 16px", bgcolor: tokens.amberTint, borderBottom: `1px solid ${tokens.divider}` }}>
+          <PhoneCallbackIcon sx={{ color: "#e65100" }} />
+          <Box sx={{ flex: 1, minWidth: 0, cursor: "pointer" }} onClick={() => setOutcomeLeadId(pendingLead.id)}>
+            <Typography sx={{ fontWeight: 600, fontSize: 14, lineHeight: 1.3 }}>
+              How did your call with {pendingLead.name.split(" ")[0]} go?
+            </Typography>
+            <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
+              Called {timeAgo(new Date(pending!.startedAt).toISOString())} · tap to update
+            </Typography>
+          </Box>
+          <Button size="small" variant="contained" onClick={() => setOutcomeLeadId(pendingLead.id)} sx={{ whiteSpace: "nowrap" }}>
+            Log it
+          </Button>
+          <IconButton size="small" onClick={dismissPending} aria-label="Dismiss">
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </Box>
+      )}
 
       {searchOpen && (
         <Box sx={{ bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}`, display: "flex", alignItems: "center", gap: 1.25, p: "10px 16px" }}>
@@ -344,6 +385,7 @@ export default function LeadsPage() {
         pipelineKind={outcomeLeadKind}
         open={!!outcomeLeadId}
         onClose={() => setOutcomeLeadId(null)}
+        onLogged={() => { if (pending && outcomeLead?.id === pending.leadId) dismissPending(); }}
         onSnack={showSnack}
       />
       <OutcomeSheet
