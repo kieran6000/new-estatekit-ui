@@ -1,11 +1,27 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Box, Skeleton, Typography } from "@mui/material";
+import {
+  Avatar,
+  Box,
+  Button,
+  Divider,
+  FormControl,
+  IconButton,
+  InputLabel,
+  ListItemIcon,
+  MenuItem,
+  Select,
+  Skeleton,
+  TextField,
+  Typography,
+} from "@mui/material";
 import CallIcon from "@mui/icons-material/Call";
 import WhatsAppIcon from "@mui/icons-material/WhatsApp";
 import LinkOffIcon from "@mui/icons-material/LinkOff";
 import ViewListIcon from "@mui/icons-material/ViewList";
+import EmailOutlinedIcon from "@mui/icons-material/EmailOutlined";
+import PlaceIcon from "@mui/icons-material/Place";
 import { tokens } from "../theme";
 import { useAuth } from "../hooks/useAuth";
 import { useLeadWithStatus, useUpdateLeadNote, useUpdateLeadStage } from "../hooks/useLeads";
@@ -74,10 +90,10 @@ function LeadActionUI({
   const [note, setNote] = useState(lead?.note ?? "");
   const [saveState, setSaveState] = useState("");
   // The follow-up sheet (when? / reminder / commission) — only for outcomes that
-  // need a second answer. The outcome list itself lives inline on the page.
+  // need a second answer. The outcome list itself is the "What happened?" dropdown.
   const [stageSheet, setStageSheet] = useState<{ step: OutcomeStep; stage: Stage } | null>(null);
   const [highlight, setHighlight] = useState(false);
-  const outcomeRef = useRef<HTMLDivElement | null>(null);
+  const [outcomeOpen, setOutcomeOpen] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // The page can't hear the call, but it can tell when they leave for the dialer
@@ -90,8 +106,10 @@ function LeadActionUI({
   const RETURN_MIN_MS = 3000; // shorter than this = they backed out, no call happened
 
   function flashOutcome() {
-    outcomeRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    // Back from a real call → open the "What happened?" dropdown for them and
+    // pulse it, so logging the outcome is the one obvious next tap.
     setHighlight(true);
+    setOutcomeOpen(true);
     setTimeout(() => setHighlight(false), 2200);
   }
 
@@ -169,20 +187,28 @@ function LeadActionUI({
   const addressAnswer = lead?.form_answers.find((a) => /address/i.test(a.q)) ?? null;
   const otherAnswers = lead ? lead.form_answers.filter((a) => a !== addressAnswer) : [];
 
+  const firstName = lead?.name.split(" ")[0] ?? "";
+
   return (
-    <Box sx={{ minHeight: "100dvh", bgcolor: tokens.bg, pb: lead && !isLoading ? "78px" : 0 }}>
-      <Box sx={{ position: "sticky", top: 0, zIndex: 2, display: "flex", alignItems: "center", justifyContent: "center", p: "10px 16px", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
-        <Box component="img" src={estateKitLogo} alt="EstateKit" sx={{ height: 22 }} />
+    <Box sx={{ height: "100dvh", display: "flex", flexDirection: "column", overflow: "hidden", bgcolor: tokens.bg }}>
+      {/* Slim header: logo + a shortcut to the full leads list (also the sign-in
+          funnel when opened from a WhatsApp link while logged out). */}
+      <Box sx={{ flex: "0 0 auto", display: "flex", alignItems: "center", gap: 1, p: "6px 6px 6px 14px", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
+        <Box component="img" src={estateKitLogo} alt="EstateKit" sx={{ height: 20 }} />
+        <Box sx={{ flex: 1 }} />
+        <IconButton component="a" href="/leads" size="small" aria-label="All my leads" sx={{ color: tokens.primaryDark }}>
+          <ViewListIcon />
+        </IconButton>
       </Box>
 
       {isLoading ? (
-        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", p: 2, minHeight: "60vh" }}>
+        <Box sx={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", p: 2 }}>
           <Box sx={{ width: "100%", maxWidth: 460 }}>
             <Skeleton variant="rounded" height={200} sx={{ borderRadius: "12px" }} />
           </Box>
         </Box>
       ) : !lead ? (
-        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", p: 3, minHeight: "70vh" }}>
+        <Box sx={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", p: 3 }}>
           <Box sx={{ textAlign: "center", maxWidth: 320 }}>
             <LinkOffIcon sx={{ fontSize: 48, color: "text.disabled", mb: 2 }} />
             <Typography sx={{ fontSize: 18, fontWeight: 600, mb: 1 }}>Link not valid</Typography>
@@ -192,189 +218,179 @@ function LeadActionUI({
           </Box>
         </Box>
       ) : (
-        <>
-          <Box sx={{ maxWidth: 480, mx: "auto", p: "12px 12px 0" }}>
-            <Box sx={{ bgcolor: "background.paper", borderRadius: "12px", border: `1px solid ${tokens.divider}`, overflow: "hidden" }}>
-              {/* Header: who + status, scannable at a glance */}
-              <Box sx={{ p: "14px 16px 12px", borderBottom: `1px solid ${tokens.divider}` }}>
-                <Typography sx={{ fontSize: 22, fontWeight: 700, lineHeight: 1.15 }}>{lead.name}</Typography>
-                <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 1 }}>
-                  <StageChip stage={lead.stage} />
-                  <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>· came in {timeAgo(lead.created_at)}</Typography>
-                </Box>
-              </Box>
-
-              {/* Contact — phone + address first, both prominent */}
-              <Box sx={{ p: "6px 16px" }}>
-                <InfoRow label="Phone" value={lead.phone} href={`tel:${digits}`} strong />
-                {addressAnswer && <InfoRow label="Address" value={addressAnswer.a} strong />}
-                {lead.email && <InfoRow label="Email" value={lead.email} href={`mailto:${lead.email}`} />}
-                {lead.next_label && lead.next_label !== "—" && <InfoRow label="Next" value={lead.next_label} />}
-              </Box>
-
-              {otherAnswers.length > 0 && (
-                <Box sx={{ borderTop: `1px solid ${tokens.divider}`, p: "10px 16px" }}>
-                  <Typography sx={{ fontSize: 11, fontWeight: 600, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.05em", mb: 0.5 }}>From their form</Typography>
-                  {otherAnswers.map((r, i) => (
-                    <InfoRow key={i} label={r.q} value={prettyAnswer(r.a)} />
-                  ))}
-                </Box>
-              )}
-
-              {canEdit && (
-                <Box sx={{ borderTop: `1px solid ${tokens.divider}`, p: "10px 16px" }}>
-                  <Typography sx={{ fontSize: 11, fontWeight: 600, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.05em", mb: 0.5 }}>Notes</Typography>
-                  <Box
-                    component="textarea"
-                    value={note}
-                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => onNoteChange(e.target.value)}
-                    onBlur={() => saveNote(note)}
-                    placeholder="Add a note…"
-                    rows={2}
-                    sx={{
-                      width: "100%", boxSizing: "border-box", border: `1px solid ${tokens.divider}`, borderRadius: "6px",
-                      p: "8px 10px", fontSize: 13, fontFamily: "inherit", resize: "none",
-                      "&:focus": { outline: `2px solid ${tokens.primary}`, borderColor: "transparent" },
-                    }}
-                  />
-                  {saveState && <Typography sx={{ fontSize: 11, color: "text.disabled", mt: 0.25 }}>{saveState}</Typography>}
-                </Box>
-              )}
+        <Box sx={{ flex: 1, minHeight: 0, overflow: "hidden", width: "100%", maxWidth: 480, mx: "auto", p: "12px", display: "flex", flexDirection: "column", gap: 1.25 }}>
+          {/* Who + everything they need to scan, in one compact card */}
+          <Box sx={{ bgcolor: "background.paper", borderRadius: "12px", border: `1px solid ${tokens.divider}`, p: "12px 14px" }}>
+            <Box sx={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 1 }}>
+              <Typography sx={{ fontSize: 20, fontWeight: 700, lineHeight: 1.15, minWidth: 0, wordBreak: "break-word" }}>{lead.name}</Typography>
+              <Typography sx={{ fontSize: 12, color: "text.secondary", whiteSpace: "nowrap" }}>{timeAgo(lead.created_at)}</Typography>
+            </Box>
+            <Box sx={{ mt: 0.75 }}>
+              <StageChip stage={lead.stage} />
             </Box>
 
-            {/* Outcome capture lives right on the page — log what happened any
-                time, not only after a call. Returning from the dialer flashes
-                this card into view. */}
-            {canEdit && (
-              <Box
-                ref={outcomeRef}
-                sx={{
-                  mt: 1.25, bgcolor: "background.paper", borderRadius: "12px", overflow: "hidden",
-                  border: `1px solid ${highlight ? tokens.primary : tokens.divider}`,
-                  boxShadow: highlight ? `0 0 0 3px ${tokens.primaryBg}` : "none",
-                  transition: "box-shadow .3s ease, border-color .3s ease",
-                }}
-              >
-                <Box sx={{ p: "12px 16px 6px" }}>
-                  <Typography sx={{ fontSize: 16, fontWeight: 700 }}>How did it go?</Typography>
-                  <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>Tap what happened.</Typography>
-                </Box>
-                {MAIN_OUTCOME_OPTIONS[pipelineKind].map((opt) => (
-                  <Box
-                    key={opt.label}
-                    component="button"
-                    onClick={() => pickOutcome(opt)}
-                    sx={{
-                      width: "100%", display: "flex", alignItems: "center", gap: 1.5,
-                      border: 0, borderTop: `1px solid ${tokens.divider2}`, bgcolor: "transparent",
-                      p: "14px 16px", cursor: "pointer", textAlign: "left", fontSize: 15,
-                      fontFamily: "inherit", color: "inherit",
-                      "&:hover": { bgcolor: tokens.primaryBg },
-                    }}
-                  >
-                    <Box sx={{ color: "text.secondary", display: "flex" }}>{OUTCOME_ICONS[opt.icon]}</Box>
-                    {opt.label}
+            <Divider sx={{ my: 1 }} />
+
+            <InfoLine icon={<CallIcon fontSize="small" />} value={lead.phone} href={`tel:${digits}`} strong />
+            {lead.email && <InfoLine icon={<EmailOutlinedIcon fontSize="small" />} value={lead.email} href={`mailto:${lead.email}`} />}
+            {addressAnswer && <InfoLine icon={<PlaceIcon fontSize="small" />} value={addressAnswer.a} />}
+
+            {otherAnswers.length > 0 && (
+              <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.75, mt: 1 }}>
+                {otherAnswers.map((r, i) => (
+                  <Box key={i} sx={{ bgcolor: tokens.bg, borderRadius: "8px", px: 1.25, py: 0.5, maxWidth: "100%" }}>
+                    <Typography sx={{ fontSize: 10.5, color: "text.secondary", lineHeight: 1.15, textTransform: "uppercase", letterSpacing: "0.03em" }}>{r.q}</Typography>
+                    <Typography sx={{ fontSize: 13.5, fontWeight: 600, lineHeight: 1.25, wordBreak: "break-word" }}>{prettyAnswer(r.a)}</Typography>
                   </Box>
                 ))}
               </Box>
             )}
-
-            {/* Always shown — for a logged-in agent it opens their list; for a
-                lead opened from a WhatsApp link (not logged in) it's the way
-                into the dashboard (routes to the sign-in screen). */}
-            <Box
-              component="a"
-              href="/leads"
-              sx={{
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 0.75,
-                mt: 1.25, p: "12px", borderRadius: "8px", border: `1px solid ${tokens.divider}`,
-                bgcolor: "#fff", color: tokens.primaryDark, fontSize: 14, fontWeight: 600,
-                textDecoration: "none", "&:hover": { bgcolor: tokens.primaryBg },
-              }}
-            >
-              <ViewListIcon sx={{ fontSize: 18 }} /> View all my leads
-            </Box>
           </Box>
 
-          {/* Fixed action bar — always visible, page flows above it. */}
-          <Box
-            sx={{
-              position: "fixed",
-              bottom: 0,
-              left: 0,
-              right: 0,
-              zIndex: 3,
-              display: "flex",
-              gap: 1,
-              p: "10px 12px",
-              bgcolor: "background.paper",
-              borderTop: `1px solid ${tokens.divider}`,
-              boxShadow: "0 -2px 8px rgba(0,0,0,.06)",
-              pb: "calc(10px + env(safe-area-inset-bottom))",
-            }}
-          >
-            {/* Call is the one dominant action; WhatsApp is a compact secondary
-                so there's no "which do I press?" hesitation. */}
-            <Box sx={{ display: "flex", gap: 1, maxWidth: 480, mx: "auto", width: "100%" }}>
-              <Box
-                component="a"
-                href={`https://wa.me/${digits}`}
-                target="_blank"
-                rel="noopener"
-                aria-label="Message on WhatsApp"
-                sx={{
-                  flex: "0 0 auto", width: 116, bgcolor: "#fff", color: "#25D366", border: `1px solid ${tokens.divider}`,
-                  borderRadius: "8px", p: "13px", fontWeight: 600, fontSize: 13.5,
-                  textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center",
-                  gap: 0.75, textDecoration: "none", "&:hover": { bgcolor: "#f0fdf4" },
-                }}
-              >
-                <WhatsAppIcon fontSize="small" /> Chat
-              </Box>
-              <Box
-                component="a"
-                href={`tel:${digits}`}
-                onClick={onCallTap}
-                sx={{
-                  flex: 1, bgcolor: tokens.green, color: "#fff",
-                  borderRadius: "8px", p: "15px", fontWeight: 700, fontSize: 16,
-                  textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center",
-                  gap: 1, textDecoration: "none", "&:hover": { bgcolor: tokens.greenDark },
-                }}
-              >
-                <CallIcon fontSize="small" /> Call {lead.name.split(" ")[0]}
-              </Box>
-            </Box>
-          </Box>
+          {canEdit ? (
+            <>
+              {/* Step 1 — call them */}
+              <StepRow n={1}>
+                <Button
+                  component="a"
+                  href={`tel:${digits}`}
+                  onClick={onCallTap}
+                  variant="contained"
+                  fullWidth
+                  startIcon={<CallIcon />}
+                  sx={{ bgcolor: tokens.green, "&:hover": { bgcolor: tokens.greenDark }, py: 1.25, fontSize: 15.5, fontWeight: 700 }}
+                >
+                  Call {firstName}
+                </Button>
+                <IconButton
+                  component="a"
+                  href={`https://wa.me/${digits}`}
+                  target="_blank"
+                  rel="noopener"
+                  aria-label="Message on WhatsApp"
+                  sx={{ ml: 1, color: "#25D366", border: `1px solid ${tokens.divider}`, borderRadius: "8px", width: 44, height: 44 }}
+                >
+                  <WhatsAppIcon />
+                </IconButton>
+              </StepRow>
 
-          {canEdit && (
-            <OutcomeSheet
-              lead={lead}
-              pipelineKind={pipelineKind}
-              open={!!stageSheet}
-              entryStep={stageSheet?.step ?? "main"}
-              entryStage={stageSheet?.stage}
-              onClose={() => setStageSheet(null)}
-              onLogged={clearPendingCall}
-              onSnack={showSnack}
-            />
+              {/* Step 2 — come back and log what happened (pipeline-aware options) */}
+              <StepRow n={2}>
+                <FormControl
+                  fullWidth
+                  sx={{
+                    bgcolor: "background.paper", borderRadius: "6px",
+                    boxShadow: highlight ? `0 0 0 3px ${tokens.primaryBg}` : "none",
+                    transition: "box-shadow .3s ease",
+                  }}
+                >
+                  <InputLabel id="outcome-label">What happened?</InputLabel>
+                  <Select
+                    labelId="outcome-label"
+                    label="What happened?"
+                    value=""
+                    displayEmpty
+                    open={outcomeOpen}
+                    onOpen={() => setOutcomeOpen(true)}
+                    onClose={() => setOutcomeOpen(false)}
+                    onChange={(e) => {
+                      const opt = MAIN_OUTCOME_OPTIONS[pipelineKind].find((o) => o.stage === e.target.value);
+                      if (opt) pickOutcome(opt);
+                    }}
+                  >
+                    {MAIN_OUTCOME_OPTIONS[pipelineKind].map((opt) => (
+                      <MenuItem key={opt.label} value={opt.stage}>
+                        <ListItemIcon sx={{ minWidth: 36, color: "text.secondary" }}>{OUTCOME_ICONS[opt.icon]}</ListItemIcon>
+                        {opt.label}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </StepRow>
+
+              {/* One-line note — no scrolling, grows a touch if they write more */}
+              <TextField
+                value={note}
+                onChange={(e) => onNoteChange(e.target.value)}
+                onBlur={() => saveNote(note)}
+                placeholder="Add a note…"
+                size="small"
+                fullWidth
+                multiline
+                maxRows={2}
+                helperText={saveState || " "}
+                sx={{ mt: "auto", "& .MuiFormHelperText-root": { m: "2px 4px", fontSize: 11 } }}
+              />
+            </>
+          ) : (
+            /* Logged out (opened from a WhatsApp link): can still call/chat, and
+               "View all my leads" routes them into sign-in. */
+            <>
+              <StepRow n={1}>
+                <Button
+                  component="a"
+                  href={`tel:${digits}`}
+                  variant="contained"
+                  fullWidth
+                  startIcon={<CallIcon />}
+                  sx={{ bgcolor: tokens.green, "&:hover": { bgcolor: tokens.greenDark }, py: 1.25, fontSize: 15.5, fontWeight: 700 }}
+                >
+                  Call {firstName}
+                </Button>
+                <IconButton
+                  component="a"
+                  href={`https://wa.me/${digits}`}
+                  target="_blank"
+                  rel="noopener"
+                  aria-label="Message on WhatsApp"
+                  sx={{ ml: 1, color: "#25D366", border: `1px solid ${tokens.divider}`, borderRadius: "8px", width: 44, height: 44 }}
+                >
+                  <WhatsAppIcon />
+                </IconButton>
+              </StepRow>
+              <Button component="a" href="/leads" variant="outlined" startIcon={<ViewListIcon />} sx={{ mt: 1 }}>
+                View all my leads
+              </Button>
+            </>
           )}
-        </>
+        </Box>
+      )}
+
+      {canEdit && lead && (
+        <OutcomeSheet
+          lead={lead}
+          pipelineKind={pipelineKind}
+          open={!!stageSheet}
+          entryStep={stageSheet?.step ?? "main"}
+          entryStage={stageSheet?.stage}
+          onClose={() => setStageSheet(null)}
+          onLogged={clearPendingCall}
+          onSnack={showSnack}
+        />
       )}
     </Box>
   );
 }
 
-function InfoRow({ label, value, href, strong }: { label: string; value: string; href?: string; strong?: boolean }) {
+function StepRow({ n, children }: { n: number; children: React.ReactNode }) {
   return (
-    <Box sx={{ display: "flex", py: "7px", borderBottom: `1px solid ${tokens.divider2}`, gap: 1, alignItems: "baseline", "&:last-child": { borderBottom: 0 } }}>
-      <Typography sx={{ color: "text.secondary", fontSize: 13, flex: "0 0 34%", wordBreak: "break-word" }}>{label}</Typography>
+    <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
+      <Avatar sx={{ width: 24, height: 24, fontSize: 13, fontWeight: 700, bgcolor: tokens.primary, flex: "0 0 auto" }}>{n}</Avatar>
+      <Box sx={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center" }}>{children}</Box>
+    </Box>
+  );
+}
+
+function InfoLine({ icon, value, href, strong }: { icon: React.ReactNode; value: string; href?: string; strong?: boolean }) {
+  return (
+    <Box sx={{ display: "flex", alignItems: "center", gap: 1.25, py: 0.4 }}>
+      <Box sx={{ color: "text.disabled", display: "flex" }}>{icon}</Box>
       {href ? (
-        <Typography component="a" href={href} sx={{ fontSize: strong ? 15 : 14, fontWeight: strong ? 700 : 500, flex: 1, wordBreak: "break-word", color: tokens.primaryDark, textDecoration: "none" }}>
+        <Typography component="a" href={href} sx={{ fontSize: strong ? 16 : 14, fontWeight: strong ? 700 : 500, color: tokens.primaryDark, textDecoration: "none", wordBreak: "break-word" }}>
           {value}
         </Typography>
       ) : (
-        <Typography sx={{ fontSize: strong ? 15 : 14, fontWeight: strong ? 700 : 400, flex: 1, wordBreak: "break-word" }}>{value}</Typography>
+        <Typography sx={{ fontSize: strong ? 15 : 14, fontWeight: strong ? 600 : 400, wordBreak: "break-word" }}>{value}</Typography>
       )}
     </Box>
   );
