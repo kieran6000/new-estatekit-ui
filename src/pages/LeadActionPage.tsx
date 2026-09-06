@@ -8,18 +8,18 @@ import LinkOffIcon from "@mui/icons-material/LinkOff";
 import ViewListIcon from "@mui/icons-material/ViewList";
 import { tokens } from "../theme";
 import { useAuth } from "../hooks/useAuth";
-import { useLeadWithStatus, useUpdateLeadNote } from "../hooks/useLeads";
+import { useLeadWithStatus, useUpdateLeadNote, useUpdateLeadStage } from "../hooks/useLeads";
 import { usePipelines } from "../hooks/usePipelines";
 import { useSnack } from "../hooks/useSnack";
-import { pipelineKindFor } from "../lib/stageLogic";
+import { pipelineKindFor, MAIN_OUTCOME_OPTIONS, STEP_FOR_STAGE, type MainOutcomeOption } from "../lib/stageLogic";
 import { prettyAnswer } from "../lib/format";
 import { timeAgo } from "../lib/timeAgo";
 import { trackActivity } from "../lib/activity";
 import { armPendingCall, clearPendingCall } from "../lib/pendingCall";
 import { getLeadByToken } from "../api/leadActions";
-import OutcomeSheet from "../components/OutcomeSheet";
+import OutcomeSheet, { OUTCOME_ICONS, outcomeSnack } from "../components/OutcomeSheet";
 import estateKitLogo from "../assets/blue logo full.png";
-import type { LeadRow } from "../types";
+import type { LeadRow, OutcomeStep, Stage } from "../types";
 
 function isTokenFormat(s: string): boolean {
   return /^[a-f0-9]{8}$/.test(s);
@@ -68,21 +68,32 @@ function LeadActionUI({
 }) {
   const { data: pipelines = [] } = usePipelines({ enabled: canEdit });
   const updateNote = useUpdateLeadNote();
+  const updateStage = useUpdateLeadStage();
   const showSnack = useSnack();
 
   const [note, setNote] = useState(lead?.note ?? "");
   const [saveState, setSaveState] = useState("");
-  const [outcomeOpen, setOutcomeOpen] = useState(false);
+  // The follow-up sheet (when? / reminder / commission) — only for outcomes that
+  // need a second answer. The outcome list itself lives inline on the page.
+  const [stageSheet, setStageSheet] = useState<{ step: OutcomeStep; stage: Stage } | null>(null);
+  const [highlight, setHighlight] = useState(false);
+  const outcomeRef = useRef<HTMLDivElement | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  // "It waited for you": we don't ask how the call went up front (useless once
-  // they've left for the dialer). We arm on tap, then open the outcome sheet the
-  // moment they come back to this tab.
+  // The page can't hear the call, but it can tell when they leave for the dialer
+  // and come back. We arm a pending call on tap (so an un-logged call resurfaces
+  // on the Leads page), and when they return from a real call we bring the
+  // inline "How did it go?" card into view and flash it — no modal to dismiss.
   const awaitingReturn = useRef(false);
   const didHide = useRef(false);
   const tapTime = useRef(0);
-  const fallbackTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const RETURN_MIN_MS = 3000; // shorter than this = they backed out, no call happened
+
+  function flashOutcome() {
+    outcomeRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    setHighlight(true);
+    setTimeout(() => setHighlight(false), 2200);
+  }
 
   function onCallTap() {
     if (!canEdit || !lead) return;
@@ -91,16 +102,21 @@ function LeadActionUI({
     awaitingReturn.current = true;
     didHide.current = false;
     tapTime.current = Date.now();
-    clearTimeout(fallbackTimer.current);
-    // Desktop / handlers that don't background the tab: behave like before and
-    // just open the sheet shortly after the tap. Guarded so it never fires on
-    // mobile (where the tab goes hidden well within this window).
-    fallbackTimer.current = setTimeout(() => {
-      if (awaitingReturn.current && !didHide.current && document.visibilityState === "visible") {
-        awaitingReturn.current = false;
-        setOutcomeOpen(true);
-      }
-    }, 1500);
+  }
+
+  function pickOutcome(opt: MainOutcomeOption) {
+    if (!lead || !canEdit) return;
+    const sub = STEP_FOR_STAGE[opt.stage];
+    if (sub) {
+      setStageSheet({ step: sub, stage: opt.stage });
+      return;
+    }
+    trackActivity("stage_change", {
+      lead: { id: lead.id, name: lead.name, phone: lead.phone, fromStage: lead.stage, toStage: opt.stage, pipeline: pipelineKind },
+    });
+    updateStage.mutate({ id: lead.id, stage: opt.stage });
+    clearPendingCall();
+    showSnack(outcomeSnack(opt.stage));
   }
 
   useEffect(() => {
@@ -113,16 +129,13 @@ function LeadActionUI({
       const away = Date.now() - tapTime.current;
       awaitingReturn.current = false;
       if (away >= RETURN_MIN_MS) {
-        setOutcomeOpen(true); // a real call happened → ask how it went
+        flashOutcome(); // a real call happened → nudge them to the outcome card
       } else {
         clearPendingCall(); // backed out of the dialer immediately → no call
       }
     }
     document.addEventListener("visibilitychange", onVis);
-    return () => {
-      document.removeEventListener("visibilitychange", onVis);
-      clearTimeout(fallbackTimer.current);
-    };
+    return () => document.removeEventListener("visibilitychange", onVis);
   }, []);
 
   useEffect(() => setNote(lead?.note ?? ""), [lead?.id]);
@@ -229,6 +242,43 @@ function LeadActionUI({
               )}
             </Box>
 
+            {/* Outcome capture lives right on the page — log what happened any
+                time, not only after a call. Returning from the dialer flashes
+                this card into view. */}
+            {canEdit && (
+              <Box
+                ref={outcomeRef}
+                sx={{
+                  mt: 1.25, bgcolor: "background.paper", borderRadius: "12px", overflow: "hidden",
+                  border: `1px solid ${highlight ? tokens.primary : tokens.divider}`,
+                  boxShadow: highlight ? `0 0 0 3px ${tokens.primaryBg}` : "none",
+                  transition: "box-shadow .3s ease, border-color .3s ease",
+                }}
+              >
+                <Box sx={{ p: "12px 16px 6px" }}>
+                  <Typography sx={{ fontSize: 16, fontWeight: 700 }}>How did it go?</Typography>
+                  <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>Tap what happened.</Typography>
+                </Box>
+                {MAIN_OUTCOME_OPTIONS[pipelineKind].map((opt) => (
+                  <Box
+                    key={opt.label}
+                    component="button"
+                    onClick={() => pickOutcome(opt)}
+                    sx={{
+                      width: "100%", display: "flex", alignItems: "center", gap: 1.5,
+                      border: 0, borderTop: `1px solid ${tokens.divider2}`, bgcolor: "transparent",
+                      p: "14px 16px", cursor: "pointer", textAlign: "left", fontSize: 15,
+                      fontFamily: "inherit", color: "inherit",
+                      "&:hover": { bgcolor: tokens.primaryBg },
+                    }}
+                  >
+                    <Box sx={{ color: "text.secondary", display: "flex" }}>{OUTCOME_ICONS[opt.icon]}</Box>
+                    {opt.label}
+                  </Box>
+                ))}
+              </Box>
+            )}
+
             {/* Always shown — for a logged-in agent it opens their list; for a
                 lead opened from a WhatsApp link (not logged in) it's the way
                 into the dashboard (routes to the sign-in screen). */}
@@ -301,8 +351,10 @@ function LeadActionUI({
             <OutcomeSheet
               lead={lead}
               pipelineKind={pipelineKind}
-              open={outcomeOpen}
-              onClose={() => setOutcomeOpen(false)}
+              open={!!stageSheet}
+              entryStep={stageSheet?.step ?? "main"}
+              entryStage={stageSheet?.stage}
+              onClose={() => setStageSheet(null)}
               onLogged={clearPendingCall}
               onSnack={showSnack}
             />
