@@ -76,7 +76,20 @@ export default function LeadsPage() {
   const [focusOpen, setFocusOpen] = useState(false);
   const [stageSheet, setStageSheet] = useState<{ leadId: string; step: OutcomeStep; stage: Stage } | null>(null);
 
-  const activePipeline: Pipeline | undefined = pipelines.find((p) => p.id === pipelineId) ?? pipelines.find((p) => p.kind === "seller") ?? pipelines[0];
+  // Default to the pipeline holding the most recent lead, so the agent lands
+  // where the newest action is — unless they've explicitly picked one before
+  // (that choice is remembered in localStorage and always wins).
+  const pipelineOfLatestLead = useMemo(() => {
+    let latest: LeadRow | undefined;
+    for (const l of leads) if (!latest || l.created_at > latest.created_at) latest = l;
+    return latest ? pipelines.find((p) => p.id === latest!.pipeline_id) : undefined;
+  }, [leads, pipelines]);
+
+  const activePipeline: Pipeline | undefined =
+    pipelines.find((p) => p.id === pipelineId) ??
+    pipelineOfLatestLead ??
+    pipelines.find((p) => p.kind === "seller") ??
+    pipelines[0];
   const stagesForPipeline = activePipeline ? PIPELINE_STAGES[activePipeline.kind] : [];
 
   // Restore this pipeline's remembered stage filter when it becomes active

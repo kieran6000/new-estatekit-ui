@@ -1,8 +1,13 @@
 import { useState } from "react";
 import { Box, Button, Paper, TextField, Typography } from "@mui/material";
+import WhatsAppIcon from "@mui/icons-material/WhatsApp";
 import { tokens } from "../theme";
 import { useAuth } from "../hooks/useAuth";
 import estateKitLogo from "../assets/blue logo full.png";
+
+// Where "Request a login" sends the agent. Kieran's admin WhatsApp.
+const ADMIN_WHATSAPP = "264852878236";
+const REQUEST_MESSAGE = "Hi, I'd like my EstateKit login details please.";
 
 function normalizePhone(raw: string): string {
   const digits = raw.replace(/[\s\-()]/g, "");
@@ -74,9 +79,25 @@ export default function LoginPage() {
           </Typography>
         )}
 
-        <Typography variant="caption" color="text.disabled" sx={{ display: "block", textAlign: "center", mt: 2.5 }}>
-          New agent? Your admin sets up your account and sends your login.
-        </Typography>
+        <Box sx={{ mt: 3, pt: 2.5, borderTop: `1px solid ${tokens.divider}`, textAlign: "center" }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.25 }}>
+            Don't have a login yet?
+          </Typography>
+          <Button
+            fullWidth
+            variant="outlined"
+            startIcon={<WhatsAppIcon />}
+            href={`https://wa.me/${ADMIN_WHATSAPP}?text=${encodeURIComponent(REQUEST_MESSAGE)}`}
+            target="_blank"
+            rel="noopener"
+            sx={{ color: "#128C7E", borderColor: "#cfe9e2", "&:hover": { borderColor: "#128C7E", bgcolor: "#f0fdf4" } }}
+          >
+            Request a login
+          </Button>
+          <Typography variant="caption" color="text.disabled" sx={{ display: "block", mt: 1.25 }}>
+            Your admin sets up your account and sends your details.
+          </Typography>
+        </Box>
       </Paper>
     </Box>
   );

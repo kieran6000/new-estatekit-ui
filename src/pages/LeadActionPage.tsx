@@ -178,20 +178,21 @@ function LeadActionUI({
               )}
             </Box>
 
-            {canEdit && (
-              <Box
-                component="a"
-                href="/leads"
-                sx={{
-                  display: "flex", alignItems: "center", justifyContent: "center", gap: 0.75,
-                  mt: 1.25, p: "12px", borderRadius: "8px", border: `1px solid ${tokens.divider}`,
-                  bgcolor: "#fff", color: tokens.primaryDark, fontSize: 14, fontWeight: 600,
-                  textDecoration: "none", "&:hover": { bgcolor: tokens.primaryBg },
-                }}
-              >
-                <ViewListIcon sx={{ fontSize: 18 }} /> View all my leads
-              </Box>
-            )}
+            {/* Always shown — for a logged-in agent it opens their list; for a
+                lead opened from a WhatsApp link (not logged in) it's the way
+                into the dashboard (routes to the sign-in screen). */}
+            <Box
+              component="a"
+              href="/leads"
+              sx={{
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 0.75,
+                mt: 1.25, p: "12px", borderRadius: "8px", border: `1px solid ${tokens.divider}`,
+                bgcolor: "#fff", color: tokens.primaryDark, fontSize: 14, fontWeight: 600,
+                textDecoration: "none", "&:hover": { bgcolor: tokens.primaryBg },
+              }}
+            >
+              <ViewListIcon sx={{ fontSize: 18 }} /> View all my leads
+            </Box>
           </Box>
 
           {/* Fixed action bar — always visible, page flows above it. */}
@@ -211,20 +212,23 @@ function LeadActionUI({
               pb: "calc(10px + env(safe-area-inset-bottom))",
             }}
           >
+            {/* Call is the one dominant action; WhatsApp is a compact secondary
+                so there's no "which do I press?" hesitation. */}
             <Box sx={{ display: "flex", gap: 1, maxWidth: 480, mx: "auto", width: "100%" }}>
               <Box
                 component="a"
                 href={`https://wa.me/${digits}`}
                 target="_blank"
                 rel="noopener"
+                aria-label="Message on WhatsApp"
                 sx={{
-                  flex: 1, bgcolor: "#fff", color: "#25D366", border: `1px solid ${tokens.divider}`,
-                  borderRadius: "8px", p: "13px", fontWeight: 600, fontSize: 14,
+                  flex: "0 0 auto", width: 116, bgcolor: "#fff", color: "#25D366", border: `1px solid ${tokens.divider}`,
+                  borderRadius: "8px", p: "13px", fontWeight: 600, fontSize: 13.5,
                   textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center",
-                  gap: 1, textDecoration: "none", "&:hover": { bgcolor: "#f0fdf4" },
+                  gap: 0.75, textDecoration: "none", "&:hover": { bgcolor: "#f0fdf4" },
                 }}
               >
-                <WhatsAppIcon fontSize="small" /> WhatsApp
+                <WhatsAppIcon fontSize="small" /> Chat
               </Box>
               <Box
                 component="a"
@@ -236,12 +240,12 @@ function LeadActionUI({
                 }}
                 sx={{
                   flex: 1, bgcolor: tokens.green, color: "#fff",
-                  borderRadius: "8px", p: "13px", fontWeight: 600, fontSize: 14,
+                  borderRadius: "8px", p: "15px", fontWeight: 700, fontSize: 16,
                   textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center",
                   gap: 1, textDecoration: "none", "&:hover": { bgcolor: tokens.greenDark },
                 }}
               >
-                <CallIcon fontSize="small" /> Call
+                <CallIcon fontSize="small" /> Call {lead.name.split(" ")[0]}
               </Box>
             </Box>
           </Box>
