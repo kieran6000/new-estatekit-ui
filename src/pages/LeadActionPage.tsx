@@ -285,7 +285,7 @@ function LeadActionUI({
                   }}
                 >
                   <InputLabel id="outcome-label">What happened?</InputLabel>
-                  <Select
+                  <Select<Stage | "">
                     labelId="outcome-label"
                     label="What happened?"
                     value=""
