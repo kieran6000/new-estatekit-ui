@@ -40,6 +40,7 @@ export default function LeadCaptureForm({
   customQuestions,
   showHeader = true,
   onSubmit,
+  preview = false,
 }: {
   page: LeadPage;
   pipelineKind: PipelineKind;
@@ -47,6 +48,8 @@ export default function LeadCaptureForm({
   /** false when a parent page renders its own full-width navbar instead. */
   showHeader?: boolean;
   onSubmit: (values: { name: string; phone: string; email: string; answers: { q: string; a: string }[] }) => void;
+  /** Dashboard preview — never records a lead or fires tracking. */
+  preview?: boolean;
 }) {
   const t = LEAD_FORM_TEMPLATE[pipelineKind];
   const nameLabel = page.nameLabel || "What's your name?";
@@ -110,7 +113,7 @@ export default function LeadCaptureForm({
     setErrors({});
     // A "not a good lead" answer ends the flow on a polite screen — no lead created.
     if (step.kind === "question" && step.question.disqualifyAnswers?.includes(value)) {
-      trackActivity("lead_disqualified", { agentId: page.agentId, lead: { name: name || "Visitor", reason: `${step.question.label}: ${value}`, pipeline: pipelineKind } });
+      if (!preview) trackActivity("lead_disqualified", { agentId: page.agentId, lead: { name: name || "Visitor", reason: `${step.question.label}: ${value}`, pipeline: pipelineKind } });
       setDisqualified(true);
       setPhase("done");
       return;

@@ -340,7 +340,13 @@ function LeadActionUI({
                   <Select<Stage | "">
                     labelId="outcome-label"
                     label="What happened?"
-                    value=""
+                    // Reflects what's already been logged, so reopening the
+                    // dropdown shows the current state rather than resetting.
+                    value={
+                      MAIN_OUTCOME_OPTIONS[pipelineKind].some((o) => o.stage === lead.stage)
+                        ? (lead.stage as Stage)
+                        : ""
+                    }
                     displayEmpty
                     open={outcomeOpen}
                     onOpen={() => setOutcomeOpen(true)}

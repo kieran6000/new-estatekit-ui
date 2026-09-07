@@ -28,6 +28,9 @@ import { computeDerived, rangeFor, useOverview, type OverviewComputedRow, type O
 import { getMyProfile } from "../api/agentProfile";
 import ActiveAds from "../components/ActiveAds";
 
+// Header row height, so the totals row can stick directly beneath it.
+const HEAD_H = 37;
+
 const PERIODS: OverviewPeriod[] = ["This month", "Last 30 days", "Last 7 days", "Lifetime", "Custom"];
 
 type Mode = "simple" | "advanced";
@@ -235,11 +238,26 @@ export default function OverviewPage() {
 
       {/* Desktop: table and ads side by side so neither is buried.
           Mobile: whichever tab is selected, full width. */}
-      <Box sx={{ display: "flex", alignItems: "flex-start", gap: isNarrow ? 0 : 1.5, p: isNarrow ? 0 : "12px 16px" }}>
-      <Box sx={{ flex: 1, minWidth: 0 }}>
+      <Box
+        sx={{
+          display: "flex", alignItems: "stretch",
+          gap: isNarrow ? 0 : 1.5,
+          p: isNarrow ? 0 : "12px 16px",
+          // Both columns fill the window and scroll internally, so the header
+          // and totals stay put and there's no dead space under a short table.
+          height: isNarrow ? "auto" : "calc(100dvh - 122px)",
+          minHeight: 0,
+        }}
+      >
+      <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", minHeight: 0 }}>
       {showNumbers && (
-      <Box sx={{ overflowX: "auto", bgcolor: "background.paper", border: isNarrow ? 0 : `1px solid ${tokens.divider}`, borderRadius: isNarrow ? 0 : "8px" }}>
-        <Table size="small">
+      <Box sx={{
+        overflow: "auto", flex: isNarrow ? "none" : 1, minHeight: 0,
+        bgcolor: "background.paper",
+        border: isNarrow ? 0 : `1px solid ${tokens.divider}`,
+        borderRadius: isNarrow ? 0 : "8px",
+      }}>
+        <Table size="small" stickyHeader>
           <TableHead>
             <TableRow>
               {cols.map((c) => (
@@ -247,7 +265,11 @@ export default function OverviewPage() {
                   key={c.k}
                   align={c.num ? "right" : "left"}
                   onClick={() => toggleSort(c.k)}
-                  sx={{ cursor: "pointer", fontSize: 12, fontWeight: 500, color: "text.secondary", whiteSpace: "nowrap" }}
+                  sx={{
+                    cursor: "pointer", fontSize: 12, fontWeight: 500,
+                    color: "text.secondary", whiteSpace: "nowrap",
+                    height: HEAD_H, bgcolor: "background.paper",
+                  }}
                 >
                   {c.label} {sort.k === c.k ? (sort.dir > 0 ? "▲" : "▼") : ""}
                 </TableCell>
@@ -267,9 +289,20 @@ export default function OverviewPage() {
               ))
             ) : (
               <>
+                {/* Totals stay pinned right under the header while you scroll. */}
                 <TableRow sx={{ bgcolor: "#eef1f3" }}>
                   {cols.map((c) => (
-                    <TableCell key={c.k} align={c.num ? "right" : "left"} sx={{ fontWeight: 500, borderTop: `2px solid ${tokens.divider}`, borderBottom: `2px solid ${tokens.divider}`, whiteSpace: "nowrap" }}>
+                    <TableCell
+                      key={c.k}
+                      align={c.num ? "right" : "left"}
+                      sx={{
+                        fontWeight: 500, whiteSpace: "nowrap",
+                        borderTop: `2px solid ${tokens.divider}`,
+                        borderBottom: `2px solid ${tokens.divider}`,
+                        position: "sticky", top: HEAD_H, zIndex: 2,
+                        bgcolor: "#eef1f3",
+                      }}
+                    >
                       {cell(c, totals as unknown as Record<string, number | string>)}
                     </TableCell>
                   ))}
@@ -308,10 +341,12 @@ export default function OverviewPage() {
             border: isNarrow ? 0 : `1px solid ${tokens.divider}`,
             borderTop: isNarrow ? `1px solid ${tokens.divider}` : undefined,
             borderRadius: isNarrow ? 0 : "8px",
-            position: isNarrow ? "static" : "sticky",
-            top: isNarrow ? undefined : 72,
-            maxHeight: isNarrow ? undefined : "calc(100dvh - 88px)",
+            minHeight: 0,
             overflowY: isNarrow ? undefined : "auto",
+            // Scrolls, but without the scrollbar cluttering the panel.
+            scrollbarWidth: "none",
+            msOverflowStyle: "none",
+            "&::-webkit-scrollbar": { display: "none" },
           }}
         >
           {!isNarrow && (

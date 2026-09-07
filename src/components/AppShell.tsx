@@ -17,8 +17,8 @@ import {
   Paper,
 } from "@mui/material";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import ViewListOutlinedIcon from "@mui/icons-material/ViewListOutlined";
-import ViewListIcon from "@mui/icons-material/ViewList";
+import ContactsIcon from "@mui/icons-material/Contacts";
+import ContactsOutlinedIcon from "@mui/icons-material/ContactsOutlined";
 import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
 import HomeIcon from "@mui/icons-material/Home";
 import WebOutlinedIcon from "@mui/icons-material/WebOutlined";
@@ -98,7 +98,7 @@ export default function AppShell() {
   const SZ = 20;
   const agentNav = [
     ...(import.meta.env.DEV ? [{ key: "home", label: "Dashboard", icon: <HomeOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <HomeIcon sx={{ fontSize: SZ }} />, to: "/home" }] : []),
-    { key: "leads", label: "Leads", icon: <ViewListOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <ViewListIcon sx={{ fontSize: SZ }} />, to: "/leads" },
+    { key: "leads", label: "Leads", icon: <ContactsOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <ContactsIcon sx={{ fontSize: SZ }} />, to: "/leads" },
     { key: "mypage", label: "Forms", icon: <WebOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <WebIcon sx={{ fontSize: SZ }} />, to: "/lead-page" },
   ];
 
@@ -118,7 +118,7 @@ export default function AppShell() {
   });
 
   const mobileNav = [
-    { key: "leads", label: "Leads", icon: <ViewListOutlinedIcon />, activeIcon: <ViewListIcon />, to: "/leads" },
+    { key: "leads", label: "Leads", icon: <ContactsOutlinedIcon />, activeIcon: <ContactsIcon />, to: "/leads" },
     { key: "mypage", label: "Forms", icon: <WebOutlinedIcon />, activeIcon: <WebIcon />, to: "/lead-page" },
     ...(isOperator ? [{ key: "overview", label: "Overview", icon: <DashboardOutlinedIcon />, activeIcon: <DashboardIcon />, to: "/overview" }] : []),
     { key: "account", label: "Account", icon: <AccountCircleOutlinedIcon />, activeIcon: <AccountCircleIcon />, to: "/account" },

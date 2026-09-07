@@ -40,7 +40,7 @@ import PlaceIcon from "@mui/icons-material/PlaceOutlined";
 import { usePostHog } from "@posthog/react";
 import { tokens } from "../theme";
 import { PIPELINE_KIND_LABEL, type CustomQuestion, type LeadPage, type Pipeline, type PipelineKind, type QuestionType } from "../types";
-import { useAddLeadPage, useDeleteLeadPage, useLeadPages, useSubmitMockLead, useUpdateLeadPage } from "../hooks/useLeadPages";
+import { useAddLeadPage, useDeleteLeadPage, useLeadPages, useUpdateLeadPage } from "../hooks/useLeadPages";
 import { usePipelines } from "../hooks/usePipelines";
 import { getFbForm, listFbForms, type FbForm } from "../api/leadPages";
 import FbFormPreview from "../components/FbFormPreview";
@@ -589,17 +589,16 @@ function FbFormSource({
 
 function PreviewAndSubmit({ page, pipelineKind }: { page: LeadPage; pipelineKind: PipelineKind }) {
   const { data: customQuestions = [] } = useCustomQuestions(page.id);
-  const submitLead = useSubmitMockLead();
   const showSnack = useSnack();
   return (
+    // Preview only: filling this in on the dashboard must never create a lead
+    // or fire tracking — it's the agent checking their own form.
     <LeadCaptureForm
       page={page}
       pipelineKind={pipelineKind}
       customQuestions={customQuestions}
-      onSubmit={async ({ name, phone, email, answers }) => {
-        await submitLead.mutateAsync({ pageId: page.id, name, phone, email, formAnswers: answers });
-        showSnack("Form submitted (demo) — a real lead lands in Leads once connected");
-      }}
+      preview
+      onSubmit={() => showSnack("Preview only — nothing was saved")}
     />
   );
 }
