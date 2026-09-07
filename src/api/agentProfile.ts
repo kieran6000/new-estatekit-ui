@@ -41,11 +41,17 @@ export interface ActiveAd {
   imageUrl: string;
   cta: string;
   link: string;
+  spend: number;
+  leads: number;
+  clicks: number;
+  impressions: number;
+  /** null when there were no leads in the window. */
+  cpl: number | null;
 }
 
 /** The ads currently delivering on an ad account, with creative fields for preview. */
-export async function getActiveAds(adAccountId: string): Promise<ActiveAd[]> {
-  const { data, error } = await supabase.functions.invoke("fb-active-ads", { body: { adAccountId } });
+export async function getActiveAds(adAccountId: string, since?: string | null, until?: string | null): Promise<ActiveAd[]> {
+  const { data, error } = await supabase.functions.invoke("fb-active-ads", { body: { adAccountId, since, until } });
   if (error) throw new Error(data?.error || error.message);
   if (data?.error) throw new Error(data.error);
   return (data?.ads ?? []) as ActiveAd[];

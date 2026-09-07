@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -24,7 +24,7 @@ import {
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { tokens } from "../theme";
-import { computeDerived, useOverview, type OverviewComputedRow, type OverviewPeriod } from "../hooks/useOverview";
+import { computeDerived, rangeFor, useOverview, type OverviewComputedRow, type OverviewPeriod } from "../hooks/useOverview";
 import { getMyProfile } from "../api/agentProfile";
 import ActiveAds from "../components/ActiveAds";
 
@@ -78,7 +78,16 @@ const ADVANCED_COLS: Col[] = [
 
 export default function OverviewPage() {
   const navigate = useNavigate();
-  const [period, setPeriod] = useState<OverviewPeriod>("Last 30 days");
+  // Remember the chosen period + custom dates across visits.
+  const [period, setPeriod] = useState<OverviewPeriod>(() => {
+    try {
+      const saved = localStorage.getItem("estatekit_overview_period");
+      return (saved && PERIODS.includes(saved as OverviewPeriod) ? saved : "Last 30 days") as OverviewPeriod;
+    } catch { return "Last 30 days"; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("estatekit_overview_period", period); } catch { /* ignore */ }
+  }, [period]);
   const [mode, setMode] = useState<Mode>("simple");
   const [tab, setTab] = useState<"numbers" | "ads">("numbers");
   const isNarrow = useMediaQuery("(max-width:899px)");
@@ -88,10 +97,23 @@ export default function OverviewPage() {
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [sort, setSort] = useState<{ k: ColKey; dir: 1 | -1 }>({ k: "date", dir: -1 });
   const todayStr = new Date().toISOString().slice(0, 10);
-  const [fromDate, setFromDate] = useState(() => new Date(Date.now() - 29 * 864e5).toISOString().slice(0, 10));
-  const [toDate, setToDate] = useState(todayStr);
+  const [fromDate, setFromDate] = useState(() => {
+    try { return localStorage.getItem('estatekit_overview_from') || new Date(Date.now() - 29 * 864e5).toISOString().slice(0, 10); }
+    catch { return new Date(Date.now() - 29 * 864e5).toISOString().slice(0, 10); }
+  });
+  const [toDate, setToDate] = useState(() => {
+    try { return localStorage.getItem('estatekit_overview_to') || todayStr; } catch { return todayStr; }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem('estatekit_overview_from', fromDate);
+      localStorage.setItem('estatekit_overview_to', toDate);
+    } catch { /* ignore */ }
+  }, [fromDate, toDate]);
   const { data = [], isLoading } = useOverview(period, { from: fromDate, to: toDate });
   const cols = mode === "simple" ? SIMPLE_COLS : ADVANCED_COLS;
+  // Ad KPIs report over exactly the window the table is showing.
+  const adRange = rangeFor(period, { from: fromDate, to: toDate });
   // Which client's ads to preview — the currently active/managed agent.
   const { data: profile } = useQuery({ queryKey: ["myProfile"], queryFn: getMyProfile });
 
@@ -211,8 +233,12 @@ export default function OverviewPage() {
         </Tabs>
       )}
 
+      {/* Desktop: table and ads side by side so neither is buried.
+          Mobile: whichever tab is selected, full width. */}
+      <Box sx={{ display: "flex", alignItems: "flex-start", gap: isNarrow ? 0 : 1.5, p: isNarrow ? 0 : "12px 16px" }}>
+      <Box sx={{ flex: 1, minWidth: 0 }}>
       {showNumbers && (
-      <Box sx={{ overflowX: "auto", bgcolor: "background.paper" }}>
+      <Box sx={{ overflowX: "auto", bgcolor: "background.paper", border: isNarrow ? 0 : `1px solid ${tokens.divider}`, borderRadius: isNarrow ? 0 : "8px" }}>
         <Table size="small">
           <TableHead>
             <TableRow>
@@ -271,19 +297,37 @@ export default function OverviewPage() {
         </Typography>
       )}
 
+      </Box>
+
       {showAds && (
-        <Box sx={{ bgcolor: "background.paper", borderTop: `1px solid ${tokens.divider}` }}>
+        <Box
+          sx={{
+            bgcolor: "background.paper",
+            width: isNarrow ? "100%" : 372,
+            flex: isNarrow ? "1 1 100%" : "0 0 372px",
+            border: isNarrow ? 0 : `1px solid ${tokens.divider}`,
+            borderTop: isNarrow ? `1px solid ${tokens.divider}` : undefined,
+            borderRadius: isNarrow ? 0 : "8px",
+            position: isNarrow ? "static" : "sticky",
+            top: isNarrow ? undefined : 72,
+            maxHeight: isNarrow ? undefined : "calc(100dvh - 88px)",
+            overflowY: isNarrow ? undefined : "auto",
+          }}
+        >
           {!isNarrow && (
-            <Typography sx={{ fontSize: 11, fontWeight: 600, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.05em", p: "16px 16px 0" }}>
-              Active ads
+            <Typography sx={{ fontSize: 11, fontWeight: 600, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.05em", p: "14px 16px 0" }}>
+              Active ads · {period.toLowerCase()}
             </Typography>
           )}
           <ActiveAds
             adAccountId={profile?.fbAdAccountId || undefined}
             agentName={profile?.company || profile?.displayName}
+            since={adRange.from}
+            until={adRange.to}
           />
         </Box>
       )}
+      </Box>
     </Box>
   );
 }

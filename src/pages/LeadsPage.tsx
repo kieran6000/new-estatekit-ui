@@ -34,6 +34,7 @@ import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import CloseIcon from "@mui/icons-material/Close";
+import EditIcon from "@mui/icons-material/EditOutlined";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutlineOutlined";
 import PhoneCallbackIcon from "@mui/icons-material/PhoneCallback";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -268,6 +269,15 @@ export default function LeadsPage() {
         >
           {activePipeline.name} pipeline <ArrowDropDownIcon fontSize="small" />
         </Box>
+        <IconButton
+          onClick={() => setRenameOpen(true)}
+          title="Rename pipeline"
+          aria-label="Rename pipeline"
+          size="small"
+          sx={{ color: "text.secondary" }}
+        >
+          <EditIcon sx={{ fontSize: 18 }} />
+        </IconButton>
         <PipelineMenu
           anchor={pipelineMenuAnchor}
           pipelines={pipelines}
@@ -276,10 +286,6 @@ export default function LeadsPage() {
           onAddNew={() => {
             setPipelineMenuAnchor(null);
             setAddPipelineOpen(true);
-          }}
-          onRename={() => {
-            setPipelineMenuAnchor(null);
-            setRenameOpen(true);
           }}
         />
         <Box sx={{ flex: 1 }} />
@@ -484,14 +490,12 @@ function PipelineMenu({
   onClose,
   onSelect,
   onAddNew,
-  onRename,
 }: {
   anchor: HTMLElement | null;
   pipelines: Pipeline[];
   onClose: () => void;
   onSelect: (id: string) => void;
   onAddNew: () => void;
-  onRename: () => void;
 }) {
   return (
     <Menu anchorEl={anchor} open={!!anchor} onClose={onClose}>
@@ -500,10 +504,7 @@ function PipelineMenu({
           {p.name}
         </MenuItem>
       ))}
-      <MenuItem onClick={onRename} sx={{ borderTop: `1px solid ${tokens.divider2}`, mt: 0.5 }}>
-        Rename this pipeline
-      </MenuItem>
-      <MenuItem onClick={onAddNew} sx={{ color: tokens.primary }}>
+      <MenuItem onClick={onAddNew} sx={{ color: tokens.primary, borderTop: `1px solid ${tokens.divider2}`, mt: 0.5 }}>
         + Add pipeline
       </MenuItem>
     </Menu>

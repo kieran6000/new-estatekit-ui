@@ -24,6 +24,13 @@ function fromDateFor(period: OverviewPeriod): string | null {
   return null; // Lifetime
 }
 
+/** The from/to the Overview is currently showing, so other panels (ad KPIs)
+ *  can report over exactly the same window. */
+export function rangeFor(period: OverviewPeriod, range?: DateRange): { from: string | null; to: string | null } {
+  if (period === "Custom") return { from: range?.from || null, to: range?.to || null };
+  return { from: fromDateFor(period), to: null };
+}
+
 export interface OverviewComputedRow {
   date: string;
   // raw counts (also the totals-row aggregation inputs)

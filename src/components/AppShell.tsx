@@ -99,7 +99,7 @@ export default function AppShell() {
   const agentNav = [
     ...(import.meta.env.DEV ? [{ key: "home", label: "Dashboard", icon: <HomeOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <HomeIcon sx={{ fontSize: SZ }} />, to: "/home" }] : []),
     { key: "leads", label: "Leads", icon: <ViewListOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <ViewListIcon sx={{ fontSize: SZ }} />, to: "/leads" },
-    { key: "mypage", label: "Sites", icon: <WebOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <WebIcon sx={{ fontSize: SZ }} />, to: "/lead-page" },
+    { key: "mypage", label: "Forms", icon: <WebOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <WebIcon sx={{ fontSize: SZ }} />, to: "/lead-page" },
   ];
 
   const adminNav = [
@@ -119,7 +119,7 @@ export default function AppShell() {
 
   const mobileNav = [
     { key: "leads", label: "Leads", icon: <ViewListOutlinedIcon />, activeIcon: <ViewListIcon />, to: "/leads" },
-    { key: "mypage", label: "Sites", icon: <WebOutlinedIcon />, activeIcon: <WebIcon />, to: "/lead-page" },
+    { key: "mypage", label: "Forms", icon: <WebOutlinedIcon />, activeIcon: <WebIcon />, to: "/lead-page" },
     ...(isOperator ? [{ key: "overview", label: "Overview", icon: <DashboardOutlinedIcon />, activeIcon: <DashboardIcon />, to: "/overview" }] : []),
     { key: "account", label: "Account", icon: <AccountCircleOutlinedIcon />, activeIcon: <AccountCircleIcon />, to: "/account" },
   ];

@@ -23,6 +23,25 @@ const CTA_LABEL: Record<string, string> = {
   SEND_MESSAGE: "Send message",
 };
 
+// Cost-per-lead bands, in rand. Tuned to the current portfolio (best ~R6,
+// typical R40-55, problem cases R150+). Change these two numbers to retune.
+const CPL_GOOD = 60;
+const CPL_WATCH = 120;
+
+type Health = { color: string; label: string };
+
+/** One glance = does this ad need attention. */
+function healthOf(ad: ActiveAd): Health {
+  if (!ad.spend) return { color: "#9aa0a6", label: "No spend yet" };
+  if (!ad.leads) return { color: "#d93025", label: "Spending, no leads" };
+  const cpl = ad.cpl ?? Infinity;
+  if (cpl <= CPL_GOOD) return { color: "#1e8e3e", label: `Good · R${Math.round(cpl)} per lead` };
+  if (cpl <= CPL_WATCH) return { color: "#f29900", label: `Watch · R${Math.round(cpl)} per lead` };
+  return { color: "#d93025", label: `High cost · R${Math.round(cpl)} per lead` };
+}
+
+const rand = (v: number) => "R" + Math.round(v).toLocaleString();
+
 function domainOf(link: string): string {
   try {
     return new URL(link).hostname.replace(/^www\./, "");
@@ -45,6 +64,7 @@ function AdCard({ ad, fallbackPage, adAccountId }: { ad: ActiveAd; fallbackPage:
   const [menuEl, setMenuEl] = useState<HTMLElement | null>(null);
   const [copied, setCopied] = useState(false);
 
+  const health = healthOf(ad);
   const pageName = ad.pageName || fallbackPage || "Sponsored";
   const avatar = pageAvatarFrom(ad);
   const adsManagerUrl =
@@ -84,6 +104,12 @@ function AdCard({ ad, fallbackPage, adAccountId }: { ad: ActiveAd; fallbackPage:
             <PublicIcon sx={{ fontSize: 12 }} />
           </Box>
         </Box>
+        {/* Status at a glance — colour only, with the reason on hover. */}
+        <Box
+          title={health.label}
+          aria-label={health.label}
+          sx={{ width: 10, height: 10, borderRadius: "50%", bgcolor: health.color, flex: "0 0 auto" }}
+        />
         <IconButton size="small" onClick={(e) => setMenuEl(e.currentTarget)} aria-label="Ad options">
           <MoreVertIcon fontSize="small" />
         </IconButton>
@@ -147,6 +173,30 @@ function AdCard({ ad, fallbackPage, adAccountId }: { ad: ActiveAd; fallbackPage:
         )}
       </Box>
 
+      {/* KPIs for the period the Overview is showing */}
+      <Box sx={{ display: "flex", borderTop: `1px solid ${tokens.divider}` }}>
+        {[
+          { k: "Spend", v: rand(ad.spend) },
+          { k: "Leads", v: String(ad.leads) },
+          { k: "Cost / lead", v: ad.cpl == null ? "—" : rand(ad.cpl) },
+        ].map((m, i) => (
+          <Box
+            key={m.k}
+            sx={{
+              flex: 1, p: "8px 10px",
+              borderLeft: i ? `1px solid ${tokens.divider2}` : 0,
+            }}
+          >
+            <Typography sx={{ fontSize: 10, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+              {m.k}
+            </Typography>
+            <Typography sx={{ fontSize: 15, fontWeight: 600, fontVariantNumeric: "tabular-nums", lineHeight: 1.3 }}>
+              {m.v}
+            </Typography>
+          </Box>
+        ))}
+      </Box>
+
       <Box sx={{ p: "8px 12px", borderTop: `1px solid ${tokens.divider}` }}>
         <Typography sx={{ fontSize: 11.5, color: "text.secondary", wordBreak: "break-word" }}>
           {ad.name}{ad.adSetName ? ` · ${ad.adSetName}` : ""}
@@ -156,10 +206,10 @@ function AdCard({ ad, fallbackPage, adAccountId }: { ad: ActiveAd; fallbackPage:
   );
 }
 
-export default function ActiveAds({ adAccountId, agentName }: { adAccountId?: string; agentName?: string }) {
+export default function ActiveAds({ adAccountId, agentName, since, until }: { adAccountId?: string; agentName?: string; since?: string | null; until?: string | null }) {
   const { data: ads, isLoading, isError } = useQuery({
-    queryKey: ["activeAds", adAccountId],
-    queryFn: () => getActiveAds(adAccountId!),
+    queryKey: ["activeAds", adAccountId, since, until],
+    queryFn: () => getActiveAds(adAccountId!, since, until),
     enabled: !!adAccountId,
     staleTime: 5 * 60_000,
     retry: false,
