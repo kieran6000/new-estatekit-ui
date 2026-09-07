@@ -1,4 +1,4 @@
-import { DEAD_STAGES, PARKED_STAGES, type LeadRow, type OutcomeStep, type Pipeline, type PipelineKind, type Stage, type StageChangeExtra } from "../types";
+import { DEAD_STAGES, PARKED_STAGES, PIPELINE_STAGES, type LeadRow, type OutcomeStep, type Pipeline, type PipelineKind, type Stage, type StageChangeExtra } from "../types";
 
 /** Stages whose outcome needs more input — picking them (from any stage-change
  * entry point) should open the matching OutcomeSheet step instead of applying
@@ -44,6 +44,30 @@ export const MAIN_OUTCOME_OPTIONS: Record<PipelineKind, MainOutcomeOption[]> = {
 
 export function pipelineKindFor(lead: Pick<LeadRow, "pipeline_id">, pipelines: Pipeline[]): PipelineKind {
   return pipelines.find((p) => p.id === lead.pipeline_id)?.kind ?? "seller";
+}
+
+/** Equivalent stages across the two pipeline kinds, paired by the follow-up
+ *  question they ask (booked / reminder / commission) so the meaning survives
+ *  the move. Stages both kinds share aren't listed — they map to themselves. */
+const SELLER_TO_BUYER: Partial<Record<Stage, Stage>> = {
+  Booked: "Viewing Booked",
+  "Mandate Signed": "Bought",
+};
+const BUYER_TO_SELLER: Partial<Record<Stage, Stage>> = {
+  "Viewing Booked": "Booked",
+  Bought: "Mandate Signed",
+  "Offer Made": "Contacted",
+};
+
+/**
+ * Translate a stage into the target pipeline kind, so a lead moved between
+ * pipelines never lands on a stage that pipeline doesn't have (which would
+ * break its filters and its "what happened?" options).
+ */
+export function stageForKind(stage: Stage, kind: PipelineKind): Stage {
+  if (PIPELINE_STAGES[kind].includes(stage)) return stage;
+  const mapped = kind === "buyer" ? SELLER_TO_BUYER[stage] : BUYER_TO_SELLER[stage];
+  return mapped && PIPELINE_STAGES[kind].includes(mapped) ? mapped : "New Lead";
 }
 
 export function defaultReminderISO(days: number): string {

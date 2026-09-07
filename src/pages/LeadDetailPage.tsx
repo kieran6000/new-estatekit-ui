@@ -14,7 +14,7 @@ import { useLead, useUpdateLeadNote, useUpdateLeadStage } from "../hooks/useLead
 import { usePipelines } from "../hooks/usePipelines";
 import { useSnack } from "../hooks/useSnack";
 import { PIPELINE_STAGES } from "../types";
-import { pipelineKindFor, STEP_FOR_STAGE } from "../lib/stageLogic";
+import { pipelineKindFor, stageForKind, STEP_FOR_STAGE } from "../lib/stageLogic";
 import { prettyAnswer, maskPhone } from "../lib/format";
 import { timeAgo } from "../lib/timeAgo";
 import { useIsOperator } from "../hooks/useAutomations";
@@ -192,10 +192,19 @@ export default function LeadDetailPage() {
                   onChange={(e) => {
                     const pid = e.target.value as string;
                     if (!pid || pid === lead.pipeline_id) return;
-                    moveLeadToPipeline(lead.id, pid)
+                    const target = pipelines.find((p) => p.id === pid);
+                    // Translate the stage if the new pipeline is a different kind,
+                    // so its "what happened?" options still apply to this lead.
+                    const mapped = target ? stageForKind(lead.stage as Stage, target.kind) : undefined;
+                    const changed = mapped && mapped !== lead.stage ? mapped : undefined;
+                    moveLeadToPipeline(lead.id, pid, changed)
                       .then(() => {
                         qc.invalidateQueries({ queryKey: ["leads"] });
-                        showSnack(`Moved to ${pipelines.find((p) => p.id === pid)?.name ?? "pipeline"}`);
+                        showSnack(
+                          changed
+                            ? `Moved to ${target?.name ?? "pipeline"} · stage is now ${changed}`
+                            : `Moved to ${target?.name ?? "pipeline"}`,
+                        );
                       })
                       .catch((err) => showSnack(err.message));
                   }}

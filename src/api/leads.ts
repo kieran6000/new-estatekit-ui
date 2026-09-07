@@ -1,5 +1,6 @@
 import { supabase, getCurrentUserId, getActiveAgentId } from "./_client";
-import type { FormAnswer, LeadRow } from "../types";
+import { computeStagePatch } from "../lib/stageLogic";
+import type { FormAnswer, LeadRow, Stage } from "../types";
 
 export async function listLeads(): Promise<LeadRow[]> {
   const agentId = await getActiveAgentId();
@@ -31,9 +32,19 @@ export async function setLeadArchived(id: string, archived: boolean): Promise<vo
   if (error) throw new Error(error.message);
 }
 
-/** Move a lead into a different pipeline (operator action). */
-export async function moveLeadToPipeline(id: string, pipelineId: string): Promise<void> {
-  const { error } = await supabase.from("leads").update({ pipeline_id: pipelineId }).eq("id", id);
+/** Move a lead into a different pipeline (operator action).
+ *
+ *  When the target pipeline is a different kind, the stage is translated to its
+ *  equivalent there and the matching SOP patch applied — otherwise the lead
+ *  would sit on a stage that pipeline has no option for. */
+export async function moveLeadToPipeline(
+  id: string,
+  pipelineId: string,
+  nextStage?: Stage,
+): Promise<void> {
+  const patch: Record<string, unknown> = { pipeline_id: pipelineId };
+  if (nextStage) Object.assign(patch, { stage: nextStage }, computeStagePatch(nextStage));
+  const { error } = await supabase.from("leads").update(patch).eq("id", id);
   if (error) throw new Error(error.message);
 }
 

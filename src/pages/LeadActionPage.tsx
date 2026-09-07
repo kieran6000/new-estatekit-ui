@@ -35,7 +35,7 @@ import { armPendingCall, clearPendingCall } from "../lib/pendingCall";
 import { getLeadByToken, logOutcomeByToken } from "../api/leadActions";
 import OutcomeSheet, { OUTCOME_ICONS, outcomeSnack } from "../components/OutcomeSheet";
 import estateKitLogo from "../assets/blue logo full.png";
-import type { LeadRow, OutcomeStep, Stage } from "../types";
+import type { LeadRow, OutcomeStep, PipelineKind, Stage } from "../types";
 
 function isTokenFormat(s: string): boolean {
   return /^[a-f0-9]{8}$/.test(s);
@@ -66,7 +66,17 @@ function TokenLeadActionPage({ token, canEdit }: { token: string; canEdit: boole
   const lead = data?.lead ?? null;
 
   // Even signed out, the token itself authorises logging this one lead's outcome.
-  return <LeadActionUI lead={lead} isLoading={isLoading} canEdit={canEdit} token={token} />;
+  // pipelineKind comes back with the lead so buyer leads get buyer options even
+  // when there's no session to load the pipeline list from.
+  return (
+    <LeadActionUI
+      lead={lead}
+      isLoading={isLoading}
+      canEdit={canEdit}
+      token={token}
+      kindHint={data?.pipelineKind}
+    />
+  );
 }
 
 function AuthedLeadActionPage({ leadId }: { leadId: string }) {
@@ -79,6 +89,7 @@ function LeadActionUI({
   isLoading,
   canEdit,
   token,
+  kindHint,
 }: {
   lead: LeadRow | null;
   isLoading: boolean;
@@ -86,6 +97,9 @@ function LeadActionUI({
   /** Share token, when opened from a WhatsApp action link. Lets a signed-out
    *  agent still log what happened. */
   token?: string;
+  /** Pipeline kind resolved server-side, for when the pipeline list can't be
+   *  loaded (signed-out token view). */
+  kindHint?: PipelineKind;
 }) {
   const { data: pipelines = [] } = usePipelines({ enabled: canEdit });
   const updateNote = useUpdateLeadNote();
@@ -202,7 +216,13 @@ function LeadActionUI({
     timer.current = setTimeout(() => saveNote(value), 500);
   }
 
-  const pipelineKind = lead ? pipelineKindFor(lead, pipelines) : "seller";
+  // Prefer the agent's own pipeline list; fall back to the server-resolved kind
+  // when there's no session (token view), so buyer leads never show seller options.
+  const pipelineKind: PipelineKind = lead
+    ? pipelines.length
+      ? pipelineKindFor(lead, pipelines)
+      : kindHint ?? "seller"
+    : "seller";
   const digits = lead?.phone.replace(/\D/g, "") ?? "";
   // Surface the property address right under the phone; keep it out of the
   // generic "From their form" list so it isn't shown twice.
