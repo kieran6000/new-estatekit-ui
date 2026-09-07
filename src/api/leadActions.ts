@@ -1,5 +1,15 @@
 import { supabase } from "./_client";
-import type { LeadRow } from "../types";
+import type { LeadRow, Stage } from "../types";
+
+/** Log an outcome using only the share token — works when the agent isn't
+ *  signed in (the WhatsApp action-link case). */
+export async function logOutcomeByToken(token: string, stage: Stage): Promise<void> {
+  const { data, error } = await supabase.functions.invoke("log-outcome", {
+    body: { token, stage },
+  });
+  if (error) throw new Error(error.message);
+  if (data?.error) throw new Error(data.error);
+}
 
 export async function getLeadByToken(
   token: string,

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Avatar,
   Box,
@@ -32,7 +32,7 @@ import { prettyAnswer } from "../lib/format";
 import { timeAgo } from "../lib/timeAgo";
 import { trackActivity } from "../lib/activity";
 import { armPendingCall, clearPendingCall } from "../lib/pendingCall";
-import { getLeadByToken } from "../api/leadActions";
+import { getLeadByToken, logOutcomeByToken } from "../api/leadActions";
 import OutcomeSheet, { OUTCOME_ICONS, outcomeSnack } from "../components/OutcomeSheet";
 import estateKitLogo from "../assets/blue logo full.png";
 import type { LeadRow, OutcomeStep, Stage } from "../types";
@@ -65,7 +65,8 @@ function TokenLeadActionPage({ token, canEdit }: { token: string; canEdit: boole
 
   const lead = data?.lead ?? null;
 
-  return <LeadActionUI lead={lead} isLoading={isLoading} canEdit={canEdit} />;
+  // Even signed out, the token itself authorises logging this one lead's outcome.
+  return <LeadActionUI lead={lead} isLoading={isLoading} canEdit={canEdit} token={token} />;
 }
 
 function AuthedLeadActionPage({ leadId }: { leadId: string }) {
@@ -77,15 +78,22 @@ function LeadActionUI({
   lead,
   isLoading,
   canEdit,
+  token,
 }: {
   lead: LeadRow | null;
   isLoading: boolean;
   canEdit: boolean;
+  /** Share token, when opened from a WhatsApp action link. Lets a signed-out
+   *  agent still log what happened. */
+  token?: string;
 }) {
   const { data: pipelines = [] } = usePipelines({ enabled: canEdit });
   const updateNote = useUpdateLeadNote();
   const updateStage = useUpdateLeadStage();
   const showSnack = useSnack();
+  const qc = useQueryClient();
+  // Signed-in agents get the full flow; a share token is enough to log an outcome.
+  const canLog = canEdit || !!token;
 
   const [note, setNote] = useState(lead?.note ?? "");
   const [saveState, setSaveState] = useState("");
@@ -114,7 +122,7 @@ function LeadActionUI({
   }
 
   function onCallTap() {
-    if (!canEdit || !lead) return;
+    if (!canLog || !lead) return;
     trackActivity("call_started", { lead: { id: lead.id, name: lead.name, phone: lead.phone, stage: lead.stage } });
     armPendingCall({ leadId: lead.id, name: lead.name, phone: lead.phone, startedAt: Date.now() });
     awaitingReturn.current = true;
@@ -123,7 +131,21 @@ function LeadActionUI({
   }
 
   function pickOutcome(opt: MainOutcomeOption) {
-    if (!lead || !canEdit) return;
+    if (!lead) return;
+    // Signed out: the share token authorises the update. Follow-up questions
+    // (when? / commission) are skipped — sensible defaults are applied server
+    // side and can be refined later in the dashboard.
+    if (!canEdit) {
+      if (!token) return;
+      logOutcomeByToken(token, opt.stage)
+        .then(() => {
+          clearPendingCall();
+          showSnack(outcomeSnack(opt.stage));
+          qc.invalidateQueries({ queryKey: ["leadByToken", token] });
+        })
+        .catch(() => showSnack("Couldn't save that — check your signal and try again"));
+      return;
+    }
     const sub = STEP_FOR_STAGE[opt.stage];
     if (sub) {
       setStageSheet({ step: sub, stage: opt.stage });
@@ -190,7 +212,9 @@ function LeadActionUI({
   const firstName = lead?.name.split(" ")[0] ?? "";
 
   return (
-    <Box sx={{ height: "100dvh", display: "flex", flexDirection: "column", overflow: "hidden", bgcolor: tokens.bg }}>
+    // Sized to one screen on a normal phone; on very short screens the content
+    // area scrolls rather than clipping.
+    <Box sx={{ minHeight: "100dvh", maxHeight: "100dvh", display: "flex", flexDirection: "column", overflow: "hidden", bgcolor: tokens.bg }}>
       {/* Slim header: logo + a shortcut to the full leads list (also the sign-in
           funnel when opened from a WhatsApp link while logged out). */}
       <Box sx={{ flex: "0 0 auto", display: "flex", alignItems: "center", gap: 1, p: "6px 6px 6px 14px", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
@@ -218,7 +242,7 @@ function LeadActionUI({
           </Box>
         </Box>
       ) : (
-        <Box sx={{ flex: 1, minHeight: 0, overflow: "hidden", width: "100%", maxWidth: 480, mx: "auto", p: "12px", display: "flex", flexDirection: "column", gap: 1.25 }}>
+        <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", width: "100%", maxWidth: 480, mx: "auto", p: "12px", display: "flex", flexDirection: "column", gap: 1.25 }}>
           {/* Who + everything they need to scan, in one compact card */}
           <Box sx={{ bgcolor: "background.paper", borderRadius: "12px", border: `1px solid ${tokens.divider}`, p: "12px 14px" }}>
             <Box sx={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 1 }}>
@@ -247,7 +271,7 @@ function LeadActionUI({
             )}
           </Box>
 
-          {canEdit ? (
+          {canLog ? (
             <>
               {/* Step 1 — call them */}
               <StepRow n={1}>
@@ -308,19 +332,26 @@ function LeadActionUI({
                 </FormControl>
               </StepRow>
 
-              {/* One-line note — no scrolling, grows a touch if they write more */}
-              <TextField
-                value={note}
-                onChange={(e) => onNoteChange(e.target.value)}
-                onBlur={() => saveNote(note)}
-                placeholder="Add a note…"
-                size="small"
-                fullWidth
-                multiline
-                maxRows={2}
-                helperText={saveState || " "}
-                sx={{ mt: "auto", "& .MuiFormHelperText-root": { m: "2px 4px", fontSize: 11 } }}
-              />
+              {/* One-line note — signed-in only (notes need a real session) */}
+              {canEdit && (
+                <TextField
+                  value={note}
+                  onChange={(e) => onNoteChange(e.target.value)}
+                  onBlur={() => saveNote(note)}
+                  placeholder="Add a note…"
+                  size="small"
+                  fullWidth
+                  multiline
+                  maxRows={2}
+                  helperText={saveState || " "}
+                  sx={{ mt: "auto", "& .MuiFormHelperText-root": { m: "2px 4px", fontSize: 11 } }}
+                />
+              )}
+              {!canEdit && (
+                <Button component="a" href="/leads" variant="outlined" startIcon={<ViewListIcon />} sx={{ mt: "auto" }}>
+                  View all my leads
+                </Button>
+              )}
             </>
           ) : (
             /* Logged out (opened from a WhatsApp link): can still call/chat, and

@@ -63,6 +63,7 @@ export default function LeadsPage() {
   const syncSheet = useSyncPipelineSheet();
   const showSnack = useSnack();
   const qc = useQueryClient();
+  const { data: isOperator } = useIsOperator();
 
   const pipelineStorageKey = `estatekit_last_pipeline_${getActiveAgentIdSync() || "me"}`;
 
@@ -237,6 +238,8 @@ export default function LeadsPage() {
       )}
 
 
+      {/* Operator-only: agents don't get the "to call today" / Start calling bar. */}
+      {isOperator && (
       <Box sx={{ display: "flex", alignItems: "center", flexWrap: "wrap", rowGap: 1, gap: 1.75, p: "14px 16px", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
         <NotificationsIcon sx={{ color: due.length ? tokens.primary : tokens.green }} />
         <Box sx={{ flex: 1, minWidth: 140 }}>
@@ -284,6 +287,7 @@ export default function LeadsPage() {
           )}
         </Box>
       </Box>
+      )}
 
       <Box sx={{ display: "flex", alignItems: "center", gap: 1, p: "8px 16px", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
         <Box
@@ -314,7 +318,8 @@ export default function LeadsPage() {
           <RefreshIcon sx={{ fontSize: 18, color: "text.secondary", animation: reloading ? "spin 0.8s linear infinite" : "none", "@keyframes spin": { to: { transform: "rotate(360deg)" } } }} />
         </IconButton>
 
-        <IconButton
+        {/* Labelled so it's obvious what it does, rather than a bare icon. */}
+        <Button
           onClick={() => {
             if (activePipeline.sheet_url) {
               window.open(activePipeline.sheet_url, "_blank");
@@ -326,11 +331,15 @@ export default function LeadsPage() {
             });
           }}
           disabled={syncSheet.isPending}
-          title={activePipeline.sheet_url ? "Open Google Sheet" : "Create Google Sheet"}
-          sx={{ border: `1px solid ${tokens.divider}`, borderRadius: "4px", width: 34, height: 34 }}
+          variant="outlined"
+          size="small"
+          startIcon={syncSheet.isPending ? <CircularProgress size={14} /> : <GSheetIcon size={16} />}
+          sx={{ whiteSpace: "nowrap", textTransform: "none", color: "text.primary", borderColor: tokens.divider }}
         >
-          {syncSheet.isPending ? <CircularProgress size={16} /> : <GSheetIcon size={18} />}
-        </IconButton>
+          {syncSheet.isPending
+            ? "Creating…"
+            : activePipeline.sheet_url ? "Open in Sheets" : "Export to Sheets"}
+        </Button>
       </Box>
 
       <Box sx={{ p: "10px 16px", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
