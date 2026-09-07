@@ -29,6 +29,7 @@ interface Creative {
   thumbnail_url?: string;
   call_to_action_type?: string;
   link_url?: string;
+  effective_object_story_id?: string;
   object_story_spec?: { page_id?: string; link_data?: { link?: string; message?: string; name?: string } };
 }
 
@@ -48,7 +49,8 @@ Deno.serve(async (req) => {
 
     const fields =
       "name,effective_status," +
-      "creative{body,title,image_url,thumbnail_url,call_to_action_type,link_url,object_story_spec}," +
+      "creative{body,title,image_url,thumbnail_url,call_to_action_type,link_url," +
+      "effective_object_story_id,object_story_spec}," +
       "adset{name}";
 
     let lastErr = "";
@@ -68,27 +70,37 @@ Deno.serve(async (req) => {
         creative?: Creative; adset?: { name?: string };
       }>;
 
-      // Resolve page names once per unique page so the card can show the
-      // advertiser exactly like Facebook does.
-      const pageIds = [...new Set(rows.map((r) => r.creative?.object_story_spec?.page_id).filter(Boolean))] as string[];
-      const pageNames: Record<string, string> = {};
+      // The page id is on object_story_spec for inline creatives, but page-post
+      // shares only carry it as the prefix of effective_object_story_id.
+      const pageIdOf = (c: Creative) =>
+        c.object_story_spec?.page_id || (c.effective_object_story_id ?? "").split("_")[0] || "";
+
+      const pageIds = [...new Set(rows.map((r) => pageIdOf(r.creative ?? {})).filter(Boolean))];
+      const pages: Record<string, { name: string; avatar: string }> = {};
       for (const pid of pageIds) {
         try {
-          const pr = await fetch(`${GRAPH}/${pid}?fields=name,picture&access_token=${token}`);
+          const pr = await fetch(`${GRAPH}/${pid}?fields=name,picture.type(large)&access_token=${token}`);
           const pd = await pr.json();
-          if (pd?.name) pageNames[pid] = pd.name;
+          if (pd?.name || pd?.picture) {
+            pages[pid] = { name: pd?.name ?? "", avatar: pd?.picture?.data?.url ?? "" };
+          }
         } catch { /* non-fatal */ }
       }
 
       const ads = rows.map((r) => {
         const c = r.creative ?? {};
-        const pid = c.object_story_spec?.page_id ?? "";
+        const pid = pageIdOf(c);
+        const storyId = c.effective_object_story_id ?? "";
+        // pageId_postId -> the public permalink for that post.
+        const [sPage, sPost] = storyId.split("_");
         return {
           id: r.id,
           name: r.name ?? "",
           status: r.effective_status ?? "",
           adSetName: r.adset?.name ?? "",
-          pageName: pid ? pageNames[pid] ?? "" : "",
+          pageName: pages[pid]?.name ?? "",
+          pageAvatar: pages[pid]?.avatar ?? "",
+          postUrl: sPage && sPost ? `https://www.facebook.com/${sPage}/posts/${sPost}` : "",
           body: c.body ?? c.object_story_spec?.link_data?.message ?? "",
           headline: c.title ?? c.object_story_spec?.link_data?.name ?? "",
           imageUrl: c.image_url ?? c.thumbnail_url ?? "",

@@ -8,11 +8,13 @@ import {
   Menu,
   MenuItem,
   Skeleton,
+  Tab,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableRow,
+  Tabs,
   TextField,
   ToggleButton,
   ToggleButtonGroup,
@@ -77,6 +79,7 @@ export default function OverviewPage() {
   const navigate = useNavigate();
   const [period, setPeriod] = useState<OverviewPeriod>("Last 30 days");
   const [mode, setMode] = useState<Mode>("simple");
+  const [tab, setTab] = useState<"numbers" | "ads">("numbers");
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [sort, setSort] = useState<{ k: ColKey; dir: 1 | -1 }>({ k: "date", dir: -1 });
   const todayStr = new Date().toISOString().slice(0, 10);
@@ -189,11 +192,26 @@ export default function OverviewPage() {
         <Typography sx={{ ml: "auto", color: "text.disabled", fontSize: 12 }}>Tap a heading to sort</Typography>
       </Box>
 
-      <ActiveAds
-        adAccountId={profile?.fbAdAccountId || undefined}
-        agentName={profile?.company || profile?.displayName}
-      />
+      {/* Tabs keep the numbers reachable in one tap on mobile, instead of making
+          you scroll past a wall of ad previews to reach the table. */}
+      <Tabs
+        value={tab}
+        onChange={(_, v) => setTab(v)}
+        variant="fullWidth"
+        sx={{ bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}`, minHeight: 44 }}
+      >
+        <Tab label="Numbers" value="numbers" sx={{ minHeight: 44, textTransform: "none", fontWeight: 600 }} />
+        <Tab label="Active ads" value="ads" sx={{ minHeight: 44, textTransform: "none", fontWeight: 600 }} />
+      </Tabs>
 
+      {tab === "ads" ? (
+        <Box sx={{ bgcolor: "background.paper" }}>
+          <ActiveAds
+            adAccountId={profile?.fbAdAccountId || undefined}
+            agentName={profile?.company || profile?.displayName}
+          />
+        </Box>
+      ) : (
       <Box sx={{ overflowX: "auto", bgcolor: "background.paper" }}>
         <Table size="small">
           <TableHead>
@@ -244,11 +262,14 @@ export default function OverviewPage() {
           </TableBody>
         </Table>
       </Box>
-      <Typography variant="caption" sx={{ display: "block", p: "12px 16px", color: "text.disabled" }}>
-        {mode === "simple"
-          ? "The numbers that matter day-to-day. Switch to Advanced for reach, show-rate, ROI & profit."
-          : "Everything, including reach, show-rate, expected vs. actual commission, profit and ROI."}
-      </Typography>
+      )}
+      {tab === "numbers" && (
+        <Typography variant="caption" sx={{ display: "block", p: "12px 16px", color: "text.disabled" }}>
+          {mode === "simple"
+            ? "The numbers that matter day-to-day. Switch to Advanced for reach, show-rate, ROI & profit."
+            : "Everything, including reach, show-rate, expected vs. actual commission, profit and ROI."}
+        </Typography>
+      )}
     </Box>
   );
 }

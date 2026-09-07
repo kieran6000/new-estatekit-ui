@@ -17,6 +17,7 @@ import {
 import LogoutIcon from "@mui/icons-material/Logout";
 import AccountBalanceWalletIcon from "@mui/icons-material/AccountBalanceWallet";
 import CreditCardIcon from "@mui/icons-material/CreditCard";
+import AgentPasswords from "../components/AgentPasswords";
 import AddIcon from "@mui/icons-material/Add";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import CloseIcon from "@mui/icons-material/Close";
@@ -398,6 +399,17 @@ export default function AccountPage() {
                   <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
                     {profile.fbAdAccountId ? "Live from Meta · tap to open Ads Manager billing" : "Add an Ad Account ID above to see live balance"}
                   </Typography>
+                </CardContent>
+              </Card>
+            )}
+
+            {isOperator && (
+              <Card variant="outlined" sx={{ mb: 3 }}>
+                <CardContent sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                    Agent logins
+                  </Typography>
+                  <AgentPasswords onSnack={showSnack} />
                 </CardContent>
               </Card>
             )}

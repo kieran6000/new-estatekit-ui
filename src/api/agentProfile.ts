@@ -18,12 +18,24 @@ export async function getFbAdAccount(adAccountId: string): Promise<FbAdAccount> 
   return data as FbAdAccount;
 }
 
+/** Operator-only. Passwords are hashed and can never be read back — this sets
+ *  a new one for the given agent. */
+export async function setAgentPassword(agentId: string, newPassword: string): Promise<void> {
+  const { data, error } = await supabase.functions.invoke("admin-set-password", {
+    body: { agentId, newPassword },
+  });
+  if (error) throw new Error(data?.error || error.message);
+  if (data?.error) throw new Error(data.error);
+}
+
 export interface ActiveAd {
   id: string;
   name: string;
   status: string;
   adSetName: string;
   pageName: string;
+  pageAvatar: string;
+  postUrl: string;
   body: string;
   headline: string;
   imageUrl: string;

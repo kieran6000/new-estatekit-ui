@@ -29,18 +29,18 @@ import {
   useMediaQuery,
 } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
-import NotificationsIcon from "@mui/icons-material/Notifications";
 import CallIcon from "@mui/icons-material/Call";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import CloseIcon from "@mui/icons-material/Close";
+import HelpOutlineIcon from "@mui/icons-material/HelpOutlineOutlined";
 import PhoneCallbackIcon from "@mui/icons-material/PhoneCallback";
 import { useQueryClient } from "@tanstack/react-query";
 import { usePostHog } from "@posthog/react";
 import { tokens } from "../theme";
 import { DEAD_STAGES, PIPELINE_KIND_LABEL, PIPELINE_STAGES, type LeadRow, type OutcomeStep, type Pipeline, type PipelineKind, type Stage } from "../types";
-import { dueLeads, pipelineKindFor, sortLeadsForList, STEP_FOR_STAGE } from "../lib/stageLogic";
+import { pipelineKindFor, sortLeadsForList, STEP_FOR_STAGE } from "../lib/stageLogic";
 import { timeAgo } from "../lib/timeAgo";
 import { useLeads, useUpdateLeadStage } from "../hooks/useLeads";
 import { useAddPipeline, usePipelines, useSyncPipelineSheet } from "../hooks/usePipelines";
@@ -48,6 +48,7 @@ import { useIsOperator } from "../hooks/useAutomations";
 import { useSnack } from "../hooks/useSnack";
 import { maskPhone } from "../lib/format";
 import { getPendingCall, clearPendingCall, type PendingCall } from "../lib/pendingCall";
+import { startLeadsTour, hasSeenLeadsTour } from "../lib/tour";
 import { syncFbLeads } from "../api/leadPages";
 import { getActiveAgentIdSync } from "../api/_client";
 import GSheetIcon from "../components/GSheetIcon";
@@ -63,7 +64,6 @@ export default function LeadsPage() {
   const syncSheet = useSyncPipelineSheet();
   const showSnack = useSnack();
   const qc = useQueryClient();
-  const { data: isOperator } = useIsOperator();
 
   const pipelineStorageKey = `estatekit_last_pipeline_${getActiveAgentIdSync() || "me"}`;
 
@@ -93,6 +93,14 @@ export default function LeadsPage() {
     };
   }, []);
   const pendingLead = pending ? leads.find((l) => l.id === pending.leadId) : undefined;
+
+  // First visit with leads on screen: run the walkthrough once. Waits for the
+  // list to render so the tour has something to point at.
+  useEffect(() => {
+    if (leadsLoading || pipelinesLoading || hasSeenLeadsTour()) return;
+    const t = setTimeout(() => startLeadsTour(), 700);
+    return () => clearTimeout(t);
+  }, [leadsLoading, pipelinesLoading]);
   function dismissPending() {
     clearPendingCall();
     setPending(null);
@@ -131,9 +139,6 @@ export default function LeadsPage() {
     [leads, activePipeline],
   );
 
-  const due = useMemo(() => dueLeads(pipelineLeads), [pipelineLeads]);
-  const remCount = due.filter((l) => l.reminder_at).length;
-  const freshCount = due.length - remCount;
 
   const filtered = useMemo(() => {
     const query = q.toLowerCase().trim();
@@ -203,6 +208,9 @@ export default function LeadsPage() {
       <AppBar position="sticky">
         <Toolbar sx={{ height: 56, minHeight: "56px !important", px: "8px 8px 8px 16px" }}>
           <Typography sx={{ fontSize: 18, fontWeight: 500, flex: 1 }}>Leads</Typography>
+          <IconButton onClick={() => startLeadsTour()} title="How it works" aria-label="How it works">
+            <HelpOutlineIcon />
+          </IconButton>
           <IconButton onClick={() => setSearchOpen((v) => !v)}>
             <SearchIcon />
           </IconButton>
@@ -238,61 +246,12 @@ export default function LeadsPage() {
       )}
 
 
-      {/* Operator-only: agents don't get the "to call today" / Start calling bar. */}
-      {isOperator && (
-      <Box sx={{ display: "flex", alignItems: "center", flexWrap: "wrap", rowGap: 1, gap: 1.75, p: "14px 16px", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
-        <NotificationsIcon sx={{ color: due.length ? tokens.primary : tokens.green }} />
-        <Box sx={{ flex: 1, minWidth: 140 }}>
-          <Typography sx={{ fontWeight: 500, fontSize: 15 }}>
-            {due.length === 0 ? "You're all caught up" : `${due.length} to call today`}
-          </Typography>
-          <Typography sx={{ color: "text.secondary", fontSize: 13 }}>
-            {due.length === 0
-              ? "No one to call today."
-              : [freshCount && `${freshCount} new`, remCount && `${remCount} follow-up${remCount > 1 ? "s" : ""}`].filter(Boolean).join(" · ")}
-          </Typography>
-        </Box>
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, ml: "auto" }}>
-          <Box
-            component="button"
-            onClick={() => navigate("/overview")}
-            sx={{ border: 0, bgcolor: "transparent", color: "text.secondary", fontSize: 12.5, cursor: "pointer", whiteSpace: "nowrap", "&:hover": { color: tokens.primary } }}
-          >
-            Full numbers ›
-          </Box>
-          {due.length > 0 && (
-            <Box
-              component="button"
-              onClick={() => setFocusOpen(true)}
-              sx={{
-                display: "flex",
-                alignItems: "center",
-                gap: 1,
-                border: 0,
-                bgcolor: "transparent",
-                color: tokens.primary,
-                fontWeight: 500,
-                fontSize: 14,
-                textTransform: "uppercase",
-                whiteSpace: "nowrap",
-                px: 1.5,
-                py: 1,
-                borderRadius: "4px",
-                cursor: "pointer",
-                "&:hover": { bgcolor: tokens.primaryBg },
-              }}
-            >
-              <CallIcon fontSize="small" /> Start calling
-            </Box>
-          )}
-        </Box>
-      </Box>
-      )}
 
       <Box sx={{ display: "flex", alignItems: "center", gap: 1, p: "8px 16px", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
         <Box
           component="button"
           onClick={(e) => setPipelineMenuAnchor(e.currentTarget)}
+          data-tour="pipeline"
           sx={{ display: "flex", alignItems: "center", gap: 0.25, border: `1px solid ${tokens.divider}`, borderRadius: "4px", bgcolor: "#fff", fontSize: 13, fontWeight: 500, p: "7px 6px 7px 12px", cursor: "pointer" }}
         >
           {activePipeline.name} pipeline <ArrowDropDownIcon fontSize="small" />
@@ -311,6 +270,7 @@ export default function LeadsPage() {
 
         <IconButton
           onClick={reloadLeads}
+          data-tour="refresh"
           disabled={reloading}
           title="Reload leads"
           sx={{ border: `1px solid ${tokens.divider}`, borderRadius: "4px", width: 34, height: 34 }}
@@ -320,6 +280,7 @@ export default function LeadsPage() {
 
         {/* Labelled so it's obvious what it does, rather than a bare icon. */}
         <Button
+          data-tour="sheets"
           onClick={() => {
             if (activePipeline.sheet_url) {
               window.open(activePipeline.sheet_url, "_blank");
@@ -346,7 +307,7 @@ export default function LeadsPage() {
         <Typography sx={{ fontSize: 11, fontWeight: 600, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.05em", mb: 0.75 }}>
           Filter by stage
         </Typography>
-        <Box sx={{ display: "flex", gap: 0.75, overflowX: "auto" }}>
+        <Box data-tour="filters" sx={{ display: "flex", gap: 0.75, overflowX: "auto" }}>
           {(["All", ...stagesForPipeline] as const).map((s) => {
             const active = filter === s;
             const count = s === "All" ? pipelineLeads.length : pipelineLeads.filter((l) => l.stage === s).length;
@@ -673,9 +634,10 @@ function MobileLeadsList({
 
   const grouped = filter === "All";
 
-  const card = (l: LeadRow) => (
+  const card = (l: LeadRow, idx = 0) => (
     <Box
       key={l.id}
+      data-tour={idx === 0 ? "lead-row" : undefined}
       sx={{
         borderBottom: `8px solid ${tokens.bg}`,
         bgcolor: l.due && !DEAD_STAGES.includes(l.stage) ? tokens.amberTint : "background.paper",
@@ -713,6 +675,7 @@ function MobileLeadsList({
           component="a"
           href={`tel:${l.phone.replace(/\s/g, "")}`}
           onClick={() => setTimeout(() => onCall(l.id), 150)}
+          data-tour="call"
           sx={{
             display: "flex",
             alignItems: "center",
@@ -749,10 +712,10 @@ function MobileLeadsList({
               >
                 {st} ({g.length})
               </Box>,
-              ...g.map(card),
+              ...g.map((l, i) => card(l, i)),
             ];
           })
-        : leads.map(card)}
+        : leads.map((l, i) => card(l, i))}
     </Box>
   );
 }
