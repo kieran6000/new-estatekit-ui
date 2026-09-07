@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import {
   AppBar,
   Box,
@@ -21,6 +22,8 @@ import {
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { tokens } from "../theme";
 import { computeDerived, useOverview, type OverviewComputedRow, type OverviewPeriod } from "../hooks/useOverview";
+import { getMyProfile } from "../api/agentProfile";
+import ActiveAds from "../components/ActiveAds";
 
 const PERIODS: OverviewPeriod[] = ["This month", "Last 30 days", "Last 7 days", "Lifetime", "Custom"];
 
@@ -81,6 +84,8 @@ export default function OverviewPage() {
   const [toDate, setToDate] = useState(todayStr);
   const { data = [], isLoading } = useOverview(period, { from: fromDate, to: toDate });
   const cols = mode === "simple" ? SIMPLE_COLS : ADVANCED_COLS;
+  // Which client's ads to preview — the currently active/managed agent.
+  const { data: profile } = useQuery({ queryKey: ["myProfile"], queryFn: getMyProfile });
 
   const totals = useMemo(() => {
     const raw = { spend: 0, leads: 0, leadsReached: 0, appts: 0, apptsHeld: 0, mandates: 0, commExpected: 0, commEarned: 0 };
@@ -183,6 +188,11 @@ export default function OverviewPage() {
 
         <Typography sx={{ ml: "auto", color: "text.disabled", fontSize: 12 }}>Tap a heading to sort</Typography>
       </Box>
+
+      <ActiveAds
+        adAccountId={profile?.fbAdAccountId || undefined}
+        agentName={profile?.company || profile?.displayName}
+      />
 
       <Box sx={{ overflowX: "auto", bgcolor: "background.paper" }}>
         <Table size="small">

@@ -18,6 +18,27 @@ export async function getFbAdAccount(adAccountId: string): Promise<FbAdAccount> 
   return data as FbAdAccount;
 }
 
+export interface ActiveAd {
+  id: string;
+  name: string;
+  status: string;
+  adSetName: string;
+  pageName: string;
+  body: string;
+  headline: string;
+  imageUrl: string;
+  cta: string;
+  link: string;
+}
+
+/** The ads currently delivering on an ad account, with creative fields for preview. */
+export async function getActiveAds(adAccountId: string): Promise<ActiveAd[]> {
+  const { data, error } = await supabase.functions.invoke("fb-active-ads", { body: { adAccountId } });
+  if (error) throw new Error(data?.error || error.message);
+  if (data?.error) throw new Error(data.error);
+  return (data?.ads ?? []) as ActiveAd[];
+}
+
 /** Daily ad spend keyed by YYYY-MM-DD, from Meta insights. */
 export async function getFbAdInsights(adAccountId: string, since: string | null): Promise<Record<string, number>> {
   const { data, error } = await supabase.functions.invoke("fb-ad-insights", { body: { adAccountId, since } });
