@@ -1,9 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { AppBar, Box, IconButton, Paper, TextField, Toolbar, Typography } from "@mui/material";
+import {
+  AppBar, Box, Button, FormControl, IconButton, InputLabel, MenuItem,
+  Paper, Select, Skeleton, TextField, Toolbar, Typography,
+} from "@mui/material";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import CallIcon from "@mui/icons-material/Call";
+import ArchiveOutlinedIcon from "@mui/icons-material/ArchiveOutlined";
 import { tokens } from "../theme";
+import { getLeadSourceAd, moveLeadToPipeline, setLeadArchived } from "../api/leads";
 import { useLead, useUpdateLeadNote, useUpdateLeadStage } from "../hooks/useLeads";
 import { usePipelines } from "../hooks/usePipelines";
 import { useSnack } from "../hooks/useSnack";
@@ -25,6 +31,7 @@ export default function LeadDetailPage() {
   const updateNote = useUpdateLeadNote();
   const updateStage = useUpdateLeadStage();
   const showSnack = useSnack();
+  const qc = useQueryClient();
 
   const [note, setNote] = useState(lead?.note ?? "");
   const [saveState, setSaveState] = useState("");
@@ -169,6 +176,60 @@ export default function LeadDetailPage() {
             {saveState}
           </Typography>
         </Section>
+
+        {/* The ad that produced this lead, resolved from its Facebook lead id. */}
+        <SourceAdSection leadId={lead.id} />
+
+        {isOperator && (
+          <Section title="Admin">
+            <Box sx={{ p: "12px 16px", display: "flex", flexDirection: "column", gap: 2 }}>
+              <FormControl fullWidth size="small">
+                <InputLabel id="move-pipeline">Pipeline</InputLabel>
+                <Select
+                  labelId="move-pipeline"
+                  label="Pipeline"
+                  value={lead.pipeline_id ?? ""}
+                  onChange={(e) => {
+                    const pid = e.target.value as string;
+                    if (!pid || pid === lead.pipeline_id) return;
+                    moveLeadToPipeline(lead.id, pid)
+                      .then(() => {
+                        qc.invalidateQueries({ queryKey: ["leads"] });
+                        showSnack(`Moved to ${pipelines.find((p) => p.id === pid)?.name ?? "pipeline"}`);
+                      })
+                      .catch((err) => showSnack(err.message));
+                  }}
+                >
+                  {pipelines.map((p) => (
+                    <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+
+              <Button
+                variant="outlined"
+                color="inherit"
+                startIcon={<ArchiveOutlinedIcon />}
+                onClick={() => {
+                  setLeadArchived(lead.id, true)
+                    .then(() => {
+                      qc.invalidateQueries({ queryKey: ["leads"] });
+                      showSnack(`${lead.name.split(" ")[0]} archived`, () => {
+                        setLeadArchived(lead.id, false).then(() =>
+                          qc.invalidateQueries({ queryKey: ["leads"] }),
+                        );
+                      });
+                      navigate("/leads");
+                    })
+                    .catch((err) => showSnack(err.message));
+                }}
+                sx={{ textTransform: "none", alignSelf: "flex-start" }}
+              >
+                Archive this lead
+              </Button>
+            </Box>
+          </Section>
+        )}
       </Box>
 
       <OutcomeSheet lead={lead} pipelineKind={pipelineKind} open={outcomeOpen} onClose={() => setOutcomeOpen(false)} onSnack={showSnack} />
@@ -182,6 +243,64 @@ export default function LeadDetailPage() {
         onSnack={showSnack}
       />
     </Box>
+  );
+}
+
+/** Shows the Facebook ad this lead clicked, when there is one. Website leads and
+ *  ads we can't read simply render nothing rather than an empty shell. */
+function SourceAdSection({ leadId }: { leadId: string }) {
+  const { data: ad, isLoading } = useQuery({
+    queryKey: ["leadSourceAd", leadId],
+    queryFn: () => getLeadSourceAd(leadId),
+    staleTime: 30 * 60_000,
+    retry: false,
+  });
+
+  if (isLoading) {
+    return (
+      <Section title="Came from this ad">
+        <Box sx={{ p: "12px 16px" }}>
+          <Skeleton variant="rounded" animation="wave" height={180} sx={{ borderRadius: "6px" }} />
+        </Box>
+      </Section>
+    );
+  }
+  if (!ad) return null;
+
+  return (
+    <Section title="Came from this ad">
+      {ad.imageUrl && (
+        <Box
+          component="img"
+          src={ad.imageUrl}
+          alt={ad.headline || ad.name}
+          loading="lazy"
+          sx={{ width: "calc(100% - 32px)", mx: 2, mt: 1, borderRadius: "6px", display: "block", border: `1px solid ${tokens.divider}` }}
+        />
+      )}
+      <Box sx={{ p: "10px 16px 14px", display: "flex", flexDirection: "column", gap: 0.5 }}>
+        {ad.headline && <Typography sx={{ fontSize: 14.5, fontWeight: 600 }}>{ad.headline}</Typography>}
+        {ad.body && (
+          <Typography sx={{ fontSize: 13, color: "text.secondary", whiteSpace: "pre-line", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+            {ad.body}
+          </Typography>
+        )}
+        <Typography sx={{ fontSize: 12, color: "text.disabled", mt: 0.5 }}>
+          {ad.name}{ad.status ? ` · ${ad.status.toLowerCase().replace(/_/g, " ")}` : ""}
+        </Typography>
+        {ad.postUrl && (
+          <Typography
+            component="a"
+            href={ad.postUrl}
+            target="_blank"
+            rel="noopener"
+            sx={{ fontSize: 13, color: tokens.primaryDark, textDecoration: "none", mt: 0.5, width: "fit-content" }}
+          >
+            View this ad on Facebook ›
+          </Typography>
+        )}
+      </Box>
+    </Section>
   );
 }
 

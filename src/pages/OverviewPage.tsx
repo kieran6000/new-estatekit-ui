@@ -20,6 +20,7 @@ import {
   ToggleButtonGroup,
   Toolbar,
   Typography,
+  useMediaQuery,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { tokens } from "../theme";
@@ -80,6 +81,10 @@ export default function OverviewPage() {
   const [period, setPeriod] = useState<OverviewPeriod>("Last 30 days");
   const [mode, setMode] = useState<Mode>("simple");
   const [tab, setTab] = useState<"numbers" | "ads">("numbers");
+  const isNarrow = useMediaQuery("(max-width:899px)");
+  // Wide screens show both; narrow screens show whichever tab is selected.
+  const showNumbers = !isNarrow || tab === "numbers";
+  const showAds = !isNarrow || tab === "ads";
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [sort, setSort] = useState<{ k: ColKey; dir: 1 | -1 }>({ k: "date", dir: -1 });
   const todayStr = new Date().toISOString().slice(0, 10);
@@ -192,26 +197,21 @@ export default function OverviewPage() {
         <Typography sx={{ ml: "auto", color: "text.disabled", fontSize: 12 }}>Tap a heading to sort</Typography>
       </Box>
 
-      {/* Tabs keep the numbers reachable in one tap on mobile, instead of making
-          you scroll past a wall of ad previews to reach the table. */}
-      <Tabs
-        value={tab}
-        onChange={(_, v) => setTab(v)}
-        variant="fullWidth"
-        sx={{ bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}`, minHeight: 44 }}
-      >
-        <Tab label="Numbers" value="numbers" sx={{ minHeight: 44, textTransform: "none", fontWeight: 600 }} />
-        <Tab label="Active ads" value="ads" sx={{ minHeight: 44, textTransform: "none", fontWeight: 600 }} />
-      </Tabs>
+      {/* On mobile the tabs stop the table being buried under ad previews. On a
+          wide screen there's room for both, so the tabs are dropped entirely. */}
+      {isNarrow && (
+        <Tabs
+          value={tab}
+          onChange={(_, v) => setTab(v)}
+          variant="fullWidth"
+          sx={{ bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}`, minHeight: 44 }}
+        >
+          <Tab label="Numbers" value="numbers" sx={{ minHeight: 44, textTransform: "none", fontWeight: 600 }} />
+          <Tab label="Active ads" value="ads" sx={{ minHeight: 44, textTransform: "none", fontWeight: 600 }} />
+        </Tabs>
+      )}
 
-      {tab === "ads" ? (
-        <Box sx={{ bgcolor: "background.paper" }}>
-          <ActiveAds
-            adAccountId={profile?.fbAdAccountId || undefined}
-            agentName={profile?.company || profile?.displayName}
-          />
-        </Box>
-      ) : (
+      {showNumbers && (
       <Box sx={{ overflowX: "auto", bgcolor: "background.paper" }}>
         <Table size="small">
           <TableHead>
@@ -263,12 +263,26 @@ export default function OverviewPage() {
         </Table>
       </Box>
       )}
-      {tab === "numbers" && (
+      {showNumbers && (
         <Typography variant="caption" sx={{ display: "block", p: "12px 16px", color: "text.disabled" }}>
           {mode === "simple"
             ? "The numbers that matter day-to-day. Switch to Advanced for reach, show-rate, ROI & profit."
             : "Everything, including reach, show-rate, expected vs. actual commission, profit and ROI."}
         </Typography>
+      )}
+
+      {showAds && (
+        <Box sx={{ bgcolor: "background.paper", borderTop: `1px solid ${tokens.divider}` }}>
+          {!isNarrow && (
+            <Typography sx={{ fontSize: 11, fontWeight: 600, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.05em", p: "16px 16px 0" }}>
+              Active ads
+            </Typography>
+          )}
+          <ActiveAds
+            adAccountId={profile?.fbAdAccountId || undefined}
+            agentName={profile?.company || profile?.displayName}
+          />
+        </Box>
       )}
     </Box>
   );

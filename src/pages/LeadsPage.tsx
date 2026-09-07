@@ -36,7 +36,7 @@ import RefreshIcon from "@mui/icons-material/Refresh";
 import CloseIcon from "@mui/icons-material/Close";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutlineOutlined";
 import PhoneCallbackIcon from "@mui/icons-material/PhoneCallback";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePostHog } from "@posthog/react";
 import { tokens } from "../theme";
 import { DEAD_STAGES, PIPELINE_KIND_LABEL, PIPELINE_STAGES, type LeadRow, type OutcomeStep, type Pipeline, type PipelineKind, type Stage } from "../types";
@@ -49,6 +49,7 @@ import { useSnack } from "../hooks/useSnack";
 import { maskPhone } from "../lib/format";
 import { getPendingCall, clearPendingCall, type PendingCall } from "../lib/pendingCall";
 import { startLeadsTour, hasSeenLeadsTour } from "../lib/tour";
+import { listArchivedLeads } from "../api/leads";
 import { syncFbLeads } from "../api/leadPages";
 import { getActiveAgentIdSync } from "../api/_client";
 import GSheetIcon from "../components/GSheetIcon";
@@ -64,6 +65,14 @@ export default function LeadsPage() {
   const syncSheet = useSyncPipelineSheet();
   const showSnack = useSnack();
   const qc = useQueryClient();
+  const { data: isOperator } = useIsOperator();
+  // Operators can look at what's been archived without it cluttering the list.
+  const [showArchived, setShowArchived] = useState(false);
+  const { data: archivedLeads = [] } = useQuery({
+    queryKey: ["archivedLeads"],
+    queryFn: listArchivedLeads,
+    enabled: showArchived,
+  });
 
   const pipelineStorageKey = `estatekit_last_pipeline_${getActiveAgentIdSync() || "me"}`;
 
@@ -134,10 +143,10 @@ export default function LeadsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activePipeline?.id]);
 
-  const pipelineLeads = useMemo(
-    () => (activePipeline ? leads.filter((l) => l.pipeline_id === activePipeline.id) : []),
-    [leads, activePipeline],
-  );
+  const pipelineLeads = useMemo(() => {
+    const source = showArchived ? archivedLeads : leads;
+    return activePipeline ? source.filter((l) => l.pipeline_id === activePipeline.id) : [];
+  }, [leads, archivedLeads, showArchived, activePipeline]);
 
 
   const filtered = useMemo(() => {
@@ -308,6 +317,24 @@ export default function LeadsPage() {
           Filter by stage
         </Typography>
         <Box data-tour="filters" sx={{ display: "flex", gap: 0.75, overflowX: "auto" }}>
+          {isOperator && (
+            <Box
+              component="button"
+              onClick={() => setShowArchived((v) => !v)}
+              sx={{
+                display: "flex", alignItems: "center", gap: 0.5,
+                border: `1px solid ${showArchived ? "#92400e" : tokens.divider}`,
+                borderRadius: "6px",
+                bgcolor: showArchived ? "#fef3c7" : "#fff",
+                color: showArchived ? "#92400e" : "text.secondary",
+                fontWeight: showArchived ? 600 : 400,
+                fontSize: 12.5, p: "5px 10px", cursor: "pointer", whiteSpace: "nowrap",
+                "&:hover": { borderColor: "#92400e" },
+              }}
+            >
+              {showArchived ? "Viewing archived" : "Archived"}
+            </Box>
+          )}
           {(["All", ...stagesForPipeline] as const).map((s) => {
             const active = filter === s;
             const count = s === "All" ? pipelineLeads.length : pipelineLeads.filter((l) => l.stage === s).length;

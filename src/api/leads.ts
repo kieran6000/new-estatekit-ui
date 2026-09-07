@@ -7,9 +7,53 @@ export async function listLeads(): Promise<LeadRow[]> {
     .from("leads")
     .select("*")
     .eq("agent_id", agentId)
+    .eq("archived", false)
     .order("created_at", { ascending: false });
   if (error) throw new Error(error.message);
   return data as LeadRow[];
+}
+
+/** Archived leads are kept but stay out of the working list. */
+export async function listArchivedLeads(): Promise<LeadRow[]> {
+  const agentId = await getActiveAgentId();
+  const { data, error } = await supabase
+    .from("leads")
+    .select("*")
+    .eq("agent_id", agentId)
+    .eq("archived", true)
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return data as LeadRow[];
+}
+
+export async function setLeadArchived(id: string, archived: boolean): Promise<void> {
+  const { error } = await supabase.from("leads").update({ archived }).eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+/** Move a lead into a different pipeline (operator action). */
+export async function moveLeadToPipeline(id: string, pipelineId: string): Promise<void> {
+  const { error } = await supabase.from("leads").update({ pipeline_id: pipelineId }).eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+export interface SourceAd {
+  id: string;
+  name: string;
+  status: string;
+  body: string;
+  headline: string;
+  imageUrl: string;
+  cta: string;
+  link: string;
+  postUrl: string;
+}
+
+/** The Facebook ad this lead came from, resolved from its fb_lead_id. */
+export async function getLeadSourceAd(leadId: string): Promise<SourceAd | null> {
+  const { data, error } = await supabase.functions.invoke("fb-lead-source-ad", { body: { leadId } });
+  if (error) throw new Error(error.message);
+  return (data?.ad ?? null) as SourceAd | null;
 }
 
 export async function updateLead(
