@@ -44,6 +44,7 @@ import { pipelineKindFor, sortLeadsForList, STEP_FOR_STAGE } from "../lib/stageL
 import { timeAgo } from "../lib/timeAgo";
 import { useLeads, useUpdateLeadStage } from "../hooks/useLeads";
 import { useAddPipeline, usePipelines, useSyncPipelineSheet } from "../hooks/usePipelines";
+import { renamePipeline } from "../api/pipelines";
 import { useIsOperator } from "../hooks/useAutomations";
 import { useSnack } from "../hooks/useSnack";
 import { maskPhone } from "../lib/format";
@@ -84,6 +85,7 @@ export default function LeadsPage() {
   const [reloading, setReloading] = useState(false);
   const [pipelineMenuAnchor, setPipelineMenuAnchor] = useState<HTMLElement | null>(null);
   const [addPipelineOpen, setAddPipelineOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
   const [filter, setFilter] = useState<"All" | Stage>("All");
   const [outcomeLeadId, setOutcomeLeadId] = useState<string | null>(null);
   const [focusOpen, setFocusOpen] = useState(false);
@@ -106,8 +108,9 @@ export default function LeadsPage() {
   // First visit with leads on screen: run the walkthrough once. Waits for the
   // list to render so the tour has something to point at.
   useEffect(() => {
-    if (leadsLoading || pipelinesLoading || hasSeenLeadsTour()) return;
-    const t = setTimeout(() => startLeadsTour(), 700);
+    const agentId = getActiveAgentIdSync();
+    if (leadsLoading || pipelinesLoading || hasSeenLeadsTour(agentId)) return;
+    const t = setTimeout(() => startLeadsTour(agentId), 700);
     return () => clearTimeout(t);
   }, [leadsLoading, pipelinesLoading]);
   function dismissPending() {
@@ -217,7 +220,7 @@ export default function LeadsPage() {
       <AppBar position="sticky">
         <Toolbar sx={{ height: 56, minHeight: "56px !important", px: "8px 8px 8px 16px" }}>
           <Typography sx={{ fontSize: 18, fontWeight: 500, flex: 1 }}>Leads</Typography>
-          <IconButton onClick={() => startLeadsTour()} title="How it works" aria-label="How it works">
+          <IconButton onClick={() => startLeadsTour(getActiveAgentIdSync())} title="How it works" aria-label="How it works">
             <HelpOutlineIcon />
           </IconButton>
           <IconButton onClick={() => setSearchOpen((v) => !v)}>
@@ -273,6 +276,10 @@ export default function LeadsPage() {
           onAddNew={() => {
             setPipelineMenuAnchor(null);
             setAddPipelineOpen(true);
+          }}
+          onRename={() => {
+            setPipelineMenuAnchor(null);
+            setRenameOpen(true);
           }}
         />
         <Box sx={{ flex: 1 }} />
@@ -395,6 +402,20 @@ export default function LeadsPage() {
         onSnack={showSnack}
       />
       <FocusCallModal leads={pipelineLeads} pipelines={pipelines} open={focusOpen} onClose={() => setFocusOpen(false)} onSnack={showSnack} />
+      <RenamePipelineDialog
+        open={renameOpen}
+        currentName={activePipeline.name}
+        onClose={() => setRenameOpen(false)}
+        onSave={(name) => {
+          renamePipeline(activePipeline.id, name)
+            .then(() => {
+              qc.invalidateQueries({ queryKey: ["pipelines"] });
+              setRenameOpen(false);
+              showSnack("Pipeline renamed");
+            })
+            .catch((err) => showSnack(err.message));
+        }}
+      />
       <AddPipelineDialog
         open={addPipelineOpen}
         onClose={() => setAddPipelineOpen(false)}
@@ -463,12 +484,14 @@ function PipelineMenu({
   onClose,
   onSelect,
   onAddNew,
+  onRename,
 }: {
   anchor: HTMLElement | null;
   pipelines: Pipeline[];
   onClose: () => void;
   onSelect: (id: string) => void;
   onAddNew: () => void;
+  onRename: () => void;
 }) {
   return (
     <Menu anchorEl={anchor} open={!!anchor} onClose={onClose}>
@@ -477,10 +500,49 @@ function PipelineMenu({
           {p.name}
         </MenuItem>
       ))}
-      <MenuItem onClick={onAddNew} sx={{ color: tokens.primary, borderTop: `1px solid ${tokens.divider2}`, mt: 0.5 }}>
+      <MenuItem onClick={onRename} sx={{ borderTop: `1px solid ${tokens.divider2}`, mt: 0.5 }}>
+        Rename this pipeline
+      </MenuItem>
+      <MenuItem onClick={onAddNew} sx={{ color: tokens.primary }}>
         + Add pipeline
       </MenuItem>
     </Menu>
+  );
+}
+
+/** Dead simple: one field, Save. */
+function RenamePipelineDialog({
+  open, currentName, onClose, onSave,
+}: {
+  open: boolean;
+  currentName: string;
+  onClose: () => void;
+  onSave: (name: string) => void;
+}) {
+  const [name, setName] = useState(currentName);
+  useEffect(() => { if (open) setName(currentName); }, [open, currentName]);
+
+  return (
+    <Dialog open={open} onClose={onClose} fullWidth maxWidth="xs">
+      <DialogTitle sx={{ fontSize: 18, fontWeight: 500 }}>Rename pipeline</DialogTitle>
+      <DialogContent>
+        <TextField
+          label="Pipeline name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && name.trim()) onSave(name.trim()); }}
+          fullWidth
+          autoFocus
+          sx={{ mt: 1 }}
+        />
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Cancel</Button>
+        <Button variant="contained" disabled={!name.trim()} onClick={() => onSave(name.trim())}>
+          Save
+        </Button>
+      </DialogActions>
+    </Dialog>
   );
 }
 

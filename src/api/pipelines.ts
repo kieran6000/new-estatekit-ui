@@ -36,6 +36,11 @@ export async function addPipeline(
   return data as Pipeline;
 }
 
+export async function renamePipeline(id: string, name: string): Promise<void> {
+  const { error } = await supabase.from("pipelines").update({ name }).eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
 export async function syncPipelineSheet(pipelineId: string): Promise<string> {
   const { data, error } = await supabase.functions.invoke("sync-pipeline-sheet", {
     body: { pipeline_id: pipelineId },

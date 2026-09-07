@@ -4,25 +4,29 @@ import "driver.js/dist/driver.css";
 // Guided walkthrough for the Leads tab. Runs once per agent (remembered in
 // localStorage) and can be replayed from the Leads header.
 
-const SEEN_KEY = "estatekit_tour_leads_v1";
+// Keyed per agent, so each agent gets the walkthrough once on their own first
+// login — rather than one flag shared by whoever used the browser first.
+function seenKey(agentId?: string | null): string {
+  return `estatekit_tour_leads_v1_${agentId || "me"}`;
+}
 
-export function hasSeenLeadsTour(): boolean {
+export function hasSeenLeadsTour(agentId?: string | null): boolean {
   try {
-    return localStorage.getItem(SEEN_KEY) === "1";
+    return localStorage.getItem(seenKey(agentId)) === "1";
   } catch {
     return true; // storage blocked — don't nag
   }
 }
 
-function markSeen() {
+function markSeen(agentId?: string | null) {
   try {
-    localStorage.setItem(SEEN_KEY, "1");
+    localStorage.setItem(seenKey(agentId), "1");
   } catch { /* ignore */ }
 }
 
 /** Steps are matched by data-tour attributes so markup changes don't silently
  *  break the tour — a missing element is simply skipped by driver.js. */
-export function startLeadsTour(onDone?: () => void) {
+export function startLeadsTour(agentId?: string | null, onDone?: () => void) {
   const d = driver({
     showProgress: true,
     allowClose: true,
@@ -30,7 +34,7 @@ export function startLeadsTour(onDone?: () => void) {
     prevBtnText: "Back",
     doneBtnText: "Got it",
     onDestroyed: () => {
-      markSeen();
+      markSeen(agentId);
       onDone?.();
     },
     steps: [
