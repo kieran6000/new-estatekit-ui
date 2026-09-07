@@ -26,8 +26,9 @@ import { tokens } from "../theme";
 import { useAuth } from "../hooks/useAuth";
 import { useLeadWithStatus, useUpdateLeadNote, useUpdateLeadStage } from "../hooks/useLeads";
 import { usePipelines } from "../hooks/usePipelines";
+import { getPipelinePublic } from "../api/pipelines";
 import { useSnack } from "../hooks/useSnack";
-import { pipelineKindFor, MAIN_OUTCOME_OPTIONS, STEP_FOR_STAGE, type MainOutcomeOption } from "../lib/stageLogic";
+import { MAIN_OUTCOME_OPTIONS, STEP_FOR_STAGE, type MainOutcomeOption } from "../lib/stageLogic";
 import { prettyAnswer } from "../lib/format";
 import { timeAgo } from "../lib/timeAgo";
 import { trackActivity } from "../lib/activity";
@@ -216,13 +217,20 @@ function LeadActionUI({
     timer.current = setTimeout(() => saveNote(value), 500);
   }
 
-  // Prefer the agent's own pipeline list; fall back to the server-resolved kind
-  // when there's no session (token view), so buyer leads never show seller options.
-  const pipelineKind: PipelineKind = lead
-    ? pipelines.length
-      ? pipelineKindFor(lead, pipelines)
-      : kindHint ?? "seller"
-    : "seller";
+  // Resolving the pipeline kind has to survive three cases, or the lead gets the
+  // wrong "what happened?" list: the pipeline is in the loaded list; there's no
+  // session to load one (token view); or the list is loaded but belongs to a
+  // different agent than the lead (an operator opening a client's lead). Only
+  // the last resort is a guess.
+  const matchedKind = lead ? pipelines.find((p) => p.id === lead.pipeline_id)?.kind : undefined;
+  const { data: leadPipeline } = useQuery({
+    queryKey: ["pipelinePublic", lead?.pipeline_id],
+    queryFn: () => getPipelinePublic(lead!.pipeline_id),
+    enabled: !!lead?.pipeline_id && !matchedKind && !kindHint,
+    staleTime: 60 * 60_000,
+    retry: false,
+  });
+  const pipelineKind: PipelineKind = matchedKind ?? kindHint ?? leadPipeline?.kind ?? "seller";
   const digits = lead?.phone.replace(/\D/g, "") ?? "";
   // Surface the property address right under the phone; keep it out of the
   // generic "From their form" list so it isn't shown twice.

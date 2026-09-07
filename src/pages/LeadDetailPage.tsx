@@ -12,9 +12,10 @@ import { tokens } from "../theme";
 import { getLeadSourceAd, moveLeadToPipeline, setLeadArchived } from "../api/leads";
 import { useLead, useUpdateLeadNote, useUpdateLeadStage } from "../hooks/useLeads";
 import { usePipelines } from "../hooks/usePipelines";
+import { getPipelinePublic } from "../api/pipelines";
 import { useSnack } from "../hooks/useSnack";
 import { PIPELINE_STAGES } from "../types";
-import { pipelineKindFor, stageForKind, STEP_FOR_STAGE } from "../lib/stageLogic";
+import { stageForKind, STEP_FOR_STAGE } from "../lib/stageLogic";
 import { prettyAnswer, maskPhone } from "../lib/format";
 import { timeAgo } from "../lib/timeAgo";
 import { useIsOperator } from "../hooks/useAutomations";
@@ -38,6 +39,17 @@ export default function LeadDetailPage() {
   const [outcomeOpen, setOutcomeOpen] = useState(false);
   const [stageStep, setStageStep] = useState<{ step: OutcomeStep; stage: Stage } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  // Fetched only when the lead's pipeline isn't among the ones we loaded.
+  // Declared before the early return so hook order stays stable.
+  const inList = pipelines.some((p) => p.id === lead?.pipeline_id);
+  const { data: leadPipeline } = useQuery({
+    queryKey: ["pipelinePublic", lead?.pipeline_id],
+    queryFn: () => getPipelinePublic(lead!.pipeline_id),
+    enabled: !!lead?.pipeline_id && !inList,
+    staleTime: 60 * 60_000,
+    retry: false,
+  });
 
   useEffect(() => setNote(lead?.note ?? ""), [lead?.id]);
 
@@ -67,7 +79,11 @@ export default function LeadDetailPage() {
     timer.current = setTimeout(() => saveNote(value), 500);
   }
 
-  const pipelineKind = pipelineKindFor(lead, pipelines);
+  // Same rule as the action page: if the lead's pipeline isn't in the loaded
+  // list (e.g. an operator viewing another agent's lead) fetch it rather than
+  // silently defaulting to seller stages.
+  const matchedKind = pipelines.find((p) => p.id === lead.pipeline_id)?.kind;
+  const pipelineKind = matchedKind ?? leadPipeline?.kind ?? "seller";
   const stagesForPipeline = PIPELINE_STAGES[pipelineKind];
 
   function handleStagePick(stage: Stage) {
