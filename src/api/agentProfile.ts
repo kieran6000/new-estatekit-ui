@@ -151,7 +151,11 @@ export async function amIOnboarded(): Promise<boolean> {
 export async function upsertProfile(
   patch: Partial<Omit<AgentProfile, "agentId" | "tier">>,
 ): Promise<void> {
-  const userId = await getCurrentUserId();
+  // Must write to the SAME agent getMyProfile reads (the active/managed agent),
+  // otherwise editing a managed agent's Account page silently overwrites the
+  // operator's own profile. getActiveAgentId === the logged-in user when no
+  // one is being managed, so this is correct for normal agents too.
+  const userId = await getActiveAgentId();
   const row: Record<string, unknown> = { agent_id: userId };
   if (patch.displayName !== undefined) row.display_name = patch.displayName;
   if (patch.email !== undefined) row.email = patch.email;
