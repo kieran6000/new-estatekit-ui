@@ -177,7 +177,7 @@ export default function LeadPagePage() {
         <Box
           component="button"
           onClick={(e) => setPageMenuAnchor(e.currentTarget)}
-          sx={{ display: "flex", alignItems: "center", gap: 0.25, border: `1px solid ${tokens.divider}`, borderRadius: "4px", bgcolor: "#fff", fontSize: 13, fontWeight: 500, p: "7px 6px 7px 12px", cursor: "pointer" }}
+          sx={{ display: "flex", alignItems: "center", gap: 0.25, border: `1px solid ${tokens.divider}`, borderRadius: "4px", bgcolor: tokens.surface, fontSize: 13, fontWeight: 500, p: "7px 6px 7px 12px", cursor: "pointer" }}
         >
           {page.name} <ArrowDropDownIcon fontSize="small" />
         </Box>
@@ -1128,7 +1128,7 @@ function EditQuestionRow({ pageId, question, onDone }: { pageId: string; questio
       )}
 
       {isChoice && currentOptions.length > 0 && (
-        <Box sx={{ bgcolor: "#fafafa", border: `1px solid ${tokens.divider2}`, borderRadius: "6px", p: "10px 12px" }}>
+        <Box sx={{ bgcolor: tokens.surface2, border: `1px solid ${tokens.divider2}`, borderRadius: "6px", p: "10px 12px" }}>
           <Typography sx={{ fontSize: 12.5, fontWeight: 600, color: "text.secondary", mb: 0.5 }}>
             Which answers mean it's NOT a good lead?
           </Typography>

@@ -1,5 +1,6 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import { useColorScheme } from "@mui/material/styles";
 import {
   Avatar,
   Box,
@@ -76,6 +77,11 @@ export default function AppShell() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const { data: isOperator } = useIsOperator();
+  // Dark mode is operator-only. If a non-operator somehow has it set, snap back.
+  const { mode, setMode } = useColorScheme();
+  useEffect(() => {
+    if (isOperator === false && mode === "dark") setMode("light");
+  }, [isOperator, mode, setMode]);
   const section = activeSection(pathname);
   const activeAgentId = getActiveAgentIdSync();
   const isManagingOther = !!activeAgentId && activeAgentId !== user?.id;

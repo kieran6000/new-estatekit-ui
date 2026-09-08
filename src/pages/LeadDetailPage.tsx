@@ -119,7 +119,7 @@ export default function LeadDetailPage() {
                 onClick={open}
                 sx={{
                   flex: 1,
-                  bgcolor: "#fff",
+                  bgcolor: tokens.surface,
                   color: tokens.primary,
                   border: `1px solid ${tokens.divider}`,
                   borderRadius: "4px",

@@ -155,7 +155,7 @@ function AdCard({ ad, fallbackPage, adAccountId }: { ad: ActiveAd; fallbackPage:
       )}
 
       {/* Link bar + CTA */}
-      <Box sx={{ display: "flex", alignItems: "center", gap: 1, p: "10px 12px", bgcolor: "#f0f2f5" }}>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1, p: "10px 12px", bgcolor: tokens.surface2 }}>
         <Box sx={{ flex: 1, minWidth: 0 }}>
           {ad.link && (
             <Typography sx={{ fontSize: 11, color: "text.secondary", wordBreak: "break-all" }}>

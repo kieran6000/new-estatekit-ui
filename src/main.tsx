@@ -34,7 +34,7 @@ createRoot(document.getElementById("root")!).render(
         },
       }}
     >
-      <ThemeProvider theme={theme}>
+      <ThemeProvider theme={theme} defaultMode="light">
         <CssBaseline />
         <QueryClientProvider client={queryClient}>
           <AuthProvider>

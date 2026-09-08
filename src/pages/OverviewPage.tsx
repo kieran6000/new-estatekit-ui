@@ -167,7 +167,7 @@ export default function OverviewPage() {
         <Box
           component="button"
           onClick={(e) => setMenuAnchor(e.currentTarget)}
-          sx={{ border: `1px solid ${tokens.divider}`, borderRadius: "4px", bgcolor: "#fff", fontSize: 13, p: "9px 12px", cursor: "pointer" }}
+          sx={{ border: `1px solid ${tokens.divider}`, borderRadius: "4px", bgcolor: tokens.surface, fontSize: 13, p: "9px 12px", cursor: "pointer" }}
         >
           {period}
         </Box>
@@ -290,7 +290,7 @@ export default function OverviewPage() {
             ) : (
               <>
                 {/* Totals stay pinned right under the header while you scroll. */}
-                <TableRow sx={{ bgcolor: "#eef1f3" }}>
+                <TableRow sx={{ bgcolor: tokens.surface2 }}>
                   {cols.map((c) => (
                     <TableCell
                       key={c.k}
@@ -300,7 +300,7 @@ export default function OverviewPage() {
                         borderTop: `2px solid ${tokens.divider}`,
                         borderBottom: `2px solid ${tokens.divider}`,
                         position: "sticky", top: HEAD_H, zIndex: 2,
-                        bgcolor: "#eef1f3",
+                        bgcolor: tokens.surface2,
                       }}
                     >
                       {cell(c, totals as unknown as Record<string, number | string>)}
@@ -308,7 +308,7 @@ export default function OverviewPage() {
                   ))}
                 </TableRow>
                 {sorted.map((r, i) => (
-                  <TableRow key={r.date} sx={i % 2 === 1 ? { bgcolor: "#f7f9fb" } : undefined}>
+                  <TableRow key={r.date} sx={i % 2 === 1 ? { bgcolor: tokens.hover } : undefined}>
                     {cols.map((c) => (
                       <TableCell key={c.k} align={c.num ? "right" : "left"} sx={{ whiteSpace: "nowrap" }}>
                         {cell(c, r as unknown as Record<string, number | string>)}

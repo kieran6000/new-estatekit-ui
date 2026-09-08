@@ -6,3 +6,48 @@ html, body, #root {
 body {
   -webkit-font-smoothing: antialiased;
 }
+
+/* EstateKit design tokens. Light values are the defaults; dark mode (operator
+   only) overrides them when MUI stamps data-mui-color-scheme="dark" on <html>.
+   Kept as CSS variables so every tokens.* call site flips with no code change. */
+:root {
+  --ek-primary: #1976d2;
+  --ek-primaryDark: #1565c0;
+  --ek-primaryBg: #e8f0fe;
+  --ek-green: #2e7d32;
+  --ek-greenDark: #1b5e20;
+  --ek-greenCall: #43a047;
+  --ek-red: #c62828;
+  --ek-amberTint: #fff8e1;
+  --ek-bg: #f1f3f4;
+  --ek-surface: #ffffff;
+  --ek-surface2: #eef1f3;
+  --ek-divider: #e0e0e0;
+  --ek-divider2: #eeeeee;
+  --ek-hover: #f5f5f5;
+  --ek-ink: rgba(0, 0, 0, .87);
+  --ek-ink2: rgba(0, 0, 0, .60);
+  --ek-ink3: rgba(0, 0, 0, .38);
+}
+
+[data-mui-color-scheme="dark"] {
+  /* Material dark: #121212 base, elevated surfaces a step lighter, dividers as
+     low-opacity white. Blue/green kept legible without glare. */
+  --ek-primary: #8ab4f8;
+  --ek-primaryDark: #aecbfa;
+  --ek-primaryBg: #1b2a3d;
+  --ek-green: #2e7d32;      /* stays medium so white button text keeps contrast */
+  --ek-greenDark: #1b5e20;
+  --ek-greenCall: #43a047;
+  --ek-red: #f28b82;
+  --ek-amberTint: #33290a;  /* dark amber wash for due rows */
+  --ek-bg: #121212;
+  --ek-surface: #1e1e1e;
+  --ek-surface2: #262626;
+  --ek-divider: rgba(255, 255, 255, .13);
+  --ek-divider2: rgba(255, 255, 255, .08);
+  --ek-hover: rgba(255, 255, 255, .06);
+  --ek-ink: rgba(255, 255, 255, .90);
+  --ek-ink2: rgba(255, 255, 255, .64);
+  --ek-ink3: rgba(255, 255, 255, .40);
+}

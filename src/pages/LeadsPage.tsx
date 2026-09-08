@@ -265,7 +265,7 @@ export default function LeadsPage() {
           component="button"
           onClick={(e) => setPipelineMenuAnchor(e.currentTarget)}
           data-tour="pipeline"
-          sx={{ display: "flex", alignItems: "center", gap: 0.25, border: `1px solid ${tokens.divider}`, borderRadius: "4px", bgcolor: "#fff", fontSize: 13, fontWeight: 500, p: "7px 6px 7px 12px", cursor: "pointer" }}
+          sx={{ display: "flex", alignItems: "center", gap: 0.25, border: `1px solid ${tokens.divider}`, borderRadius: "4px", bgcolor: tokens.surface, fontSize: 13, fontWeight: 500, p: "7px 6px 7px 12px", cursor: "pointer" }}
         >
           {activePipeline.name} pipeline <ArrowDropDownIcon fontSize="small" />
         </Box>
@@ -688,7 +688,7 @@ function LeadsTable({
                 if (!g.length) return [];
                 return [
                   <TableRow key={"hd-" + st}>
-                    <TableCell colSpan={4} sx={{ bgcolor: "#eef1f3", fontSize: 12, fontWeight: 500, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.04em", height: 34 }}>
+                    <TableCell colSpan={4} sx={{ bgcolor: tokens.surface2, fontSize: 12, fontWeight: 500, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.04em", height: 34 }}>
                       {st} ({g.length})
                     </TableCell>
                   </TableRow>,
@@ -798,7 +798,7 @@ function MobileLeadsList({
             return [
               <Box
                 key={"hd-" + st}
-                sx={{ bgcolor: "#eef1f3", fontSize: 12, fontWeight: 500, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.04em", p: "8px 16px", borderBottom: `1px solid ${tokens.divider}` }}
+                sx={{ bgcolor: tokens.surface2, fontSize: 12, fontWeight: 500, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.04em", p: "8px 16px", borderBottom: `1px solid ${tokens.divider}` }}
               >
                 {st} ({g.length})
               </Box>,
