@@ -11,6 +11,7 @@ import {
   Popover,
   TextField,
   Typography,
+  useMediaQuery,
 } from "@mui/material";
 import UnfoldMoreIcon from "@mui/icons-material/UnfoldMore";
 import { listAgentProfiles, setActiveAgent, getActiveAgentIdSync } from "../api/_client";
@@ -18,6 +19,8 @@ import { useAuth } from "../hooks/useAuth";
 
 export default function AccountSwitcher({ variant = "dark" }: { variant?: "dark" | "light" }) {
   const { user } = useAuth();
+  // A mouse/trackpad exists → safe to auto-focus search. On touch it isn't.
+  const canHover = useMediaQuery("(hover: hover) and (pointer: fine)");
   const qc = useQueryClient();
   const [active, setActive] = useState(getActiveAgentIdSync() || user?.id || "");
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
@@ -99,7 +102,8 @@ export default function AccountSwitcher({ variant = "dark" }: { variant?: "dark"
             placeholder="Search for a sub-account"
             size="small"
             fullWidth
-            autoFocus
+            // Don't auto-focus on touch — it pops the keyboard over the list.
+            autoFocus={canHover}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />

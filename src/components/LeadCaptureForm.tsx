@@ -9,6 +9,7 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import CallIcon from "@mui/icons-material/Call";
 import PlaceIcon from "@mui/icons-material/Place";
 import { LEAD_FORM_TEMPLATE } from "../lib/leadFormTemplate";
+import { readableOn } from "../lib/contrast";
 import { trackActivity } from "../lib/activity";
 import type { CustomQuestion, LeadPage, PipelineKind } from "../types";
 
@@ -52,6 +53,7 @@ export default function LeadCaptureForm({
   preview?: boolean;
 }) {
   const t = LEAD_FORM_TEMPLATE[pipelineKind];
+  const onAccent = readableOn(page.accentColor);
   const nameLabel = page.nameLabel || "What's your name?";
   const phoneLabel = page.phoneLabel || "WhatsApp number";
 
@@ -127,8 +129,9 @@ export default function LeadCaptureForm({
     <Box>
       {showHeader && (
         <>
-          {/* Header sits apart from the form card, not fused to it. */}
-          <Box sx={{ bgcolor: page.accentColor, color: "#fff", p: "14px 20px", textAlign: "center", borderRadius: "8px" }}>
+          {/* Header sits apart from the form card, not fused to it. Text colour
+              adapts to the accent so a light brand colour stays readable. */}
+          <Box sx={{ bgcolor: page.accentColor, color: onAccent, p: "14px 20px", textAlign: "center", borderRadius: "8px" }}>
             <HeaderBrand page={page} />
           </Box>
           <Box sx={{ height: 16 }} />
@@ -159,7 +162,7 @@ export default function LeadCaptureForm({
                 fullWidth
                 endIcon={<ArrowForwardIcon />}
                 onClick={() => setPhase("steps")}
-                sx={{ mt: 3, bgcolor: page.accentColor, "&:hover": { bgcolor: page.accentColor, filter: "brightness(0.9)" } }}
+                sx={{ mt: 3, bgcolor: page.accentColor, color: onAccent, "&:hover": { bgcolor: page.accentColor, filter: "brightness(0.9)" } }}
               >
                 Get Started
               </Button>
@@ -237,7 +240,7 @@ export default function LeadCaptureForm({
                   fullWidth
                   endIcon={isLast ? undefined : <ArrowForwardIcon />}
                   onClick={handleNext}
-                  sx={{ mt: 3, bgcolor: page.accentColor, "&:hover": { bgcolor: page.accentColor, filter: "brightness(0.9)" } }}
+                  sx={{ mt: 3, bgcolor: page.accentColor, color: onAccent, "&:hover": { bgcolor: page.accentColor, filter: "brightness(0.9)" } }}
                 >
                   {isLast ? page.ctaLabel : "Next Step"}
                 </Button>
@@ -319,7 +322,7 @@ function ThankYouScreen({ page, name }: { page: LeadPage; name: string }) {
               justifyContent: "center",
             }}
           >
-            <CallIcon sx={{ fontSize: 40, color: "#fff" }} />
+            <CallIcon sx={{ fontSize: 40, color: readableOn(page.accentColor) }} />
           </Box>
         )}
         {hasPhoto && (

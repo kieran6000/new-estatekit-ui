@@ -17,18 +17,17 @@ export async function getCurrentUserId(): Promise<string> {
   return session.user.id;
 }
 
-const ACTIVE_AGENT_KEY = "estatekit_active_agent";
+// Managing another agent is an in-session action ONLY. It is deliberately not
+// persisted: a stale "managing Zainub" flag surviving into a fresh login made
+// the operator's own account appear to "become" that agent and risked writes
+// landing on the wrong profile. A reload / new session always starts as you.
+let _activeAgentId: string | null = null;
 
-let _activeAgentId: string | null = (() => {
-  try { return localStorage.getItem(ACTIVE_AGENT_KEY); } catch { return null; }
-})();
+// Clean up the old persisted value from any browser that still has it.
+try { localStorage.removeItem("estatekit_active_agent"); } catch { /* ignore */ }
 
 export function setActiveAgent(id: string | null): void {
   _activeAgentId = id;
-  try {
-    if (id) localStorage.setItem(ACTIVE_AGENT_KEY, id);
-    else localStorage.removeItem(ACTIVE_AGENT_KEY);
-  } catch { /* private browsing */ }
 }
 
 export function getActiveAgentIdSync(): string | null {

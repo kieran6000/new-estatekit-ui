@@ -37,29 +37,12 @@ import { usePageviewTracking } from "../hooks/usePageviewTracking";
 import { useRealtimeSubscriptions } from "../hooks/useRealtime";
 import { getMyProfile } from "../api/agentProfile";
 import { getActiveAgentIdSync, setActiveAgent } from "../api/_client";
+import { isLightColor } from "../lib/contrast";
 import AccountSwitcher from "./AccountSwitcher";
 import DevTierToggle from "./DevTierToggle";
 import estateKitLogoWhite from "../assets/whitelogofull.png";
 
 const RAIL_WIDTH = 240;
-
-function sRGBtoLin(c: number): number {
-  const s = c / 255;
-  return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
-}
-
-function relativeLuminance(hex: string): number {
-  const c = hex.replace("#", "");
-  if (c.length < 6) return 0;
-  const r = sRGBtoLin(parseInt(c.slice(0, 2), 16));
-  const g = sRGBtoLin(parseInt(c.slice(2, 4), 16));
-  const b = sRGBtoLin(parseInt(c.slice(4, 6), 16));
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-}
-
-function isLightColor(hex: string): boolean {
-  return relativeLuminance(hex) > 0.179;
-}
 
 function activeSection(pathname: string): string {
   if (pathname.startsWith("/lead-page")) return "mypage";

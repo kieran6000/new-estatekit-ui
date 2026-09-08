@@ -22,6 +22,7 @@ import DarkModeToggle from "../components/DarkModeToggle";
 import AddIcon from "@mui/icons-material/Add";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import CloseIcon from "@mui/icons-material/Close";
+import CheckIcon from "@mui/icons-material/Check";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../hooks/useAuth";
@@ -55,6 +56,7 @@ export default function AccountPage() {
     retry: false,
   });
 
+  const [saveState, setSaveState] = useState<"" | "saving" | "saved" | "error">("");
   const [stopping, setStopping] = useState(false);
   async function emergencyStop() {
     setStopping(true);
@@ -102,13 +104,23 @@ export default function AccountPage() {
     (patch: Partial<typeof form>) => {
       const next = { ...form, ...patch };
       setForm(next);
+      // Bind the write to the profile currently shown, captured now — so it
+      // can't land on a different row if the active agent changes before the
+      // debounce fires.
+      const targetId = profile?.agentId;
+      setSaveState("saving");
       clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(async () => {
-        await upsertProfile(next);
-        queryClient.invalidateQueries({ queryKey: ["myProfile"] });
+        try {
+          await upsertProfile(next, targetId);
+          await queryClient.invalidateQueries({ queryKey: ["myProfile"] });
+          setSaveState("saved");
+        } catch {
+          setSaveState("error");
+        }
       }, 600);
     },
-    [form, queryClient],
+    [form, profile?.agentId, queryClient],
   );
 
   function update(field: keyof typeof form, value: string | null) {
@@ -136,7 +148,7 @@ export default function AccountPage() {
     const { error } = await supabase.storage.from("logos").upload(path, file, { upsert: true });
     if (error) { showSnack("Upload failed: " + error.message); return; }
     const { data: urlData } = supabase.storage.from("logos").getPublicUrl(path);
-    await upsertProfile({ contractPdfUrl: urlData.publicUrl });
+    await upsertProfile({ contractPdfUrl: urlData.publicUrl }, profile?.agentId);
     queryClient.invalidateQueries({ queryKey: ["myProfile"] });
     showSnack("Contract uploaded");
   }
@@ -151,7 +163,14 @@ export default function AccountPage() {
     <Box>
       <AppBar position="sticky">
         <Toolbar sx={{ height: 56, minHeight: "56px !important" }}>
-          <Typography sx={{ fontSize: 18, fontWeight: 500 }}>Account</Typography>
+          <Typography sx={{ fontSize: 18, fontWeight: 500, flex: 1 }}>Account</Typography>
+          {saveState && (
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, fontSize: 13 }}>
+              {saveState === "saving" && <Typography sx={{ fontSize: 13, color: "text.secondary" }}>Saving…</Typography>}
+              {saveState === "saved" && <Typography sx={{ fontSize: 13, color: "success.main", display: "flex", alignItems: "center", gap: 0.5 }}><CheckIcon sx={{ fontSize: 17 }} /> Saved</Typography>}
+              {saveState === "error" && <Typography sx={{ fontSize: 13, color: "error.main" }}>Couldn't save — retry</Typography>}
+            </Box>
+          )}
         </Toolbar>
       </AppBar>
 
