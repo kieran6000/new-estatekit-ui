@@ -56,6 +56,10 @@ export interface LeadRow {
   commission: number | null;
   created_at: string;
   updated_at: string;
+  /** Archived leads are kept but hidden from the working list. */
+  archived?: boolean;
+  /** Facebook ad this lead came from, resolved lazily from fb_lead_id. */
+  fb_ad_id?: string | null;
 }
 
 export interface OverviewDailyRow {

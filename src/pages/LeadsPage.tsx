@@ -14,8 +14,10 @@ import {
   InputBase,
   Menu,
   MenuItem,
+  Paper,
   Radio,
   RadioGroup,
+  Checkbox,
   FormControlLabel,
   Skeleton,
   Table,
@@ -41,7 +43,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePostHog } from "@posthog/react";
 import { tokens } from "../theme";
 import { DEAD_STAGES, PIPELINE_KIND_LABEL, PIPELINE_STAGES, type LeadRow, type OutcomeStep, type Pipeline, type PipelineKind, type Stage } from "../types";
-import { pipelineKindFor, sortLeadsForList, STEP_FOR_STAGE } from "../lib/stageLogic";
+import { pipelineKindFor, sortLeadsForList, STEP_FOR_STAGE, computeStagePatch, stageForKind } from "../lib/stageLogic";
 import { timeAgo } from "../lib/timeAgo";
 import { useLeads, useUpdateLeadStage } from "../hooks/useLeads";
 import { useAddPipeline, usePipelines, useSyncPipelineSheet } from "../hooks/usePipelines";
@@ -50,6 +52,7 @@ import { useIsOperator } from "../hooks/useAutomations";
 import { useSnack } from "../hooks/useSnack";
 import { maskPhone } from "../lib/format";
 import { getPendingCall, clearPendingCall, type PendingCall } from "../lib/pendingCall";
+import { bulkUpdateLeads } from "../api/leads";
 import { startLeadsTour, hasSeenLeadsTour } from "../lib/tour";
 import { listArchivedLeads } from "../api/leads";
 import { syncFbLeads } from "../api/leadPages";
@@ -91,6 +94,26 @@ export default function LeadsPage() {
   const [outcomeLeadId, setOutcomeLeadId] = useState<string | null>(null);
   const [focusOpen, setFocusOpen] = useState(false);
   const [stageSheet, setStageSheet] = useState<{ leadId: string; step: OutcomeStep; stage: Stage } | null>(null);
+
+  // Operator bulk actions: select many leads, then move / restage / archive.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkMoveAnchor, setBulkMoveAnchor] = useState<HTMLElement | null>(null);
+  const [bulkStageAnchor, setBulkStageAnchor] = useState<HTMLElement | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  function toggleSelect(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+  function exitSelect() {
+    setSelectMode(false);
+    setSelected(new Set());
+    setBulkMoveAnchor(null);
+    setBulkStageAnchor(null);
+  }
 
   // A call started elsewhere (dialer/WhatsApp) whose outcome was never logged —
   // surfaced as a one-tap "log it now" row so nothing slips through.
@@ -213,6 +236,49 @@ export default function LeadsPage() {
     }
   }
 
+  async function runBulk(fn: () => Promise<void>, done: string) {
+    setBulkBusy(true);
+    try {
+      await fn();
+      await qc.invalidateQueries({ queryKey: ["leads"] });
+      await qc.invalidateQueries({ queryKey: ["archivedLeads"] });
+      showSnack(done);
+      exitSelect();
+    } catch (e) {
+      showSnack(e instanceof Error ? e.message : "Bulk action failed");
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+  const selectedIds = () => [...selected];
+  function bulkArchive() {
+    const ids = selectedIds();
+    runBulk(() => bulkUpdateLeads(ids, { archived: !showArchived }), `${ids.length} ${showArchived ? "restored" : "archived"}`);
+  }
+  function bulkSetStage(stage: Stage) {
+    setBulkStageAnchor(null);
+    const ids = selectedIds();
+    runBulk(() => bulkUpdateLeads(ids, { stage, ...computeStagePatch(stage) }), `${ids.length} moved to ${stage}`);
+  }
+  function bulkMovePipeline(target: Pipeline) {
+    setBulkMoveAnchor(null);
+    const chosen = leads.filter((l) => selected.has(l.id));
+    // Group by the stage each lead maps to in the target kind, so no lead lands
+    // on a stage the destination pipeline doesn't have.
+    const groups = new Map<Stage, string[]>();
+    for (const l of chosen) {
+      const st = stageForKind(l.stage as Stage, target.kind);
+      const arr = groups.get(st) ?? [];
+      arr.push(l.id);
+      groups.set(st, arr);
+    }
+    runBulk(async () => {
+      for (const [st, ids] of groups) {
+        await bulkUpdateLeads(ids, { pipeline_id: target.id, stage: st, ...computeStagePatch(st) });
+      }
+    }, `${chosen.length} moved to ${target.name}`);
+  }
+
   if (leadsLoading || pipelinesLoading) return <LeadsPageSkeleton />;
   if (!activePipeline) return null;
 
@@ -289,6 +355,17 @@ export default function LeadsPage() {
           }}
         />
         <Box sx={{ flex: 1 }} />
+
+        {isOperator && (
+          <Button
+            onClick={() => (selectMode ? exitSelect() : setSelectMode(true))}
+            variant={selectMode ? "contained" : "outlined"}
+            size="small"
+            sx={{ whiteSpace: "nowrap", textTransform: "none", ...(selectMode ? {} : { color: "text.primary", borderColor: tokens.divider }) }}
+          >
+            {selectMode ? "Done" : "Select"}
+          </Button>
+        )}
 
         <IconButton
           onClick={reloadLeads}
@@ -384,11 +461,55 @@ export default function LeadsPage() {
         leads={filtered}
         stages={stagesForPipeline}
         filter={filter}
+        selectable={selectMode}
+        selected={selected}
+        onToggleSelect={toggleSelect}
         onOpen={(id) => navigate(`/leads/${id}`)}
         onCall={(id) => setOutcomeLeadId(id)}
         onStagePick={handleStagePick}
       />
-      
+
+      {/* Bulk action bar — appears once leads are selected. Sits above the
+          mobile bottom-nav (56px). Boring on purpose. */}
+      {selectMode && selected.size > 0 && (
+        <Paper
+          elevation={8}
+          sx={{
+            position: "fixed", left: 0, right: 0, bottom: { xs: 56, sm: 0 }, zIndex: 20,
+            borderTop: `1px solid ${tokens.divider}`,
+            display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap",
+            p: "8px 12px",
+          }}
+        >
+          <Typography sx={{ fontSize: 14, fontWeight: 600, mr: 0.5 }}>{selected.size} selected</Typography>
+          <Box sx={{ flex: 1 }} />
+          <Button size="small" disabled={bulkBusy} onClick={(e) => setBulkStageAnchor(e.currentTarget)} endIcon={<ArrowDropDownIcon />} sx={{ textTransform: "none" }}>
+            Stage
+          </Button>
+          <Button size="small" disabled={bulkBusy} onClick={(e) => setBulkMoveAnchor(e.currentTarget)} endIcon={<ArrowDropDownIcon />} sx={{ textTransform: "none" }}>
+            Move to
+          </Button>
+          <Button size="small" color="inherit" disabled={bulkBusy} onClick={bulkArchive} sx={{ textTransform: "none", color: "text.secondary" }}>
+            {showArchived ? "Restore" : "Archive"}
+          </Button>
+          <IconButton size="small" onClick={exitSelect} aria-label="Clear selection"><CloseIcon fontSize="small" /></IconButton>
+
+          <Menu anchorEl={bulkStageAnchor} open={!!bulkStageAnchor} onClose={() => setBulkStageAnchor(null)}>
+            {stagesForPipeline.map((s) => (
+              <MenuItem key={s} onClick={() => bulkSetStage(s)}>{s}</MenuItem>
+            ))}
+          </Menu>
+          <Menu anchorEl={bulkMoveAnchor} open={!!bulkMoveAnchor} onClose={() => setBulkMoveAnchor(null)}>
+            {pipelines.filter((p) => p.id !== activePipeline.id).map((p) => (
+              <MenuItem key={p.id} onClick={() => bulkMovePipeline(p)}>{p.name}</MenuItem>
+            ))}
+            {pipelines.filter((p) => p.id !== activePipeline.id).length === 0 && (
+              <MenuItem disabled>No other pipelines</MenuItem>
+            )}
+          </Menu>
+        </Paper>
+      )}
+
 
       <OutcomeSheet
         lead={outcomeLead}
@@ -586,6 +707,9 @@ function LeadsTable({
   leads,
   stages,
   filter,
+  selectable,
+  selected,
+  onToggleSelect,
   onOpen,
   onCall,
   onStagePick,
@@ -593,6 +717,9 @@ function LeadsTable({
   leads: LeadRow[];
   stages: Stage[];
   filter: "All" | Stage;
+  selectable: boolean;
+  selected: Set<string>;
+  onToggleSelect: (id: string) => void;
   onOpen: (id: string) => void;
   onCall: (id: string) => void;
   onStagePick: (id: string, stage: Stage) => void;
@@ -600,7 +727,7 @@ function LeadsTable({
   const isMobile = useMediaQuery("(max-width:639px)");
   const { data: isOperator } = useIsOperator();
   if (isMobile) {
-    return <MobileLeadsList leads={leads} stages={stages} filter={filter} onOpen={onOpen} onCall={onCall} onStagePick={onStagePick} />;
+    return <MobileLeadsList leads={leads} stages={stages} filter={filter} selectable={selectable} selected={selected} onToggleSelect={onToggleSelect} onOpen={onOpen} onCall={onCall} onStagePick={onStagePick} />;
   }
 
   if (leads.length === 0) {
@@ -611,7 +738,12 @@ function LeadsTable({
 
   const rows = (group: LeadRow[]) =>
     group.map((l) => (
-      <TableRow key={l.id} hover sx={l.due && !DEAD_STAGES.includes(l.stage) ? { bgcolor: tokens.amberTint } : DEAD_STAGES.includes(l.stage) ? { color: tokens.ink3 } : undefined}>
+      <TableRow key={l.id} hover selected={selectable && selected.has(l.id)} sx={l.due && !DEAD_STAGES.includes(l.stage) ? { bgcolor: tokens.amberTint } : DEAD_STAGES.includes(l.stage) ? { color: tokens.ink3 } : undefined}>
+        {selectable && (
+          <TableCell padding="checkbox">
+            <Checkbox size="small" checked={selected.has(l.id)} onChange={() => onToggleSelect(l.id)} />
+          </TableCell>
+        )}
         <TableCell sx={{ py: 1 }}>
           <Box component="span" onClick={() => onOpen(l.id)} sx={{ fontWeight: 500, fontSize: 15, color: tokens.primaryDark, cursor: "pointer" }}>
             {l.name}
@@ -675,6 +807,20 @@ function LeadsTable({
       <Table size="small">
         <TableHead>
           <TableRow>
+            {selectable && (
+              <TableCell padding="checkbox">
+                <Checkbox
+                  size="small"
+                  indeterminate={selected.size > 0 && selected.size < leads.length}
+                  checked={leads.length > 0 && selected.size === leads.length}
+                  onChange={(e) => leads.forEach((l) => {
+                    const has = selected.has(l.id);
+                    if (e.target.checked && !has) onToggleSelect(l.id);
+                    if (!e.target.checked && has) onToggleSelect(l.id);
+                  })}
+                />
+              </TableCell>
+            )}
             <TableCell>Name</TableCell>
             <TableCell>Stage</TableCell>
             <TableCell>Next</TableCell>
@@ -688,7 +834,7 @@ function LeadsTable({
                 if (!g.length) return [];
                 return [
                   <TableRow key={"hd-" + st}>
-                    <TableCell colSpan={4} sx={{ bgcolor: tokens.surface2, fontSize: 12, fontWeight: 500, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.04em", height: 34 }}>
+                    <TableCell colSpan={selectable ? 5 : 4} sx={{ bgcolor: tokens.surface2, fontSize: 12, fontWeight: 500, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.04em", height: 34 }}>
                       {st} ({g.length})
                     </TableCell>
                   </TableRow>,
@@ -706,6 +852,9 @@ function MobileLeadsList({
   leads,
   stages,
   filter,
+  selectable,
+  selected,
+  onToggleSelect,
   onOpen,
   onCall,
   onStagePick,
@@ -713,6 +862,9 @@ function MobileLeadsList({
   leads: LeadRow[];
   stages: Stage[];
   filter: "All" | Stage;
+  selectable: boolean;
+  selected: Set<string>;
+  onToggleSelect: (id: string) => void;
   onOpen: (id: string) => void;
   onCall: (id: string) => void;
   onStagePick: (id: string, stage: Stage) => void;
@@ -728,13 +880,21 @@ function MobileLeadsList({
     <Box
       key={l.id}
       data-tour={idx === 0 ? "lead-row" : undefined}
+      onClick={selectable ? () => onToggleSelect(l.id) : undefined}
       sx={{
         borderBottom: `8px solid ${tokens.bg}`,
-        bgcolor: l.due && !DEAD_STAGES.includes(l.stage) ? tokens.amberTint : "background.paper",
+        bgcolor: selectable && selected.has(l.id) ? tokens.primaryBg : l.due && !DEAD_STAGES.includes(l.stage) ? tokens.amberTint : "background.paper",
         p: "12px 16px",
+        display: selectable ? "flex" : "block",
+        gap: 1,
+        cursor: selectable ? "pointer" : "default",
       }}
     >
-      <Box onClick={() => onOpen(l.id)} sx={{ fontWeight: 500, fontSize: 15, color: tokens.primaryDark, cursor: "pointer" }}>
+      {selectable && (
+        <Checkbox size="small" checked={selected.has(l.id)} sx={{ p: 0, mt: 0.25, alignSelf: "flex-start" }} />
+      )}
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+      <Box onClick={selectable ? undefined : () => onOpen(l.id)} sx={{ fontWeight: 500, fontSize: 15, color: tokens.primaryDark, cursor: selectable ? "inherit" : "pointer" }}>
         {l.name}
         {l.stage === "New Lead" && <Box component="span" sx={{ fontSize: 10, fontWeight: 700, color: tokens.green, ml: 0.75 }}>NEW</Box>}
       </Box>
@@ -760,7 +920,7 @@ function MobileLeadsList({
           {l.next_label}
         </Box>
       </Box>
-      {!DEAD_STAGES.includes(l.stage) && (
+      {!selectable && !DEAD_STAGES.includes(l.stage) && (
         <Box
           component="a"
           href={`tel:${l.phone.replace(/\s/g, "")}`}
@@ -786,6 +946,7 @@ function MobileLeadsList({
           <CallIcon fontSize="small" /> Call
         </Box>
       )}
+      </Box>
     </Box>
   );
 

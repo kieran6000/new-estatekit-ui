@@ -32,6 +32,13 @@ export async function setLeadArchived(id: string, archived: boolean): Promise<vo
   if (error) throw new Error(error.message);
 }
 
+/** Apply the same patch to many leads at once (operator bulk actions). */
+export async function bulkUpdateLeads(ids: string[], patch: Partial<LeadRow>): Promise<void> {
+  if (!ids.length) return;
+  const { error } = await supabase.from("leads").update(patch).in("id", ids);
+  if (error) throw new Error(error.message);
+}
+
 /** Move a lead into a different pipeline (operator action).
  *
  *  When the target pipeline is a different kind, the stage is translated to its
