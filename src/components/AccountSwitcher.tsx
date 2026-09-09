@@ -4,18 +4,39 @@ import {
   Avatar,
   Box,
   Divider,
+  IconButton,
   List,
   ListItemAvatar,
   ListItemButton,
   ListItemText,
   Popover,
   TextField,
+  Tooltip,
   Typography,
   useMediaQuery,
 } from "@mui/material";
 import UnfoldMoreIcon from "@mui/icons-material/UnfoldMore";
+import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import { listAgentProfiles, setActiveAgent, getActiveAgentIdSync } from "../api/_client";
 import { useAuth } from "../hooks/useAuth";
+
+/** Agents type a full patch of suburbs into "area" (e.g. "Fourways, Sandton,
+ *  Johannesburg"). The switcher only needs the headline city, so show the first
+ *  entry rather than the whole list. */
+function cityOf(area: string | null | undefined): string {
+  if (!area) return "";
+  return area.split(/[,/•|]/)[0].trim();
+}
+
+/** A Facebook page's public picture needs no access token, so we can show it
+ *  straight from Graph when the account has a linked page and no custom logo. */
+function pageAvatar(fbPageId: string | null | undefined): string | undefined {
+  return fbPageId ? `https://graph.facebook.com/${fbPageId}/picture?type=square&width=80&height=80` : undefined;
+}
+
+function adsManagerUrl(adAccountId: string): string {
+  return `https://adsmanager.facebook.com/adsmanager/manage/campaigns?act=${adAccountId}`;
+}
 
 export default function AccountSwitcher({ variant = "dark" }: { variant?: "dark" | "light" }) {
   const { user } = useAuth();
@@ -47,8 +68,8 @@ export default function AccountSwitcher({ variant = "dark" }: { variant?: "dark"
   const activeProfile = profiles.find((p) => p.agent_id === active);
   const activeName = activeProfile ? name(activeProfile) : "Select account";
   const activeInitial = activeName[0].toUpperCase();
-  const activeArea = activeProfile?.area || activeProfile?.company || "";
-  const activePfp = activeProfile?.sidebar_logo_url || null;
+  const activeArea = cityOf(activeProfile?.area) || activeProfile?.company || "";
+  const activePfp = activeProfile?.sidebar_logo_url || pageAvatar(activeProfile?.fb_page_id) || null;
 
   const filtered = search
     ? profiles.filter((p) => name(p).toLowerCase().includes(search.toLowerCase()))
@@ -121,21 +142,38 @@ export default function AccountSwitcher({ variant = "dark" }: { variant?: "dark"
                 key={p.agent_id}
                 selected={isActive}
                 onClick={() => handleSelect(p.agent_id)}
-                sx={{ py: 1, px: 2 }}
+                sx={{ py: 1, pl: 2, pr: 1 }}
               >
                 <ListItemAvatar sx={{ minWidth: 44 }}>
-                  <Avatar src={p.sidebar_logo_url ?? undefined} sx={{ width: 34, height: 34, bgcolor: isActive ? "#6366f1" : "#e0e0e0", color: isActive ? "#fff" : "#666", fontSize: 14, fontWeight: 700 }}>
+                  <Avatar src={p.sidebar_logo_url ?? pageAvatar(p.fb_page_id) ?? undefined} sx={{ width: 34, height: 34, bgcolor: isActive ? "#6366f1" : "#e0e0e0", color: isActive ? "#fff" : "#666", fontSize: 14, fontWeight: 700 }}>
                     {pName[0].toUpperCase()}
                   </Avatar>
                 </ListItemAvatar>
                 <ListItemText
                   primary={pName}
-                  secondary={[p.agent_id === user?.id ? "You" : null, p.area || p.company].filter(Boolean).join(" · ") || null}
+                  secondary={[p.agent_id === user?.id ? "You" : null, cityOf(p.area) || p.company].filter(Boolean).join(" · ") || null}
                   slotProps={{
                     primary: { sx: { fontSize: 14, fontWeight: 500 } },
                     secondary: { sx: { fontSize: 12 } },
                   }}
                 />
+                {p.fb_ad_account_id && (
+                  <Tooltip title="Open in Ads Manager">
+                    <IconButton
+                      size="small"
+                      edge="end"
+                      component="a"
+                      href={adsManagerUrl(p.fb_ad_account_id)}
+                      target="_blank"
+                      rel="noopener"
+                      onClick={(e) => e.stopPropagation()}
+                      aria-label={`Open ${pName} in Ads Manager`}
+                      sx={{ ml: 0.5, color: "text.secondary" }}
+                    >
+                      <OpenInNewIcon sx={{ fontSize: 17 }} />
+                    </IconButton>
+                  </Tooltip>
+                )}
               </ListItemButton>
             );
           })}

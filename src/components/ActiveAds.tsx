@@ -1,12 +1,15 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Box, IconButton, Menu, MenuItem, ListItemIcon, Skeleton, Typography } from "@mui/material";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Box, Button, IconButton, Menu, MenuItem, ListItemIcon, Skeleton, Typography } from "@mui/material";
 import PublicIcon from "@mui/icons-material/Public";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import LinkIcon from "@mui/icons-material/Link";
+import PauseCircleOutlineIcon from "@mui/icons-material/PauseCircleOutlined";
+import PlayCircleOutlineIcon from "@mui/icons-material/PlayCircleOutlined";
 import { tokens } from "../theme";
-import { getActiveAds, type ActiveAd } from "../api/agentProfile";
+import { getActiveAds, setAdStatus, type ActiveAd } from "../api/agentProfile";
+import { useSnack } from "../hooks/useSnack";
 
 /** Facebook's CTA enum -> the label shown on the button. */
 const CTA_LABEL: Record<string, string> = {
@@ -63,6 +66,9 @@ function AdCard({ ad, fallbackPage, adAccountId }: { ad: ActiveAd; fallbackPage:
   const [expanded, setExpanded] = useState(false);
   const [menuEl, setMenuEl] = useState<HTMLElement | null>(null);
   const [copied, setCopied] = useState(false);
+  const [pausing, setPausing] = useState(false);
+  const qc = useQueryClient();
+  const showSnack = useSnack();
 
   const health = healthOf(ad);
   const pageName = ad.pageName || fallbackPage || "Sponsored";
@@ -80,12 +86,31 @@ function AdCard({ ad, fallbackPage, adAccountId }: { ad: ActiveAd; fallbackPage:
     setMenuEl(null);
   }
 
+  // Pausing stops delivery/spend immediately — confirm before firing, since
+  // there's no undo besides manually resuming.
+  async function pauseThisAd() {
+    setMenuEl(null);
+    if (!window.confirm(`Pause "${ad.name}"? It stops running (and spending) right away.`)) return;
+    setPausing(true);
+    try {
+      await setAdStatus(ad.id, "PAUSED");
+      showSnack(`Paused "${ad.name}"`);
+      await qc.invalidateQueries({ queryKey: ["activeAds", adAccountId] });
+    } catch (e) {
+      showSnack(e instanceof Error ? e.message : "Couldn't pause the ad");
+    } finally {
+      setPausing(false);
+    }
+  }
+
   return (
     <Box
       sx={{
         width: { xs: "100%", sm: 340 }, flex: { xs: "1 1 100%", sm: "0 0 auto" },
         bgcolor: "background.paper", border: `1px solid ${tokens.divider}`,
         borderRadius: "10px", overflow: "hidden",
+        opacity: pausing ? 0.6 : 1, pointerEvents: pausing ? "none" : "auto",
+        transition: "opacity 0.15s",
       }}
     >
       {/* Page identity + actions */}
@@ -114,6 +139,10 @@ function AdCard({ ad, fallbackPage, adAccountId }: { ad: ActiveAd; fallbackPage:
           <MoreVertIcon fontSize="small" />
         </IconButton>
         <Menu anchorEl={menuEl} open={!!menuEl} onClose={() => setMenuEl(null)}>
+          <MenuItem onClick={pauseThisAd} disabled={pausing}>
+            <ListItemIcon><PauseCircleOutlineIcon fontSize="small" /></ListItemIcon>
+            {pausing ? "Pausing…" : "Pause this ad"}
+          </MenuItem>
           <MenuItem component="a" href={adsManagerUrl} target="_blank" rel="noopener" onClick={() => setMenuEl(null)}>
             <ListItemIcon><OpenInNewIcon fontSize="small" /></ListItemIcon>
             Open in Ads Manager
@@ -243,10 +272,75 @@ export default function ActiveAds({ adAccountId, agentName, since, until }: { ad
   }
 
   return (
-    <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1.5, p: 2 }}>
-      {ads.map((ad) => (
-        <AdCard key={ad.id} ad={ad} fallbackPage={agentName ?? ""} adAccountId={adAccountId} />
-      ))}
+    <Box>
+      <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1.5, p: 2 }}>
+        {ads.map((ad) => (
+          <AdCard key={ad.id} ad={ad} fallbackPage={agentName ?? ""} adAccountId={adAccountId} />
+        ))}
+      </Box>
+      <PausedAds adAccountId={adAccountId} />
+    </Box>
+  );
+}
+
+/** Compact "resume" list — paused ads don't need the full preview card, just
+ *  a name and a one-tap way to bring them back. Hidden entirely when empty. */
+function PausedAds({ adAccountId }: { adAccountId: string }) {
+  const qc = useQueryClient();
+  const showSnack = useSnack();
+  const [resumingId, setResumingId] = useState<string | null>(null);
+  const { data: paused = [] } = useQuery({
+    queryKey: ["pausedAds", adAccountId],
+    queryFn: () => getActiveAds(adAccountId, null, null, ["PAUSED"]),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+
+  if (paused.length === 0) return null;
+
+  async function resume(ad: ActiveAd) {
+    setResumingId(ad.id);
+    try {
+      await setAdStatus(ad.id, "ACTIVE");
+      showSnack(`Resumed "${ad.name}"`);
+      await qc.invalidateQueries({ queryKey: ["pausedAds", adAccountId] });
+      await qc.invalidateQueries({ queryKey: ["activeAds", adAccountId] });
+    } catch (e) {
+      showSnack(e instanceof Error ? e.message : "Couldn't resume the ad");
+    } finally {
+      setResumingId(null);
+    }
+  }
+
+  return (
+    <Box sx={{ px: 2, pb: 2 }}>
+      <Typography sx={{ fontSize: 11, fontWeight: 600, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.05em", mb: 1 }}>
+        Paused ({paused.length})
+      </Typography>
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+        {paused.map((ad) => (
+          <Box
+            key={ad.id}
+            sx={{
+              display: "flex", alignItems: "center", gap: 1, p: "8px 10px",
+              border: `1px solid ${tokens.divider}`, borderRadius: "8px",
+            }}
+          >
+            <Typography sx={{ fontSize: 13, flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {ad.name}
+            </Typography>
+            <Button
+              size="small"
+              startIcon={<PlayCircleOutlineIcon sx={{ fontSize: 16 }} />}
+              disabled={resumingId === ad.id}
+              onClick={() => resume(ad)}
+              sx={{ textTransform: "none", whiteSpace: "nowrap" }}
+            >
+              {resumingId === ad.id ? "Resuming…" : "Resume"}
+            </Button>
+          </Box>
+        ))}
+      </Box>
     </Box>
   );
 }

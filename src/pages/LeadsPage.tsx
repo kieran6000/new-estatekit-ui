@@ -62,8 +62,11 @@ import StageMenu from "../components/StageMenu";
 import OutcomeSheet from "../components/OutcomeSheet";
 import FocusCallModal from "../components/FocusCallModal";
 
+const PAGE_SIZE = 50;
+
 export default function LeadsPage() {
   const navigate = useNavigate();
+  const isMobile = useMediaQuery("(max-width:639px)");
   const { data: leads = [], isLoading: leadsLoading } = useLeads();
   const { data: pipelines = [], isLoading: pipelinesLoading } = usePipelines();
   const updateStage = useUpdateLeadStage();
@@ -98,9 +101,12 @@ export default function LeadsPage() {
   // Operator bulk actions: select many leads, then move / restage / archive.
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // Anchor row for shift+click range selection (last row toggled on its own).
+  const [selectAnchor, setSelectAnchor] = useState<string | null>(null);
   const [bulkMoveAnchor, setBulkMoveAnchor] = useState<HTMLElement | null>(null);
   const [bulkStageAnchor, setBulkStageAnchor] = useState<HTMLElement | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [page, setPage] = useState(0);
   function toggleSelect(id: string) {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -111,6 +117,7 @@ export default function LeadsPage() {
   function exitSelect() {
     setSelectMode(false);
     setSelected(new Set());
+    setSelectAnchor(null);
     setBulkMoveAnchor(null);
     setBulkStageAnchor(null);
   }
@@ -184,6 +191,41 @@ export default function LeadsPage() {
       return l.name.toLowerCase().includes(query) || l.phone.replace(/\s/g, "").includes(query.replace(/\s/g, ""));
     });
   }, [pipelineLeads, filter, q]);
+
+  // Pagination — the working list can grow large, so show one page at a time.
+  // Reset to the first page whenever the underlying list changes.
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  useEffect(() => { setPage(0); }, [filter, q, showArchived, activePipeline?.id]);
+  const safePage = Math.min(page, pageCount - 1);
+  const pagedLeads = useMemo(
+    () => filtered.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE),
+    [filtered, safePage],
+  );
+
+  // Flat visual order of the rows currently on screen — drives shift+click
+  // range selection (grouped view lays rows out stage-by-stage).
+  const orderedVisibleIds = useMemo(() => {
+    if (filter === "All") {
+      return stagesForPipeline.flatMap((st) => pagedLeads.filter((l) => l.stage === st).map((l) => l.id));
+    }
+    return pagedLeads.map((l) => l.id);
+  }, [pagedLeads, filter, stagesForPipeline]);
+
+  function handleRowSelect(id: string, shiftKey: boolean) {
+    if (shiftKey && selectAnchor && orderedVisibleIds.includes(selectAnchor) && orderedVisibleIds.includes(id)) {
+      const a = orderedVisibleIds.indexOf(selectAnchor);
+      const b = orderedVisibleIds.indexOf(id);
+      const [lo, hi] = a < b ? [a, b] : [b, a];
+      setSelected((prev) => {
+        const next = new Set(prev);
+        for (let i = lo; i <= hi; i++) next.add(orderedVisibleIds[i]);
+        return next;
+      });
+    } else {
+      toggleSelect(id);
+    }
+    setSelectAnchor(id);
+  }
 
   const outcomeLead = leads.find((l) => l.id === outcomeLeadId);
   const stageSheetLead = leads.find((l) => l.id === stageSheet?.leadId);
@@ -326,7 +368,7 @@ export default function LeadsPage() {
 
 
 
-      <Box sx={{ display: "flex", alignItems: "center", gap: 1, p: "8px 16px", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
+      <Box sx={{ display: "flex", alignItems: "center", flexWrap: "wrap", rowGap: 1, gap: 1, p: "8px 16px", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
         <Box
           component="button"
           onClick={(e) => setPipelineMenuAnchor(e.currentTarget)}
@@ -354,8 +396,9 @@ export default function LeadsPage() {
             setAddPipelineOpen(true);
           }}
         />
-        <Box sx={{ flex: 1 }} />
+        <Box sx={{ flex: 1, minWidth: { xs: "100%", sm: 0 } }} />
 
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexShrink: 0 }}>
         {isOperator && (
           <Button
             onClick={() => (selectMode ? exitSelect() : setSelectMode(true))}
@@ -398,8 +441,9 @@ export default function LeadsPage() {
         >
           {syncSheet.isPending
             ? "Creating…"
-            : activePipeline.sheet_url ? "Open in Sheets" : "Export to Sheets"}
+            : activePipeline.sheet_url ? (isMobile ? "Sheets" : "Open in Sheets") : (isMobile ? "Export" : "Export to Sheets")}
         </Button>
+        </Box>
       </Box>
 
       <Box sx={{ p: "10px 16px", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
@@ -458,16 +502,31 @@ export default function LeadsPage() {
       </Box>
 
       <LeadsTable
-        leads={filtered}
+        leads={pagedLeads}
         stages={stagesForPipeline}
         filter={filter}
         selectable={selectMode}
         selected={selected}
         onToggleSelect={toggleSelect}
+        onRowSelect={handleRowSelect}
         onOpen={(id) => navigate(`/leads/${id}`)}
         onCall={(id) => setOutcomeLeadId(id)}
         onStagePick={handleStagePick}
       />
+
+      {filtered.length > PAGE_SIZE && (
+        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 2, p: "12px 16px", bgcolor: "background.paper", borderTop: `1px solid ${tokens.divider}` }}>
+          <Button size="small" disabled={safePage === 0} onClick={() => setPage((p) => Math.max(0, p - 1))} sx={{ textTransform: "none" }}>
+            Prev
+          </Button>
+          <Typography sx={{ fontSize: 13, color: "text.secondary", whiteSpace: "nowrap" }}>
+            {safePage * PAGE_SIZE + 1}–{Math.min(filtered.length, (safePage + 1) * PAGE_SIZE)} of {filtered.length}
+          </Typography>
+          <Button size="small" disabled={safePage >= pageCount - 1} onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))} sx={{ textTransform: "none" }}>
+            Next
+          </Button>
+        </Box>
+      )}
 
       {/* Bulk action bar — appears once leads are selected. Sits above the
           mobile bottom-nav (56px). Boring on purpose. */}
@@ -710,6 +769,7 @@ function LeadsTable({
   selectable,
   selected,
   onToggleSelect,
+  onRowSelect,
   onOpen,
   onCall,
   onStagePick,
@@ -720,6 +780,7 @@ function LeadsTable({
   selectable: boolean;
   selected: Set<string>;
   onToggleSelect: (id: string) => void;
+  onRowSelect: (id: string, shiftKey: boolean) => void;
   onOpen: (id: string) => void;
   onCall: (id: string) => void;
   onStagePick: (id: string, stage: Stage) => void;
@@ -727,7 +788,7 @@ function LeadsTable({
   const isMobile = useMediaQuery("(max-width:639px)");
   const { data: isOperator } = useIsOperator();
   if (isMobile) {
-    return <MobileLeadsList leads={leads} stages={stages} filter={filter} selectable={selectable} selected={selected} onToggleSelect={onToggleSelect} onOpen={onOpen} onCall={onCall} onStagePick={onStagePick} />;
+    return <MobileLeadsList leads={leads} stages={stages} filter={filter} selectable={selectable} selected={selected} onToggleSelect={onToggleSelect} onRowSelect={onRowSelect} onOpen={onOpen} onCall={onCall} onStagePick={onStagePick} />;
   }
 
   if (leads.length === 0) {
@@ -738,14 +799,23 @@ function LeadsTable({
 
   const rows = (group: LeadRow[]) =>
     group.map((l) => (
-      <TableRow key={l.id} hover selected={selectable && selected.has(l.id)} sx={l.due && !DEAD_STAGES.includes(l.stage) ? { bgcolor: tokens.amberTint } : DEAD_STAGES.includes(l.stage) ? { color: tokens.ink3 } : undefined}>
+      <TableRow
+        key={l.id}
+        hover
+        selected={selectable && selected.has(l.id)}
+        onClick={selectable ? (e) => onRowSelect(l.id, e.shiftKey) : undefined}
+        sx={{
+          ...(selectable ? { cursor: "pointer", userSelect: "none" } : undefined),
+          ...(l.due && !DEAD_STAGES.includes(l.stage) ? { bgcolor: tokens.amberTint } : DEAD_STAGES.includes(l.stage) ? { color: tokens.ink3 } : undefined),
+        }}
+      >
         {selectable && (
           <TableCell padding="checkbox">
-            <Checkbox size="small" checked={selected.has(l.id)} onChange={() => onToggleSelect(l.id)} />
+            <Checkbox size="small" checked={selected.has(l.id)} readOnly tabIndex={-1} sx={{ pointerEvents: "none" }} />
           </TableCell>
         )}
         <TableCell sx={{ py: 1 }}>
-          <Box component="span" onClick={() => onOpen(l.id)} sx={{ fontWeight: 500, fontSize: 15, color: tokens.primaryDark, cursor: "pointer" }}>
+          <Box component="span" onClick={selectable ? undefined : () => onOpen(l.id)} sx={{ fontWeight: 500, fontSize: 15, color: tokens.primaryDark, cursor: selectable ? "inherit" : "pointer" }}>
             {l.name}
             {l.stage === "New Lead" && <Box component="span" sx={{ fontSize: 10, fontWeight: 700, color: tokens.green, ml: 0.75 }}>NEW</Box>}
           </Box>
@@ -760,7 +830,7 @@ function LeadsTable({
             {(open) => (
               <Box
                 component="button"
-                onClick={open}
+                onClick={(e) => { e.stopPropagation(); open(e); }}
                 sx={{ border: 0, bgcolor: "transparent", fontSize: 14, color: "inherit", display: "inline-flex", alignItems: "center", gap: 0.75, cursor: "pointer", p: "6px 0" }}
               >
                 {l.stage}
@@ -779,7 +849,7 @@ function LeadsTable({
             <Box
               component="a"
               href={`tel:${l.phone.replace(/\s/g, "")}`}
-              onClick={() => setTimeout(() => onCall(l.id), 150)}
+              onClick={(e) => { e.stopPropagation(); setTimeout(() => onCall(l.id), 150); }}
               sx={{
                 display: "inline-flex",
                 alignItems: "center",
@@ -855,6 +925,7 @@ function MobileLeadsList({
   selectable,
   selected,
   onToggleSelect,
+  onRowSelect,
   onOpen,
   onCall,
   onStagePick,
@@ -865,10 +936,12 @@ function MobileLeadsList({
   selectable: boolean;
   selected: Set<string>;
   onToggleSelect: (id: string) => void;
+  onRowSelect: (id: string, shiftKey: boolean) => void;
   onOpen: (id: string) => void;
   onCall: (id: string) => void;
   onStagePick: (id: string, stage: Stage) => void;
 }) {
+  void onToggleSelect;
   const { data: isOperator } = useIsOperator();
   if (leads.length === 0) {
     return <EmptyLeadsState filter={filter} />;
@@ -880,7 +953,7 @@ function MobileLeadsList({
     <Box
       key={l.id}
       data-tour={idx === 0 ? "lead-row" : undefined}
-      onClick={selectable ? () => onToggleSelect(l.id) : undefined}
+      onClick={selectable ? (e) => onRowSelect(l.id, e.shiftKey) : undefined}
       sx={{
         borderBottom: `8px solid ${tokens.bg}`,
         bgcolor: selectable && selected.has(l.id) ? tokens.primaryBg : l.due && !DEAD_STAGES.includes(l.stage) ? tokens.amberTint : "background.paper",
@@ -908,7 +981,7 @@ function MobileLeadsList({
           {(open) => (
             <Box
               component="button"
-              onClick={open}
+              onClick={(e) => { e.stopPropagation(); open(e); }}
               sx={{ border: 0, bgcolor: "transparent", fontSize: 14, color: DEAD_STAGES.includes(l.stage) ? "text.disabled" : "text.primary", p: 0, cursor: "pointer" }}
             >
               {l.stage}

@@ -4,18 +4,19 @@ import { Snackbar, Button } from "@mui/material";
 interface SnackState {
   msg: string;
   undo?: () => void;
+  actionLabel?: string;
 }
 
 const SnackContext = createContext<{
-  showSnack: (msg: string, undo?: () => void) => void;
+  showSnack: (msg: string, undo?: () => void, actionLabel?: string) => void;
 } | null>(null);
 
 export function SnackProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<SnackState | null>(null);
   const [open, setOpen] = useState(false);
 
-  const showSnack = useCallback((msg: string, undo?: () => void) => {
-    setState({ msg, undo });
+  const showSnack = useCallback((msg: string, undo?: () => void, actionLabel?: string) => {
+    setState({ msg, undo, actionLabel });
     setOpen(true);
   }, []);
 
@@ -40,7 +41,7 @@ export function SnackProvider({ children }: { children: ReactNode }) {
                 setOpen(false);
               }}
             >
-              Undo
+              {state.actionLabel ?? "Undo"}
             </Button>
           ) : undefined
         }

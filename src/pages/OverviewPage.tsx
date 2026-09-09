@@ -27,6 +27,11 @@ import { tokens } from "../theme";
 import { computeDerived, rangeFor, useOverview, type OverviewComputedRow, type OverviewPeriod } from "../hooks/useOverview";
 import { getMyProfile } from "../api/agentProfile";
 import ActiveAds from "../components/ActiveAds";
+import StageDonut from "../components/StageDonut";
+import { useLeads } from "../hooks/useLeads";
+import { usePipelines } from "../hooks/usePipelines";
+import { useIsOperator } from "../hooks/useAutomations";
+import { PIPELINE_STAGES, type Stage } from "../types";
 
 // Header row height, so the totals row can stick directly beneath it.
 const HEAD_H = 37;
@@ -113,12 +118,34 @@ export default function OverviewPage() {
       localStorage.setItem('estatekit_overview_to', toDate);
     } catch { /* ignore */ }
   }, [fromDate, toDate]);
-  const { data = [], isLoading } = useOverview(period, { from: fromDate, to: toDate });
+  // Overview KPIs, scoped to one pipeline at a time — "All pipelines" by
+  // default. Meta spend isn't split per-pipeline, so cost/lead etc. are only
+  // an approximation once you narrow to a single pipeline (noted in the caption).
+  const { data: pipelines = [] } = usePipelines();
+  const [pipelineFilter, setPipelineFilter] = useState<string | "all">("all");
+  const [pipelineMenuAnchor2, setPipelineMenuAnchor2] = useState<HTMLElement | null>(null);
+  const pipelineIdFilter = pipelineFilter === "all" ? null : pipelineFilter;
+  const { data = [], isLoading } = useOverview(period, { from: fromDate, to: toDate }, pipelineIdFilter);
   const cols = mode === "simple" ? SIMPLE_COLS : ADVANCED_COLS;
   // Ad KPIs report over exactly the window the table is showing.
   const adRange = rangeFor(period, { from: fromDate, to: toDate });
   // Which client's ads to preview — the currently active/managed agent.
   const { data: profile } = useQuery({ queryKey: ["myProfile"], queryFn: getMyProfile });
+
+  // Admin-only: how this client's active leads split across stages. Counts
+  // every non-archived lead, ordered by the natural pipeline stage order.
+  const { data: isOperator } = useIsOperator();
+  const { data: allLeads = [] } = useLeads();
+  const stageCounts = useMemo(() => {
+    const order: Stage[] = [...new Set([...PIPELINE_STAGES.seller, ...PIPELINE_STAGES.buyer])];
+    const tally = new Map<Stage, number>();
+    for (const l of allLeads) {
+      if (l.archived) continue;
+      if (pipelineIdFilter && l.pipeline_id !== pipelineIdFilter) continue;
+      tally.set(l.stage as Stage, (tally.get(l.stage as Stage) ?? 0) + 1);
+    }
+    return order.map((stage) => ({ stage, count: tally.get(stage) ?? 0 }));
+  }, [allLeads, pipelineIdFilter]);
 
   const totals = useMemo(() => {
     const raw = { spend: 0, leads: 0, leadsReached: 0, appts: 0, apptsHeld: 0, mandates: 0, commExpected: 0, commEarned: 0 };
@@ -219,6 +246,28 @@ export default function OverviewPage() {
           <ToggleButton value="advanced">Advanced</ToggleButton>
         </ToggleButtonGroup>
 
+        {pipelines.length > 1 && (
+          <>
+            <Box
+              component="button"
+              onClick={(e) => setPipelineMenuAnchor2(e.currentTarget)}
+              sx={{ border: `1px solid ${tokens.divider}`, borderRadius: "4px", bgcolor: tokens.surface, fontSize: 13, p: "9px 12px", cursor: "pointer" }}
+            >
+              {pipelineFilter === "all" ? "All pipelines" : pipelines.find((p) => p.id === pipelineFilter)?.name ?? "All pipelines"}
+            </Box>
+            <Menu anchorEl={pipelineMenuAnchor2} open={!!pipelineMenuAnchor2} onClose={() => setPipelineMenuAnchor2(null)}>
+              <MenuItem selected={pipelineFilter === "all"} onClick={() => { setPipelineFilter("all"); setPipelineMenuAnchor2(null); }}>
+                All pipelines
+              </MenuItem>
+              {pipelines.map((p) => (
+                <MenuItem key={p.id} selected={pipelineFilter === p.id} onClick={() => { setPipelineFilter(p.id); setPipelineMenuAnchor2(null); }}>
+                  {p.name}
+                </MenuItem>
+              ))}
+            </Menu>
+          </>
+        )}
+
         <Typography sx={{ ml: "auto", color: "text.disabled", fontSize: 12 }}>Tap a heading to sort</Typography>
       </Box>
 
@@ -250,6 +299,11 @@ export default function OverviewPage() {
         }}
       >
       <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", minHeight: 0 }}>
+      {showNumbers && isOperator && (
+        <Box sx={{ p: isNarrow ? "12px 16px 0" : "0 0 12px" }}>
+          <StageDonut counts={stageCounts} />
+        </Box>
+      )}
       {showNumbers && (
       <Box sx={{
         overflow: "auto", flex: isNarrow ? "none" : 1, minHeight: 0,
@@ -327,6 +381,7 @@ export default function OverviewPage() {
           {mode === "simple"
             ? "The numbers that matter day-to-day. Switch to Advanced for reach, show-rate, ROI & profit."
             : "Everything, including reach, show-rate, expected vs. actual commission, profit and ROI."}
+          {pipelineIdFilter && " Ad spend isn't split per pipeline, so cost-based figures here are an approximation."}
         </Typography>
       )}
 

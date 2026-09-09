@@ -49,12 +49,20 @@ export interface ActiveAd {
   cpl: number | null;
 }
 
-/** The ads currently delivering on an ad account, with creative fields for preview. */
-export async function getActiveAds(adAccountId: string, since?: string | null, until?: string | null): Promise<ActiveAd[]> {
-  const { data, error } = await supabase.functions.invoke("fb-active-ads", { body: { adAccountId, since, until } });
+/** The ads currently delivering on an ad account, with creative fields for preview.
+ *  Pass statuses: ["PAUSED"] to list paused ads instead (for a "resume" list). */
+export async function getActiveAds(adAccountId: string, since?: string | null, until?: string | null, statuses?: string[]): Promise<ActiveAd[]> {
+  const { data, error } = await supabase.functions.invoke("fb-active-ads", { body: { adAccountId, since, until, statuses } });
   if (error) throw new Error(data?.error || error.message);
   if (data?.error) throw new Error(data.error);
   return (data?.ads ?? []) as ActiveAd[];
+}
+
+/** Pauses or resumes a single ad. Changes live delivery/spend immediately. */
+export async function setAdStatus(adId: string, status: "ACTIVE" | "PAUSED"): Promise<void> {
+  const { data, error } = await supabase.functions.invoke("fb-set-ad-status", { body: { adId, status } });
+  if (error) throw new Error(data?.error || error.message);
+  if (data?.error) throw new Error(data.error);
 }
 
 /** Daily ad spend keyed by YYYY-MM-DD, from Meta insights. */

@@ -36,9 +36,12 @@ interface Creative {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   try {
-    const { adAccountId } = await req.json();
+    const { adAccountId, statuses } = await req.json();
     if (!adAccountId) return json({ error: "adAccountId required" }, 400);
     const actId = String(adAccountId).startsWith("act_") ? String(adAccountId) : `act_${adAccountId}`;
+    // Defaults to just-delivering ads; callers can pass ["PAUSED"] to list
+    // paused ads instead (used for the "resume" list in the dashboard).
+    const wantedStatuses: string[] = Array.isArray(statuses) && statuses.length ? statuses : ["ACTIVE"];
 
     const tokens: string[] = [];
     for (const name of TOKEN_NAMES) {
@@ -57,7 +60,7 @@ Deno.serve(async (req) => {
     for (const token of tokens) {
       const url =
         `${GRAPH}/${actId}/ads?fields=${encodeURIComponent(fields)}` +
-        `&effective_status=${encodeURIComponent('["ACTIVE"]')}&limit=25&access_token=${token}`;
+        `&effective_status=${encodeURIComponent(JSON.stringify(wantedStatuses))}&limit=25&access_token=${token}`;
       const res = await fetch(url);
       const data = await res.json();
       if (!res.ok || data.error) {

@@ -30,6 +30,11 @@ export function startLeadsTour(agentId?: string | null, onDone?: () => void) {
   const d = driver({
     showProgress: true,
     allowClose: true,
+    // Phones are small — make sure each spot scrolls into view and the
+    // highlight box hugs the button so the tip is easy to read.
+    smoothScroll: true,
+    stagePadding: 6,
+    stageRadius: 8,
     nextBtnText: "Next",
     prevBtnText: "Back",
     doneBtnText: "Got it",
@@ -37,53 +42,48 @@ export function startLeadsTour(agentId?: string | null, onDone?: () => void) {
       markSeen(agentId);
       onDone?.();
     },
+    // Wording kept short and simple — one idea per line, easy words.
     steps: [
       {
         element: "[data-tour='pipeline']",
         popover: {
-          title: "Your pipelines",
-          description:
-            "Leads are split into pipelines — Seller and Buyer. Tap here to switch between them.",
+          title: "Your lists",
+          description: "Your leads are split into lists. Tap here to switch between them.",
         },
       },
       {
         element: "[data-tour='filters']",
         popover: {
-          title: "Filter by stage",
-          description:
-            "Jump straight to the leads you care about — new ones, no answers, or anyone you've already spoken to.",
+          title: "Find leads fast",
+          description: "Tap a word to see just those leads — like new ones, or people you already called.",
         },
       },
       {
         element: "[data-tour='lead-row']",
         popover: {
-          title: "A lead",
-          description:
-            "Tap a name to open it. You'll see their phone, address and what they answered on your form.",
+          title: "Open a lead",
+          description: "Tap a name to see their number, their home, and what they typed on your form.",
         },
       },
       {
         element: "[data-tour='call']",
         popover: {
           title: "Call them",
-          description:
-            "This dials straight from your phone. When you come back, you'll be asked how the call went — one tap and the lead moves along.",
+          description: "Tap Call to ring them. When you come back, we ask how it went. One tap moves the lead forward.",
         },
       },
       {
         element: "[data-tour='sheets']",
         popover: {
-          title: "Export to Sheets",
-          description:
-            "Sends all these leads to a Google Sheet you can share or print.",
+          title: "Save to a sheet",
+          description: "This puts all your leads in a Google Sheet. You can share it or print it.",
         },
       },
       {
         element: "[data-tour='refresh']",
         popover: {
-          title: "Check for new leads",
-          description:
-            "New leads arrive on their own, but tap here any time you want to pull the latest.",
+          title: "Get new leads",
+          description: "New leads come in on their own. Tap here to check for them right now.",
         },
       },
     ],

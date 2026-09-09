@@ -141,15 +141,19 @@ async function loadDailySpend(from: string | null): Promise<Record<string, numbe
   }
 }
 
-export function useOverview(period: OverviewPeriod, range?: DateRange) {
+/** Pass a pipelineId to scope the KPI rows to just that pipeline's leads — ad
+ *  spend still comes in account-wide (Meta doesn't split spend by pipeline),
+ *  so cost/lead etc. only make sense as an approximation when filtered. */
+export function useOverview(period: OverviewPeriod, range?: DateRange, pipelineId?: string | null) {
   const from = period === "Custom" ? (range?.from || null) : fromDateFor(period);
   const to = period === "Custom" ? (range?.to || null) : null;
   return useQuery({
-    queryKey: ["overview", period, from, to],
+    queryKey: ["overview", period, from, to, pipelineId ?? "all"],
     // For a custom range, wait until both ends are set.
     enabled: period !== "Custom" || (!!range?.from && !!range?.to),
     queryFn: async (): Promise<OverviewComputedRow[]> => {
-      const [leads, dailySpend] = await Promise.all([listLeads(), loadDailySpend(from)]);
+      const [allLeads, dailySpend] = await Promise.all([listLeads(), loadDailySpend(from)]);
+      const leads = pipelineId ? allLeads.filter((l) => l.pipeline_id === pipelineId) : allLeads;
       return buildRows(leads, dailySpend, from, to);
     },
   });

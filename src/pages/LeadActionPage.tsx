@@ -145,20 +145,38 @@ function LeadActionUI({
     tapTime.current = Date.now();
   }
 
+  // Optimistically reflect a token lead's stage in the cache so the chip and
+  // dropdown update the instant it's tapped — no waiting on the network.
+  function setTokenStage(stage: Stage) {
+    qc.setQueryData(["leadByToken", token], (old: { lead: LeadRow } | null | undefined) =>
+      old?.lead ? { ...old, lead: { ...old.lead, stage } } : old,
+    );
+  }
+
+  function logTokenOutcome(stage: Stage, offerUndo: boolean) {
+    if (!token || !lead) return;
+    const prevStage = lead.stage as Stage;
+    if (stage === prevStage) return;
+    setTokenStage(stage);            // instant
+    clearPendingCall();
+    logOutcomeByToken(token, stage)
+      .then(() => {
+        if (offerUndo) showSnack(outcomeSnack(stage), () => logTokenOutcome(prevStage, false));
+        else showSnack(outcomeSnack(stage));
+      })
+      .catch(() => {
+        setTokenStage(prevStage);    // roll back the optimistic change
+        showSnack("Couldn't save — try again", () => logTokenOutcome(stage, offerUndo), "Retry");
+      });
+  }
+
   function pickOutcome(opt: MainOutcomeOption) {
     if (!lead) return;
     // Signed out: the share token authorises the update. Follow-up questions
     // (when? / commission) are skipped — sensible defaults are applied server
     // side and can be refined later in the dashboard.
     if (!canEdit) {
-      if (!token) return;
-      logOutcomeByToken(token, opt.stage)
-        .then(() => {
-          clearPendingCall();
-          showSnack(outcomeSnack(opt.stage));
-          qc.invalidateQueries({ queryKey: ["leadByToken", token] });
-        })
-        .catch(() => showSnack("Couldn't save that — check your signal and try again"));
+      logTokenOutcome(opt.stage, true);
       return;
     }
     const sub = STEP_FOR_STAGE[opt.stage];
@@ -166,12 +184,14 @@ function LeadActionUI({
       setStageSheet({ step: sub, stage: opt.stage });
       return;
     }
+    // Signed in: useUpdateLeadStage is already optimistic with rollback.
+    const prev = { stage: lead.stage, next_label: lead.next_label, due: lead.due, reminder_at: lead.reminder_at, commission: lead.commission };
     trackActivity("stage_change", {
       lead: { id: lead.id, name: lead.name, phone: lead.phone, fromStage: lead.stage, toStage: opt.stage, pipeline: pipelineKind },
     });
     updateStage.mutate({ id: lead.id, stage: opt.stage });
     clearPendingCall();
-    showSnack(outcomeSnack(opt.stage));
+    showSnack(outcomeSnack(opt.stage), () => updateStage.mutate({ id: lead.id, stage: prev.stage as Stage, override: prev }));
   }
 
   useEffect(() => {

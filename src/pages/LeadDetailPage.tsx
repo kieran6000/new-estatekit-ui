@@ -292,38 +292,46 @@ function SourceAdSection({ leadId }: { leadId: string }) {
   }
   if (!ad) return null;
 
+  // Compact: a small thumbnail beside the copy, not a full-width hero image —
+  // this block sits among the lead's details and shouldn't dominate the screen.
   return (
     <Section title="Came from this ad">
-      {ad.imageUrl && (
-        <Box
-          component="img"
-          src={ad.imageUrl}
-          alt={ad.headline || ad.name}
-          loading="lazy"
-          sx={{ width: "calc(100% - 32px)", mx: 2, mt: 1, borderRadius: "6px", display: "block", border: `1px solid ${tokens.divider}` }}
-        />
-      )}
-      <Box sx={{ p: "10px 16px 14px", display: "flex", flexDirection: "column", gap: 0.5 }}>
-        {ad.headline && <Typography sx={{ fontSize: 14.5, fontWeight: 600 }}>{ad.headline}</Typography>}
-        {ad.body && (
-          <Typography sx={{ fontSize: 13, color: "text.secondary", whiteSpace: "pre-line", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-            {ad.body}
-          </Typography>
+      <Box sx={{ display: "flex", gap: 1.25, p: "10px 16px 14px", alignItems: "flex-start" }}>
+        {ad.imageUrl && (
+          <Box
+            component="img"
+            src={ad.imageUrl}
+            alt={ad.headline || ad.name}
+            loading="lazy"
+            sx={{ width: 64, height: 64, flex: "0 0 auto", objectFit: "cover", borderRadius: "6px", border: `1px solid ${tokens.divider}` }}
+          />
         )}
-        <Typography sx={{ fontSize: 12, color: "text.disabled", mt: 0.5 }}>
-          {ad.name}{ad.status ? ` · ${ad.status.toLowerCase().replace(/_/g, " ")}` : ""}
-        </Typography>
-        {ad.postUrl && (
-          <Typography
-            component="a"
-            href={ad.postUrl}
-            target="_blank"
-            rel="noopener"
-            sx={{ fontSize: 13, color: tokens.primaryDark, textDecoration: "none", mt: 0.5, width: "fit-content" }}
-          >
-            View this ad on Facebook ›
+        <Box sx={{ minWidth: 0, flex: 1, display: "flex", flexDirection: "column", gap: 0.25 }}>
+          {ad.headline && (
+            <Typography sx={{ fontSize: 14, fontWeight: 600, lineHeight: 1.3, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+              {ad.headline}
+            </Typography>
+          )}
+          {ad.body && (
+            <Typography sx={{ fontSize: 12.5, color: "text.secondary", whiteSpace: "pre-line", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+              {ad.body}
+            </Typography>
+          )}
+          <Typography sx={{ fontSize: 11.5, color: "text.disabled" }}>
+            {ad.name}{ad.status ? ` · ${ad.status.toLowerCase().replace(/_/g, " ")}` : ""}
           </Typography>
-        )}
+          {ad.postUrl && (
+            <Typography
+              component="a"
+              href={ad.postUrl}
+              target="_blank"
+              rel="noopener"
+              sx={{ fontSize: 12.5, color: tokens.primaryDark, textDecoration: "none", width: "fit-content" }}
+            >
+              View on Facebook ›
+            </Typography>
+          )}
+        </Box>
       </Box>
     </Section>
   );
