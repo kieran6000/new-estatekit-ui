@@ -33,7 +33,7 @@ import { prettyAnswer } from "../lib/format";
 import { timeAgo } from "../lib/timeAgo";
 import { trackActivity } from "../lib/activity";
 import { armPendingCall, clearPendingCall } from "../lib/pendingCall";
-import { getLeadByToken, logOutcomeByToken } from "../api/leadActions";
+import { getLeadByToken, logOutcomeByToken, saveNoteByToken } from "../api/leadActions";
 import OutcomeSheet, { OUTCOME_ICONS, outcomeSnack } from "../components/OutcomeSheet";
 import estateKitLogo from "../assets/blue logo full.png";
 import type { LeadRow, OutcomeStep, PipelineKind, Stage } from "../types";
@@ -198,23 +198,27 @@ function LeadActionUI({
   useEffect(() => { window.scrollTo(0, 0); }, [lead?.id, isLoading]);
 
   function saveNote(value: string) {
-    if (!lead || !canEdit) return;
+    if (!lead || !canLog) return;
     setSaveState("Saving…");
-    updateNote.mutate(
-      { id: lead.id, note: value },
-      {
-        onSuccess: () => setSaveState("Saved"),
-        onError: () => setSaveState("Save failed"),
-      },
-    );
+    if (canEdit) {
+      updateNote.mutate(
+        { id: lead.id, note: value },
+        { onSuccess: () => setSaveState("Saved"), onError: () => setSaveState("Save failed") },
+      );
+    } else if (token) {
+      // Signed out: the share token authorises the note write.
+      saveNoteByToken(token, value)
+        .then(() => setSaveState("Saved"))
+        .catch(() => setSaveState("Save failed"));
+    }
   }
 
   function onNoteChange(value: string) {
     setNote(value);
-    if (!canEdit) return;
+    if (!canLog) return;
     setSaveState("Saving…");
     clearTimeout(timer.current);
-    timer.current = setTimeout(() => saveNote(value), 500);
+    timer.current = setTimeout(() => saveNote(value), 600);
   }
 
   // Resolving the pipeline kind has to survive three cases, or the lead gets the
@@ -368,9 +372,9 @@ function LeadActionUI({
             </FormControl>
           </Step>
 
-          {/* Notes are step 3 now, right where the flow ends — not stranded at
-              the bottom of the page. Signed-in only (needs a real session). */}
-          {canEdit && (
+          {/* Notes are step 3, right where the flow ends. Available on the
+              WhatsApp link too — saved via the share token when signed out. */}
+          {canLog && (
             <Step n={3} label="Add a note" optional>
               <TextField
                 value={note}

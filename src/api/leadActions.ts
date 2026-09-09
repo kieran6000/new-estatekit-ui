@@ -11,6 +11,15 @@ export async function logOutcomeByToken(token: string, stage: Stage): Promise<vo
   if (data?.error) throw new Error(data.error);
 }
 
+/** Save a lead's note using only the share token (signed-out action link). */
+export async function saveNoteByToken(token: string, note: string): Promise<void> {
+  const { data, error } = await supabase.functions.invoke("lead-note", {
+    body: { token, note },
+  });
+  if (error) throw new Error(error.message);
+  if (data?.error) throw new Error(data.error);
+}
+
 export async function getLeadByToken(
   token: string,
 ): Promise<{ lead: LeadRow; agentPhone: string; pipelineKind: PipelineKind } | null> {
