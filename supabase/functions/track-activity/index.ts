@@ -12,8 +12,8 @@ const CORS = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, x-client-info, apikey",
 };
 
-const APP = "https://estatekit-prototype.vercel.app";
-const EK_LOGO = "https://estatekit-prototype.vercel.app/favicon.svg";
+const APP = "https://leads.estatekit.co";
+const EK_LOGO = "https://leads.estatekit.co/favicon.svg";
 
 type EventKey =
   | "login" | "new_lead" | "form_submitted" | "lead_disqualified" | "stage_change"
@@ -70,6 +70,25 @@ async function geoFor(ip: string): Promise<{ label: string; ip: string } | null>
 }
 
 interface Field { name: string; value: string; inline?: boolean }
+
+/** The same kind of link an agent gets on WhatsApp (/l/{token}, no sign-in
+ *  needed) — not the internal /leads/{id} dashboard route, which only works
+ *  if you're already signed in as that specific agent. */
+async function leadShareLink(leadId: string, agentId: string): Promise<string | null> {
+  const token = crypto.randomUUID().replace(/-/g, "").slice(0, 8);
+  const { error } = await supabase.from("lead_share_tokens").insert({
+    lead_id: leadId,
+    agent_id: agentId,
+    token,
+    link_type: "first_touch",
+    expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+  });
+  if (error) {
+    console.error("leadShareLink: token insert failed", error.message);
+    return null;
+  }
+  return `${APP}/l/${token}`;
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
@@ -144,7 +163,10 @@ Deno.serve(async (req) => {
       const host = (await secret("POSTHOG_HOST")) || "https://us.posthog.com";
       if (projectId) links.push(`[👤 Person in PostHog](${host}/project/${projectId}/person/${b.distinctId})`);
     }
-    if (lead.id) links.push(`[📇 Open lead](${APP}/leads/${lead.id})`);
+    if (lead.id && b.agentId) {
+      const link = await leadShareLink(String(lead.id), String(b.agentId));
+      if (link) links.push(`[📇 Open lead](${link})`);
+    }
     links.push(`[📊 Dashboard](${APP}/leads)`);
 
     const descLines = [`-# ${cfg.cat} · <t:${now}:R>`];
