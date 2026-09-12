@@ -17,17 +17,44 @@ export async function getCurrentUserId(): Promise<string> {
   return session.user.id;
 }
 
-// Managing another agent is an in-session action ONLY. It is deliberately not
-// persisted: a stale "managing Zainub" flag surviving into a fresh login made
-// the operator's own account appear to "become" that agent and risked writes
-// landing on the wrong profile. A reload / new session always starts as you.
+// Managing another agent survives a refresh, but is scoped to the real signed-in
+// user's own id -- not a single shared key. That's what the earlier bug was:
+// one unscoped "managing Zainub" flag could survive into a DIFFERENT operator's
+// fresh login on the same browser and make their own account "become" Zainub.
+// Keying by the real user's id means it can only ever rehydrate for the same
+// person who set it, and signing out clears it.
 let _activeAgentId: string | null = null;
 
-// Clean up the old persisted value from any browser that still has it.
+// Clean up the old unscoped key from any browser that still has it.
 try { localStorage.removeItem("estatekit_active_agent"); } catch { /* ignore */ }
+
+function activeAgentKey(realUserId: string): string {
+  return `estatekit_active_agent_for_${realUserId}`;
+}
 
 export function setActiveAgent(id: string | null): void {
   _activeAgentId = id;
+  getCurrentUserId().then((realId) => {
+    if (!realId) return;
+    try {
+      if (id) localStorage.setItem(activeAgentKey(realId), id);
+      else localStorage.removeItem(activeAgentKey(realId));
+    } catch { /* private browsing */ }
+  });
+}
+
+/** Called once the real session is known (see useAuth) so a refresh lands back
+ *  on whichever agent this operator was last managing. */
+export function restoreActiveAgent(realUserId: string): void {
+  try {
+    const saved = localStorage.getItem(activeAgentKey(realUserId));
+    if (saved) _activeAgentId = saved;
+  } catch { /* ignore */ }
+}
+
+export function clearActiveAgentFor(realUserId: string): void {
+  try { localStorage.removeItem(activeAgentKey(realUserId)); } catch { /* ignore */ }
+  _activeAgentId = null;
 }
 
 export function getActiveAgentIdSync(): string | null {

@@ -3,11 +3,9 @@ import { createTheme } from "@mui/material/styles";
 // Old-Android / Material Design 2 look. Deliberately plain — flat surfaces,
 // 4px radius, thin dividers, uppercase text-buttons.
 //
-// Dark mode (operator-only) is driven entirely by CSS variables: every token
-// below resolves to a `--ek-*` custom property whose light/dark values live in
-// index.css, keyed off MUI's `data-mui-color-scheme` attribute. Because the
-// call sites reference these vars (not literal hex), the whole app flips with
-// one attribute change and light mode stays byte-for-byte identical.
+// Tokens are still CSS variables (see index.css) rather than literal hex —
+// that's just a convenient single place to tweak a colour, not a light/dark
+// switch. The app is light-only.
 export const tokens = {
   primary: "var(--ek-primary)",
   primaryDark: "var(--ek-primaryDark)",
@@ -34,9 +32,8 @@ export const tokens = {
   railInk: "#aeb9c7",
 };
 
-// MUI palette per colour scheme. These must be real values (MUI computes
-// hover/contrast variants from them), so they can't be CSS vars — but they
-// switch automatically via colorSchemes.
+// MUI's palette. Real values (MUI computes hover/contrast variants from
+// them), so they can't be CSS vars like tokens.* above.
 const lightPalette = {
   primary: { main: "#1976d2", dark: "#1565c0", contrastText: "#fff" },
   success: { main: "#2e7d32", dark: "#1b5e20" },
@@ -46,21 +43,8 @@ const lightPalette = {
   divider: "#e0e0e0",
 } as const;
 
-const darkPalette = {
-  primary: { main: "#8ab4f8", dark: "#aecbfa", contrastText: "rgba(0,0,0,.87)" },
-  success: { main: "#66bb6a", dark: "#43a047" },
-  error: { main: "#f28b82" },
-  background: { default: "#121212", paper: "#1e1e1e" },
-  text: { primary: "rgba(255,255,255,.90)", secondary: "rgba(255,255,255,.64)", disabled: "rgba(255,255,255,.40)" },
-  divider: "rgba(255,255,255,.13)",
-} as const;
-
 export const theme = createTheme({
-  cssVariables: { colorSchemeSelector: "data" },
-  colorSchemes: {
-    light: { palette: lightPalette },
-    dark: { palette: darkPalette },
-  },
+  palette: lightPalette,
   shape: { borderRadius: 4 },
   typography: {
     fontFamily: 'Roboto, -apple-system, "Segoe UI", Arial, sans-serif',

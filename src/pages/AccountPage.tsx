@@ -15,19 +15,14 @@ import {
   useMediaQuery,
 } from "@mui/material";
 import LogoutIcon from "@mui/icons-material/Logout";
-import AccountBalanceWalletIcon from "@mui/icons-material/AccountBalanceWallet";
-import CreditCardIcon from "@mui/icons-material/CreditCard";
 import AgentPasswords from "../components/AgentPasswords";
-import MigrateAgentsCard from "../components/MigrateAgentsCard";
-import DarkModeToggle from "../components/DarkModeToggle";
 import AddIcon from "@mui/icons-material/Add";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import CloseIcon from "@mui/icons-material/Close";
 import CheckIcon from "@mui/icons-material/Check";
-import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../hooks/useAuth";
-import { getMyProfile, upsertProfile, getFbAdAccount } from "../api/agentProfile";
+import { getMyProfile, upsertProfile } from "../api/agentProfile";
 import { panicStopAutomations } from "../api/automations";
 import { useIsOperator } from "../hooks/useAutomations";
 import { useSnack } from "../hooks/useSnack";
@@ -47,14 +42,6 @@ export default function AccountPage() {
     queryKey: ["myProfile"],
     queryFn: getMyProfile,
     enabled: !!user,
-  });
-
-  const { data: adAccount } = useQuery({
-    queryKey: ["fbAdAccount", profile?.fbAdAccountId],
-    queryFn: () => getFbAdAccount(profile!.fbAdAccountId!),
-    enabled: !!isOperator && !!profile?.fbAdAccountId,
-    staleTime: 5 * 60_000,
-    retry: false,
   });
 
   const [saveState, setSaveState] = useState<"" | "saving" | "saved" | "error">("");
@@ -155,10 +142,6 @@ export default function AccountPage() {
   }
 
   if (!user) return null;
-
-  const adsManagerUrl = profile?.fbAdAccountId
-    ? `https://business.facebook.com/billing_hub/payment_activity?asset_id=${profile.fbAdAccountId}`
-    : "https://business.facebook.com/billing_hub/payment_activity";
 
   return (
     <Box>
@@ -362,76 +345,6 @@ export default function AccountPage() {
               </Card>
             )}
 
-            {isOperator && profile && (
-              <Card
-                variant="outlined"
-                sx={{ mb: 3, cursor: "pointer", "&:hover": { borderColor: "primary.main" } }}
-                onClick={() => window.open(adsManagerUrl, "_blank")}
-              >
-                <CardContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                  <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                      Ad spend
-                    </Typography>
-                    <OpenInNewIcon sx={{ fontSize: 16, color: "text.secondary" }} />
-                  </Box>
-
-                  {adAccount?.note ? (
-                    <Typography sx={{ fontSize: 13, color: "warning.main" }}>
-                      Can't read this ad account from Meta. The account owner needs to grant this app
-                      ads access (ads_read). Balance and spend will appear once that's done.
-                    </Typography>
-                  ) : (
-                    <Box sx={{ display: "flex", gap: 3 }}>
-                      <Box>
-                        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>
-                          Balance
-                        </Typography>
-                        <Typography sx={{ fontSize: 28, fontWeight: 700 }}>
-                          {adAccount?.balance != null
-                            ? `${adAccount.currency === "ZAR" ? "R" : adAccount.currency + " "}${adAccount.balance.toLocaleString("en-ZA", { minimumFractionDigits: 2 })}`
-                            : profile.fbAdAccountId ? "…" : "—"}
-                        </Typography>
-                      </Box>
-                      <Box>
-                        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>
-                          Total spent
-                        </Typography>
-                        <Typography sx={{ fontSize: 28, fontWeight: 700 }}>
-                          {adAccount?.amountSpent != null
-                            ? `${adAccount.currency === "ZAR" ? "R" : adAccount.currency + " "}${adAccount.amountSpent.toLocaleString("en-ZA", { minimumFractionDigits: 2 })}`
-                            : profile.fbAdAccountId ? "…" : "—"}
-                        </Typography>
-                      </Box>
-                    </Box>
-                  )}
-
-                  <Box>
-                    <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>
-                      Billing method
-                    </Typography>
-                    <Chip
-                      icon={profile.billingType === "card" ? <CreditCardIcon /> : <AccountBalanceWalletIcon />}
-                      label={profile.billingType === "card" ? "Card" : "Prepaid"}
-                      color={profile.billingType === "card" ? "primary" : "warning"}
-                      size="small"
-                    />
-                  </Box>
-                  <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
-                    {profile.fbAdAccountId ? "Live from Meta · tap to open Ads Manager billing" : "Add an Ad Account ID above to see live balance"}
-                  </Typography>
-                </CardContent>
-              </Card>
-            )}
-
-            {isOperator && (
-              <Card variant="outlined" sx={{ mb: 3 }}>
-                <CardContent>
-                  <DarkModeToggle />
-                </CardContent>
-              </Card>
-            )}
-
             {isOperator && (
               <Card variant="outlined" sx={{ mb: 3 }}>
                 <CardContent sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
@@ -442,8 +355,6 @@ export default function AccountPage() {
                 </CardContent>
               </Card>
             )}
-
-            {isOperator && <MigrateAgentsCard onSnack={showSnack} />}
 
             {isOperator && (
               <Card variant="outlined" sx={{ mb: 3, borderColor: "#fca5a5" }}>

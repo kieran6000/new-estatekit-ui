@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { usePostHog } from "@posthog/react";
-import { supabase } from "../api/_client";
+import { supabase, restoreActiveAgent, clearActiveAgentFor } from "../api/_client";
 import * as authApi from "../api/auth";
 import * as tierApi from "../api/tier";
 import { trackActivity, registerActivityPostHog } from "../lib/activity";
@@ -26,6 +26,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     authApi.getSession().then((session) => {
+      if (session) restoreActiveAgent(session.id);
       setUser(session);
       setLoading(false);
     });
@@ -60,6 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function signOut() {
+    if (user) clearActiveAgentFor(user.id);
     await authApi.signOut();
     setUser(null);
     posthog.reset();

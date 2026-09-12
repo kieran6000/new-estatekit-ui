@@ -25,9 +25,10 @@ import {
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { tokens } from "../theme";
 import { computeDerived, rangeFor, useOverview, type OverviewComputedRow, type OverviewPeriod } from "../hooks/useOverview";
-import { getMyProfile } from "../api/agentProfile";
+import { getMyProfile, getFbAdAccount } from "../api/agentProfile";
 import ActiveAds from "../components/ActiveAds";
 import StageDonut from "../components/StageDonut";
+import AdSpendCard from "../components/AdSpendCard";
 import { useLeads } from "../hooks/useLeads";
 import { usePipelines } from "../hooks/usePipelines";
 import { useIsOperator } from "../hooks/useAutomations";
@@ -131,10 +132,17 @@ export default function OverviewPage() {
   const adRange = rangeFor(period, { from: fromDate, to: toDate });
   // Which client's ads to preview — the currently active/managed agent.
   const { data: profile } = useQuery({ queryKey: ["myProfile"], queryFn: getMyProfile });
+  const { data: isOperator } = useIsOperator();
+  const { data: adAccount, isLoading: adAccountLoading } = useQuery({
+    queryKey: ["fbAdAccount", profile?.fbAdAccountId],
+    queryFn: () => getFbAdAccount(profile!.fbAdAccountId!),
+    enabled: !!isOperator && !!profile?.fbAdAccountId,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
 
   // Admin-only: how this client's active leads split across stages. Counts
   // every non-archived lead, ordered by the natural pipeline stage order.
-  const { data: isOperator } = useIsOperator();
   const { data: allLeads = [] } = useLeads();
   const stageCounts = useMemo(() => {
     const order: Stage[] = [...new Set([...PIPELINE_STAGES.seller, ...PIPELINE_STAGES.buyer])];
@@ -299,8 +307,9 @@ export default function OverviewPage() {
         }}
       >
       <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", minHeight: 0 }}>
-      {showNumbers && isOperator && (
-        <Box sx={{ p: isNarrow ? "12px 16px 0" : "0 0 12px" }}>
+      {showNumbers && isOperator && profile && (
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 1, p: isNarrow ? "12px 16px 0" : "0 0 12px" }}>
+          <AdSpendCard profile={profile} adAccount={adAccount} periodSpend={totals.spend} isLoading={adAccountLoading} />
           <StageDonut counts={stageCounts} />
         </Box>
       )}

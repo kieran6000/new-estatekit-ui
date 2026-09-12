@@ -33,10 +33,27 @@ interface Creative {
   object_story_spec?: { page_id?: string; link_data?: { link?: string; message?: string; name?: string } };
 }
 
+interface InsightRow {
+  spend?: string;
+  clicks?: string;
+  impressions?: string;
+  actions?: { action_type: string; value: string }[];
+}
+
+// Lead-gen forms report under a few different action_type names depending on
+// campaign objective/API version — match anything "lead"-shaped rather than
+// pinning to one exact string.
+function leadsFrom(actions: InsightRow["actions"]): number {
+  if (!actions) return 0;
+  return actions
+    .filter((a) => a.action_type.toLowerCase().includes("lead"))
+    .reduce((sum, a) => sum + (Number(a.value) || 0), 0);
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   try {
-    const { adAccountId, statuses } = await req.json();
+    const { adAccountId, statuses, since, until } = await req.json();
     if (!adAccountId) return json({ error: "adAccountId required" }, 400);
     const actId = String(adAccountId).startsWith("act_") ? String(adAccountId) : `act_${adAccountId}`;
     // Defaults to just-delivering ads; callers can pass ["PAUSED"] to list
@@ -50,11 +67,19 @@ Deno.serve(async (req) => {
     }
     if (tokens.length === 0) return json({ error: "No FB token configured" }, 500);
 
+    // Per-ad spend/leads for the requested window, fetched inline via field
+    // expansion rather than one insights call per ad.
+    const today = new Date().toISOString().slice(0, 10);
+    const timeRangeParam = since
+      ? `insights.time_range(${JSON.stringify({ since, until: until || today })})`
+      : "insights.date_preset(maximum)";
+
     const fields =
       "name,effective_status," +
       "creative{body,title,image_url,thumbnail_url,call_to_action_type,link_url," +
       "effective_object_story_id,object_story_spec}," +
-      "adset{name}";
+      "adset{name}," +
+      `${timeRangeParam}{spend,clicks,impressions,actions}`;
 
     let lastErr = "";
     for (const token of tokens) {
@@ -71,6 +96,7 @@ Deno.serve(async (req) => {
       const rows = (data.data ?? []) as Array<{
         id: string; name?: string; effective_status?: string;
         creative?: Creative; adset?: { name?: string };
+        insights?: { data?: InsightRow[] };
       }>;
 
       // The page id is on object_story_spec for inline creatives, but page-post
@@ -96,6 +122,9 @@ Deno.serve(async (req) => {
         const storyId = c.effective_object_story_id ?? "";
         // pageId_postId -> the public permalink for that post.
         const [sPage, sPost] = storyId.split("_");
+        const insight = r.insights?.data?.[0];
+        const spend = Number(insight?.spend || 0);
+        const leads = leadsFrom(insight?.actions);
         return {
           id: r.id,
           name: r.name ?? "",
@@ -109,6 +138,11 @@ Deno.serve(async (req) => {
           imageUrl: c.image_url ?? c.thumbnail_url ?? "",
           cta: c.call_to_action_type ?? "",
           link: c.link_url ?? c.object_story_spec?.link_data?.link ?? "",
+          spend,
+          leads,
+          clicks: Number(insight?.clicks || 0),
+          impressions: Number(insight?.impressions || 0),
+          cpl: leads > 0 ? spend / leads : null,
         };
       });
 

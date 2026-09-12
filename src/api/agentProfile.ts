@@ -7,6 +7,9 @@ export interface FbAdAccount {
   spendCap: number | null;
   name: string | null;
   accountStatus: number | null;
+  /** e.g. "Visa •••• 1234" for a card, or Meta's own label for a wallet/prepaid source. */
+  fundingLabel: string | null;
+  fundingType: string | null;
   /** Present when Meta could not be read (e.g. missing ads_read permission). */
   note?: string;
 }

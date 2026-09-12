@@ -33,7 +33,7 @@ Deno.serve(async (req) => {
     }
     if (tokens.length === 0) return json({ error: "No FB token configured" }, 500);
 
-    const fields = "balance,amount_spent,spend_cap,currency,name,account_status";
+    const fields = "balance,amount_spent,spend_cap,currency,name,account_status,funding_source_details";
     let lastErr = "";
     for (const token of tokens) {
       const res = await fetch(`${GRAPH}/${actId}?fields=${fields}&access_token=${token}`);
@@ -41,6 +41,7 @@ Deno.serve(async (req) => {
       if (res.ok && !data.error) {
         // Amounts come back in minor units (cents) of the account currency.
         const toMajor = (v: string | undefined) => (v == null ? null : Number(v) / 100);
+        const funding = data.funding_source_details as { type?: string; display_string?: string } | undefined;
         return json({
           currency: data.currency ?? "ZAR",
           balance: toMajor(data.balance),
@@ -48,6 +49,9 @@ Deno.serve(async (req) => {
           spendCap: toMajor(data.spend_cap),
           name: data.name ?? null,
           accountStatus: data.account_status ?? null,
+          // e.g. "Visa •••• 1234" for a card, or the wallet/prepaid label Meta gives it.
+          fundingLabel: funding?.display_string ?? null,
+          fundingType: funding?.type ?? null,
         });
       }
       lastErr = data.error?.message || `HTTP ${res.status}`;
@@ -56,7 +60,7 @@ Deno.serve(async (req) => {
     // "no access" state instead of erroring. Common cause: the ad account
     // owner hasn't granted the app ads_read/ads_management.
     console.warn("fb-ad-account: all tokens failed:", lastErr);
-    return json({ currency: "ZAR", balance: null, amountSpent: null, spendCap: null, name: null, accountStatus: null, note: lastErr });
+    return json({ currency: "ZAR", balance: null, amountSpent: null, spendCap: null, name: null, accountStatus: null, fundingLabel: null, fundingType: null, note: lastErr });
   } catch (err) {
     return json({ error: String(err) }, 500);
   }

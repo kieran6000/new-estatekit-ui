@@ -62,8 +62,6 @@ import StageMenu from "../components/StageMenu";
 import OutcomeSheet from "../components/OutcomeSheet";
 import FocusCallModal from "../components/FocusCallModal";
 
-const PAGE_SIZE = 50;
-
 export default function LeadsPage() {
   const navigate = useNavigate();
   const isMobile = useMediaQuery("(max-width:639px)");
@@ -106,7 +104,6 @@ export default function LeadsPage() {
   const [bulkMoveAnchor, setBulkMoveAnchor] = useState<HTMLElement | null>(null);
   const [bulkStageAnchor, setBulkStageAnchor] = useState<HTMLElement | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
-  const [page, setPage] = useState(0);
   function toggleSelect(id: string) {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -192,24 +189,14 @@ export default function LeadsPage() {
     });
   }, [pipelineLeads, filter, q]);
 
-  // Pagination — the working list can grow large, so show one page at a time.
-  // Reset to the first page whenever the underlying list changes.
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  useEffect(() => { setPage(0); }, [filter, q, showArchived, activePipeline?.id]);
-  const safePage = Math.min(page, pageCount - 1);
-  const pagedLeads = useMemo(
-    () => filtered.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE),
-    [filtered, safePage],
-  );
-
   // Flat visual order of the rows currently on screen — drives shift+click
   // range selection (grouped view lays rows out stage-by-stage).
   const orderedVisibleIds = useMemo(() => {
     if (filter === "All") {
-      return stagesForPipeline.flatMap((st) => pagedLeads.filter((l) => l.stage === st).map((l) => l.id));
+      return stagesForPipeline.flatMap((st) => filtered.filter((l) => l.stage === st).map((l) => l.id));
     }
-    return pagedLeads.map((l) => l.id);
-  }, [pagedLeads, filter, stagesForPipeline]);
+    return filtered.map((l) => l.id);
+  }, [filtered, filter, stagesForPipeline]);
 
   function handleRowSelect(id: string, shiftKey: boolean) {
     if (shiftKey && selectAnchor && orderedVisibleIds.includes(selectAnchor) && orderedVisibleIds.includes(id)) {
@@ -502,7 +489,7 @@ export default function LeadsPage() {
       </Box>
 
       <LeadsTable
-        leads={pagedLeads}
+        leads={filtered}
         stages={stagesForPipeline}
         filter={filter}
         selectable={selectMode}
@@ -513,20 +500,6 @@ export default function LeadsPage() {
         onCall={(id) => setOutcomeLeadId(id)}
         onStagePick={handleStagePick}
       />
-
-      {filtered.length > PAGE_SIZE && (
-        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 2, p: "12px 16px", bgcolor: "background.paper", borderTop: `1px solid ${tokens.divider}` }}>
-          <Button size="small" disabled={safePage === 0} onClick={() => setPage((p) => Math.max(0, p - 1))} sx={{ textTransform: "none" }}>
-            Prev
-          </Button>
-          <Typography sx={{ fontSize: 13, color: "text.secondary", whiteSpace: "nowrap" }}>
-            {safePage * PAGE_SIZE + 1}–{Math.min(filtered.length, (safePage + 1) * PAGE_SIZE)} of {filtered.length}
-          </Typography>
-          <Button size="small" disabled={safePage >= pageCount - 1} onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))} sx={{ textTransform: "none" }}>
-            Next
-          </Button>
-        </Box>
-      )}
 
       {/* Bulk action bar — appears once leads are selected. Sits above the
           mobile bottom-nav (56px). Boring on purpose. */}
