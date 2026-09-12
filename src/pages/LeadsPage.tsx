@@ -53,6 +53,7 @@ import { useSnack } from "../hooks/useSnack";
 import { maskPhone } from "../lib/format";
 import { getPendingCall, clearPendingCall, type PendingCall } from "../lib/pendingCall";
 import { bulkUpdateLeads } from "../api/leads";
+import { logLeadCall } from "../api/leadEvents";
 import { startLeadsTour, hasSeenLeadsTour } from "../lib/tour";
 import { listArchivedLeads } from "../api/leads";
 import { syncFbLeads } from "../api/leadPages";
@@ -497,7 +498,11 @@ export default function LeadsPage() {
         onToggleSelect={toggleSelect}
         onRowSelect={handleRowSelect}
         onOpen={(id) => navigate(`/leads/${id}`)}
-        onCall={(id) => setOutcomeLeadId(id)}
+        onCall={(id) => {
+          setOutcomeLeadId(id);
+          const called = leads.find((l) => l.id === id);
+          if (called) logLeadCall(called.id, called.agent_id);
+        }}
         onStagePick={handleStagePick}
       />
 

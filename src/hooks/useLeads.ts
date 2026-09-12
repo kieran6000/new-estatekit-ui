@@ -68,6 +68,7 @@ export function useUpdateLeadStage() {
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: LEADS_KEY });
+      qc.invalidateQueries({ queryKey: ["leadEvents"] });
     },
   });
 }
@@ -86,6 +87,9 @@ export function useUpdateLeadNote() {
     },
     onError: (_err, _vars, ctx) => {
       if (ctx?.prev) qc.setQueryData(LEADS_KEY, ctx.prev);
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["leadEvents"] });
     },
   });
 }

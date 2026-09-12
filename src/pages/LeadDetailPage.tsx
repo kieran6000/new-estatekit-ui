@@ -21,6 +21,8 @@ import { timeAgo } from "../lib/timeAgo";
 import { useIsOperator } from "../hooks/useAutomations";
 import StageMenu from "../components/StageMenu";
 import OutcomeSheet from "../components/OutcomeSheet";
+import LeadHistory from "../components/LeadHistory";
+import { logLeadCall } from "../api/leadEvents";
 import type { OutcomeStep, Stage } from "../types";
 
 export default function LeadDetailPage() {
@@ -138,7 +140,10 @@ export default function LeadDetailPage() {
           <Box
             component="a"
             href={`tel:${lead.phone.replace(/\s/g, "")}`}
-            onClick={() => setTimeout(() => setOutcomeOpen(true), 150)}
+            onClick={() => {
+              logLeadCall(lead.id, lead.agent_id);
+              setTimeout(() => setOutcomeOpen(true), 150);
+            }}
             sx={{
               flex: 1,
               bgcolor: tokens.green,
@@ -216,6 +221,7 @@ export default function LeadDetailPage() {
                     moveLeadToPipeline(lead.id, pid, changed)
                       .then(() => {
                         qc.invalidateQueries({ queryKey: ["leads"] });
+                        qc.invalidateQueries({ queryKey: ["leadEvents"] });
                         showSnack(
                           changed
                             ? `Moved to ${target?.name ?? "pipeline"} · stage is now ${changed}`
@@ -253,6 +259,12 @@ export default function LeadDetailPage() {
                 Archive this lead
               </Button>
             </Box>
+          </Section>
+        )}
+
+        {isOperator && (
+          <Section title="History">
+            <LeadHistory leadId={lead.id} />
           </Section>
         )}
       </Box>

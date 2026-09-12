@@ -20,6 +20,12 @@ function json(body: unknown, status = 200) {
 
 const DEAD_STAGES = ["Lost", "Invalid Number"];
 
+// Must stay in step with PIPELINE_STAGES in src/types.
+const STAGES_FOR_KIND: Record<string, string[]> = {
+  seller: ["New Lead", "No Answer", "Contacted", "Booked", "Mandate Signed", "Lost", "Invalid Number"],
+  buyer: ["New Lead", "No Answer", "Contacted", "Viewing Booked", "Offer Made", "Bought", "Lost", "Invalid Number"],
+};
+
 function reminderISO(days: number): string {
   return new Date(Date.now() + days * 86400000).toISOString();
 }
@@ -46,18 +52,12 @@ function stagePatch(stage: string): Record<string, unknown> {
   return {};
 }
 
-const ALLOWED = [
-  "New Lead", "No Answer", "Contacted", "Booked", "Mandate Signed",
-  "Viewing Booked", "Offer Made", "Bought", "Lost", "Invalid Number",
-];
-
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
 
   try {
     const { token, stage } = await req.json();
     if (!token || !stage) return json({ error: "token and stage required" }, 400);
-    if (!ALLOWED.includes(stage)) return json({ error: "Unknown stage" }, 400);
 
     const admin = createClient(SUPABASE_URL, SERVICE_KEY);
 
@@ -72,14 +72,30 @@ Deno.serve(async (req) => {
 
     const { data: lead } = await admin
       .from("leads")
-      .select("id, name, phone, stage, agent_id")
+      .select("id, name, phone, stage, agent_id, pipeline_id")
       .eq("id", tokenRow.lead_id)
       .maybeSingle();
     if (!lead) return json({ error: "Lead not found" }, 404);
     // The token must belong to the same agent as the lead.
     if (lead.agent_id !== tokenRow.agent_id) return json({ error: "Not allowed" }, 403);
 
-    const { error } = await admin
+    // The stage has to be one this lead's own pipeline actually offers, so a
+    // buyer lead can never be moved to a seller-only stage (or vice versa).
+    const { data: pipeline } = await admin
+      .from("pipelines")
+      .select("kind")
+      .eq("id", lead.pipeline_id)
+      .maybeSingle();
+    const kind = pipeline?.kind === "buyer" ? "buyer" : "seller";
+    if (!STAGES_FOR_KIND[kind].includes(stage)) {
+      return json({ error: `"${stage}" isn't a stage in this ${kind} pipeline` }, 400);
+    }
+
+    // Tag the write so the lead history shows the agent, via their WhatsApp link.
+    const writer = createClient(SUPABASE_URL, SERVICE_KEY, {
+      global: { headers: { "x-ek-source": "action_link", "x-ek-actor": tokenRow.agent_id } },
+    });
+    const { error } = await writer
       .from("leads")
       .update({ stage, ...stagePatch(stage) })
       .eq("id", lead.id);
@@ -93,13 +109,13 @@ Deno.serve(async (req) => {
         body: JSON.stringify({
           event: "stage_change",
           agentId: lead.agent_id,
-          lead: { id: lead.id, name: lead.name, phone: lead.phone, fromStage: lead.stage, toStage: stage },
+          lead: { id: lead.id, name: lead.name, phone: lead.phone, fromStage: lead.stage, toStage: stage, pipeline: kind },
           note: "logged from action link (not signed in)",
         }),
       });
     } catch { /* non-fatal */ }
 
-    return json({ ok: true, stage });
+    return json({ ok: true, stage, pipelineKind: kind });
   } catch (err) {
     return json({ error: String(err) }, 500);
   }

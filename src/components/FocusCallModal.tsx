@@ -7,6 +7,7 @@ import { dueLeads, pipelineKindFor } from "../lib/stageLogic";
 import { prettyAnswer, maskPhone } from "../lib/format";
 import { timeAgo } from "../lib/timeAgo";
 import { trackActivity } from "../lib/activity";
+import { logLeadCall } from "../api/leadEvents";
 import { useIsOperator } from "../hooks/useAutomations";
 import type { LeadRow, Pipeline } from "../types";
 import OutcomeSheet from "./OutcomeSheet";
@@ -61,7 +62,10 @@ export default function FocusCallModal({
   const done = qi >= total;
 
   async function saveNoteAndCall() {
-    if (lead) trackActivity("call_started", { lead: { id: lead.id, name: lead.name, phone: lead.phone, stage: lead.stage } });
+    if (lead) {
+      trackActivity("call_started", { lead: { id: lead.id, name: lead.name, phone: lead.phone, stage: lead.stage } });
+      logLeadCall(lead.id, lead.agent_id);
+    }
     if (note.trim() && lead) {
       const merged = (lead.note ? lead.note + " · " : "") + note.trim();
       await leadsApi.updateLead(lead.id, { note: merged });

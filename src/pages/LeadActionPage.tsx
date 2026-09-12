@@ -34,6 +34,7 @@ import { timeAgo } from "../lib/timeAgo";
 import { trackActivity } from "../lib/activity";
 import { armPendingCall, clearPendingCall } from "../lib/pendingCall";
 import { getLeadByToken, logOutcomeByToken, saveNoteByToken } from "../api/leadActions";
+import { logCallByToken, logLeadCall } from "../api/leadEvents";
 import OutcomeSheet, { OUTCOME_ICONS, outcomeSnack } from "../components/OutcomeSheet";
 import estateKitLogo from "../assets/blue logo full.png";
 import type { LeadRow, OutcomeStep, PipelineKind, Stage } from "../types";
@@ -139,6 +140,8 @@ function LeadActionUI({
   function onCallTap() {
     if (!canLog || !lead) return;
     trackActivity("call_started", { lead: { id: lead.id, name: lead.name, phone: lead.phone, stage: lead.stage } });
+    if (canEdit) logLeadCall(lead.id, lead.agent_id);
+    else if (token) logCallByToken(token);
     armPendingCall({ leadId: lead.id, name: lead.name, phone: lead.phone, startedAt: Date.now() });
     awaitingReturn.current = true;
     didHide.current = false;
