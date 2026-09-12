@@ -6,6 +6,7 @@ import {
   Card,
   CardContent,
   Chip,
+  CircularProgress,
   Divider,
   IconButton,
   Skeleton,
@@ -20,9 +21,10 @@ import AddIcon from "@mui/icons-material/Add";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import CloseIcon from "@mui/icons-material/Close";
 import CheckIcon from "@mui/icons-material/Check";
+import ErrorOutlineIcon from "@mui/icons-material/ErrorOutlined";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../hooks/useAuth";
-import { getMyProfile, upsertProfile } from "../api/agentProfile";
+import { getMyProfile, upsertProfile, type AgentProfile } from "../api/agentProfile";
 import { panicStopAutomations } from "../api/automations";
 import { useIsOperator } from "../hooks/useAutomations";
 import { useSnack } from "../hooks/useSnack";
@@ -45,6 +47,7 @@ export default function AccountPage() {
   });
 
   const [saveState, setSaveState] = useState<"" | "saving" | "saved" | "error">("");
+  const [logoUploading, setLogoUploading] = useState(false);
   const [stopping, setStopping] = useState(false);
   async function emergencyStop() {
     setStopping(true);
@@ -88,27 +91,44 @@ export default function AccountPage() {
     }
   }, [profile]);
 
+  // Reflect a patch into the shared ["myProfile"] cache immediately — every
+  // consumer (sidebar rail, account switcher) re-renders with the new color/
+  // logo right away, before the network write even starts. No reload needed.
+  const applyOptimistic = useCallback(
+    (patch: Partial<AgentProfile>) => {
+      queryClient.setQueryData(["myProfile"], (old: AgentProfile | null | undefined) =>
+        old ? { ...old, ...patch } : old);
+    },
+    [queryClient],
+  );
+
   const autosave = useCallback(
     (patch: Partial<typeof form>) => {
       const next = { ...form, ...patch };
       setForm(next);
+      applyOptimistic(patch);
       // Bind the write to the profile currently shown, captured now — so it
       // can't land on a different row if the active agent changes before the
-      // debounce fires.
+      // debounce fires. Only the changed field(s) are sent — sending the
+      // whole form here used to smuggle in stale/empty values (e.g. an empty
+      // renewalDate) on every keystroke and 400 the write.
       const targetId = profile?.agentId;
       setSaveState("saving");
       clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(async () => {
         try {
-          await upsertProfile(next, targetId);
+          await upsertProfile(patch, targetId);
           await queryClient.invalidateQueries({ queryKey: ["myProfile"] });
           setSaveState("saved");
-        } catch {
+        } catch (e) {
           setSaveState("error");
+          showSnack(e instanceof Error ? `Couldn't save: ${e.message}` : "Couldn't save");
+          // Optimistic patch was wrong — pull back the real, saved values.
+          queryClient.invalidateQueries({ queryKey: ["myProfile"] });
         }
       }, 600);
     },
-    [form, profile?.agentId, queryClient],
+    [form, profile?.agentId, queryClient, applyOptimistic, showSnack],
   );
 
   function update(field: keyof typeof form, value: string | null) {
@@ -120,11 +140,46 @@ export default function AccountPage() {
     if (file.size > 2 * 1024 * 1024) { showSnack("Image must be under 2 MB"); return; }
     const ext = file.name.split(".").pop() || "png";
     const path = `${user.id}/logo-${Date.now()}.${ext}`;
-    const { error } = await supabase.storage.from("logos").upload(path, file, { upsert: true });
-    if (error) { showSnack("Upload failed: " + error.message); return; }
-    const { data: urlData } = supabase.storage.from("logos").getPublicUrl(path);
-    update("sidebarLogoUrl", urlData.publicUrl);
-    showSnack("Logo uploaded");
+    const prevLogo = form.sidebarLogoUrl;
+    // Show the picked file immediately (a blob: URL renders fine everywhere
+    // in this page, sidebar included) while the real upload happens in the
+    // background — no waiting to *see* the change take effect.
+    const previewUrl = URL.createObjectURL(file);
+    setForm((f) => ({ ...f, sidebarLogoUrl: previewUrl }));
+    applyOptimistic({ sidebarLogoUrl: previewUrl });
+    setLogoUploading(true);
+    try {
+      const { error } = await supabase.storage.from("logos").upload(path, file, { upsert: true });
+      if (error) throw error;
+      const { data: urlData } = supabase.storage.from("logos").getPublicUrl(path);
+      await upsertProfile({ sidebarLogoUrl: urlData.publicUrl }, profile?.agentId);
+      setForm((f) => ({ ...f, sidebarLogoUrl: urlData.publicUrl }));
+      applyOptimistic({ sidebarLogoUrl: urlData.publicUrl });
+      await queryClient.invalidateQueries({ queryKey: ["myProfile"] });
+      showSnack("Logo uploaded");
+    } catch (e) {
+      setForm((f) => ({ ...f, sidebarLogoUrl: prevLogo }));
+      applyOptimistic({ sidebarLogoUrl: prevLogo });
+      showSnack(e instanceof Error ? `Upload failed: ${e.message}` : "Upload failed");
+    } finally {
+      setLogoUploading(false);
+      setTimeout(() => URL.revokeObjectURL(previewUrl), 3000);
+    }
+  }
+
+  async function onLogoRemove() {
+    const prevLogo = form.sidebarLogoUrl;
+    setForm((f) => ({ ...f, sidebarLogoUrl: null }));
+    applyOptimistic({ sidebarLogoUrl: null });
+    try {
+      await upsertProfile({ sidebarLogoUrl: null }, profile?.agentId);
+      await queryClient.invalidateQueries({ queryKey: ["myProfile"] });
+      showSnack("Logo removed");
+    } catch (e) {
+      setForm((f) => ({ ...f, sidebarLogoUrl: prevLogo }));
+      applyOptimistic({ sidebarLogoUrl: prevLogo });
+      showSnack(e instanceof Error ? `Couldn't remove logo: ${e.message}` : "Couldn't remove logo");
+    }
   }
 
   async function onContractUpload(file: File | null) {
@@ -189,9 +244,31 @@ export default function AccountPage() {
 
             <Card variant="outlined" sx={{ mb: 3 }}>
               <CardContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                  Sidebar
-                </Typography>
+                <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                    Sidebar
+                  </Typography>
+                  {/* Changes here apply live (color/logo update the real sidebar
+                      instantly) — this just confirms the write landed. */}
+                  {saveState === "saving" && (
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                      <CircularProgress size={13} thickness={5} />
+                      <Typography sx={{ fontSize: 12, color: "text.secondary" }}>Saving…</Typography>
+                    </Box>
+                  )}
+                  {saveState === "saved" && (
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                      <CheckIcon sx={{ fontSize: 15, color: "success.main" }} />
+                      <Typography sx={{ fontSize: 12, color: "success.main" }}>Saved</Typography>
+                    </Box>
+                  )}
+                  {saveState === "error" && (
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                      <ErrorOutlineIcon sx={{ fontSize: 15, color: "error.main" }} />
+                      <Typography sx={{ fontSize: 12, color: "error.main" }}>Couldn't save</Typography>
+                    </Box>
+                  )}
+                </Box>
 
                 <Box>
                   <Typography sx={{ fontSize: 13, color: "text.secondary", mb: 1 }}>Accent color</Typography>
@@ -207,6 +284,8 @@ export default function AccountPage() {
                       cursor: "pointer",
                       display: "block",
                       overflow: "hidden",
+                      transition: "transform 0.1s",
+                      "&:active": { transform: "scale(0.92)" },
                     }}
                   >
                     <input
@@ -228,9 +307,10 @@ export default function AccountPage() {
                           width: 64, height: 64, borderRadius: "8px",
                           border: `2px dashed ${form.sidebarLogoUrl ? tokens.primary : tokens.divider}`,
                           display: "flex", alignItems: "center", justifyContent: "center",
-                          cursor: "pointer", overflow: "hidden",
+                          cursor: logoUploading ? "default" : "pointer", overflow: "hidden",
                           bgcolor: form.sidebarLogoUrl ? form.sidebarColor : tokens.bg,
-                          "&:hover": { borderColor: tokens.primary },
+                          opacity: logoUploading ? 0.5 : 1,
+                          "&:hover": logoUploading ? undefined : { borderColor: tokens.primary },
                         }}
                       >
                         {form.sidebarLogoUrl ? (
@@ -238,20 +318,25 @@ export default function AccountPage() {
                         ) : (
                           <AddIcon sx={{ fontSize: 20, color: "text.disabled" }} />
                         )}
-                        <input type="file" hidden accept="image/*" onChange={(e) => onLogoUpload(e.target.files?.[0] ?? null)} />
+                        <input type="file" hidden accept="image/*" disabled={logoUploading} onChange={(e) => onLogoUpload(e.target.files?.[0] ?? null)} />
                       </Box>
-                      {form.sidebarLogoUrl && (
+                      {logoUploading && (
+                        <Box sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          <CircularProgress size={22} thickness={5} />
+                        </Box>
+                      )}
+                      {form.sidebarLogoUrl && !logoUploading && (
                         <IconButton
                           size="small"
-                          onClick={() => { update("sidebarLogoUrl", null); showSnack("Logo removed"); }}
+                          onClick={onLogoRemove}
                           sx={{ position: "absolute", top: -8, right: -8, width: 20, height: 20, bgcolor: "#e0e0e0", "&:hover": { bgcolor: "#bdbdbd" } }}
                         >
                           <CloseIcon sx={{ fontSize: 12 }} />
                         </IconButton>
                       )}
                     </Box>
-                    <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
-                      {form.sidebarLogoUrl ? "Click to replace" : "Upload your logo"}
+                    <Typography sx={{ fontSize: 12, color: logoUploading ? "text.secondary" : "text.secondary" }}>
+                      {logoUploading ? "Uploading…" : form.sidebarLogoUrl ? "Click to replace" : "Upload your logo"}
                     </Typography>
                   </Box>
                 </Box>
