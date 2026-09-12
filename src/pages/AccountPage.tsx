@@ -18,6 +18,7 @@ import LogoutIcon from "@mui/icons-material/Logout";
 import AccountBalanceWalletIcon from "@mui/icons-material/AccountBalanceWallet";
 import CreditCardIcon from "@mui/icons-material/CreditCard";
 import AgentPasswords from "../components/AgentPasswords";
+import MigrateAgentsCard from "../components/MigrateAgentsCard";
 import DarkModeToggle from "../components/DarkModeToggle";
 import AddIcon from "@mui/icons-material/Add";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
@@ -441,6 +442,8 @@ export default function AccountPage() {
                 </CardContent>
               </Card>
             )}
+
+            {isOperator && <MigrateAgentsCard onSnack={showSnack} />}
 
             {isOperator && (
               <Card variant="outlined" sx={{ mb: 3, borderColor: "#fca5a5" }}>
