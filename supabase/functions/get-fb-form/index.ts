@@ -13,7 +13,9 @@ const CORS = {
 };
 
 const GRAPH = "https://graph.facebook.com/v21.0";
-const TOKEN_NAMES = ["FB_ACCESS_TOKEN", "FB_ACCESS_TOKEN_2"];
+// Every token in the vault — same set as list-fb-forms, so a form that shows
+// in the list can also be previewed.
+const TOKEN_NAMES = ["FB_ACCESS_TOKEN", "FB_ACCESS_TOKEN_2", "FB_ACCESS_TOKEN_ALDREDT"];
 
 // Everything the Ads Manager preview renders for an instant form.
 const FIELDS = [
@@ -102,6 +104,7 @@ Deno.serve(async (req) => {
       }
     }
 
+    console.warn(`get-fb-form: form ${formId} failed:`, attempts.join(" | "));
     return json({ error: `Could not load form ${formId}. ${attempts.join(" | ")}` }, 502);
   } catch (err) {
     return json({ error: String(err) }, 500);

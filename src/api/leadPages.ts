@@ -190,13 +190,28 @@ export interface FbFormResult {
   page: FbPageInfo | null;
 }
 
+/** On a non-2xx response supabase-js leaves `data` null and hides the body in
+ *  `error.context`, so the function's own explanation never reached the UI —
+ *  just "Edge Function returned a non-2xx status code". Read it back out. */
+async function functionErrorMessage(error: unknown): Promise<string> {
+  const ctx = (error as { context?: Response })?.context;
+  if (ctx && typeof ctx.json === "function") {
+    try {
+      const body = await ctx.clone().json();
+      if (body?.error) return String(body.error);
+    } catch { /* not JSON */ }
+  }
+  return error instanceof Error ? error.message : "Request failed";
+}
+
 export async function getFbForm(fbPageId: string | null, formId: string): Promise<FbFormResult> {
   const { data, error } = await supabase.functions.invoke("get-fb-form", {
     body: { pageId: fbPageId, formId },
   });
   if (error) {
-    console.error("get-fb-form error:", error, "data:", data);
-    throw new Error(data?.error || error.message);
+    const message = await functionErrorMessage(error);
+    console.error("get-fb-form error:", message);
+    throw new Error(message);
   }
   if (data?.error) {
     console.error("get-fb-form API error:", data.error);
@@ -210,8 +225,9 @@ export async function listFbForms(fbPageId: string): Promise<FbForm[]> {
     body: { pageId: fbPageId },
   });
   if (error) {
-    console.error("list-fb-forms error:", error, "data:", data);
-    throw new Error(data?.error || error.message);
+    const message = await functionErrorMessage(error);
+    console.error("list-fb-forms error:", message);
+    throw new Error(message);
   }
   if (data?.error) {
     console.error("list-fb-forms API error:", data.error);
