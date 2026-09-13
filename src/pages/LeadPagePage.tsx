@@ -420,9 +420,10 @@ export default function LeadPagePage() {
                 </Typography>
               }
             >
-              {isOperator && <LeadPageFunnelStats pageId={page.id} />}
               <PreviewAndSubmit page={{ ...page, ...form }} pipelineKind={pipeline.kind} />
             </Section>
+
+            {isOperator && <LeadPageFunnelStats pageId={page.id} />}
 
             <ShareSection page={page} onUpdateSlug={(slug) => updatePage.mutate({ id: page.id, patch: { slug } })} />
           </Box>

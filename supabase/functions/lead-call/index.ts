@@ -50,6 +50,7 @@ Deno.serve(async (req) => {
       actor_id: tokenRow.agent_id,
       event_type: "call",
       source: "action_link",
+      device: req.headers.get("user-agent")?.slice(0, 300) ?? null,
     });
     if (error) return json({ error: error.message }, 500);
 

@@ -45,7 +45,13 @@ Deno.serve(async (req) => {
 
     // Tag the write so the lead history shows the agent, via their WhatsApp link.
     const writer = createClient(SUPABASE_URL, SERVICE_KEY, {
-      global: { headers: { "x-ek-source": "action_link", "x-ek-actor": tokenRow.agent_id } },
+      global: {
+        headers: {
+          "x-ek-source": "action_link",
+          "x-ek-actor": tokenRow.agent_id,
+          "x-ek-device": (req.headers.get("user-agent") ?? "").slice(0, 300),
+        },
+      },
     });
     const { error } = await writer.from("leads").update({ note }).eq("id", lead.id);
     if (error) return json({ error: error.message }, 500);

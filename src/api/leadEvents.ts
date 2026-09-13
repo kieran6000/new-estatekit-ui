@@ -17,6 +17,8 @@ export interface LeadEvent {
   from_value: string | null;
   to_value: string | null;
   source: LeadEventSource;
+  /** Browser user agent the change came from, when known. */
+  device: string | null;
   created_at: string;
 }
 

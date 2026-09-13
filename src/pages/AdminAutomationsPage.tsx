@@ -7,6 +7,8 @@ import {
   CircularProgress,
   Divider,
   Switch,
+  Tab,
+  Tabs,
   TextField,
   Toolbar,
   Typography,
@@ -23,6 +25,7 @@ import {
 } from "../hooks/useAutomations";
 import { useLeads } from "../hooks/useLeads";
 import { useSnack } from "../hooks/useSnack";
+import ScheduledAutomations from "../components/ScheduledAutomations";
 import type { AutomationRow, AutomationStepRow } from "../types/automations";
 import type { LeadRow } from "../types";
 
@@ -146,6 +149,7 @@ function AutomationsAdmin() {
   const showSnack = useSnack();
   const posthog = usePostHog();
   const previewLead = leads[0];
+  const [tab, setTab] = useState<"scheduled" | "setup">("scheduled");
 
   return (
     <Box>
@@ -154,6 +158,19 @@ function AutomationsAdmin() {
           <Typography sx={{ fontSize: 18, fontWeight: 500 }}>Automations</Typography>
         </Toolbar>
       </AppBar>
+      <Tabs
+        value={tab}
+        onChange={(_, v) => setTab(v)}
+        sx={{ bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}`, minHeight: 44, px: 1 }}
+      >
+        <Tab label="Scheduled" value="scheduled" sx={{ minHeight: 44, textTransform: "none", fontWeight: 600 }} />
+        <Tab label="Setup" value="setup" sx={{ minHeight: 44, textTransform: "none", fontWeight: 600 }} />
+      </Tabs>
+      {tab === "scheduled" ? (
+        <Box sx={{ maxWidth: 820, mx: "auto" }}>
+          <ScheduledAutomations />
+        </Box>
+      ) : (
       <Box sx={{ maxWidth: 820, mx: "auto", pb: 4 }}>
       <Typography variant="body2" color="text.secondary" sx={{ p: "16px 16px 0" }}>
         The lead-follow-up SOP, running automatically. Agents never see this — messages go to the agent's own WhatsApp
@@ -180,6 +197,7 @@ function AutomationsAdmin() {
         ))
       )}
       </Box>
+      )}
     </Box>
   );
 }

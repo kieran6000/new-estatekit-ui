@@ -30,7 +30,7 @@ export default function LeadPagePreviewPage() {
     enabled: !!page?.pipelineId,
   });
 
-  const { data: customQuestions = [] } = useQuery({
+  const { data: customQuestions = [], isLoading: questionsLoading } = useQuery({
     queryKey: ["publicQuestions", page?.id],
     queryFn: () => listCustomQuestionsPublic(page!.id),
     enabled: !!page?.id,
@@ -50,7 +50,9 @@ export default function LeadPagePreviewPage() {
     if (page?.id) trackPageEvent(page.id, "view");
   }, [page?.id]);
 
-  const loading = pageLoading || pipelineLoading;
+  // Wait for the questions too: rendering the form before they arrive briefly
+  // shows the contact step as step 1 (and used to count a fake "reached contact").
+  const loading = pageLoading || pipelineLoading || (!!page && questionsLoading);
 
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: tokens.bg }}>

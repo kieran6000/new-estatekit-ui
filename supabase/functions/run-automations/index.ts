@@ -124,6 +124,8 @@ interface RunRow {
   lead_id: string;
   automation_id: string;
   current_step: number;
+  /** One-off wording set from the dashboard for this run's current step. */
+  template_override: string | null;
 }
 
 async function processRun(supabase: SupabaseClient, run: RunRow) {
@@ -135,6 +137,17 @@ async function processRun(supabase: SupabaseClient, run: RunRow) {
 
   if (!lead) {
     await supabase.from("automation_runs").update({ status: "cancelled" }).eq("id", run.id);
+    return;
+  }
+
+  // Account paused from the dashboard: hold the run instead of sending.
+  const { data: owner } = await supabase
+    .from("agent_profiles")
+    .select("automations_paused")
+    .eq("agent_id", lead.agent_id)
+    .maybeSingle();
+  if (owner?.automations_paused) {
+    await supabase.from("automation_runs").update({ status: "paused" }).eq("id", run.id);
     return;
   }
 
@@ -171,16 +184,17 @@ async function processRun(supabase: SupabaseClient, run: RunRow) {
     .maybeSingle();
 
   const linkType = inferLinkType(automation?.name ?? "");
+  const template = run.template_override || step.template_text;
 
   try {
-    if (step.action_type === "send_whatsapp" && step.template_text) {
+    if (step.action_type === "send_whatsapp" && template) {
       const { data: profile } = await supabase
         .from("agent_profiles")
         .select("whatsapp_number, display_name")
         .eq("agent_id", lead.agent_id)
         .maybeSingle();
       if (profile?.whatsapp_number) {
-        const text = await fillTemplate(supabase, step.template_text, lead, linkType);
+        const text = await fillTemplate(supabase, template, lead, linkType);
         await sendWhatsApp(profile.whatsapp_number, text);
         await logToDiscord(`\u{2699}\u{FE0F} Automation **${automation?.name}** sent WhatsApp to **${profile.display_name || profile.whatsapp_number}** re: ${lead.name}`);
         // Sending doesn't change the lead row, so the history trigger can't see it.
@@ -225,6 +239,8 @@ async function processRun(supabase: SupabaseClient, run: RunRow) {
         current_step: run.current_step + 1,
         run_at: new Date(Date.now() + nextStep.delay_minutes * 60000).toISOString(),
         status: "pending",
+        // An edited message only ever applied to the step that just sent.
+        template_override: null,
       })
       .eq("id", run.id);
   } else {
@@ -240,7 +256,7 @@ Deno.serve(async (_req: Request) => {
 
   const { data: due, error } = await supabase
     .from("automation_runs")
-    .select("id, lead_id, automation_id, current_step")
+    .select("id, lead_id, automation_id, current_step, template_override")
     .eq("status", "pending")
     .lte("run_at", new Date().toISOString())
     .limit(BATCH_SIZE);

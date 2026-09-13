@@ -83,7 +83,8 @@ export default function LeadCaptureForm({
   }
   const reachedContactRef = useRef(false);
   useEffect(() => {
-    if (preview || phase !== "steps" || step.kind !== "contact" || reachedContactRef.current) return;
+    // Only counts once they've actually started — landing on it isn't reaching it.
+    if (preview || !startedRef.current || phase !== "steps" || step.kind !== "contact" || reachedContactRef.current) return;
     reachedContactRef.current = true;
     trackPageEvent(page.id, "contact");
   }, [preview, phase, step.kind, page.id]);
