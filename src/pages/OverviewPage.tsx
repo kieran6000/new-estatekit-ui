@@ -421,6 +421,7 @@ export default function OverviewPage() {
           <ActiveAds
             adAccountId={profile?.fbAdAccountId || undefined}
             agentName={profile?.company || profile?.displayName}
+            agentId={profile?.agentId}
             since={adRange.from}
             until={adRange.to}
           />

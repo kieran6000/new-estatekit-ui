@@ -146,6 +146,14 @@ export async function getMyProfile(): Promise<AgentProfile | null> {
   return data ? rowToProfile(data as ProfileRow) : null;
 }
 
+/** The name of the *logged-in* user (not the active/managed agent) — for
+ *  logging who actually took an action while switched into another account. */
+export async function getMyRealDisplayName(): Promise<string> {
+  const uid = await getCurrentUserId();
+  const { data } = await supabase.from("agent_profiles").select("display_name").eq("agent_id", uid).maybeSingle();
+  return data?.display_name || "Someone";
+}
+
 /** Whether the *logged-in* user (not the active/managed agent) has finished
  *  onboarding. Defaults to true on any error so no one gets trapped. */
 export async function amIOnboarded(): Promise<boolean> {

@@ -2,7 +2,8 @@ import { supabase, getActiveAgentIdSync } from "../api/_client";
 
 type ActivityEvent =
   | "login" | "new_lead" | "form_submitted" | "lead_disqualified" | "stage_change"
-  | "call_started" | "note_added" | "lead_page_created" | "lead_page_deleted" | "sold_listing_added";
+  | "call_started" | "note_added" | "lead_page_created" | "lead_page_deleted" | "sold_listing_added"
+  | "ad_paused" | "ad_resumed";
 
 interface ActivityPayload {
   agentId?: string;
@@ -10,6 +11,7 @@ interface ActivityPayload {
   lead?: { id?: string; name?: string; phone?: string; address?: string; stage?: string; fromStage?: string; toStage?: string; pipeline?: string; source?: string; reason?: string };
   page?: { name?: string; slug?: string };
   sale?: { address?: string; price?: number };
+  ad?: { name?: string; link?: string };
 }
 
 interface PostHogLike { get_session_id?: () => string; get_distinct_id?: () => string }
@@ -38,6 +40,7 @@ export function trackActivity(event: ActivityEvent, payload: ActivityPayload = {
       lead: payload.lead,
       page: payload.page,
       sale: payload.sale,
+      ad: payload.ad,
       device: navigator.userAgent,
       sessionId,
       distinctId,

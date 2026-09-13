@@ -18,7 +18,7 @@ const EK_LOGO = "https://leads.estatekit.co/favicon.svg";
 type EventKey =
   | "login" | "new_lead" | "form_submitted" | "lead_disqualified" | "stage_change"
   | "call_started" | "note_added" | "lead_page_created" | "lead_page_deleted" | "sold_listing_added"
-  | "page_view" | "form_started" | "form_contact_step";
+  | "page_view" | "form_started" | "form_contact_step" | "ad_paused" | "ad_resumed";
 
 const EVENTS: Record<EventKey, { emoji: string; label: string; color: number; cat: string }> = {
   login:              { emoji: "🔓", label: "Signed in",            color: 0x6366f1, cat: "Agent" },
@@ -34,6 +34,8 @@ const EVENTS: Record<EventKey, { emoji: string; label: string; color: number; ca
   page_view:          { emoji: "👀", label: "Landing page viewed",   color: 0x94a3b8, cat: "Funnel" },
   form_started:       { emoji: "▶️", label: "Started the form",      color: 0x0ea5e9, cat: "Funnel" },
   form_contact_step:  { emoji: "✍️", label: "Reached contact details", color: 0xf59e0b, cat: "Funnel" },
+  ad_paused:          { emoji: "⏸️", label: "Ad paused",             color: 0xd93025, cat: "Ads" },
+  ad_resumed:         { emoji: "▶️", label: "Ad resumed",            color: 0x1e8e3e, cat: "Ads" },
 };
 
 function json(body: unknown, status = 200) {
@@ -143,6 +145,15 @@ Deno.serve(async (req) => {
 
     const sale = b.sale || {};
     if (sale.address) fields.push({ name: "Sold", value: `${sale.address}${sale.price ? ` — R${Number(sale.price).toLocaleString("en-ZA")}` : ""}`, inline: false });
+
+    // Pause/resume is done by an operator acting on a client's account — the
+    // author line already shows *which account*; this shows *who did it*.
+    const ad = b.ad || {};
+    if (ad.name) fields.push({ name: "Ad", value: String(ad.name), inline: true });
+    if (b.event === "ad_paused" || b.event === "ad_resumed") {
+      if (b.actorName) fields.push({ name: "Changed by", value: String(b.actorName), inline: true });
+      if (ad.link) fields.push({ name: "Ads Manager", value: `[Open this ad](${ad.link})`, inline: false });
+    }
 
     if (b.device) fields.push({ name: "Device", value: deviceLabel(b.device), inline: true });
 
