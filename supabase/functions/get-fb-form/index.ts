@@ -17,6 +17,15 @@ const GRAPH = "https://graph.facebook.com/v21.0";
 // in the list can also be previewed.
 const TOKEN_NAMES = ["FB_ACCESS_TOKEN", "FB_ACCESS_TOKEN_2", "FB_ACCESS_TOKEN_ALDREDT"];
 
+// Facebook's throttling codes (app, user, page, custom). When we hit one, every
+// further call only digs the hole deeper — stop immediately.
+const RATE_LIMIT_CODES = new Set([4, 17, 32, 613]);
+class RateLimited extends Error {}
+
+function throwIfRateLimited(data: { error?: { code?: number; message?: string } }) {
+  if (data?.error?.code && RATE_LIMIT_CODES.has(data.error.code)) throw new RateLimited(data.error.message);
+}
+
 // Everything the Ads Manager preview renders for an instant form.
 const FIELDS = [
   "id",
@@ -42,14 +51,18 @@ async function getPageToken(pageId: string, userToken: string): Promise<string |
   try {
     const res = await fetch(`${GRAPH}/${pageId}?fields=access_token&access_token=${userToken}`);
     const data = await res.json();
+    throwIfRateLimited(data);
     if (res.ok && !data.error && data.access_token) return data.access_token as string;
-  } catch { /* fall through to me/accounts */ }
+  } catch (e) {
+    if (e instanceof RateLimited) throw e;
+  }
 
   let url: string | null =
     `${GRAPH}/me/accounts?fields=id,access_token&limit=200&access_token=${userToken}`;
   while (url) {
     const res = await fetch(url);
     const data = await res.json();
+    throwIfRateLimited(data);
     if (!res.ok || data.error) return null;
     const match = (data.data || []).find((p: { id: string }) => p.id === pageId);
     if (match?.access_token) return match.access_token as string;
@@ -61,6 +74,7 @@ async function getPageToken(pageId: string, userToken: string): Promise<string |
 async function fetchForm(formId: string, token: string): Promise<Record<string, unknown>> {
   const res = await fetch(`${GRAPH}/${formId}?fields=${FIELDS}&access_token=${token}`);
   const data = await res.json();
+  throwIfRateLimited(data);
   if (!res.ok || data.error) throw data.error || { message: `HTTP ${res.status}` };
   return data;
 }
@@ -79,8 +93,11 @@ async function fetchPage(pageId: string, token: string): Promise<{ name?: string
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
 
+  let formId = "";
   try {
-    const { pageId, formId } = await req.json();
+    const body = await req.json();
+    const pageId: string | null = body.pageId ?? null;
+    formId = body.formId;
     if (!formId) return json({ error: "formId required" }, 400);
 
     const tokens: string[] = [];
@@ -110,6 +127,7 @@ Deno.serve(async (req) => {
           const page = pageId ? await fetchPage(pageId, t) : null;
           return json({ form, page });
         } catch (e) {
+          if (e instanceof RateLimited) throw e;
           attempts.push((e as { message?: string })?.message || String(e));
         }
       }
@@ -119,6 +137,10 @@ Deno.serve(async (req) => {
     console.warn(`get-fb-form: no access to form ${formId}:`, attempts.join(" | "));
     return json({ form: null, page: null, noAccess: true });
   } catch (err) {
+    if (err instanceof RateLimited) {
+      console.warn(`get-fb-form: Facebook rate limit hit (form ${formId}):`, err.message);
+      return json({ error: "rate_limited" }, 503);
+    }
     console.error("get-fb-form failed:", err);
     return json({ error: "failed" }, 500);
   }

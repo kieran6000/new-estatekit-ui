@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Box, Button, FormControlLabel, InputAdornment, LinearProgress, Radio, RadioGroup, TextField, Typography } from "@mui/material";
 import EventNoteIcon from "@mui/icons-material/EventNote";
 import PersonOutlineIcon from "@mui/icons-material/PersonOutlineOutlined";
@@ -10,7 +10,7 @@ import CallIcon from "@mui/icons-material/Call";
 import PlaceIcon from "@mui/icons-material/Place";
 import { LEAD_FORM_TEMPLATE } from "../lib/leadFormTemplate";
 import { readableOn } from "../lib/contrast";
-import { trackActivity } from "../lib/activity";
+import { trackPageEvent } from "../lib/pageTracking";
 import type { CustomQuestion, LeadPage, PipelineKind } from "../types";
 
 type Phase = "intro" | "steps" | "done";
@@ -73,6 +73,21 @@ export default function LeadCaptureForm({
   const isFirst = stepIndex === 0;
   const progress = ((stepIndex + 1) / steps.length) * 100;
 
+  // Funnel tracking for the published page — never fires in the dashboard
+  // preview. Each step counts once per visitor session.
+  const startedRef = useRef(false);
+  function markStarted() {
+    if (preview || startedRef.current) return;
+    startedRef.current = true;
+    trackPageEvent(page.id, "start");
+  }
+  const reachedContactRef = useRef(false);
+  useEffect(() => {
+    if (preview || phase !== "steps" || step.kind !== "contact" || reachedContactRef.current) return;
+    reachedContactRef.current = true;
+    trackPageEvent(page.id, "contact");
+  }, [preview, phase, step.kind, page.id]);
+
   function goNext() {
     setErrors({});
     setStepIndex((i) => Math.min(i + 1, steps.length - 1));
@@ -82,6 +97,7 @@ export default function LeadCaptureForm({
     setStepIndex((i) => Math.max(i - 1, 0));
   }
   function submit() {
+    if (!preview) trackPageEvent(page.id, "submit");
     const answerList = customQuestions.map((q) => ({ q: q.label, a: answers[q.id] ?? "" }));
     onSubmit({ name, phone, email: email.trim(), answers: answerList });
     setSubmittedName(name.split(" ")[0] || "there");
@@ -89,6 +105,7 @@ export default function LeadCaptureForm({
   }
 
   function handleNext() {
+    markStarted();
     if (step.kind === "question" && (step.question.type === "address" || step.question.type === "short_text")) {
       if (step.question.required && !(answers[step.question.id] ?? "").trim()) {
         setErrors({ question: "This question needs an answer." });
@@ -111,11 +128,12 @@ export default function LeadCaptureForm({
   }
 
   function pickChoice(questionId: string, value: string) {
+    markStarted();
     setAnswers((a) => ({ ...a, [questionId]: value }));
     setErrors({});
     // A "not a good lead" answer ends the flow on a polite screen — no lead created.
     if (step.kind === "question" && step.question.disqualifyAnswers?.includes(value)) {
-      if (!preview) trackActivity("lead_disqualified", { agentId: page.agentId, lead: { name: name || "Visitor", reason: `${step.question.label}: ${value}`, pipeline: pipelineKind } });
+      if (!preview) trackPageEvent(page.id, "disqualified", `${step.question.label}: ${value}`);
       setDisqualified(true);
       setPhase("done");
       return;
@@ -161,7 +179,7 @@ export default function LeadCaptureForm({
                 size="large"
                 fullWidth
                 endIcon={<ArrowForwardIcon />}
-                onClick={() => setPhase("steps")}
+                onClick={() => { markStarted(); setPhase("steps"); }}
                 sx={{ mt: 3, bgcolor: page.accentColor, color: onAccent, "&:hover": { bgcolor: page.accentColor, filter: "brightness(0.9)" } }}
               >
                 Get Started

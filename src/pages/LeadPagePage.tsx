@@ -60,6 +60,7 @@ import { useTier } from "../hooks/useTier";
 import { useIsOperator } from "../hooks/useAutomations";
 import { useSnack } from "../hooks/useSnack";
 import LeadCaptureForm from "../components/LeadCaptureForm";
+import LeadPageFunnelStats from "../components/LeadPageFunnelStats";
 
 export default function LeadPagePage() {
   const navigate = useNavigate();
@@ -419,6 +420,7 @@ export default function LeadPagePage() {
                 </Typography>
               }
             >
+              {isOperator && <LeadPageFunnelStats pageId={page.id} />}
               <PreviewAndSubmit page={{ ...page, ...form }} pipelineKind={pipeline.kind} />
             </Section>
 

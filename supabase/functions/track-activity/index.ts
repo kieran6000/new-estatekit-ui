@@ -17,7 +17,8 @@ const EK_LOGO = "https://leads.estatekit.co/favicon.svg";
 
 type EventKey =
   | "login" | "new_lead" | "form_submitted" | "lead_disqualified" | "stage_change"
-  | "call_started" | "note_added" | "lead_page_created" | "lead_page_deleted" | "sold_listing_added";
+  | "call_started" | "note_added" | "lead_page_created" | "lead_page_deleted" | "sold_listing_added"
+  | "page_view" | "form_started" | "form_contact_step";
 
 const EVENTS: Record<EventKey, { emoji: string; label: string; color: number; cat: string }> = {
   login:              { emoji: "🔓", label: "Signed in",            color: 0x6366f1, cat: "Agent" },
@@ -30,6 +31,9 @@ const EVENTS: Record<EventKey, { emoji: string; label: string; color: number; ca
   lead_page_created:  { emoji: "✨", label: "Created a lead page",   color: 0x8b5cf6, cat: "Page" },
   lead_page_deleted:  { emoji: "🗑️", label: "Deleted a lead page",  color: 0x8b5cf6, cat: "Page" },
   sold_listing_added: { emoji: "🏡", label: "Added a recent sale",  color: 0xf59e0b, cat: "Page" },
+  page_view:          { emoji: "👀", label: "Landing page viewed",   color: 0x94a3b8, cat: "Funnel" },
+  form_started:       { emoji: "▶️", label: "Started the form",      color: 0x0ea5e9, cat: "Funnel" },
+  form_contact_step:  { emoji: "✍️", label: "Reached contact details", color: 0xf59e0b, cat: "Funnel" },
 };
 
 function json(body: unknown, status = 200) {

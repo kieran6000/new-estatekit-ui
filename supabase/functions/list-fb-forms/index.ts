@@ -17,6 +17,15 @@ const GRAPH = "https://graph.facebook.com/v21.0";
 // page one token can't reach is often reachable through another.
 const TOKEN_NAMES = ["FB_ACCESS_TOKEN", "FB_ACCESS_TOKEN_2", "FB_ACCESS_TOKEN_ALDREDT"];
 
+// Facebook's throttling codes (app, user, page, custom). When we hit one, every
+// further call only digs the hole deeper — stop immediately.
+const RATE_LIMIT_CODES = new Set([4, 17, 32, 613]);
+class RateLimited extends Error {}
+
+function throwIfRateLimited(data: { error?: { code?: number; message?: string } }) {
+  if (data?.error?.code && RATE_LIMIT_CODES.has(data.error.code)) throw new RateLimited(data.error.message);
+}
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -26,11 +35,16 @@ function json(body: unknown, status = 200) {
 
 interface FbForm { id: string; name: string; status: string }
 
+function messageOf(e: unknown): string {
+  return (e as { message?: string })?.message || String(e);
+}
+
 async function fetchForms(pageId: string, token: string): Promise<FbForm[]> {
   const res = await fetch(
     `${GRAPH}/${pageId}/leadgen_forms?fields=id,name,status&limit=200&access_token=${token}`,
   );
   const data = await res.json();
+  throwIfRateLimited(data);
   if (!res.ok || data.error) {
     throw data.error || { message: `HTTP ${res.status}` };
   }
@@ -44,14 +58,18 @@ async function getPageToken(pageId: string, userToken: string): Promise<string |
   try {
     const res = await fetch(`${GRAPH}/${pageId}?fields=access_token&access_token=${userToken}`);
     const data = await res.json();
+    throwIfRateLimited(data);
     if (res.ok && !data.error && data.access_token) return data.access_token as string;
-  } catch { /* fall through to me/accounts */ }
+  } catch (e) {
+    if (e instanceof RateLimited) throw e;
+  }
 
   let url: string | null =
     `${GRAPH}/me/accounts?fields=id,access_token&limit=200&access_token=${userToken}`;
   while (url) {
     const res = await fetch(url);
     const data = await res.json();
+    throwIfRateLimited(data);
     if (!res.ok || data.error) return null;
     const match = (data.data || []).find((p: { id: string }) => p.id === pageId);
     if (match?.access_token) return match.access_token as string;
@@ -63,8 +81,9 @@ async function getPageToken(pageId: string, userToken: string): Promise<string |
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
 
+  let pageId = "";
   try {
-    const { pageId } = await req.json();
+    ({ pageId } = await req.json());
     if (!pageId) return json({ error: "pageId required" }, 400);
 
     const tokens: { name: string; value: string }[] = [];
@@ -79,22 +98,28 @@ Deno.serve(async (req) => {
 
     const attempts: string[] = [];
 
-    for (const { name, value: token } of tokens) {
-      const pageToken = await getPageToken(pageId, token);
-      if (pageToken) {
-        try {
-          return json({ forms: await fetchForms(pageId, pageToken) });
-        } catch (e) {
-          attempts.push(`${name} page-token: ${(e as { message?: string })?.message || String(e)}`);
-        }
-      } else {
+    // Page tokens first — leadgen_forms needs one — stopping at the first that works.
+    for (const { name, value } of tokens) {
+      const pageToken = await getPageToken(pageId, value);
+      if (!pageToken) {
         attempts.push(`${name}: no page token`);
+        continue;
       }
-
       try {
-        return json({ forms: await fetchForms(pageId, token) });
+        return json({ forms: await fetchForms(pageId, pageToken) });
       } catch (e) {
-        attempts.push(`${name} direct: ${(e as { message?: string })?.message || String(e)}`);
+        if (e instanceof RateLimited) throw e;
+        attempts.push(`${name} page-token: ${messageOf(e)}`);
+      }
+    }
+
+    // Raw tokens only as a last resort.
+    for (const { name, value } of tokens) {
+      try {
+        return json({ forms: await fetchForms(pageId, value) });
+      } catch (e) {
+        if (e instanceof RateLimited) throw e;
+        attempts.push(`${name} direct: ${messageOf(e)}`);
       }
     }
 
@@ -103,6 +128,10 @@ Deno.serve(async (req) => {
     console.warn(`list-fb-forms: no access to page ${pageId}:`, attempts.join(" | "));
     return json({ forms: [], noAccess: true });
   } catch (err) {
+    if (err instanceof RateLimited) {
+      console.warn(`list-fb-forms: Facebook rate limit hit (page ${pageId}):`, err.message);
+      return json({ error: "rate_limited" }, 503);
+    }
     console.error("list-fb-forms failed:", err);
     return json({ error: "failed" }, 500);
   }

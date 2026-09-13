@@ -247,6 +247,28 @@ export async function listFbForms(fbPageId: string): Promise<FbFormsResult> {
   return { forms: (data?.forms ?? []) as FbForm[], noAccess: data?.noAccess === true };
 }
 
+export interface LeadPageFunnel {
+  views: number;
+  starts: number;
+  contacts: number;
+  disqualified: number;
+  submits: number;
+}
+
+/** Unique-visitor funnel counts for one landing page. Operator-only (RLS). */
+export async function getLeadPageFunnel(pageId: string, sinceIso: string | null): Promise<LeadPageFunnel> {
+  const { data, error } = await supabase.rpc("lead_page_funnel", { p_page_id: pageId, p_since: sinceIso });
+  if (error) throw new Error(error.message);
+  const row = (Array.isArray(data) ? data[0] : data) ?? {};
+  return {
+    views: Number(row.views ?? 0),
+    starts: Number(row.starts ?? 0),
+    contacts: Number(row.contacts ?? 0),
+    disqualified: Number(row.disqualified ?? 0),
+    submits: Number(row.submits ?? 0),
+  };
+}
+
 export async function updateLeadPage(
   id: string,
   patch: Partial<Omit<LeadPage, "id" | "pipelineId">>,

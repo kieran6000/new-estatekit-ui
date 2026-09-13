@@ -9,6 +9,7 @@ import { getPipelinePublic } from "../api/pipelines";
 import { listCustomQuestionsPublic } from "../api/customQuestions";
 import LeadCaptureForm, { HeaderBrand } from "../components/LeadCaptureForm";
 import { initPixel, trackPixel } from "../lib/fbPixel";
+import { trackPageEvent } from "../lib/pageTracking";
 import { listSoldListingsForAgent } from "../api/soldListings";
 import { SoldStrip } from "../components/SoldListings";
 
@@ -44,6 +45,10 @@ export default function LeadPagePreviewPage() {
   useEffect(() => {
     if (page?.fbPixelId) initPixel(page.fbPixelId);
   }, [page?.fbPixelId]);
+
+  useEffect(() => {
+    if (page?.id) trackPageEvent(page.id, "view");
+  }, [page?.id]);
 
   const loading = pageLoading || pipelineLoading;
 
