@@ -97,9 +97,22 @@ export default function LeadCaptureForm({
     setErrors({});
     setStepIndex((i) => Math.max(i - 1, 0));
   }
-  function submit() {
+  const submittedRef = useRef(false);
+  /** `latest` carries an answer picked in this same tap, before state catches up. */
+  function submit(latest: Record<string, string> = {}) {
+    if (submittedRef.current) return;
+    const all = { ...answers, ...latest };
+    // Last line of defence: never let a lead through with a required question
+    // unanswered — send them back to the first one they missed.
+    const missing = customQuestions.findIndex((q) => q.required && !(all[q.id] ?? "").trim());
+    if (missing !== -1) {
+      setStepIndex(missing);
+      setErrors({ question: "This question needs an answer." });
+      return;
+    }
+    submittedRef.current = true;
     if (!preview) trackPageEvent(page.id, "submit");
-    const answerList = customQuestions.map((q) => ({ q: q.label, a: answers[q.id] ?? "" }));
+    const answerList = customQuestions.map((q) => ({ q: q.label, a: all[q.id] ?? "" }));
     onSubmit({ name, phone, email: email.trim(), answers: answerList });
     setSubmittedName(name.split(" ")[0] || "there");
     setPhase("done");
@@ -140,8 +153,12 @@ export default function LeadCaptureForm({
       return;
     }
     // Auto-advance: a tap on a choice is itself the "next" action — no extra button press.
-    if (isLast) submit();
-    else setStepIndex((i) => i + 1);
+    // One tap fires this twice (the answer row's click and the radio's change), so
+    // only ever advance from the step the tap happened on. Advancing blindly moved
+    // two steps and silently skipped the next question.
+    const from = stepIndex;
+    if (isLast) submit({ [questionId]: value });
+    else setStepIndex((i) => (i === from ? i + 1 : i));
   }
 
   return (
@@ -387,7 +404,7 @@ function DisqualifiedScreen({ page }: { page: LeadPage }) {
   );
 }
 
-function ChoiceStep({ question, options, value, onPick, accent }: { question: string; options: string[]; value: string; onPick: (v: string) => void; accent: string }) {
+function ChoiceStep({ question, options, value, onPick, accent, error }: { question: string; options: string[]; value: string; onPick: (v: string) => void; accent: string; error?: string }) {
   return (
     <Box sx={{ mt: 1.5 }}>
       <Typography sx={{ fontSize: 18, fontWeight: 600, mb: 1 }}>{question}</Typography>
@@ -415,6 +432,7 @@ function ChoiceStep({ question, options, value, onPick, accent }: { question: st
           );
         })}
       </RadioGroup>
+      {error && <Typography sx={{ fontSize: 12.5, color: "error.main", mt: 1 }}>{error}</Typography>}
     </Box>
   );
 }
@@ -435,10 +453,10 @@ function QuestionStep({
   onPickChoice: (v: string) => void;
 }) {
   if (question.type === "multiple_choice") {
-    return <ChoiceStep question={question.label} options={question.options ?? []} value={value} onPick={onPickChoice} accent={accent} />;
+    return <ChoiceStep question={question.label} options={question.options ?? []} value={value} onPick={onPickChoice} accent={accent} error={error} />;
   }
   if (question.type === "yes_no") {
-    return <ChoiceStep question={question.label} options={["Yes", "No"]} value={value} onPick={onPickChoice} accent={accent} />;
+    return <ChoiceStep question={question.label} options={["Yes", "No"]} value={value} onPick={onPickChoice} accent={accent} error={error} />;
   }
   const isAddress = question.type === "address";
   return (
