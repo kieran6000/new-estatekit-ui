@@ -4,6 +4,7 @@ import {
   AppBar,
   Box,
   Button,
+  Chip,
   CircularProgress,
   Dialog,
   DialogActions,
@@ -20,6 +21,8 @@ import {
   Skeleton,
   Switch,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
   Toolbar,
   Typography,
 } from "@mui/material";
@@ -47,7 +50,7 @@ import FbFormPreview from "../components/FbFormPreview";
 import { getMyProfile } from "../api/agentProfile";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase, getActiveAgentIdSync } from "../api/_client";
-import { listMySoldListings, addSoldListing, deleteSoldListing } from "../api/soldListings";
+import { listMySoldListings, addSoldListing, deleteSoldListing, type SoldListingStatus } from "../api/soldListings";
 import { trackActivity } from "../lib/activity";
 import {
   useAddCustomQuestion,
@@ -908,6 +911,7 @@ function RecentSalesEditor() {
   const { data: listings = [] } = useQuery({ queryKey: ["mySold"], queryFn: listMySoldListings });
   const [address, setAddress] = useState("");
   const [price, setPrice] = useState("");
+  const [status, setStatus] = useState<SoldListingStatus>("sold");
   const [busy, setBusy] = useState(false);
 
   async function onImage(file: File | null) {
@@ -923,13 +927,14 @@ function RecentSalesEditor() {
       if (error) { console.error(error); showSnack("Couldn't upload the photo. Try again."); setBusy(false); return; }
       const { data: urlData } = supabase.storage.from("logos").getPublicUrl(path);
       const priceNum = price ? Number(price.replace(/\D/g, "")) : null;
-      await addSoldListing({ imageUrl: urlData.publicUrl, address: address.trim(), price: priceNum });
+      await addSoldListing({ imageUrl: urlData.publicUrl, address: address.trim(), price: priceNum, status });
       trackActivity("sold_listing_added", { sale: { address: address.trim(), price: priceNum ?? undefined } });
       await qc.invalidateQueries({ queryKey: ["mySold"] });
       await qc.invalidateQueries({ queryKey: ["publicSold"] });
       setAddress("");
       setPrice("");
-      showSnack("Sale added");
+      setStatus("sold");
+      showSnack(status === "sold" ? "Sale added" : "Listing added");
     } finally {
       setBusy(false);
     }
@@ -945,15 +950,28 @@ function RecentSalesEditor() {
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
       <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
-        Sold homes shown under the form and on the thank-you page as social proof. Add the address and price, then pick a photo.
+        Sold and currently-listed homes shown under the form and on the thank-you page as social proof. Choose sold or listed, add the address and price, then pick a photo.
       </Typography>
 
       {listings.map((l) => (
         <Box key={l.id} sx={{ display: "flex", alignItems: "center", gap: 1.25, p: "8px 10px", border: `1px solid ${tokens.divider}`, borderRadius: "6px" }}>
           {l.imageUrl && <Box component="img" src={l.imageUrl} alt="" sx={{ width: 48, height: 40, objectFit: "cover", borderRadius: "4px", flexShrink: 0 }} />}
           <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography sx={{ fontSize: 13.5, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.address}</Typography>
-            {l.price != null && <Typography sx={{ fontSize: 12, color: "text.secondary" }}>Sold for R{l.price.toLocaleString("en-ZA")}</Typography>}
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
+              <Chip
+                size="small"
+                label={l.status === "sold" ? "Sold" : "Listed"}
+                color={l.status === "sold" ? "success" : "primary"}
+                variant="outlined"
+                sx={{ height: 18, fontSize: 10.5, "& .MuiChip-label": { px: 0.75 } }}
+              />
+              <Typography sx={{ fontSize: 13.5, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.address}</Typography>
+            </Box>
+            {l.price != null && (
+              <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
+                {l.status === "sold" ? "Sold for" : "Listed at"} R{l.price.toLocaleString("en-ZA")}
+              </Typography>
+            )}
           </Box>
           <IconButton size="small" onClick={() => remove(l.id)}>
             <DeleteOutlineIcon fontSize="small" />
@@ -962,10 +980,28 @@ function RecentSalesEditor() {
       ))}
 
       <Box sx={{ display: "flex", flexDirection: "column", gap: 1, p: "12px", border: `1px dashed ${tokens.divider}`, borderRadius: "6px" }}>
+        <ToggleButtonGroup
+          size="small"
+          exclusive
+          value={status}
+          onChange={(_e, v) => v && setStatus(v)}
+          sx={{ alignSelf: "flex-start", "& .MuiToggleButton-root": { textTransform: "none", fontSize: 12.5, px: 1.5, py: 0.5 } }}
+        >
+          <ToggleButton value="sold">Sold</ToggleButton>
+          <ToggleButton value="listed">Listed</ToggleButton>
+        </ToggleButtonGroup>
         <TextField label="Address" size="small" value={address} onChange={(e) => setAddress(e.target.value)} fullWidth placeholder="e.g. 12 Protea Drive, Midrand" />
-        <TextField label="Sold price (R)" size="small" value={price} onChange={(e) => setPrice(e.target.value.replace(/\D/g, ""))} fullWidth placeholder="e.g. 1970000" inputMode="numeric" />
+        <TextField
+          label={status === "sold" ? "Sold price (R)" : "Listed price (R)"}
+          size="small"
+          value={price}
+          onChange={(e) => setPrice(e.target.value.replace(/\D/g, ""))}
+          fullWidth
+          placeholder="e.g. 1970000"
+          inputMode="numeric"
+        />
         <Button component="label" variant="contained" size="small" disabled={busy || !address.trim()} startIcon={busy ? <CircularProgress size={14} /> : <AddIcon fontSize="small" />} sx={{ alignSelf: "flex-start" }}>
-          {busy ? "Adding…" : "Add sale (pick photo)"}
+          {busy ? "Adding…" : `Add ${status} home (pick photo)`}
           <input type="file" hidden accept="image/*" onChange={(e) => onImage(e.target.files?.[0] ?? null)} />
         </Button>
       </Box>

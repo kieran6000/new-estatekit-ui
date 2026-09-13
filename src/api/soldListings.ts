@@ -1,11 +1,14 @@
 import { supabase, getActiveAgentId } from "./_client";
 
+export type SoldListingStatus = "sold" | "listed";
+
 export interface SoldListing {
   id: string;
   agentId: string;
   imageUrl: string | null;
   address: string;
   price: number | null;
+  status: SoldListingStatus;
   sortOrder: number;
 }
 
@@ -15,6 +18,7 @@ interface Row {
   image_url: string | null;
   address: string;
   price: number | null;
+  status: SoldListingStatus;
   sort_order: number;
 }
 
@@ -25,6 +29,7 @@ function toListing(r: Row): SoldListing {
     imageUrl: r.image_url,
     address: r.address,
     price: r.price != null ? Number(r.price) : null,
+    status: r.status,
     sortOrder: r.sort_order,
   };
 }
@@ -46,7 +51,7 @@ export async function listMySoldListings(): Promise<SoldListing[]> {
   return listSoldListingsForAgent(agentId);
 }
 
-export async function addSoldListing(input: { imageUrl: string | null; address: string; price: number | null }): Promise<void> {
+export async function addSoldListing(input: { imageUrl: string | null; address: string; price: number | null; status: SoldListingStatus }): Promise<void> {
   const agentId = await getActiveAgentId();
   const { data: maxRow } = await supabase
     .from("sold_listings")
@@ -61,6 +66,7 @@ export async function addSoldListing(input: { imageUrl: string | null; address: 
     image_url: input.imageUrl,
     address: input.address,
     price: input.price,
+    status: input.status,
     sort_order: nextOrder,
   });
   if (error) throw new Error(error.message);
