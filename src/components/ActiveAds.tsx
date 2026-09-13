@@ -97,7 +97,8 @@ function AdCard({ ad, fallbackPage, adAccountId }: { ad: ActiveAd; fallbackPage:
       showSnack(`Paused "${ad.name}"`);
       await qc.invalidateQueries({ queryKey: ["activeAds", adAccountId] });
     } catch (e) {
-      showSnack(e instanceof Error ? e.message : "Couldn't pause the ad");
+      console.error(e);
+      showSnack("Couldn't pause the ad. Try again.");
     } finally {
       setPausing(false);
     }
@@ -306,7 +307,8 @@ function PausedAds({ adAccountId }: { adAccountId: string }) {
       await qc.invalidateQueries({ queryKey: ["pausedAds", adAccountId] });
       await qc.invalidateQueries({ queryKey: ["activeAds", adAccountId] });
     } catch (e) {
-      showSnack(e instanceof Error ? e.message : "Couldn't resume the ad");
+      console.error(e);
+      showSnack("Couldn't resume the ad. Try again.");
     } finally {
       setResumingId(null);
     }

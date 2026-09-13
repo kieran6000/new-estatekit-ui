@@ -36,7 +36,15 @@ function json(body: unknown, status = 200) {
   });
 }
 
+// Same lookup as list-fb-forms: ask the page for its token first (works for
+// pages shared through Business Settings), then fall back to me/accounts.
 async function getPageToken(pageId: string, userToken: string): Promise<string | null> {
+  try {
+    const res = await fetch(`${GRAPH}/${pageId}?fields=access_token&access_token=${userToken}`);
+    const data = await res.json();
+    if (res.ok && !data.error && data.access_token) return data.access_token as string;
+  } catch { /* fall through to me/accounts */ }
+
   let url: string | null =
     `${GRAPH}/me/accounts?fields=id,access_token&limit=200&access_token=${userToken}`;
   while (url) {
@@ -80,7 +88,10 @@ Deno.serve(async (req) => {
       const { data } = await supabase.rpc("get_secret", { secret_name: name });
       if (data) tokens.push(data);
     }
-    if (tokens.length === 0) return json({ error: "No FB token configured" }, 500);
+    if (tokens.length === 0) {
+      console.error("get-fb-form: no Facebook tokens in the vault");
+      return json({ form: null, page: null, noAccess: true });
+    }
 
     const attempts: string[] = [];
     for (const token of tokens) {
@@ -104,9 +115,11 @@ Deno.serve(async (req) => {
       }
     }
 
-    console.warn(`get-fb-form: form ${formId} failed:`, attempts.join(" | "));
-    return json({ error: `Could not load form ${formId}. ${attempts.join(" | ")}` }, 502);
+    // Details go to the logs only — the app shows a plain "no access" message.
+    console.warn(`get-fb-form: no access to form ${formId}:`, attempts.join(" | "));
+    return json({ form: null, page: null, noAccess: true });
   } catch (err) {
-    return json({ error: String(err) }, 500);
+    console.error("get-fb-form failed:", err);
+    return json({ error: "failed" }, 500);
   }
 });

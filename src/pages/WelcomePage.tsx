@@ -47,14 +47,15 @@ export default function WelcomePage() {
     try {
       if (pw) {
         const { error } = await updatePassword(pw);
-        if (error) { showSnack(error); setBusy(false); return; }
+        if (error) { console.error(error); showSnack("Couldn't set your password. Try again."); setBusy(false); return; }
       }
       await upsertProfile({ displayName: displayName.trim(), company: company.trim(), area: area.trim(), onboarded: true });
       await qc.invalidateQueries({ queryKey: ["myProfile"] });
       await qc.invalidateQueries({ queryKey: ["amIOnboarded"] });
       navigate("/leads", { replace: true });
     } catch (e) {
-      showSnack(e instanceof Error ? e.message : "Something went wrong");
+      console.error(e);
+      showSnack("Couldn't finish setting up. Try again.");
       setBusy(false);
     }
   }

@@ -35,7 +35,8 @@ export default function AgentPasswords({ onSnack }: { onSnack: (msg: string) => 
       setPw("");
       setShow(false);
     } catch (e) {
-      onSnack(e instanceof Error ? e.message : "Couldn't set password");
+      console.error(e);
+      onSnack("Couldn't set the password. Try again.");
     } finally {
       setBusy(false);
     }

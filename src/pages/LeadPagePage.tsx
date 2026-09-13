@@ -535,9 +535,11 @@ function FbFormSource({
         <Section title="Form questions">
           {isLoading ? (
             <Skeleton variant="rounded" height={160} sx={{ borderRadius: "8px" }} />
-          ) : error ? (
-            <Typography sx={{ fontSize: 13, color: "error.main" }}>
-              Couldn't load the form from Facebook: {error instanceof Error ? error.message : "unknown error"}
+          ) : error || data?.noAccess ? (
+            <Typography sx={{ fontSize: 13, color: "text.secondary" }}>
+              {data?.noAccess
+                ? "EstateKit doesn't have access to this Facebook page, so the form's questions can't be shown."
+                : "Couldn't load this form from Facebook right now. Try again in a minute."}
             </Typography>
           ) : form ? (
             <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
@@ -720,7 +722,8 @@ function AddPageDialog({
   const [fbForms, setFbForms] = useState<FbForm[]>([]);
   const [fbFormId, setFbFormId] = useState("");
   const [loadingForms, setLoadingForms] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
+  // Why the form list is empty, when it isn't simply "no forms on the page".
+  const [formsProblem, setFormsProblem] = useState<"no_access" | "failed" | null>(null);
   const addPage = useAddLeadPage();
   const posthog = usePostHog();
 
@@ -731,24 +734,27 @@ function AddPageDialog({
       setPipelineId(pipelines[0]?.id ?? "");
       setFbForms([]);
       setFbFormId("");
-      setFormError(null);
+      setFormsProblem(null);
     }
   }, [open, pipelines]);
 
   useEffect(() => {
     if (sourceType !== "fb_form" || !open) return;
-    if (!fbPageId) { setFbForms([]); setFormError(null); return; }
+    if (!fbPageId) { setFbForms([]); setFormsProblem(null); return; }
     let cancelled = false;
     (async () => {
       setLoadingForms(true);
-      setFormError(null);
+      setFormsProblem(null);
       try {
-        const forms = await listFbForms(fbPageId);
-        if (!cancelled) setFbForms(forms);
-      } catch (err) {
+        const { forms, noAccess } = await listFbForms(fbPageId);
+        if (!cancelled) {
+          setFbForms(forms);
+          setFormsProblem(noAccess ? "no_access" : null);
+        }
+      } catch {
         if (!cancelled) {
           setFbForms([]);
-          setFormError(err instanceof Error ? err.message : "Failed to load forms");
+          setFormsProblem("failed");
         }
       }
       if (!cancelled) setLoadingForms(false);
@@ -825,12 +831,14 @@ function AddPageDialog({
               </TextField>
             ) : (
               <Box sx={{ py: 1 }}>
-                <Typography sx={{ fontSize: 13, color: formError ? "error.main" : "text.secondary", mb: 1 }}>
-                  {formError
-                    ? `Error: ${formError}`
-                    : fbPageId
-                      ? "No forms found on this Facebook page."
-                      : "No Facebook page linked to this account."}
+                <Typography sx={{ fontSize: 13, color: "text.secondary", mb: 1 }}>
+                  {formsProblem === "no_access"
+                    ? "EstateKit doesn't have access to this Facebook page's forms yet."
+                    : formsProblem === "failed"
+                      ? "Couldn't load forms from Facebook. Try again in a minute."
+                      : fbPageId
+                        ? "No forms found on this Facebook page."
+                        : "No Facebook page linked to this account."}
                 </Typography>
                 <Button
                   size="small"
@@ -909,7 +917,7 @@ function RecentSalesEditor() {
       const ext = file.name.split(".").pop() || "jpg";
       const path = `${agentId}/sale-${Date.now()}.${ext}`;
       const { error } = await supabase.storage.from("logos").upload(path, file, { upsert: true });
-      if (error) { showSnack("Upload failed: " + error.message); setBusy(false); return; }
+      if (error) { console.error(error); showSnack("Couldn't upload the photo. Try again."); setBusy(false); return; }
       const { data: urlData } = supabase.storage.from("logos").getPublicUrl(path);
       const priceNum = price ? Number(price.replace(/\D/g, "")) : null;
       await addSoldListing({ imageUrl: urlData.publicUrl, address: address.trim(), price: priceNum });

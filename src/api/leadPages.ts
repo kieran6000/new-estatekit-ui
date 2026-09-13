@@ -186,13 +186,22 @@ export interface FbPageInfo {
 }
 
 export interface FbFormResult {
-  form: FbFormDetail;
+  form: FbFormDetail | null;
   page: FbPageInfo | null;
+  /** None of our Facebook tokens can read this page. */
+  noAccess: boolean;
+}
+
+export interface FbFormsResult {
+  forms: FbForm[];
+  /** None of our Facebook tokens can read this page. */
+  noAccess: boolean;
 }
 
 /** On a non-2xx response supabase-js leaves `data` null and hides the body in
  *  `error.context`, so the function's own explanation never reached the UI —
- *  just "Edge Function returned a non-2xx status code". Read it back out. */
+ *  just "Edge Function returned a non-2xx status code". Read it back out for the
+ *  console — it's diagnostic detail, never text to show in the app. */
 async function functionErrorMessage(error: unknown): Promise<string> {
   const ctx = (error as { context?: Response })?.context;
   if (ctx && typeof ctx.json === "function") {
@@ -209,31 +218,33 @@ export async function getFbForm(fbPageId: string | null, formId: string): Promis
     body: { pageId: fbPageId, formId },
   });
   if (error) {
-    const message = await functionErrorMessage(error);
-    console.error("get-fb-form error:", message);
-    throw new Error(message);
+    console.error("get-fb-form error:", await functionErrorMessage(error));
+    throw new Error("Couldn't load form");
   }
   if (data?.error) {
     console.error("get-fb-form API error:", data.error);
-    throw new Error(data.error);
+    throw new Error("Couldn't load form");
   }
-  return { form: data.form as FbFormDetail, page: (data.page ?? null) as FbPageInfo | null };
+  return {
+    form: (data?.form ?? null) as FbFormDetail | null,
+    page: (data?.page ?? null) as FbPageInfo | null,
+    noAccess: data?.noAccess === true,
+  };
 }
 
-export async function listFbForms(fbPageId: string): Promise<FbForm[]> {
+export async function listFbForms(fbPageId: string): Promise<FbFormsResult> {
   const { data, error } = await supabase.functions.invoke("list-fb-forms", {
     body: { pageId: fbPageId },
   });
   if (error) {
-    const message = await functionErrorMessage(error);
-    console.error("list-fb-forms error:", message);
-    throw new Error(message);
+    console.error("list-fb-forms error:", await functionErrorMessage(error));
+    throw new Error("Couldn't load forms");
   }
   if (data?.error) {
     console.error("list-fb-forms API error:", data.error);
-    throw new Error(data.error);
+    throw new Error("Couldn't load forms");
   }
-  return data?.forms || [];
+  return { forms: (data?.forms ?? []) as FbForm[], noAccess: data?.noAccess === true };
 }
 
 export async function updateLeadPage(

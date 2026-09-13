@@ -275,7 +275,8 @@ export default function LeadsPage() {
       showSnack(done);
       exitSelect();
     } catch (e) {
-      showSnack(e instanceof Error ? e.message : "Bulk action failed");
+      console.error(e);
+      showSnack("Couldn't update those leads. Try again.");
     } finally {
       setBulkBusy(false);
     }
@@ -577,7 +578,7 @@ export default function LeadsPage() {
               setRenameOpen(false);
               showSnack("Pipeline renamed");
             })
-            .catch((err) => showSnack(err.message));
+            .catch((err) => { console.error(err); showSnack("That didn't save. Try again."); });
         }}
       />
       <AddPipelineDialog

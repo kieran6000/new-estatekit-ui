@@ -55,7 +55,8 @@ export default function AccountPage() {
       const { cancelled } = await panicStopAutomations();
       showSnack(`Automations stopped — ${cancelled} queued message${cancelled === 1 ? "" : "s"} cancelled`);
     } catch (e) {
-      showSnack(e instanceof Error ? e.message : "Failed to stop");
+      console.error(e);
+      showSnack("Couldn't stop automations. Try again.");
     } finally {
       setStopping(false);
     }
@@ -122,7 +123,8 @@ export default function AccountPage() {
           setSaveState("saved");
         } catch (e) {
           setSaveState("error");
-          showSnack(e instanceof Error ? `Couldn't save: ${e.message}` : "Couldn't save");
+          console.error(e);
+          showSnack("Couldn't save. Try again.");
           // Optimistic patch was wrong — pull back the real, saved values.
           queryClient.invalidateQueries({ queryKey: ["myProfile"] });
         }
@@ -160,7 +162,8 @@ export default function AccountPage() {
     } catch (e) {
       setForm((f) => ({ ...f, sidebarLogoUrl: prevLogo }));
       applyOptimistic({ sidebarLogoUrl: prevLogo });
-      showSnack(e instanceof Error ? `Upload failed: ${e.message}` : "Upload failed");
+      console.error(e);
+      showSnack("Couldn't upload the logo. Try again.");
     } finally {
       setLogoUploading(false);
       setTimeout(() => URL.revokeObjectURL(previewUrl), 3000);
@@ -178,7 +181,8 @@ export default function AccountPage() {
     } catch (e) {
       setForm((f) => ({ ...f, sidebarLogoUrl: prevLogo }));
       applyOptimistic({ sidebarLogoUrl: prevLogo });
-      showSnack(e instanceof Error ? `Couldn't remove logo: ${e.message}` : "Couldn't remove logo");
+      console.error(e);
+      showSnack("Couldn't remove the logo. Try again.");
     }
   }
 
@@ -189,7 +193,7 @@ export default function AccountPage() {
     const agentId = getActiveAgentIdSync() || user.id;
     const path = `${agentId}/contract-${Date.now()}.pdf`;
     const { error } = await supabase.storage.from("logos").upload(path, file, { upsert: true });
-    if (error) { showSnack("Upload failed: " + error.message); return; }
+    if (error) { console.error(error); showSnack("Couldn't upload the contract. Try again."); return; }
     const { data: urlData } = supabase.storage.from("logos").getPublicUrl(path);
     await upsertProfile({ contractPdfUrl: urlData.publicUrl }, profile?.agentId);
     queryClient.invalidateQueries({ queryKey: ["myProfile"] });

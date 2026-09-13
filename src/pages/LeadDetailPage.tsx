@@ -228,7 +228,7 @@ export default function LeadDetailPage() {
                             : `Moved to ${target?.name ?? "pipeline"}`,
                         );
                       })
-                      .catch((err) => showSnack(err.message));
+                      .catch((err) => { console.error(err); showSnack("That didn't save. Try again."); });
                   }}
                 >
                   {pipelines.map((p) => (
@@ -252,7 +252,7 @@ export default function LeadDetailPage() {
                       });
                       navigate("/leads");
                     })
-                    .catch((err) => showSnack(err.message));
+                    .catch((err) => { console.error(err); showSnack("That didn't save. Try again."); });
                 }}
                 sx={{ textTransform: "none", alignSelf: "flex-start" }}
               >
