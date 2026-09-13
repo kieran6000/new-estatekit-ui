@@ -105,7 +105,8 @@ export default function LeadDetailPage() {
     <Box>
       <AppBar position="sticky">
         <Toolbar sx={{ height: 56, minHeight: "56px !important" }}>
-          <IconButton onClick={() => navigate("/leads")}>
+          {/* Back to wherever they came from (e.g. Automations), else the lead list. */}
+          <IconButton onClick={() => ((window.history.state?.idx ?? 0) > 0 ? navigate(-1) : navigate("/leads"))}>
             <ArrowBackIcon />
           </IconButton>
           <Typography sx={{ fontSize: 18, fontWeight: 500 }}>{lead.name}</Typography>

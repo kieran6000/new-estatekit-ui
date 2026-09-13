@@ -1,18 +1,7 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Box,
-  Button,
-  Chip,
-  CircularProgress,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  Switch,
-  TextField,
-  Typography,
-} from "@mui/material";
+import { Box, Button, Chip, CircularProgress, Switch, Typography } from "@mui/material";
 import { tokens } from "../theme";
 import { getActiveAgentId, getActiveAgentIdSync } from "../api/_client";
 import { getMyProfile } from "../api/agentProfile";
@@ -27,9 +16,11 @@ import {
 import { useAutomations, useAutomationSteps } from "../hooks/useAutomations";
 import { useSnack } from "../hooks/useSnack";
 import type { AutomationStepRow } from "../types/automations";
+import WhatsAppPreview from "./WhatsAppPreview";
 
 // What's about to go out for the account you're viewing: every queued automation
-// message, soonest first, with pause / edit / send now / skip on each.
+// message, soonest first, with pause / send now / skip on each. Double-click a
+// message to reword it for that lead.
 
 // Mirrors run-automations: WhatsApps only send 08:00–20:00 SAST (UTC+2).
 const SAST_OFFSET = 2;
@@ -58,18 +49,6 @@ function relative(d: Date): string {
 const whenLabel = (d: Date) =>
   d.toLocaleString("en-ZA", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
-function fillMessage(text: string, lead: ScheduledRun["lead"]): string {
-  const fields: Record<string, string> = {
-    name: lead.name,
-    first_name: lead.name.split(" ")[0],
-    phone: lead.phone,
-    stage: lead.stage,
-    next_label: lead.next_label,
-    action_link: "[link to lead]",
-  };
-  return text.replace(/\{\{(\w+)\}\}/g, (_m, key: string) => fields[key] ?? `{{${key}}}`);
-}
-
 function describeStep(step: AutomationStepRow | undefined): string {
   if (!step) return "Finishes this automation";
   if (step.action_type === "set_reminder") return `Sets reminder: ${String(step.payload?.label ?? "follow up")}`;
@@ -78,6 +57,7 @@ function describeStep(step: AutomationStepRow | undefined): string {
 }
 
 export default function ScheduledAutomations() {
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const showSnack = useSnack();
   const agentKey = getActiveAgentIdSync() ?? "me";
@@ -99,8 +79,6 @@ export default function ScheduledAutomations() {
 
   const [busyId, setBusyId] = useState<string | null>(null);
   const [togglingAccount, setTogglingAccount] = useState(false);
-  const [editing, setEditing] = useState<ScheduledRun | null>(null);
-  const [draft, setDraft] = useState("");
 
   const refresh = () => qc.invalidateQueries({ queryKey: runsKey });
 
@@ -130,13 +108,6 @@ export default function ScheduledAutomations() {
     } finally {
       setTogglingAccount(false);
     }
-  }
-
-  async function saveMessage(value: string | null) {
-    if (!editing) return;
-    const run = editing;
-    setEditing(null);
-    await act(run, { template_override: value }, value === null ? "Back to the default message" : "Message updated");
   }
 
   return (
@@ -169,24 +140,35 @@ export default function ScheduledAutomations() {
           Nothing scheduled for this account.
         </Typography>
       ) : (
-        <Box sx={{ m: "12px 16px 0", border: `1px solid ${tokens.divider}`, borderRadius: "8px", bgcolor: "background.paper" }}>
-          {runs.map((run) => {
-            const automation = automations.find((a) => a.id === run.automation_id);
-            const step = steps.find((s) => s.automation_id === run.automation_id && s.step_order === run.current_step);
-            const isWhatsApp = step?.action_type === "send_whatsapp";
-            const template = run.template_override ?? step?.template_text ?? "";
-            const sendAt = effectiveSendTime(run.run_at, isWhatsApp);
-            const heldByQuietHours = isWhatsApp && sendAt.getTime() > Math.max(Date.parse(run.run_at), Date.now()) + 60_000;
-            const busy = busyId === run.id;
-            const locked = run.status === "processing";
+        runs.map((run) => {
+          const automation = automations.find((a) => a.id === run.automation_id);
+          const step = steps.find((s) => s.automation_id === run.automation_id && s.step_order === run.current_step);
+          const isWhatsApp = step?.action_type === "send_whatsapp";
+          const defaultText = step?.template_text ?? "";
+          const text = run.template_override ?? defaultText;
+          const sendAt = effectiveSendTime(run.run_at, isWhatsApp);
+          const heldByQuietHours = isWhatsApp && sendAt.getTime() > Math.max(Date.parse(run.run_at), Date.now()) + 60_000;
+          const busy = busyId === run.id;
+          const locked = run.status === "processing";
 
-            return (
-              <Box
-                key={run.id}
-                sx={{ p: "12px 16px 6px", borderTop: `1px solid ${tokens.divider2}`, "&:first-of-type": { borderTop: 0 } }}
-              >
+          return (
+            <Box
+              key={run.id}
+              sx={{ m: "12px 16px 0", border: `1px solid ${tokens.divider}`, borderRadius: "8px", bgcolor: "background.paper" }}
+            >
+              <Box sx={{ p: "12px 16px 10px" }}>
                 <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
-                  <Typography sx={{ fontSize: 14.5, fontWeight: 500 }}>{run.lead.name}</Typography>
+                  <Typography
+                    component="button"
+                    onClick={() => navigate(`/leads/${run.lead.id}`)}
+                    sx={{
+                      p: 0, border: 0, bgcolor: "transparent", cursor: "pointer", font: "inherit",
+                      fontSize: 15, fontWeight: 500, color: tokens.primary, textAlign: "left",
+                      "&:hover": { textDecoration: "underline" },
+                    }}
+                  >
+                    {run.lead.name}
+                  </Typography>
                   <Typography sx={{ fontSize: 13, color: "text.secondary", flex: 1, minWidth: 120 }}>
                     {automation?.name ?? "Automation"}
                   </Typography>
@@ -202,92 +184,80 @@ export default function ScheduledAutomations() {
                   {whenLabel(sendAt)}
                   {heldByQuietHours ? " · waiting for 08:00 (quiet hours)" : ""}
                 </Typography>
-
-                {isWhatsApp ? (
-                  <Box sx={{ mt: 1, p: "8px 10px", bgcolor: tokens.surface2, borderRadius: "6px" }}>
-                    <Typography sx={{ fontSize: 13, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-                      {fillMessage(template, run.lead)}
-                    </Typography>
-                    {run.template_override !== null && (
-                      <Typography sx={{ fontSize: 11.5, color: "text.secondary", mt: 0.5 }}>Edited for this lead</Typography>
-                    )}
-                  </Box>
-                ) : (
-                  <Typography sx={{ fontSize: 13, color: "text.secondary", mt: 1 }}>{describeStep(step)}</Typography>
-                )}
-
-                <Box sx={{ display: "flex", flexWrap: "wrap", mt: 0.5, ml: -0.75 }}>
-                  {isWhatsApp && (
-                    <Button size="small" disabled={busy || locked} onClick={() => { setEditing(run); setDraft(template); }}>
-                      Edit message
-                    </Button>
-                  )}
-                  {run.status === "paused" ? (
-                    <Button size="small" disabled={busy || accountPaused} onClick={() => act(run, { status: "pending" }, "Resumed")}>
-                      Resume
-                    </Button>
-                  ) : (
-                    <Button size="small" disabled={busy || locked} onClick={() => act(run, { status: "paused" }, "Paused", { status: "pending" })}>
-                      Pause
-                    </Button>
-                  )}
-                  <Button
-                    size="small"
-                    disabled={busy || locked || accountPaused}
-                    onClick={() => {
-                      const later = isWhatsApp && effectiveSendTime(new Date().toISOString(), true).getTime() > Date.now() + 60_000;
-                      act(
-                        run,
-                        { status: "pending", run_at: new Date().toISOString() },
-                        later ? "Queued — sends at 08:00 when quiet hours end" : "Sending within a minute",
-                      );
-                    }}
-                  >
-                    Send now
-                  </Button>
-                  <Button
-                    size="small"
-                    color="error"
-                    disabled={busy || locked}
-                    onClick={() => act(run, { status: "cancelled" }, "Skipped", { status: run.status === "paused" ? "paused" : "pending" })}
-                  >
-                    Skip
-                  </Button>
-                </Box>
               </Box>
-            );
-          })}
-        </Box>
-      )}
 
-      <Dialog open={!!editing} onClose={() => setEditing(null)} fullWidth maxWidth="sm">
-        <DialogTitle sx={{ fontSize: 18, fontWeight: 500 }}>Edit message</DialogTitle>
-        <DialogContent>
-          <Typography sx={{ fontSize: 13, color: "text.secondary", mb: 1.5 }}>
-            Only changes this one message about {editing?.lead.name}. The automation's usual message stays the same.
-          </Typography>
-          <TextField
-            multiline
-            minRows={4}
-            fullWidth
-            autoFocus
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            helperText="{{first_name}}, {{name}}, {{phone}}, {{stage}} and {{action_link}} fill in automatically."
-          />
-        </DialogContent>
-        <DialogActions>
-          {editing?.template_override !== null && (
-            <Button onClick={() => saveMessage(null)} sx={{ mr: "auto" }}>
-              Use default
-            </Button>
-          )}
-          <Button onClick={() => setEditing(null)}>Cancel</Button>
-          <Button variant="contained" disabled={!draft.trim()} onClick={() => saveMessage(draft)}>
-            Save
-          </Button>
-        </DialogActions>
-      </Dialog>
+              <Box sx={{ px: 2 }}>
+                {isWhatsApp ? (
+                  <>
+                    <WhatsAppPreview
+                      lead={run.lead}
+                      text={text}
+                      time={sendAt}
+                      editable={!locked}
+                      onSave={(next) =>
+                        act(
+                          run,
+                          { template_override: next.trim() === defaultText.trim() ? null : next },
+                          "Message saved",
+                          { template_override: run.template_override },
+                        )
+                      }
+                    />
+                    {run.template_override !== null && (
+                      <Typography sx={{ fontSize: 12, color: "text.secondary", mt: 0.5 }}>
+                        Edited for this lead ·{" "}
+                        <Box
+                          component="button"
+                          onClick={() => act(run, { template_override: null }, "Back to the usual message", { template_override: run.template_override })}
+                          sx={{ p: 0, border: 0, bgcolor: "transparent", cursor: "pointer", font: "inherit", color: tokens.primary }}
+                        >
+                          use the usual message
+                        </Box>
+                      </Typography>
+                    )}
+                  </>
+                ) : (
+                  <Typography sx={{ fontSize: 13, color: "text.secondary" }}>{describeStep(step)}</Typography>
+                )}
+              </Box>
+
+              <Box sx={{ display: "flex", flexWrap: "wrap", p: "4px 8px 6px" }}>
+                {run.status === "paused" ? (
+                  <Button size="small" disabled={busy || accountPaused} onClick={() => act(run, { status: "pending" }, "Resumed")}>
+                    Resume
+                  </Button>
+                ) : (
+                  <Button size="small" disabled={busy || locked} onClick={() => act(run, { status: "paused" }, "Paused", { status: "pending" })}>
+                    Pause
+                  </Button>
+                )}
+                <Button
+                  size="small"
+                  disabled={busy || locked || accountPaused}
+                  onClick={() => {
+                    const later = isWhatsApp && effectiveSendTime(new Date().toISOString(), true).getTime() > Date.now() + 60_000;
+                    act(
+                      run,
+                      { status: "pending", run_at: new Date().toISOString() },
+                      later ? "Queued — sends at 08:00 when quiet hours end" : "Sending within a minute",
+                    );
+                  }}
+                >
+                  Send now
+                </Button>
+                <Button
+                  size="small"
+                  color="error"
+                  disabled={busy || locked}
+                  onClick={() => act(run, { status: "cancelled" }, "Skipped", { status: run.status === "paused" ? "paused" : "pending" })}
+                >
+                  Skip
+                </Button>
+              </Box>
+            </Box>
+          );
+        })
+      )}
     </Box>
   );
 }
