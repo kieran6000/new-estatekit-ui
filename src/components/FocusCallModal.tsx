@@ -25,15 +25,30 @@ export default function FocusCallModal({
   onClose: () => void;
   onSnack: (msg: string) => void;
 }) {
-  const queue = useMemo(() => (open ? dueLeads(leads) : []), [open, leads]);
   const { data: isOperator } = useIsOperator();
   const [qi, setQi] = useState(0);
   const [note, setNote] = useState("");
   const [outcomeOpen, setOutcomeOpen] = useState(false);
+  // The call list is frozen when focus mode opens. It must NOT be recomputed
+  // from `leads`: logging an outcome moves that lead off "due", so a live list
+  // would shrink by one at the same moment the cursor advances by one — and
+  // every second person in the queue would be silently skipped.
+  const [queueIds, setQueueIds] = useState<string[]>([]);
 
   useEffect(() => {
-    if (open) setQi(0);
+    if (!open) return;
+    setQueueIds(dueLeads(leads).map((l) => l.id));
+    setQi(0);
+    // `leads` is deliberately omitted: snapshot once, at open. See above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // Order stays frozen, but each card still renders the freshest row we have,
+  // so a note or stage edited mid-session shows up immediately.
+  const queue = useMemo(
+    () => queueIds.map((id) => leads.find((l) => l.id === id)).filter((l): l is LeadRow => !!l),
+    [queueIds, leads],
+  );
 
   useEffect(() => {
     if (!open) return;

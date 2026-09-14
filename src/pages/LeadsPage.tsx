@@ -43,7 +43,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePostHog } from "@posthog/react";
 import { tokens } from "../theme";
 import { DEAD_STAGES, PIPELINE_KIND_LABEL, PIPELINE_STAGES, type LeadRow, type OutcomeStep, type Pipeline, type PipelineKind, type Stage } from "../types";
-import { pipelineKindFor, sortLeadsForList, STEP_FOR_STAGE, computeStagePatch, stageForKind } from "../lib/stageLogic";
+import { dueLeads, pipelineKindFor, sortLeadsForList, STEP_FOR_STAGE, computeStagePatch, stageForKind } from "../lib/stageLogic";
 import { timeAgo } from "../lib/timeAgo";
 import { useLeads, useUpdateLeadStage } from "../hooks/useLeads";
 import { useAddPipeline, usePipelines, useSyncPipelineSheet } from "../hooks/usePipelines";
@@ -180,6 +180,10 @@ export default function LeadsPage() {
     return activePipeline ? source.filter((l) => l.pipeline_id === activePipeline.id) : [];
   }, [leads, archivedLeads, showArchived, activePipeline]);
 
+
+  // Who's actually due a call right now, ignoring the stage filter — the
+  // banner shouldn't vanish just because the agent narrowed the list.
+  const callList = useMemo(() => dueLeads(pipelineLeads), [pipelineLeads]);
 
   const filtered = useMemo(() => {
     const query = q.toLowerCase().trim();
@@ -489,6 +493,36 @@ export default function LeadsPage() {
           })}
         </Box>
       </Box>
+
+      {/* One-at-a-time call mode. Shown only when there's actually something to
+          call, so the list isn't cluttered on a quiet day. This is the whole
+          "don't make me think" path: tap once, work the list top to bottom. */}
+      {!selectMode && !showArchived && callList.length > 0 && (
+        <Box
+          sx={{
+            display: "flex", alignItems: "center", gap: 1.5,
+            p: "12px 16px", bgcolor: "background.paper",
+            borderBottom: `1px solid ${tokens.divider}`,
+          }}
+        >
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography sx={{ fontSize: 14, fontWeight: 600, lineHeight: 1.3 }}>
+              {callList.length} {callList.length === 1 ? "lead" : "leads"} to call
+            </Typography>
+            <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
+              Go through them one at a time
+            </Typography>
+          </Box>
+          <Button
+            onClick={() => setFocusOpen(true)}
+            variant="contained"
+            startIcon={<CallIcon />}
+            sx={{ bgcolor: tokens.green, whiteSpace: "nowrap", "&:hover": { bgcolor: tokens.greenDark } }}
+          >
+            Start calling
+          </Button>
+        </Box>
+      )}
 
       <LeadsTable
         leads={filtered}
@@ -824,7 +858,9 @@ function LeadsTable({
           </Box>
         </TableCell>
         <TableCell align="right">
-          {!DEAD_STAGES.includes(l.stage) && (
+          {/* Hidden while selecting, matching the mobile list — otherwise a tap
+              meant to tick the row starts a phone call instead. */}
+          {!selectable && !DEAD_STAGES.includes(l.stage) && (
             <Box
               component="a"
               href={`tel:${l.phone.replace(/\s/g, "")}`}
@@ -943,7 +979,9 @@ function MobileLeadsList({
       }}
     >
       {selectable && (
-        <Checkbox size="small" checked={selected.has(l.id)} sx={{ p: 0, mt: 0.25, alignSelf: "flex-start" }} />
+        // Display-only: the whole card is the tap target, so the box must not
+        // steal the tap or warn about a controlled input with no onChange.
+        <Checkbox size="small" checked={selected.has(l.id)} readOnly tabIndex={-1} sx={{ p: 0, mt: 0.25, alignSelf: "flex-start", pointerEvents: "none" }} />
       )}
       <Box sx={{ flex: 1, minWidth: 0 }}>
       <Box onClick={selectable ? undefined : () => onOpen(l.id)} sx={{ fontWeight: 500, fontSize: 15, color: tokens.primaryDark, cursor: selectable ? "inherit" : "pointer" }}>

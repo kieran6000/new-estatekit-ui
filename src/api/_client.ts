@@ -9,11 +9,15 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+/** Stand-in id for "nobody is signed in" so callers always get a uuid-shaped
+ *  value. Never matches a real agent, so queries scoped to it return nothing. */
+const ANON_USER_ID = "00000000-0000-0000-0000-000000000000";
+
 export async function getCurrentUserId(): Promise<string> {
   const {
     data: { session },
   } = await supabase.auth.getSession();
-  if (!session?.user) return "00000000-0000-0000-0000-000000000000";
+  if (!session?.user) return ANON_USER_ID;
   return session.user.id;
 }
 
@@ -35,12 +39,23 @@ function activeAgentKey(realUserId: string): string {
 export function setActiveAgent(id: string | null): void {
   _activeAgentId = id;
   getCurrentUserId().then((realId) => {
-    if (!realId) return;
+    if (!realId || realId === ANON_USER_ID) return;
     try {
       if (id) localStorage.setItem(activeAgentKey(realId), id);
       else localStorage.removeItem(activeAgentKey(realId));
     } catch { /* private browsing */ }
   });
+}
+
+/** Drop the in-memory "managing X" flag without touching anyone's saved choice.
+ *
+ *  Must run whenever the session ends or a different person signs in. The
+ *  localStorage half of this is keyed per real user, but `_activeAgentId` is a
+ *  plain module variable that outlives a sign-out: without this, operator A
+ *  switching into a client's account and then agent B signing in on the same
+ *  tab left B reading A's client's leads. */
+export function forgetActiveAgentInMemory(): void {
+  _activeAgentId = null;
 }
 
 /** Called once the real session is known (see useAuth) so a refresh lands back
