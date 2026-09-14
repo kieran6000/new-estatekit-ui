@@ -40,14 +40,21 @@ interface InsightRow {
   actions?: { action_type: string; value: string }[];
 }
 
-// Lead-gen forms report under a few different action_type names depending on
-// campaign objective/API version — match anything "lead"-shaped rather than
-// pinning to one exact string.
+// Facebook reports the SAME lead-form submissions under multiple overlapping
+// action_types at once — 'lead' and 'onsite_conversion.lead_grouped' are
+// consistently identical for a given ad (verified against Ads Manager: e.g.
+// an ad with 198 real leads reports both as 198). Summing every "lead"-ish
+// action double counts. Pick one canonical type instead, in the same order
+// Ads Manager itself falls back through for a Leads-objective ad.
+const LEAD_ACTION_PRIORITY = ["lead", "onsite_conversion.lead_grouped", "offsite_conversion.fb_pixel_lead", "leadgen.other"];
+
 function leadsFrom(actions: InsightRow["actions"]): number {
   if (!actions) return 0;
-  return actions
-    .filter((a) => a.action_type.toLowerCase().includes("lead"))
-    .reduce((sum, a) => sum + (Number(a.value) || 0), 0);
+  for (const type of LEAD_ACTION_PRIORITY) {
+    const match = actions.find((a) => a.action_type === type);
+    if (match) return Number(match.value) || 0;
+  }
+  return 0;
 }
 
 Deno.serve(async (req) => {
