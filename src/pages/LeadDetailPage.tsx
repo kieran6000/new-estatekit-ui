@@ -19,6 +19,7 @@ import { stageForKind, STEP_FOR_STAGE } from "../lib/stageLogic";
 import { prettyAnswer, maskPhone } from "../lib/format";
 import { timeAgo } from "../lib/timeAgo";
 import { useIsOperator } from "../hooks/useAutomations";
+import { useCanSeeFullPhone } from "../hooks/useTier";
 import StageMenu from "../components/StageMenu";
 import OutcomeSheet from "../components/OutcomeSheet";
 import LeadHistory from "../components/LeadHistory";
@@ -31,6 +32,7 @@ export default function LeadDetailPage() {
   const lead = useLead(id);
   const { data: pipelines = [] } = usePipelines();
   const { data: isOperator } = useIsOperator();
+  const canSeeFullPhone = useCanSeeFullPhone();
   const updateNote = useUpdateLeadNote();
   const updateStage = useUpdateLeadStage();
   const showSnack = useSnack();
@@ -168,7 +170,7 @@ export default function LeadDetailPage() {
         </Box>
 
         <Section title="Contact">
-          <Row k="Phone" v={isOperator ? lead.phone : maskPhone(lead.phone)} />
+          <Row k="Phone" v={canSeeFullPhone ? lead.phone : maskPhone(lead.phone)} />
           <Row k="Email" v={lead.email || ""} />
           <Row k="Stage" v={lead.stage} />
           <Row k="Received" v={timeAgo(lead.created_at)} />

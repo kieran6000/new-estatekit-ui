@@ -51,6 +51,7 @@ import { renamePipeline } from "../api/pipelines";
 import { useIsOperator } from "../hooks/useAutomations";
 import { useSnack } from "../hooks/useSnack";
 import { maskPhone } from "../lib/format";
+import { useCanSeeFullPhone } from "../hooks/useTier";
 import { getPendingCall, clearPendingCall, type PendingCall } from "../lib/pendingCall";
 import { bulkUpdateLeads } from "../api/leads";
 import { logLeadCall } from "../api/leadEvents";
@@ -799,7 +800,7 @@ function LeadsTable({
   onStagePick: (id: string, stage: Stage) => void;
 }) {
   const isMobile = useMediaQuery("(max-width:639px)");
-  const { data: isOperator } = useIsOperator();
+  const canSeeFullPhone = useCanSeeFullPhone();
   if (isMobile) {
     return <MobileLeadsList leads={leads} stages={stages} filter={filter} selectable={selectable} selected={selected} onToggleSelect={onToggleSelect} onRowSelect={onRowSelect} onOpen={onOpen} onCall={onCall} onStagePick={onStagePick} />;
   }
@@ -833,7 +834,7 @@ function LeadsTable({
             {l.stage === "New Lead" && <Box component="span" sx={{ fontSize: 10, fontWeight: 700, color: tokens.green, ml: 0.75 }}>NEW</Box>}
           </Box>
           <Typography sx={{ color: "text.secondary", fontSize: 13, display: "block" }}>
-            {isOperator ? l.phone : maskPhone(l.phone)}
+            {canSeeFullPhone ? l.phone : maskPhone(l.phone)}
             <Box component="span" sx={{ color: "text.disabled", mx: 0.75 }}>·</Box>
             {timeAgo(l.created_at)}
           </Typography>
@@ -957,7 +958,7 @@ function MobileLeadsList({
   onStagePick: (id: string, stage: Stage) => void;
 }) {
   void onToggleSelect;
-  const { data: isOperator } = useIsOperator();
+  const canSeeFullPhone = useCanSeeFullPhone();
   if (leads.length === 0) {
     return <EmptyLeadsState filter={filter} />;
   }
@@ -989,7 +990,7 @@ function MobileLeadsList({
         {l.stage === "New Lead" && <Box component="span" sx={{ fontSize: 10, fontWeight: 700, color: tokens.green, ml: 0.75 }}>NEW</Box>}
       </Box>
       <Typography sx={{ color: "text.secondary", fontSize: 13 }}>
-        {isOperator ? l.phone : maskPhone(l.phone)}
+        {canSeeFullPhone ? l.phone : maskPhone(l.phone)}
         <Box component="span" sx={{ color: "text.disabled", mx: 0.75 }}>·</Box>
         {timeAgo(l.created_at)}
       </Typography>

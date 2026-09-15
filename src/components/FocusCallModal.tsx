@@ -8,7 +8,7 @@ import { prettyAnswer, maskPhone } from "../lib/format";
 import { timeAgo } from "../lib/timeAgo";
 import { trackActivity } from "../lib/activity";
 import { logLeadCall } from "../api/leadEvents";
-import { useIsOperator } from "../hooks/useAutomations";
+import { useCanSeeFullPhone } from "../hooks/useTier";
 import type { LeadRow, Pipeline } from "../types";
 import OutcomeSheet from "./OutcomeSheet";
 
@@ -25,7 +25,7 @@ export default function FocusCallModal({
   onClose: () => void;
   onSnack: (msg: string) => void;
 }) {
-  const { data: isOperator } = useIsOperator();
+  const canSeeFullPhone = useCanSeeFullPhone();
   const [qi, setQi] = useState(0);
   const [note, setNote] = useState("");
   const [outcomeOpen, setOutcomeOpen] = useState(false);
@@ -148,7 +148,7 @@ export default function FocusCallModal({
           <>
             <Box sx={{ flex: 1, overflow: "auto", px: 1.75, pb: 1.5 }}>
               <Typography sx={{ fontSize: 22, fontWeight: 500, textAlign: "center", pt: 1.75 }}>{lead.name}</Typography>
-              <Typography sx={{ color: "#b0bec5", fontSize: 15, textAlign: "center" }}>{isOperator ? lead.phone : maskPhone(lead.phone)}</Typography>
+              <Typography sx={{ color: "#b0bec5", fontSize: 15, textAlign: "center" }}>{canSeeFullPhone ? lead.phone : maskPhone(lead.phone)}</Typography>
               <Typography sx={{ color: "#78909c", fontSize: 12.5, textAlign: "center", mb: 2 }}>Came in {timeAgo(lead.created_at)}</Typography>
               <Typography sx={{ color: "#90a4ae", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", m: "16px 4px 6px" }}>
                 From their form
