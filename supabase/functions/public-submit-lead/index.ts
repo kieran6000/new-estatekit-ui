@@ -36,6 +36,7 @@ Deno.serve(async (req: Request) => {
     phone?: string;
     email?: string | null;
     formAnswers?: { q: string; a: string }[];
+    attribution?: Record<string, unknown>;
   };
   try {
     body = await req.json();
@@ -59,6 +60,20 @@ Deno.serve(async (req: Request) => {
     return new Response(JSON.stringify({ error: "Page not found" }), { status: 404, headers: CORS });
   }
 
+  // Attribution is visitor-supplied (it comes from the query string), so keep
+  // only keys we expect and cap the values — this lands in a jsonb column that
+  // agents read, and an unbounded query string shouldn't end up in the row.
+  const ALLOWED_ATTRIBUTION = [
+    "ad_id", "adset_id", "campaign_id", "ad_name", "campaign_name",
+    "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term",
+    "fbclid", "gclid", "referrer",
+  ];
+  const attribution: Record<string, string> = {};
+  for (const key of ALLOWED_ATTRIBUTION) {
+    const value = body.attribution?.[key];
+    if (typeof value === "string" && value.trim()) attribution[key] = value.slice(0, 200);
+  }
+
   const { data: lead, error } = await supabase
     .from("leads")
     .insert({
@@ -69,6 +84,10 @@ Deno.serve(async (req: Request) => {
       phone: body.phone,
       email: body.email ?? null,
       form_answers: body.formAnswers ?? [],
+      attribution,
+      // Meta's {{ad.id}} macro on the landing-page URL is the only way a
+      // website lead can name the ad that produced it.
+      fb_ad_id: attribution.ad_id ?? null,
       stage: "New Lead",
       next_label: "Just came in",
       due: true,
@@ -99,10 +118,18 @@ Deno.serve(async (req: Request) => {
   const answers = body.formAnswers ?? [];
   const address = answers.find((a) => /address/i.test(a.q))?.a;
 
+  // Name the traffic source on the alert so the agent knows whether this came
+  // off an ad or straight to the page.
+  const sourceLabel = attribution.ad_id || attribution.fbclid
+    ? "Website form · Facebook ad"
+    : attribution.utm_source
+      ? `Website form · ${attribution.utm_source}`
+      : "Website form";
+
   await notifyActivity({
     event: "new_lead",
     agentId: page.agent_id,
-    lead: { id: lead.id, name: body.name, phone: body.phone, address, pipeline: pipelineName, source: "Website form" },
+    lead: { id: lead.id, name: body.name, phone: body.phone, address, pipeline: pipelineName, source: sourceLabel },
   });
 
   return new Response(JSON.stringify({ id: lead.id }), { headers: CORS });

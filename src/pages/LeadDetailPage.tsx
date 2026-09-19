@@ -17,6 +17,7 @@ import { useSnack } from "../hooks/useSnack";
 import { PIPELINE_STAGES } from "../types";
 import { stageForKind, STEP_FOR_STAGE } from "../lib/stageLogic";
 import { prettyAnswer, maskPhone } from "../lib/format";
+import { describeAttribution, type AdAttribution } from "../lib/adAttribution";
 import { timeAgo } from "../lib/timeAgo";
 import { useIsOperator } from "../hooks/useAutomations";
 import { useCanSeeFullPhone } from "../hooks/useTier";
@@ -24,7 +25,7 @@ import StageMenu from "../components/StageMenu";
 import OutcomeSheet from "../components/OutcomeSheet";
 import LeadHistory from "../components/LeadHistory";
 import { logLeadCall } from "../api/leadEvents";
-import type { OutcomeStep, Stage } from "../types";
+import type { LeadRow, OutcomeStep, Stage } from "../types";
 
 export default function LeadDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -201,8 +202,10 @@ export default function LeadDetailPage() {
           </Typography>
         </Section>
 
-        {/* The ad that produced this lead, resolved from its Facebook lead id. */}
-        <SourceAdSection leadId={lead.id} />
+        {/* The ad that produced this lead, resolved from its Facebook lead id.
+            Falls back to the captured landing-page attribution when there's no
+            readable ad — a website lead used to show nothing at all here. */}
+        <SourceAdSection leadId={lead.id} lead={lead} />
 
         {isOperator && (
           <Section title="Admin">
@@ -288,7 +291,40 @@ export default function LeadDetailPage() {
 
 /** Shows the Facebook ad this lead clicked, when there is one. Website leads and
  *  ads we can't read simply render nothing rather than an empty shell. */
-function SourceAdSection({ leadId }: { leadId: string }) {
+/**
+ * What we know about where a lead came from when there's no ad to show —
+ * website leads, or a Facebook ad we can't read. Renders nothing at all rather
+ * than an empty "Source: Direct" shell when nothing was captured.
+ */
+function SourceFallback({ lead }: { lead: LeadRow }) {
+  const a = (lead.attribution ?? {}) as AdAttribution;
+  const label = describeAttribution(a);
+  const campaign = a.campaign_name || a.utm_campaign;
+  const adName = a.ad_name || a.utm_content;
+  const hasAnything = Object.keys(a).length > 0;
+  if (!hasAnything && !lead.source_page_id) return null;
+
+  return (
+    <Section title="Came from">
+      <Box sx={{ p: "10px 16px 14px", display: "flex", flexDirection: "column", gap: 0.35 }}>
+        <Typography sx={{ fontSize: 14, fontWeight: 600 }}>{label}</Typography>
+        {campaign && (
+          <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>Campaign: {campaign}</Typography>
+        )}
+        {adName && (
+          <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>Ad: {adName}</Typography>
+        )}
+        {!hasAnything && (
+          <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
+            Filled in your lead page. No campaign details were tagged on the link.
+          </Typography>
+        )}
+      </Box>
+    </Section>
+  );
+}
+
+function SourceAdSection({ leadId, lead }: { leadId: string; lead: LeadRow }) {
   const { data: ad, isLoading } = useQuery({
     queryKey: ["leadSourceAd", leadId],
     queryFn: () => getLeadSourceAd(leadId),
@@ -305,7 +341,9 @@ function SourceAdSection({ leadId }: { leadId: string }) {
       </Section>
     );
   }
-  if (!ad) return null;
+  // No readable ad: show whatever the landing page captured instead. Agents
+  // kept asking where a website lead came from and the answer was nowhere.
+  if (!ad) return <SourceFallback lead={lead} />;
 
   // Compact: a small thumbnail beside the copy, not a full-width hero image —
   // this block sits among the lead's details and shouldn't dominate the screen.

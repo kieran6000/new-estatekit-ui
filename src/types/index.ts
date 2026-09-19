@@ -60,6 +60,10 @@ export interface LeadRow {
   archived?: boolean;
   /** Facebook ad this lead came from, resolved lazily from fb_lead_id. */
   fb_ad_id?: string | null;
+  /** Ad/traffic parameters captured on the landing page at first visit
+   *  (utm_*, fbclid, Meta's {{ad.id}} macros). Empty for leads with no
+   *  captured source — see lib/adAttribution.ts. */
+  attribution?: Record<string, string> | null;
 }
 
 export interface OverviewDailyRow {

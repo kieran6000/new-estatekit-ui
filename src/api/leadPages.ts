@@ -302,10 +302,11 @@ export async function submitMockLead(
   phone: string,
   formAnswers: FormAnswer[],
   email: string | null = null,
+  attribution: Record<string, string | undefined> = {},
 ) {
   const { data, error } = await supabase.functions.invoke(
     "public-submit-lead",
-    { body: { pageId, name, phone, formAnswers, email } },
+    { body: { pageId, name, phone, formAnswers, email, attribution } },
   );
   if (error) throw new Error(error.message);
   return data;

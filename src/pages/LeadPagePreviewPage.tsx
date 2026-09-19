@@ -10,6 +10,7 @@ import { listCustomQuestionsPublic } from "../api/customQuestions";
 import LeadCaptureForm, { HeaderBrand } from "../components/LeadCaptureForm";
 import { initPixel, trackPixel } from "../lib/fbPixel";
 import { trackPageEvent } from "../lib/pageTracking";
+import { captureAttribution, readAttribution } from "../lib/adAttribution";
 import { listSoldListingsForAgent } from "../api/soldListings";
 import { SoldStrip } from "../components/SoldListings";
 
@@ -48,6 +49,12 @@ export default function LeadPagePreviewPage() {
 
   useEffect(() => {
     if (page?.id) trackPageEvent(page.id, "view");
+  }, [page?.id]);
+
+  // Stash which ad/campaign sent them before they start the form — the query
+  // string is only present on this first hit, and the form is multi-step.
+  useEffect(() => {
+    if (page?.id) captureAttribution(page.id);
   }, [page?.id]);
 
   // Wait for the questions too: rendering the form before they arrive briefly
@@ -92,7 +99,7 @@ export default function LeadPagePreviewPage() {
                   // trigger on the thank-you route). The DB insert runs in the
                   // background — client-side nav doesn't unload the page, so the
                   // request completes without blocking the visitor.
-                  void submitMockLead(page.id, name, phone, answers, email).catch(() => {});
+                  void submitMockLead(page.id, name, phone, answers, email, readAttribution(page.id)).catch(() => {});
                   trackPixel("Lead");
                   posthog.capture("lead_page_form_submitted", { pipeline: pipeline.kind });
                   navigate(`/thank-you?p=${page.slug}&n=${encodeURIComponent(name.split(" ")[0] || "there")}`);
