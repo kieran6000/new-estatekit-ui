@@ -5,6 +5,7 @@ import {
   Avatar,
   Box,
   Button,
+  CircularProgress,
   Divider,
   FormControl,
   IconButton,
@@ -22,6 +23,9 @@ import LinkOffIcon from "@mui/icons-material/LinkOff";
 import ViewListIcon from "@mui/icons-material/ViewList";
 import EmailOutlinedIcon from "@mui/icons-material/EmailOutlined";
 import PlaceIcon from "@mui/icons-material/Place";
+import CheckCircleIcon from "@mui/icons-material/CheckCircle";
+import ErrorOutlineIcon from "@mui/icons-material/ErrorOutlined";
+import EventAvailableIcon from "@mui/icons-material/EventAvailable";
 import { tokens } from "../theme";
 import { useAuth } from "../hooks/useAuth";
 import { useLeadWithStatus, useUpdateLeadNote, useUpdateLeadStage } from "../hooks/useLeads";
@@ -30,7 +34,7 @@ import { getPipelinePublic } from "../api/pipelines";
 import { useSnack } from "../hooks/useSnack";
 import { MAIN_OUTCOME_OPTIONS, STEP_FOR_STAGE, type MainOutcomeOption } from "../lib/stageLogic";
 import { prettyAnswer } from "../lib/format";
-import { timeAgo } from "../lib/timeAgo";
+import { timeAgo, whenLabel, isUpcoming } from "../lib/timeAgo";
 import { trackActivity } from "../lib/activity";
 import { armPendingCall, clearPendingCall } from "../lib/pendingCall";
 import { getLeadByToken, logOutcomeByToken, saveNoteByToken } from "../api/leadActions";
@@ -119,6 +123,10 @@ function LeadActionUI({
   const [highlight, setHighlight] = useState(false);
   const [outcomeOpen, setOutcomeOpen] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // What this session logged, and whether it's still in flight. This is the
+  // whole point of the screen: the agent must never be left wondering whether
+  // the tap worked. A snackbar alone isn't enough — it disappears.
+  const [logged, setLogged] = useState<{ stage: Stage; label: string; status: "saving" | "saved" | "failed" } | null>(null);
 
   // The page can't hear the call, but it can tell when they leave for the dialer
   // and come back. We arm a pending call on tap (so an un-logged call resurfaces
@@ -156,20 +164,26 @@ function LeadActionUI({
     );
   }
 
-  function logTokenOutcome(stage: Stage, offerUndo: boolean) {
+  function logTokenOutcome(stage: Stage, offerUndo: boolean, label?: string) {
     if (!token || !lead) return;
     const prevStage = lead.stage as Stage;
     if (stage === prevStage) return;
     setTokenStage(stage);            // instant
+    setLogged({ stage, label: label ?? labelForStage(stage, pipelineKind), status: "saving" });
     clearPendingCall();
     logOutcomeByToken(token, stage)
       .then(() => {
+        setLogged((l) => (l && l.stage === stage ? { ...l, status: "saved" } : l));
+        // The server works out the follow-up (next_label / reminder_at) from the
+        // stage, so pull the row back to show the agent what's actually been set.
+        qc.invalidateQueries({ queryKey: ["leadByToken", token] });
         if (offerUndo) showSnack(outcomeSnack(stage), () => logTokenOutcome(prevStage, false));
         else showSnack(outcomeSnack(stage));
       })
       .catch(() => {
         setTokenStage(prevStage);    // roll back the optimistic change
-        showSnack("Couldn't save — try again", () => logTokenOutcome(stage, offerUndo), "Retry");
+        setLogged((l) => (l && l.stage === stage ? { ...l, status: "failed" } : l));
+        showSnack("Couldn't save — try again", () => logTokenOutcome(stage, offerUndo, label), "Retry");
       });
   }
 
@@ -179,7 +193,7 @@ function LeadActionUI({
     // (when? / commission) are skipped — sensible defaults are applied server
     // side and can be refined later in the dashboard.
     if (!canEdit) {
-      logTokenOutcome(opt.stage, true);
+      logTokenOutcome(opt.stage, true, opt.label);
       return;
     }
     const sub = STEP_FOR_STAGE[opt.stage];
@@ -192,7 +206,14 @@ function LeadActionUI({
     trackActivity("stage_change", {
       lead: { id: lead.id, name: lead.name, phone: lead.phone, fromStage: lead.stage, toStage: opt.stage, pipeline: pipelineKind },
     });
-    updateStage.mutate({ id: lead.id, stage: opt.stage });
+    setLogged({ stage: opt.stage, label: opt.label, status: "saving" });
+    updateStage.mutate(
+      { id: lead.id, stage: opt.stage },
+      {
+        onSuccess: () => setLogged((l) => (l && l.stage === opt.stage ? { ...l, status: "saved" } : l)),
+        onError: () => setLogged((l) => (l && l.stage === opt.stage ? { ...l, status: "failed" } : l)),
+      },
+    );
     clearPendingCall();
     showSnack(outcomeSnack(opt.stage), () => updateStage.mutate({ id: lead.id, stage: prev.stage as Stage, override: prev }));
   }
@@ -217,6 +238,9 @@ function LeadActionUI({
   }, []);
 
   useEffect(() => setNote(lead?.note ?? ""), [lead?.id]);
+  // A different lead is a different job — don't carry the last one's "Logged"
+  // banner across, or the agent sees a confirmation for work they haven't done.
+  useEffect(() => setLogged(null), [lead?.id]);
   // Always open at the top — no mysterious mid-page scroll on load.
   useEffect(() => { window.scrollTo(0, 0); }, [lead?.id, isLoading]);
 
@@ -308,9 +332,32 @@ function LeadActionUI({
               <Typography sx={{ fontSize: 20, fontWeight: 700, lineHeight: 1.15, minWidth: 0, wordBreak: "break-word" }}>{lead.name}</Typography>
               <Typography sx={{ fontSize: 12, color: "text.secondary", whiteSpace: "nowrap" }}>{timeAgo(lead.created_at)}</Typography>
             </Box>
-            <Box sx={{ mt: 0.75 }}>
+            <Box sx={{ mt: 0.75, display: "flex", alignItems: "center", gap: 0.75, flexWrap: "wrap" }}>
               <StageChip stage={lead.stage} />
             </Box>
+
+            {/* What's already committed for this lead, stated up front. Without
+                it an agent opening the link has no idea an appointment is an
+                hour away — the single most useful thing to know before ringing. */}
+            {isUpcoming(lead.reminder_at) && (
+              <Box
+                sx={{
+                  display: "flex", alignItems: "center", gap: 1, mt: 1,
+                  bgcolor: tokens.amberTint, border: "1px solid #f59e0b55",
+                  borderRadius: "8px", p: "8px 10px",
+                }}
+              >
+                <EventAvailableIcon sx={{ fontSize: 18, color: "#b45309", flex: "0 0 auto" }} />
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography sx={{ fontSize: 13.5, fontWeight: 700, color: "#92400e", lineHeight: 1.3 }}>
+                    {lead.next_label && lead.next_label !== "—" ? lead.next_label : "Follow up"}
+                  </Typography>
+                  <Typography sx={{ fontSize: 12.5, color: "#92400e", lineHeight: 1.3 }}>
+                    {whenLabel(lead.reminder_at)}
+                  </Typography>
+                </Box>
+              </Box>
+            )}
 
             <Divider sx={{ my: 1 }} />
 
@@ -359,6 +406,18 @@ function LeadActionUI({
           </Step>
 
           <Step n={2} label="Log what happened">
+            {/* Once something is logged this visit, the dropdown is replaced by a
+                plain statement of what was saved and what happens next. The
+                agent should never have to guess whether the tap worked. */}
+            {logged ? (
+              <LoggedConfirmation
+                label={logged.label}
+                status={logged.status}
+                nextLabel={lead.next_label}
+                reminderAt={lead.reminder_at}
+                onChange={() => { setLogged(null); setOutcomeOpen(true); }}
+              />
+            ) : (
             <FormControl
               fullWidth
               sx={{
@@ -393,6 +452,7 @@ function LeadActionUI({
                 ))}
               </Select>
             </FormControl>
+            )}
           </Step>
 
           {/* Notes are step 3, right where the flow ends. Available on the
@@ -441,10 +501,93 @@ function LeadActionUI({
           entryStep={stageSheet?.step ?? "main"}
           entryStage={stageSheet?.stage}
           onClose={() => setStageSheet(null)}
-          onLogged={clearPendingCall}
+          onLogged={(stage) => {
+            clearPendingCall();
+            // Same confirmation as the direct outcomes — the sheet commits
+            // optimistically, so by the time it closes the write is done.
+            setLogged({ stage, label: labelForStage(stage, pipelineKind), status: "saved" });
+          }}
           onSnack={showSnack}
         />
       )}
+    </Box>
+  );
+}
+
+/** The readable label for a stage, so a confirmation can say "Booked an
+ *  appointment" rather than the bare stage name. Falls back to the stage. */
+function labelForStage(stage: Stage, kind: PipelineKind): string {
+  return MAIN_OUTCOME_OPTIONS[kind].find((o) => o.stage === stage)?.label ?? stage;
+}
+
+/**
+ * Persistent proof that the outcome saved, replacing the dropdown once used.
+ *
+ * Deliberately not a snackbar: this is the screen agents use most, usually
+ * standing outside a property on a bad connection, and a toast that vanishes
+ * after four seconds leaves them tapping the same option again "just in case".
+ * Saving / saved / failed are all shown in place, and the follow-up the system
+ * set for them is spelled out so they know what happens next.
+ */
+function LoggedConfirmation({
+  label,
+  status,
+  nextLabel,
+  reminderAt,
+  onChange,
+}: {
+  label: string;
+  status: "saving" | "saved" | "failed";
+  nextLabel: string;
+  reminderAt: string | null;
+  onChange: () => void;
+}) {
+  const failed = status === "failed";
+  const saving = status === "saving";
+  const tone = failed
+    ? { bg: "#fef2f2", border: "#fecaca", fg: "#991b1b" }
+    : { bg: "#e8f5e9", border: "#a5d6a7", fg: "#1b5e20" };
+
+  return (
+    <Box sx={{ bgcolor: tone.bg, border: `1px solid ${tone.border}`, borderRadius: "8px", p: "12px 14px" }}>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+        {saving ? (
+          <CircularProgress size={18} sx={{ color: tone.fg }} />
+        ) : failed ? (
+          <ErrorOutlineIcon sx={{ fontSize: 20, color: tone.fg }} />
+        ) : (
+          <CheckCircleIcon sx={{ fontSize: 20, color: tone.fg }} />
+        )}
+        <Typography sx={{ fontSize: 13, fontWeight: 700, color: tone.fg, letterSpacing: "0.02em" }}>
+          {saving ? "Saving…" : failed ? "Didn't save" : "Logged"}
+        </Typography>
+      </Box>
+
+      <Typography sx={{ fontSize: 16, fontWeight: 700, mt: 0.5, lineHeight: 1.3 }}>{label}</Typography>
+
+      {failed ? (
+        <Typography sx={{ fontSize: 13, color: tone.fg, mt: 0.5, lineHeight: 1.45 }}>
+          Check your signal and tap Change to try again.
+        </Typography>
+      ) : (
+        !saving && nextLabel && nextLabel !== "—" && (
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, mt: 0.75 }}>
+            <EventAvailableIcon sx={{ fontSize: 16, color: "text.secondary" }} />
+            <Typography sx={{ fontSize: 13.5, color: "text.secondary", lineHeight: 1.4 }}>
+              Next: <Box component="span" sx={{ fontWeight: 600, color: "text.primary" }}>{nextLabel}</Box>
+              {isUpcoming(reminderAt) && ` · ${whenLabel(reminderAt)}`}
+            </Typography>
+          </Box>
+        )
+      )}
+
+      <Button
+        onClick={onChange}
+        size="small"
+        sx={{ mt: 0.75, ml: -0.75, textTransform: "none", fontWeight: 600, color: tone.fg }}
+      >
+        {failed ? "Try again" : "Change"}
+      </Button>
     </Box>
   );
 }

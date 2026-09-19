@@ -53,7 +53,8 @@ export default function OutcomeSheet({
   pipelineKind?: PipelineKind;
   open: boolean;
   onClose: () => void;
-  onLogged?: () => void;
+  /** Called after a stage is committed, with the stage that was logged. */
+  onLogged?: (stage: Stage) => void;
   onSnack: (msg: string) => void;
   /** Open directly at a sub-step (e.g. "booked") instead of the "how did it
    * go" list — used when the stage was already picked from a stage menu, so
@@ -80,10 +81,12 @@ export default function OutcomeSheet({
   function close() {
     onClose();
   }
-  function finish(msg: string) {
+  function finish(msg: string, stage: Stage) {
     onSnack(msg);
     onClose();
-    onLogged?.();
+    // The stage is passed on so callers can show their own confirmation of
+    // exactly what was logged, rather than inferring it.
+    onLogged?.(stage);
   }
   function goBack() {
     if (step === entryStep) {
@@ -98,7 +101,7 @@ export default function OutcomeSheet({
       lead: { id: lead!.id, name: lead!.name, phone: lead!.phone, fromStage: lead!.stage, toStage, pipeline: pipelineKind },
     });
     updateStage.mutate({ id: lead!.id, stage: toStage, extra });
-    finish(outcomeSnack(toStage));
+    finish(outcomeSnack(toStage), toStage);
   }
   function pickMain(option: MainOutcomeOption) {
     const subStep = STEP_FOR_STAGE[option.stage];
