@@ -27,6 +27,69 @@ export async function listArchivedLeads(): Promise<LeadRow[]> {
   return data as LeadRow[];
 }
 
+/** A lead found by the operator-wide search, with enough context to tell two
+ *  same-named leads on different accounts apart. */
+export interface LeadSearchHit extends LeadRow {
+  agent_name: string;
+  pipeline_name: string;
+}
+
+/**
+ * Search every lead the caller can see, across all accounts, by name, phone or
+ * email. For operators this is the whole database — RLS is what scopes it, so
+ * a normal agent running the same query just gets their own leads back.
+ *
+ * Phone matching ignores spaces and punctuation on both sides, because nobody
+ * types a number the way it was stored ("082 000 0000" vs "+27820000000").
+ */
+export async function searchLeadsEverywhere(query: string): Promise<LeadSearchHit[]> {
+  const q = query.trim();
+  if (q.length < 2) return [];
+  const digits = q.replace(/\D/g, "");
+
+  // PostgREST `or` takes a comma-separated filter list; commas inside a value
+  // would split it, so they're stripped from the search term.
+  const safe = q.replace(/[,()]/g, " ").trim();
+  const clauses = [`name.ilike.*${safe}*`, `email.ilike.*${safe}*`];
+  // Only treat it as a phone search once there are enough digits to be one —
+  // otherwise "07" matches half the database.
+  if (digits.length >= 4) clauses.push(`phone.ilike.*${digits}*`);
+
+  const { data, error } = await supabase
+    .from("leads")
+    .select("*, pipeline:pipelines(name)")
+    .or(clauses.join(","))
+    .order("created_at", { ascending: false })
+    .limit(50);
+  if (error) throw new Error(error.message);
+
+  const rows = (data ?? []) as (LeadRow & { pipeline: { name: string } | null })[];
+
+  // Stored numbers aren't normalised, so a digits-only query can miss rows
+  // whose phone has spaces in it. Re-filter client side to catch those.
+  const matched = rows.filter((l) => {
+    if (l.name?.toLowerCase().includes(safe.toLowerCase())) return true;
+    if (l.email?.toLowerCase().includes(safe.toLowerCase())) return true;
+    return digits.length >= 4 && (l.phone ?? "").replace(/\D/g, "").includes(digits);
+  });
+
+  const names = await agentNameMap([...new Set(matched.map((l) => l.agent_id))]);
+  return matched.map((l) => ({
+    ...l,
+    agent_name: names.get(l.agent_id) ?? "Unknown account",
+    pipeline_name: l.pipeline?.name ?? "",
+  }));
+}
+
+async function agentNameMap(ids: string[]): Promise<Map<string, string>> {
+  if (!ids.length) return new Map();
+  const { data } = await supabase
+    .from("agent_profiles")
+    .select("agent_id, display_name, company")
+    .in("agent_id", ids);
+  return new Map((data ?? []).map((p) => [p.agent_id, p.display_name || p.company || "Unknown account"]));
+}
+
 export async function setLeadArchived(id: string, archived: boolean): Promise<void> {
   const { error } = await supabase.from("leads").update({ archived }).eq("id", id);
   if (error) throw new Error(error.message);

@@ -53,7 +53,7 @@ import { useSnack } from "../hooks/useSnack";
 import { maskPhone } from "../lib/format";
 import { useCanSeeFullPhone } from "../hooks/useTier";
 import { getPendingCall, clearPendingCall, type PendingCall } from "../lib/pendingCall";
-import { bulkUpdateLeads } from "../api/leads";
+import { bulkUpdateLeads, searchLeadsEverywhere, type LeadSearchHit } from "../api/leads";
 import { logLeadCall } from "../api/leadEvents";
 import { startLeadsTour, hasSeenLeadsTour } from "../lib/tour";
 import { listArchivedLeads } from "../api/leads";
@@ -86,6 +86,9 @@ export default function LeadsPage() {
 
   const [searchOpen, setSearchOpen] = useState(false);
   const [q, setQ] = useState("");
+  // Operator-only: widen the search from this pipeline to every account.
+  const [searchAll, setSearchAll] = useState(false);
+  const showGlobalSearch = searchOpen && searchAll && !!isOperator && q.trim().length >= 2;
   const [pipelineId, setPipelineId] = useState<string | null>(() => {
     try { return localStorage.getItem(pipelineStorageKey); } catch { return null; }
   });
@@ -354,10 +357,42 @@ export default function LeadsPage() {
       )}
 
       {searchOpen && (
-        <Box sx={{ bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}`, display: "flex", alignItems: "center", gap: 1.25, p: "10px 16px" }}>
-          <SearchIcon sx={{ color: "text.disabled" }} />
-          <InputBase placeholder="Search leads" value={q} onChange={(e) => setQ(e.target.value)} fullWidth autoFocus />
+        <Box sx={{ bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}`, p: "10px 16px" }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
+            <SearchIcon sx={{ color: "text.disabled" }} />
+            <InputBase
+              placeholder={searchAll ? "Search every account by name, phone or email" : "Search leads"}
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              fullWidth
+              autoFocus
+            />
+            {q && (
+              <IconButton size="small" onClick={() => setQ("")} aria-label="Clear search">
+                <CloseIcon fontSize="small" />
+              </IconButton>
+            )}
+          </Box>
+          {/* Operators support every client, so "which account was that lead on
+              again?" is a daily question. Agents never see this — for them the
+              same query would only ever return their own leads anyway. */}
+          {isOperator && (
+            <FormControlLabel
+              control={<Checkbox size="small" checked={searchAll} onChange={(e) => setSearchAll(e.target.checked)} />}
+              label="Search across all accounts"
+              sx={{ mt: 0.5, ml: -0.75, "& .MuiFormControlLabel-label": { fontSize: 13, color: "text.secondary" } }}
+            />
+          )}
         </Box>
+      )}
+
+      {/* Whole-database results replace the pipeline list while active, so
+          there's no confusion about which set of leads is on screen. */}
+      {showGlobalSearch && (
+        <GlobalSearchResults
+          query={q}
+          onOpen={(hit) => navigate(`/leads/${hit.id}`)}
+        />
       )}
 
 
@@ -498,7 +533,7 @@ export default function LeadsPage() {
       {/* One-at-a-time call mode. Shown only when there's actually something to
           call, so the list isn't cluttered on a quiet day. This is the whole
           "don't make me think" path: tap once, work the list top to bottom. */}
-      {!selectMode && !showArchived && callList.length > 0 && (
+      {!selectMode && !showArchived && !showGlobalSearch && callList.length > 0 && (
         <Box
           sx={{
             display: "flex", alignItems: "center", gap: 1.5,
@@ -525,6 +560,7 @@ export default function LeadsPage() {
         </Box>
       )}
 
+      {!showGlobalSearch && (
       <LeadsTable
         leads={filtered}
         stages={stagesForPipeline}
@@ -541,6 +577,7 @@ export default function LeadsPage() {
         }}
         onStagePick={handleStagePick}
       />
+      )}
 
       {/* Bulk action bar — appears once leads are selected. Sits above the
           mobile bottom-nav (56px). Boring on purpose. */}
@@ -624,6 +661,90 @@ export default function LeadsPage() {
           showSnack("Pipeline created");
         }}
       />
+    </Box>
+  );
+}
+
+/**
+ * Whole-database lead search for operators. Supporting many clients means
+ * fielding "which account was that lead on?" constantly, and the per-pipeline
+ * search can't answer it. Debounced so typing doesn't hammer the database.
+ */
+function GlobalSearchResults({ query, onOpen }: { query: string; onOpen: (hit: LeadSearchHit) => void }) {
+  const [debounced, setDebounced] = useState(query);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(query), 300);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  const { data: hits = [], isFetching } = useQuery({
+    queryKey: ["globalLeadSearch", debounced],
+    queryFn: () => searchLeadsEverywhere(debounced),
+    enabled: debounced.trim().length >= 2,
+    staleTime: 30_000,
+  });
+
+  if (isFetching && hits.length === 0) {
+    return (
+      <Box sx={{ bgcolor: "background.paper" }}>
+        {[0, 1, 2].map((i) => (
+          <Box key={i} sx={{ p: "12px 16px", borderBottom: `1px solid ${tokens.divider2}` }}>
+            <Skeleton variant="text" animation="wave" width="45%" height={20} />
+            <Skeleton variant="text" animation="wave" width="30%" height={16} />
+          </Box>
+        ))}
+      </Box>
+    );
+  }
+
+  if (hits.length === 0) {
+    return (
+      <Box sx={{ p: "40px 24px", textAlign: "center", color: "text.secondary", bgcolor: "background.paper" }}>
+        <Typography sx={{ fontSize: 15, fontWeight: 500, mb: 0.5 }}>No leads match "{query}"</Typography>
+        <Typography sx={{ fontSize: 13.5 }}>Try part of a name, a phone number, or an email address.</Typography>
+      </Box>
+    );
+  }
+
+  return (
+    <Box sx={{ bgcolor: "background.paper" }}>
+      <Typography sx={{ fontSize: 11, fontWeight: 600, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.05em", p: "10px 16px 6px" }}>
+        {hits.length} {hits.length === 1 ? "result" : "results"} across all accounts
+        {hits.length === 50 ? " (showing the newest 50)" : ""}
+      </Typography>
+      {hits.map((h) => (
+        <Box
+          key={h.id}
+          onClick={() => onOpen(h)}
+          sx={{
+            p: "12px 16px", borderTop: `1px solid ${tokens.divider2}`, cursor: "pointer",
+            "&:hover": { bgcolor: tokens.hover },
+          }}
+        >
+          <Box sx={{ display: "flex", alignItems: "baseline", gap: 1 }}>
+            <Typography sx={{ fontSize: 15, fontWeight: 500, color: tokens.primaryDark, minWidth: 0, wordBreak: "break-word" }}>
+              {h.name}
+            </Typography>
+            <Box sx={{ flex: 1 }} />
+            <Typography sx={{ fontSize: 12, color: "text.disabled", whiteSpace: "nowrap" }}>{timeAgo(h.created_at)}</Typography>
+          </Box>
+          <Typography sx={{ fontSize: 13, color: "text.secondary" }}>
+            {h.phone}
+            {h.email ? ` · ${h.email}` : ""}
+          </Typography>
+          {/* The account is the whole point of this view — make it the loudest
+              secondary detail, not a footnote. */}
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, flexWrap: "wrap", mt: 0.5 }}>
+            <Box sx={{ fontSize: 11.5, fontWeight: 700, bgcolor: tokens.primaryBg, color: tokens.primaryDark, borderRadius: "4px", px: 0.75, py: 0.25 }}>
+              {h.agent_name}
+            </Box>
+            <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
+              {[h.pipeline_name, h.stage].filter(Boolean).join(" · ")}
+              {h.archived ? " · archived" : ""}
+            </Typography>
+          </Box>
+        </Box>
+      ))}
     </Box>
   );
 }
