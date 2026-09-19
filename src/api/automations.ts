@@ -66,15 +66,20 @@ export interface ScheduledRunPatch {
   template_override?: string | null;
 }
 
-/** Queued and paused automation runs for one account's leads, soonest first. */
-export async function listScheduledRuns(agentId: string): Promise<ScheduledRun[]> {
-  const { data, error } = await supabase
+const SCHEDULED_RUN_SELECT =
+  "id, run_at, status, current_step, template_override, automation_id, lead:leads!inner(id, name, phone, stage, next_label, agent_id)";
+const SCHEDULED_RUN_STATUSES = ["pending", "processing", "paused"];
+
+/** Queued and paused automation runs for one account's leads, soonest first.
+ *  Pass null for `agentId` to list them across every account — operators only,
+ *  since RLS is what actually scopes this. */
+export async function listScheduledRuns(agentId: string | null): Promise<ScheduledRun[]> {
+  let query = supabase
     .from("automation_runs")
-    .select("id, run_at, status, current_step, template_override, automation_id, lead:leads!inner(id, name, phone, stage, next_label, agent_id)")
-    .eq("lead.agent_id", agentId)
-    .in("status", ["pending", "processing", "paused"])
-    .order("run_at", { ascending: true })
-    .limit(200);
+    .select(SCHEDULED_RUN_SELECT)
+    .in("status", SCHEDULED_RUN_STATUSES);
+  if (agentId) query = query.eq("lead.agent_id", agentId);
+  const { data, error } = await query.order("run_at", { ascending: true }).limit(200);
   if (error) throw new Error(error.message);
   return (data ?? []) as unknown as ScheduledRun[];
 }

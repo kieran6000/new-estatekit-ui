@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Box, Button, Chip, CircularProgress, Switch, Typography } from "@mui/material";
+import { Box, Button, Chip, CircularProgress, Switch, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
 import { tokens } from "../theme";
-import { getActiveAgentId, getActiveAgentIdSync } from "../api/_client";
+import { getActiveAgentId, getActiveAgentIdSync, listAgentProfiles } from "../api/_client";
 import { getMyProfile } from "../api/agentProfile";
 import {
   getAccountAutomationsPaused,
@@ -22,7 +22,9 @@ import WhatsAppPreview from "./WhatsAppPreview";
 // message, soonest first, with pause / send now / skip on each. Double-click a
 // message to reword it for that lead.
 
-// Mirrors run-automations: WhatsApps only send 08:00–20:00 SAST (UTC+2).
+// Mirrors run-automations: follow-up WhatsApps only send 08:00–20:00 SAST
+// (UTC+2). New-lead alerts are exempt there, so callers pass quietHours=false
+// for those — keep the two in step or this preview lies about send times.
 const SAST_OFFSET = 2;
 
 function effectiveSendTime(runAtIso: string, quietHours: boolean): Date {
@@ -60,16 +62,31 @@ export default function ScheduledAutomations() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const showSnack = useSnack();
+  // "account" = just the account you're switched into; "all" = every client's
+  // queue in one list, so nothing about to go out is hidden behind a switcher.
+  const [scope, setScope] = useState<"account" | "all">("account");
+  const allAccounts = scope === "all";
   const agentKey = getActiveAgentIdSync() ?? "me";
-  const runsKey = ["scheduledRuns", agentKey];
+  const runsKey = ["scheduledRuns", allAccounts ? "all" : agentKey];
   const pausedKey = ["automationsPaused", agentKey];
 
   const { data: profile } = useQuery({ queryKey: ["myProfile"], queryFn: getMyProfile, staleTime: 5 * 60_000 });
   const { data: automations = [] } = useAutomations();
   const { data: steps = [] } = useAutomationSteps();
+  // Only needed to name the owner of each run in the all-accounts view.
+  const { data: agentProfiles = [] } = useQuery({
+    queryKey: ["agentProfiles"],
+    queryFn: listAgentProfiles,
+    enabled: allAccounts,
+    staleTime: 5 * 60_000,
+  });
+  const agentName = (id: string) => {
+    const p = agentProfiles.find((a) => a.agent_id === id);
+    return p?.display_name || p?.company || "Unknown account";
+  };
   const { data: runs = [], isLoading } = useQuery({
     queryKey: runsKey,
-    queryFn: async () => listScheduledRuns(await getActiveAgentId()),
+    queryFn: async () => listScheduledRuns(allAccounts ? null : await getActiveAgentId()),
     refetchInterval: 30_000,
   });
   const { data: accountPaused = false } = useQuery({
@@ -112,24 +129,54 @@ export default function ScheduledAutomations() {
 
   return (
     <Box sx={{ pb: 4 }}>
-      {/* Account-wide switch */}
-      <Box
-        sx={{
-          m: "12px 16px 0", p: "10px 8px 10px 16px", display: "flex", alignItems: "center", gap: 1,
-          border: `1px solid ${tokens.divider}`, borderRadius: "8px", bgcolor: "background.paper",
-        }}
-      >
-        <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Typography sx={{ fontSize: 15, fontWeight: 500 }}>{profile?.displayName || "This account"}</Typography>
+      {/* Whose queue you're looking at. */}
+      <Box sx={{ m: "12px 16px 0" }}>
+        <ToggleButtonGroup
+          size="small"
+          exclusive
+          value={scope}
+          onChange={(_e, v) => v && setScope(v)}
+          sx={{ "& .MuiToggleButton-root": { textTransform: "none", fontSize: 13, px: 1.5, py: 0.5 } }}
+        >
+          <ToggleButton value="account">This account</ToggleButton>
+          <ToggleButton value="all">All accounts</ToggleButton>
+        </ToggleButtonGroup>
+      </Box>
+
+      {/* Account-wide switch. Only in single-account view — pausing is a
+          per-account setting, so it has no meaning across the combined list. */}
+      {allAccounts ? (
+        <Box
+          sx={{
+            m: "12px 16px 0", p: "10px 16px",
+            border: `1px solid ${tokens.divider}`, borderRadius: "8px", bgcolor: "background.paper",
+          }}
+        >
+          <Typography sx={{ fontSize: 15, fontWeight: 500 }}>All accounts</Typography>
           <Typography sx={{ fontSize: 13, color: "text.secondary" }}>
-            {accountPaused
-              ? "Automations paused — nothing will send"
-              : `${runs.length} message${runs.length === 1 ? "" : "s"} scheduled`}
+            {runs.length} message{runs.length === 1 ? "" : "s"} scheduled across every client.
+            Switch to a single account to pause it.
           </Typography>
         </Box>
-        <Typography sx={{ fontSize: 13, color: "text.secondary" }}>{accountPaused ? "Paused" : "On"}</Typography>
-        <Switch checked={!accountPaused} disabled={togglingAccount} onChange={(e) => toggleAccount(!e.target.checked)} />
-      </Box>
+      ) : (
+        <Box
+          sx={{
+            m: "12px 16px 0", p: "10px 8px 10px 16px", display: "flex", alignItems: "center", gap: 1,
+            border: `1px solid ${tokens.divider}`, borderRadius: "8px", bgcolor: "background.paper",
+          }}
+        >
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography sx={{ fontSize: 15, fontWeight: 500 }}>{profile?.displayName || "This account"}</Typography>
+            <Typography sx={{ fontSize: 13, color: "text.secondary" }}>
+              {accountPaused
+                ? "Automations paused — nothing will send"
+                : `${runs.length} message${runs.length === 1 ? "" : "s"} scheduled`}
+            </Typography>
+          </Box>
+          <Typography sx={{ fontSize: 13, color: "text.secondary" }}>{accountPaused ? "Paused" : "On"}</Typography>
+          <Switch checked={!accountPaused} disabled={togglingAccount} onChange={(e) => toggleAccount(!e.target.checked)} />
+        </Box>
+      )}
 
       {isLoading ? (
         <Box sx={{ display: "flex", justifyContent: "center", p: 6 }}>
@@ -137,7 +184,7 @@ export default function ScheduledAutomations() {
         </Box>
       ) : runs.length === 0 ? (
         <Typography sx={{ fontSize: 14, color: "text.secondary", p: "24px 16px", textAlign: "center" }}>
-          Nothing scheduled for this account.
+          {allAccounts ? "Nothing scheduled on any account." : "Nothing scheduled for this account."}
         </Typography>
       ) : (
         runs.map((run) => {
@@ -146,8 +193,11 @@ export default function ScheduledAutomations() {
           const isWhatsApp = step?.action_type === "send_whatsapp";
           const defaultText = step?.template_text ?? "";
           const text = run.template_override ?? defaultText;
-          const sendAt = effectiveSendTime(run.run_at, isWhatsApp);
-          const heldByQuietHours = isWhatsApp && sendAt.getTime() > Math.max(Date.parse(run.run_at), Date.now()) + 60_000;
+          // New-lead alerts ignore quiet hours (see run-automations), so the
+          // preview must not claim they'll wait until morning.
+          const quietHoursApply = isWhatsApp && automation?.trigger_type !== "lead_created";
+          const sendAt = effectiveSendTime(run.run_at, quietHoursApply);
+          const heldByQuietHours = quietHoursApply && sendAt.getTime() > Math.max(Date.parse(run.run_at), Date.now()) + 60_000;
           const busy = busyId === run.id;
           const locked = run.status === "processing";
 
@@ -181,6 +231,14 @@ export default function ScheduledAutomations() {
                   )}
                 </Box>
                 <Typography sx={{ fontSize: 12, color: "text.secondary", mt: 0.25 }}>
+                  {/* Whose lead this is — without it the combined list is
+                      ambiguous the moment two clients have a lead of the same name. */}
+                  {allAccounts && (
+                    <Box component="span" sx={{ fontWeight: 600, color: "text.primary" }}>
+                      {agentName(run.lead.agent_id)}
+                      <Box component="span" sx={{ color: "text.disabled", mx: 0.75 }}>·</Box>
+                    </Box>
+                  )}
                   {whenLabel(sendAt)}
                   {heldByQuietHours ? " · waiting for 08:00 (quiet hours)" : ""}
                 </Typography>
