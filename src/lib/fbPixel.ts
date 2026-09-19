@@ -26,8 +26,27 @@ export function initPixel(rawId: string | null | undefined): string | null {
   return id;
 }
 
-/** Fire a standard event (e.g. "Lead"). Safe no-op if the pixel isn't loaded. */
-export function trackPixel(event: string): void {
+/**
+ * Fire a standard event (e.g. "Lead"). Safe no-op if the pixel isn't loaded.
+ *
+ * `eventId` must match the one sent to the Conversions API for the same
+ * conversion — Meta uses it to collapse the browser event and the server event
+ * into one, instead of counting the lead twice.
+ */
+export function trackPixel(event: string, eventId?: string): void {
   const w = window as unknown as FbWindow;
-  if (typeof w.fbq === "function") w.fbq("track", event);
+  if (typeof w.fbq === "function") {
+    if (eventId) w.fbq("track", event, {}, { eventID: eventId });
+    else w.fbq("track", event);
+  }
+}
+
+/** Meta's browser cookie, passed to the Conversions API to improve matching.
+ *  Absent when the pixel hasn't set it (blocked, or first hit). */
+export function readFbp(): string | undefined {
+  try {
+    return document.cookie.split("; ").find((c) => c.startsWith("_fbp="))?.split("=")[1];
+  } catch {
+    return undefined;
+  }
 }

@@ -65,13 +65,41 @@ function startOfTodaySastUtc(): string {
   return new Date(`${todaySast()}T00:00:00+02:00`).toISOString();
 }
 
-function buildMessage(firstName: string, count: number): string {
-  const leads = count === 1 ? "lead" : "leads";
-  return (
-    `Hi ${firstName}, hope you're well.\n\n` +
-    `You have ${count} ${leads} that still need updating.\n\n` +
-    `Tap here to update them: ${APP_URL}/leads`
-  );
+const FALLBACK_TEMPLATE =
+  "Hi {{first_name}}, hope you're well.\n\n" +
+  "You have {{count}} {{leads_word}} that still need updating.\n\n" +
+  `Tap here to update them: ${APP_URL}/leads`;
+
+function buildMessage(template: string, firstName: string, count: number): string {
+  return template
+    .replaceAll("{{first_name}}", firstName)
+    .replaceAll("{{count}}", String(count))
+    .replaceAll("{{leads_word}}", count === 1 ? "lead" : "leads");
+}
+
+/** The Automations screen owns this nudge: its row there is the on/off switch,
+ *  and its step holds the wording. Returns null when it's switched off. */
+async function loadDigestAutomation(
+  supabase: SupabaseClient,
+): Promise<{ name: string; template: string } | null> {
+  const { data: automation } = await supabase
+    .from("automations")
+    .select("id, name, enabled")
+    .eq("trigger_type", "daily_digest")
+    .maybeSingle();
+
+  // No row yet (migration not applied) or switched off — send nothing. Failing
+  // closed matters here: this messages real agents.
+  if (!automation?.enabled) return null;
+
+  const { data: step } = await supabase
+    .from("automation_steps")
+    .select("template_text")
+    .eq("automation_id", automation.id)
+    .eq("step_order", 1)
+    .maybeSingle();
+
+  return { name: automation.name, template: step?.template_text || FALLBACK_TEMPLATE };
 }
 
 interface LeadCountRow { agent_id: string }
@@ -91,6 +119,13 @@ Deno.serve(async (req) => {
     const body = await req.json();
     dryRun = body?.dryRun === true;
   } catch { /* no body is fine */ }
+
+  // Checked before any work: if the automation is off, this is a no-op.
+  const digest = await loadDigestAutomation(supabase);
+  if (!digest && !dryRun) {
+    return json({ sent: 0, note: "automation disabled — switch it on under Automations" });
+  }
+  const template = digest?.template ?? FALLBACK_TEMPLATE;
 
   const sentOn = todaySast();
   const dayStart = startOfTodaySastUtc();
@@ -147,7 +182,11 @@ Deno.serve(async (req) => {
     }
 
     if (dryRun) {
-      results.push({ agent: name, count, status: "would send" });
+      results.push({
+        agent: name,
+        count,
+        status: digest ? "would send" : "would send (automation currently OFF)",
+      });
       continue;
     }
 
@@ -161,7 +200,7 @@ Deno.serve(async (req) => {
       continue;
     }
 
-    const ok = await sendWhatsApp(profile.whatsapp_number, buildMessage(name.split(" ")[0], count));
+    const ok = await sendWhatsApp(profile.whatsapp_number, buildMessage(template, name.split(" ")[0], count));
     if (ok) {
       sent++;
       results.push({ agent: name, count, status: "sent" });

@@ -4,11 +4,11 @@ import { useQuery } from "@tanstack/react-query";
 import { Box, Skeleton, Typography } from "@mui/material";
 import { usePostHog } from "@posthog/react";
 import { tokens } from "../theme";
-import { getLeadPageBySlug, submitMockLead } from "../api/leadPages";
+import { getLeadPageBySlug, submitMockLead, reportCapiLead } from "../api/leadPages";
 import { getPipelinePublic } from "../api/pipelines";
 import { listCustomQuestionsPublic } from "../api/customQuestions";
 import LeadCaptureForm, { HeaderBrand } from "../components/LeadCaptureForm";
-import { initPixel, trackPixel } from "../lib/fbPixel";
+import { initPixel, trackPixel, readFbp } from "../lib/fbPixel";
 import { trackPageEvent } from "../lib/pageTracking";
 import { captureAttribution, readAttribution } from "../lib/adAttribution";
 import { listSoldListingsForAgent } from "../api/soldListings";
@@ -94,14 +94,36 @@ export default function LeadPagePreviewPage() {
                 pipelineKind={pipeline.kind}
                 customQuestions={customQuestions}
                 showHeader={false}
-                onSubmit={({ name, phone, email, answers }) => {
+                onSubmit={({ name, phone, email, answers, quality }) => {
                   // Fire the pixel + navigate to /thank-you IMMEDIATELY (most pixels
                   // trigger on the thank-you route). The DB insert runs in the
                   // background — client-side nav doesn't unload the page, so the
                   // request completes without blocking the visitor.
-                  void submitMockLead(page.id, name, phone, answers, email, readAttribution(page.id)).catch(() => {});
-                  trackPixel("Lead");
-                  posthog.capture("lead_page_form_submitted", { pipeline: pipeline.kind });
+                  const attribution = { ...readAttribution(page.id), fbp: readFbp() };
+                  // Minted here, before anything is sent, because the browser
+                  // pixel fires immediately while the lead id only exists after
+                  // the insert. Both sides must quote the same id or Meta counts
+                  // one conversion twice.
+                  const eventId = crypto.randomUUID();
+
+                  void submitMockLead(page.id, name, phone, answers, email, attribution, quality)
+                    .then((res) => {
+                      if (res?.id && quality === "good" && page.fbPixelId) {
+                        void reportCapiLead({
+                          leadId: res.id,
+                          pixelId: page.fbPixelId,
+                          eventId,
+                          sourceUrl: window.location.href,
+                        }).catch(() => {});
+                      }
+                    })
+                    .catch(() => {});
+
+                  // Pixel conditioning: a weak lead still reaches the agent, but
+                  // Meta is never told it converted — otherwise the algorithm
+                  // goes looking for more of exactly the lead they don't want.
+                  if (quality === "good") trackPixel("Lead", eventId);
+                  posthog.capture("lead_page_form_submitted", { pipeline: pipeline.kind, quality });
                   navigate(`/thank-you?p=${page.slug}&n=${encodeURIComponent(name.split(" ")[0] || "there")}`);
                 }}
               />

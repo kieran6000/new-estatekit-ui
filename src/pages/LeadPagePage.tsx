@@ -16,7 +16,6 @@ import {
   MenuItem,
   Radio,
   RadioGroup,
-  Checkbox,
   FormControlLabel,
   Skeleton,
   Switch,
@@ -64,6 +63,8 @@ import { useIsOperator } from "../hooks/useAutomations";
 import { useSnack } from "../hooks/useSnack";
 import LeadCaptureForm from "../components/LeadCaptureForm";
 import LeadPageFunnelStats from "../components/LeadPageFunnelStats";
+import { getCapiConfig, saveCapiConfig, listCapiEvents } from "../api/capi";
+import { timeAgo } from "../lib/timeAgo";
 
 export default function LeadPagePage() {
   const navigate = useNavigate();
@@ -83,6 +84,7 @@ export default function LeadPagePage() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [renameDialogId, setRenameDialogId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const page: LeadPage | undefined = pages.find((p) => p.id === pageId) ?? pages[0];
   const pipeline: Pipeline | undefined = pipelines.find((p) => p.id === page?.pipelineId);
@@ -377,6 +379,21 @@ export default function LeadPagePage() {
                   minRows={1}
                   maxRows={3}
                 />
+
+                {/* Everything below is off by default and stays collapsed.
+                    Nobody needs it to run a page, and a wall of tracking
+                    options is how a simple screen turns confusing. */}
+                <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mt: 0.5 }}>
+                  <Box>
+                    <Typography sx={{ fontSize: 13.5, fontWeight: 500 }}>Advanced tracking</Typography>
+                    <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
+                      Server-side conversions. Leave off unless you're setting it up.
+                    </Typography>
+                  </Box>
+                  <Switch size="small" checked={showAdvanced} onChange={(e) => setShowAdvanced(e.target.checked)} />
+                </Box>
+
+                {showAdvanced && <CapiSettings pixelId={form.fbPixelId} />}
               </Section>
             )}
 
@@ -1128,6 +1145,134 @@ function CustomQuestionEditor({
   );
 }
 
+/**
+ * Conversions API setup for the page's pixel.
+ *
+ * Kept to four controls on purpose: paste a token, choose test or live, save,
+ * and see whether events are actually landing. Anything more and it stops being
+ * something you can talk a client through on the phone.
+ */
+function CapiSettings({ pixelId }: { pixelId: string }) {
+  const showSnack = useSnack();
+  const qc = useQueryClient();
+  const cleanPixel = (pixelId || "").replace(/\D/g, "");
+
+  const { data: config } = useQuery({
+    queryKey: ["capiConfig", cleanPixel],
+    queryFn: () => getCapiConfig(cleanPixel),
+    enabled: !!cleanPixel,
+  });
+  const { data: events = [] } = useQuery({
+    queryKey: ["capiEvents", cleanPixel],
+    queryFn: () => listCapiEvents(cleanPixel),
+    enabled: !!cleanPixel,
+    refetchInterval: 30_000,
+  });
+
+  const [token, setToken] = useState("");
+  const [testCode, setTestCode] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { setTestCode(config?.testEventCode ?? ""); }, [config?.testEventCode]);
+
+  if (!cleanPixel) {
+    return (
+      <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
+        Add a Pixel ID above first — conversions are reported against it.
+      </Typography>
+    );
+  }
+
+  async function save(enabled: boolean) {
+    setSaving(true);
+    try {
+      await saveCapiConfig({
+        pixelId: cleanPixel,
+        accessToken: token,
+        enabled,
+        testEventCode: testCode.trim() || null,
+      });
+      setToken("");
+      await qc.invalidateQueries({ queryKey: ["capiConfig", cleanPixel] });
+      showSnack(enabled ? "Conversions API is on" : "Conversions API is off");
+    } catch (e) {
+      console.error(e);
+      showSnack("Couldn't save that. Try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Box sx={{ bgcolor: tokens.surface2, border: `1px solid ${tokens.divider2}`, borderRadius: "6px", p: "12px", display: "flex", flexDirection: "column", gap: 1.25 }}>
+      <Typography sx={{ fontSize: 12.5, color: "text.secondary", lineHeight: 1.5 }}>
+        Sends conversions to Facebook from our server as well as the browser. Ad blockers
+        and iPhones block a lot of browser events, so this recovers leads Facebook
+        otherwise never hears about. Both are sent with the same ID, so nothing is
+        double-counted.
+      </Typography>
+
+      <TextField
+        label={config?.hasToken ? "Replace access token" : "Conversions API access token"}
+        placeholder={config?.hasToken ? "Leave blank to keep the current one" : "Paste from Events Manager → Settings"}
+        value={token}
+        onChange={(e) => setToken(e.target.value)}
+        type="password"
+        size="small"
+        fullWidth
+      />
+
+      <TextField
+        label="Test event code (optional)"
+        placeholder="TEST12345"
+        value={testCode}
+        onChange={(e) => setTestCode(e.target.value)}
+        helperText="While this is set, events show in Facebook's Test Events tab and don't affect ad delivery. Clear it to go live."
+        size="small"
+        fullWidth
+      />
+
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+        <Chip
+          size="small"
+          label={config?.enabled ? "On" : "Off"}
+          color={config?.enabled ? "success" : "default"}
+          variant="outlined"
+        />
+        {config?.testEventCode && <Chip size="small" label="Test mode" color="warning" variant="outlined" />}
+        <Box sx={{ flex: 1 }} />
+        <Button
+          size="small"
+          disabled={saving || (!config?.hasToken && !token.trim())}
+          onClick={() => save(!config?.enabled)}
+          variant={config?.enabled ? "outlined" : "contained"}
+        >
+          {config?.enabled ? "Turn off" : "Turn on"}
+        </Button>
+        {config?.enabled && (
+          <Button size="small" disabled={saving} onClick={() => save(true)}>
+            Save
+          </Button>
+        )}
+      </Box>
+
+      {/* Proof it's working, rather than asking them to trust the toggle. */}
+      {events.length > 0 && (
+        <Box sx={{ borderTop: `1px solid ${tokens.divider2}`, pt: 1 }}>
+          <Typography sx={{ fontSize: 11.5, fontWeight: 600, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.05em", mb: 0.5 }}>
+            Last reported
+          </Typography>
+          {events.map((ev) => (
+            <Typography key={ev.id} sx={{ fontSize: 12.5, color: ev.status === "sent" ? "text.secondary" : "error.main" }}>
+              {ev.event_name} · {ev.status} · {timeAgo(ev.created_at)}
+            </Typography>
+          ))}
+        </Box>
+      )}
+    </Box>
+  );
+}
+
 function EditQuestionRow({ pageId, question, onDone }: { pageId: string; question: CustomQuestion; onDone: () => void }) {
   const updateQuestion = useUpdateCustomQuestion(pageId);
   const [label, setLabel] = useState(question.label);
@@ -1135,6 +1280,7 @@ function EditQuestionRow({ pageId, question, onDone }: { pageId: string; questio
   const [required, setRequired] = useState(question.required);
   const [optionsText, setOptionsText] = useState((question.options ?? []).join(", "));
   const [disqualify, setDisqualify] = useState<string[]>(question.disqualifyAnswers ?? []);
+  const [lowQuality, setLowQuality] = useState<string[]>(question.lowQualityAnswers ?? []);
 
   const isChoice = question.type === "multiple_choice" || question.type === "yes_no";
   const currentOptions =
@@ -1142,8 +1288,17 @@ function EditQuestionRow({ pageId, question, onDone }: { pageId: string; questio
       ? ["Yes", "No"]
       : optionsText.split(",").map((o) => o.trim()).filter(Boolean);
 
-  function toggleDisqualify(opt: string) {
-    setDisqualify((d) => (d.includes(opt) ? d.filter((x) => x !== opt) : [...d, opt]));
+  // The three states are stored as two lists, so an answer must only ever be in
+  // one of them — setting a state always clears the other.
+  type OptionQuality = "good" | "weak" | "reject";
+  function qualityOf(opt: string): OptionQuality {
+    if (disqualify.includes(opt)) return "reject";
+    if (lowQuality.includes(opt)) return "weak";
+    return "good";
+  }
+  function setQualityFor(opt: string, quality: OptionQuality) {
+    setDisqualify((d) => (quality === "reject" ? [...new Set([...d, opt])] : d.filter((x) => x !== opt)));
+    setLowQuality((l) => (quality === "weak" ? [...new Set([...l, opt])] : l.filter((x) => x !== opt)));
   }
 
   async function save() {
@@ -1158,7 +1313,12 @@ function EditQuestionRow({ pageId, question, onDone }: { pageId: string; questio
         required,
         ...(question.type === "address" ? { helperText: helperText.trim() } : {}),
         ...(question.type === "multiple_choice" ? { options } : {}),
-        ...(isChoice ? { disqualifyAnswers: disqualify.filter((o) => currentOptions.includes(o)) } : {}),
+        ...(isChoice
+          ? {
+              disqualifyAnswers: disqualify.filter((o) => currentOptions.includes(o)),
+              lowQualityAnswers: lowQuality.filter((o) => currentOptions.includes(o)),
+            }
+          : {}),
       },
     });
     onDone();
@@ -1177,18 +1337,29 @@ function EditQuestionRow({ pageId, question, onDone }: { pageId: string; questio
       {isChoice && currentOptions.length > 0 && (
         <Box sx={{ bgcolor: tokens.surface2, border: `1px solid ${tokens.divider2}`, borderRadius: "6px", p: "10px 12px" }}>
           <Typography sx={{ fontSize: 12.5, fontWeight: 600, color: "text.secondary", mb: 0.5 }}>
-            Which answers mean it's NOT a good lead?
+            How good is each answer?
           </Typography>
-          <Typography sx={{ fontSize: 11.5, color: "text.secondary", mb: 1 }}>
-            If someone picks a ticked answer, they see a polite "not a fit" page and don't become a lead.
+          <Typography sx={{ fontSize: 11.5, color: "text.secondary", mb: 1.25, lineHeight: 1.5 }}>
+            <strong>Good</strong> — normal lead.<br />
+            <strong>Weak</strong> — you still get the lead, but Facebook isn't told it's a
+            conversion (so it stops finding more like it), and they get one extra "are you sure" step.<br />
+            <strong>Reject</strong> — polite "not a fit" page, no lead at all.
           </Typography>
           {currentOptions.map((opt) => (
-            <FormControlLabel
-              key={opt}
-              control={<Checkbox size="small" checked={disqualify.includes(opt)} onChange={() => toggleDisqualify(opt)} />}
-              label={<Typography sx={{ fontSize: 13.5 }}>{opt}</Typography>}
-              sx={{ display: "flex", m: 0 }}
-            />
+            <Box key={opt} sx={{ display: "flex", alignItems: "center", gap: 1, py: 0.5, flexWrap: "wrap" }}>
+              <Typography sx={{ fontSize: 13.5, flex: 1, minWidth: 100, wordBreak: "break-word" }}>{opt}</Typography>
+              <ToggleButtonGroup
+                size="small"
+                exclusive
+                value={qualityOf(opt)}
+                onChange={(_e, v) => v && setQualityFor(opt, v)}
+                sx={{ "& .MuiToggleButton-root": { textTransform: "none", fontSize: 12, px: 1.25, py: 0.25 } }}
+              >
+                <ToggleButton value="good">Good</ToggleButton>
+                <ToggleButton value="weak">Weak</ToggleButton>
+                <ToggleButton value="reject">Reject</ToggleButton>
+              </ToggleButtonGroup>
+            </Box>
           ))}
         </Box>
       )}

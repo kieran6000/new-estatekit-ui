@@ -33,6 +33,8 @@ const TRIGGER_LABEL: Record<string, string> = {
   lead_created: "When a lead is created",
   stage_changed: "When stage changes to",
   reminder_due: "When a reminder comes due",
+  // Not per-lead like the others: one message per agent, each weekday at 16:00.
+  daily_digest: "Every weekday at 16:00",
 };
 
 export default function AdminAutomationsPage() {
@@ -136,6 +138,7 @@ function AutomationCard({
 }) {
   const [expanded, setExpanded] = useState(false);
   const whatsappSteps = steps.filter((s) => s.action_type === "send_whatsapp");
+  const isDigest = automation.trigger_type === "daily_digest";
 
   return (
     <Box sx={{ m: "12px 16px 0", border: `1px solid ${tokens.divider}`, borderRadius: "8px", bgcolor: "background.paper" }}>
@@ -144,7 +147,9 @@ function AutomationCard({
           <Typography sx={{ fontWeight: 500, fontSize: 15 }}>{automation.name}</Typography>
           <Typography sx={{ color: "text.secondary", fontSize: 13 }}>
             {TRIGGER_LABEL[automation.trigger_type]}
-            {automation.trigger_stage ? ` "${automation.trigger_stage}"` : ""} · {steps.length} step{steps.length === 1 ? "" : "s"}
+            {automation.trigger_stage ? ` "${automation.trigger_stage}"` : ""}
+            {/* "1 step" is noise for the digest — it's one message, always. */}
+            {isDigest ? " · one message per agent" : ` · ${steps.length} step${steps.length === 1 ? "" : "s"}`}
           </Typography>
         </Box>
         <Chip size="small" label={automation.enabled ? "Enabled" : "Disabled"} color={automation.enabled ? "success" : "default"} variant="outlined" />
@@ -157,8 +162,21 @@ function AutomationCard({
 
       {whatsappSteps.length > 0 && (
         <Box sx={{ px: 2, pb: 2, display: "flex", flexDirection: "column", gap: 1.5 }}>
+          {isDigest && (
+            <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
+              Goes to each agent once a day, only if they actually have leads waiting.
+              Nobody with an empty list gets a message.
+            </Typography>
+          )}
           {whatsappSteps.map((s) => (
-            <WhatsAppPreview key={s.id} lead={previewLead} text={s.template_text} />
+            <WhatsAppPreview
+              key={s.id}
+              lead={previewLead}
+              text={s.template_text}
+              // This one is addressed to the agent about a count of leads, so
+              // the usual lead-based preview values would be misleading.
+              sampleFields={isDigest ? { first_name: "James", count: "7", leads_word: "leads" } : undefined}
+            />
           ))}
         </Box>
       )}
@@ -168,7 +186,7 @@ function AutomationCard({
           <Divider />
           <Box sx={{ p: "8px 16px 16px" }}>
             {steps.map((s) => (
-              <StepEditor key={s.id} step={s} />
+              <StepEditor key={s.id} step={s} hideDelay={isDigest} />
             ))}
           </Box>
         </>
@@ -177,7 +195,7 @@ function AutomationCard({
   );
 }
 
-function StepEditor({ step }: { step: AutomationStepRow }) {
+function StepEditor({ step, hideDelay = false }: { step: AutomationStepRow; hideDelay?: boolean }) {
   const update = useUpdateAutomationStep();
   const showSnack = useSnack();
   const [delayMinutes, setDelayMinutes] = useState(step.delay_minutes);
@@ -205,16 +223,20 @@ function StepEditor({ step }: { step: AutomationStepRow }) {
   return (
     <Box sx={{ py: 1.5, borderTop: `1px solid ${tokens.divider2}`, "&:first-of-type": { borderTop: 0 } }}>
       <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1 }}>
-        <Chip size="small" label={`Step ${step.step_order}`} />
+        {!hideDelay && <Chip size="small" label={`Step ${step.step_order}`} />}
         <Chip size="small" label={step.action_type} variant="outlined" />
-        <TextField
-          size="small"
-          type="number"
-          label="Delay (minutes, after previous step)"
-          value={delayMinutes}
-          onChange={(e) => setDelayMinutes(Number(e.target.value))}
-          sx={{ ml: "auto", width: 260 }}
-        />
+        {/* The digest runs on a fixed daily schedule — a per-step delay would
+            do nothing, so showing the field would just invite confusion. */}
+        {!hideDelay && (
+          <TextField
+            size="small"
+            type="number"
+            label="Delay (minutes, after previous step)"
+            value={delayMinutes}
+            onChange={(e) => setDelayMinutes(Number(e.target.value))}
+            sx={{ ml: "auto", width: 260 }}
+          />
+        )}
       </Box>
 
       {step.action_type === "send_whatsapp" ? (
@@ -223,7 +245,9 @@ function StepEditor({ step }: { step: AutomationStepRow }) {
           multiline
           minRows={2}
           size="small"
-          label="Message ({{name}}, {{first_name}}, {{phone}}, {{stage}}, {{next_label}})"
+          label={hideDelay
+            ? "Message ({{first_name}}, {{count}}, {{leads_word}})"
+            : "Message ({{name}}, {{first_name}}, {{phone}}, {{stage}}, {{next_label}})"}
           value={templateText}
           onChange={(e) => setTemplateText(e.target.value)}
         />

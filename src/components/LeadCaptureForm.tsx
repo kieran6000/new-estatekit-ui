@@ -48,7 +48,17 @@ export default function LeadCaptureForm({
   customQuestions: CustomQuestion[];
   /** false when a parent page renders its own full-width navbar instead. */
   showHeader?: boolean;
-  onSubmit: (values: { name: string; phone: string; email: string; answers: { q: string; a: string }[] }) => void;
+  onSubmit: (values: {
+    name: string;
+    phone: string;
+    email: string;
+    answers: { q: string; a: string }[];
+    /** "weak" when they picked an answer the agent flagged as low quality.
+     *  The caller uses this to decide whether to report a conversion to
+     *  Facebook — teaching the pixel to find more of a bad lead is worse than
+     *  not reporting it at all. */
+    quality: "good" | "weak";
+  }) => void;
   /** Dashboard preview — never records a lead or fires tracking. */
   preview?: boolean;
 }) {
@@ -65,8 +75,15 @@ export default function LeadCaptureForm({
   const [errors, setErrors] = useState<FieldErrors>({});
   const [submittedName, setSubmittedName] = useState("");
   const [disqualified, setDisqualified] = useState(false);
+  // Extra confirmation shown once to leads flagged as weak — see handleNext.
+  const [confirmShown, setConfirmShown] = useState(false);
 
   const steps: StepDef[] = [...customQuestions.map((question) => ({ kind: "question" as const, question })), { kind: "contact" }];
+  // Whether anything picked so far is flagged low quality, used to decide if
+  // the confirmation step appears. The submitted value is recomputed at submit.
+  const isWeakSoFar = customQuestions.some((q) =>
+    q.lowQualityAnswers?.includes((answers[q.id] ?? "").trim()),
+  );
   const [stepIndex, setStepIndex] = useState(0);
   const step = steps[Math.min(stepIndex, steps.length - 1)];
   const isLast = stepIndex === steps.length - 1;
@@ -113,7 +130,12 @@ export default function LeadCaptureForm({
     submittedRef.current = true;
     if (!preview) trackPageEvent(page.id, "submit");
     const answerList = customQuestions.map((q) => ({ q: q.label, a: all[q.id] ?? "" }));
-    onSubmit({ name, phone, email: email.trim(), answers: answerList });
+    // Graded off the final answers rather than tracked as they go, so going
+    // back and changing an answer grades the lead on what they actually sent.
+    const quality = customQuestions.some((q) =>
+      q.lowQualityAnswers?.includes((all[q.id] ?? "").trim()),
+    ) ? "weak" as const : "good" as const;
+    onSubmit({ name, phone, email: email.trim(), answers: answerList, quality });
     setSubmittedName(name.split(" ")[0] || "there");
     setPhase("done");
   }
@@ -133,6 +155,14 @@ export default function LeadCaptureForm({
       if (!phoneIsValid(phone)) nextErrors.phone = "Please enter a valid WhatsApp number.";
       if (Object.keys(nextErrors).length) {
         setErrors(nextErrors);
+        return;
+      }
+      // One deliberate speed bump for leads the agent flagged as weak, and only
+      // once. Someone genuinely interested taps through it; someone idly
+      // filling in forms often doesn't — which is the whole point. Good leads
+      // never see it, so the fast path stays fast.
+      if (isWeakSoFar && !confirmShown) {
+        setConfirmShown(true);
         return;
       }
       submit();
@@ -269,6 +299,21 @@ export default function LeadCaptureForm({
                 </Box>
               )}
 
+              {/* The speed bump. Plain and honest — it states what's about to
+                  happen rather than trying to talk them out of it. */}
+              {step.kind === "contact" && confirmShown && (
+                <Box sx={{ mt: 2, p: "12px 14px", bgcolor: "#fff8e1", border: "1px solid #ffe082", borderRadius: "8px" }}>
+                  <Typography sx={{ fontSize: 14.5, fontWeight: 700, mb: 0.5 }}>
+                    Just checking before we call
+                  </Typography>
+                  <Typography sx={{ fontSize: 13.5, color: "text.secondary", lineHeight: 1.5 }}>
+                    {page.agentName || "An agent"} will phone you on{" "}
+                    <Box component="span" sx={{ fontWeight: 600, color: "text.primary" }}>{phone || "your number"}</Box>{" "}
+                    about your property. Tap below if that's OK.
+                  </Typography>
+                </Box>
+              )}
+
               {(step.kind === "contact" || (step.kind === "question" && (step.question.type === "address" || step.question.type === "short_text"))) && (
                 <Button
                   variant="contained"
@@ -276,9 +321,11 @@ export default function LeadCaptureForm({
                   fullWidth
                   endIcon={isLast ? undefined : <ArrowForwardIcon />}
                   onClick={handleNext}
-                  sx={{ mt: 3, bgcolor: page.accentColor, color: onAccent, "&:hover": { bgcolor: page.accentColor, filter: "brightness(0.9)" } }}
+                  sx={{ mt: confirmShown ? 1.5 : 3, bgcolor: page.accentColor, color: onAccent, "&:hover": { bgcolor: page.accentColor, filter: "brightness(0.9)" } }}
                 >
-                  {isLast ? page.ctaLabel : "Next Step"}
+                  {step.kind === "contact" && confirmShown
+                    ? "Yes, call me"
+                    : isLast ? page.ctaLabel : "Next Step"}
                 </Button>
               )}
 

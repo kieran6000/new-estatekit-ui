@@ -24,13 +24,16 @@ function shortSlugFor(id: string): string {
   return h.toString(36).padStart(4, "0").slice(0, 4);
 }
 
-function fillTemplate(text: string, lead: PreviewLead): string {
+function fillTemplate(text: string, lead: PreviewLead, extra?: Record<string, string>): string {
   const fields: Record<string, string> = {
     name: lead.name,
     first_name: lead.name.split(" ")[0],
     phone: lead.phone,
     stage: lead.stage,
     next_label: lead.next_label,
+    // Caller-supplied values win: the daily digest is addressed to the agent and
+    // talks about a count, so a lead's name would be the wrong preview entirely.
+    ...extra,
   };
   // {{action_link}} is left in place and rendered as a link below.
   return text.replace(/\{\{(\w+)\}\}/g, (m, key: string) => (key === "action_link" ? m : fields[key] ?? m));
@@ -42,6 +45,7 @@ export default function WhatsAppPreview({
   time,
   editable = false,
   onSave,
+  sampleFields,
 }: {
   lead: PreviewLead | undefined;
   text: string | null;
@@ -50,6 +54,10 @@ export default function WhatsAppPreview({
   editable?: boolean;
   /** Called with the new template text when an edit is committed. */
   onSave?: (text: string) => void;
+  /** Overrides for placeholders this template uses that aren't lead fields
+   *  (e.g. the daily digest's {{count}}), so the preview shows real wording
+   *  instead of a literal "{{count}}". */
+  sampleFields?: Record<string, string>;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -57,7 +65,7 @@ export default function WhatsAppPreview({
 
   if (!lead || !text) return null;
 
-  const parts = fillTemplate(text, lead).split(LINK_TOKEN);
+  const parts = fillTemplate(text, lead, sampleFields).split(LINK_TOKEN);
   const link = `ek.co/L/${shortSlugFor(lead.id)}`;
 
   function startEditing() {

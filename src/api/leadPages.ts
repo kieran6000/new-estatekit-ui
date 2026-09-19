@@ -303,11 +303,23 @@ export async function submitMockLead(
   formAnswers: FormAnswer[],
   email: string | null = null,
   attribution: Record<string, string | undefined> = {},
-) {
+  quality: "good" | "weak" = "good",
+): Promise<{ id: string } | null> {
   const { data, error } = await supabase.functions.invoke(
     "public-submit-lead",
-    { body: { pageId, name, phone, formAnswers, email, attribution } },
+    { body: { pageId, name, phone, formAnswers, email, attribution, quality } },
   );
   if (error) throw new Error(error.message);
-  return data;
+  return data as { id: string } | null;
+}
+
+/** Report a conversion to Meta server-side, alongside the browser pixel.
+ *  Fire-and-forget: a reporting failure must never affect the visitor. */
+export async function reportCapiLead(args: {
+  leadId: string;
+  pixelId: string;
+  eventId: string;
+  sourceUrl?: string;
+}): Promise<void> {
+  await supabase.functions.invoke("fb-capi-lead", { body: args });
 }

@@ -37,6 +37,7 @@ Deno.serve(async (req: Request) => {
     email?: string | null;
     formAnswers?: { q: string; a: string }[];
     attribution?: Record<string, unknown>;
+    quality?: string;
   };
   try {
     body = await req.json();
@@ -85,6 +86,9 @@ Deno.serve(async (req: Request) => {
       email: body.email ?? null,
       form_answers: body.formAnswers ?? [],
       attribution,
+      // Only ever "good" or "weak" — anything else is treated as good rather
+      // than trusted, since this arrives from the public page.
+      quality: body.quality === "weak" ? "weak" : "good",
       // Meta's {{ad.id}} macro on the landing-page URL is the only way a
       // website lead can name the ad that produced it.
       fb_ad_id: attribution.ad_id ?? null,
