@@ -11,6 +11,7 @@ import LeadCaptureForm, { HeaderBrand } from "../components/LeadCaptureForm";
 import { initPixel, trackPixel, readFbp } from "../lib/fbPixel";
 import { trackPageEvent } from "../lib/pageTracking";
 import { captureAttribution, readAttribution } from "../lib/adAttribution";
+import { listEndingsPublic } from "../api/endings";
 import { listSoldListingsForAgent } from "../api/soldListings";
 import { SoldStrip } from "../components/SoldListings";
 
@@ -41,6 +42,13 @@ export default function LeadPagePreviewPage() {
     queryKey: ["publicSold", page?.agentId],
     queryFn: () => listSoldListingsForAgent(page!.agentId),
     enabled: !!page?.agentId,
+  });
+
+  // Custom end pages an answer can route to.
+  const { data: endings = [] } = useQuery({
+    queryKey: ["publicEndings", page?.id],
+    queryFn: () => listEndingsPublic(page!.id),
+    enabled: !!page?.id,
   });
 
   useEffect(() => {
@@ -93,8 +101,9 @@ export default function LeadPagePreviewPage() {
                 page={page}
                 pipelineKind={pipeline.kind}
                 customQuestions={customQuestions}
+                endings={endings}
                 showHeader={false}
-                onSubmit={({ name, phone, email, answers, quality }) => {
+                onSubmit={({ name, phone, email, answers, quality, customEnding }) => {
                   // Fire the pixel + navigate to /thank-you IMMEDIATELY (most pixels
                   // trigger on the thank-you route). The DB insert runs in the
                   // background — client-side nav doesn't unload the page, so the
@@ -124,7 +133,13 @@ export default function LeadPagePreviewPage() {
                   // goes looking for more of exactly the lead they don't want.
                   if (quality === "good") trackPixel("Lead", eventId);
                   posthog.capture("lead_page_form_submitted", { pipeline: pipeline.kind, quality });
-                  navigate(`/thank-you?p=${page.slug}&n=${encodeURIComponent(name.split(" ")[0] || "there")}`);
+
+                  // A custom end page is rendered by the form itself, so we
+                  // must stay put. Only the standard thank-you lives on its own
+                  // route (which some pixels are configured to fire on).
+                  if (!customEnding) {
+                    navigate(`/thank-you?p=${page.slug}&n=${encodeURIComponent(name.split(" ")[0] || "there")}`);
+                  }
                 }}
               />
 

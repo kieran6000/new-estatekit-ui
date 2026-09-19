@@ -8,7 +8,7 @@ interface CqRow {
   type: string;
   options: string[] | null;
   disqualify_answers: string[] | null;
-  low_quality_answers: string[] | null;
+  answer_routes: Record<string, string> | null;
   helper_text: string | null;
   required: boolean;
   is_default: boolean;
@@ -23,7 +23,7 @@ function rowToQuestion(r: CqRow): CustomQuestion {
     type: r.type as CustomQuestion["type"],
     options: r.options ?? undefined,
     disqualifyAnswers: r.disqualify_answers ?? undefined,
-    lowQualityAnswers: r.low_quality_answers ?? undefined,
+    answerRoutes: r.answer_routes ?? undefined,
     helperText: r.helper_text ?? undefined,
     required: r.required,
     isDefault: r.is_default,
@@ -67,7 +67,7 @@ export interface NewCustomQuestion {
   type: CustomQuestion["type"];
   options?: string[];
   disqualifyAnswers?: string[];
-  lowQualityAnswers?: string[];
+  answerRoutes?: Record<string, string>;
   helperText?: string;
   required: boolean;
 }
@@ -93,7 +93,7 @@ export async function addCustomQuestion(
     type: data.type,
     options: data.options ?? null,
     disqualify_answers: data.disqualifyAnswers ?? [],
-    low_quality_answers: data.lowQualityAnswers ?? [],
+    answer_routes: data.answerRoutes ?? {},
     helper_text: data.helperText ?? null,
     required: data.required,
     is_default: false,
@@ -105,7 +105,7 @@ export async function addCustomQuestion(
 export async function updateCustomQuestion(
   id: string,
   patch: Partial<
-    Pick<CustomQuestion, "label" | "type" | "options" | "disqualifyAnswers" | "lowQualityAnswers" | "helperText" | "required">
+    Pick<CustomQuestion, "label" | "type" | "options" | "disqualifyAnswers" | "answerRoutes" | "helperText" | "required">
   >,
 ): Promise<void> {
   const row: Record<string, unknown> = {};
@@ -113,7 +113,7 @@ export async function updateCustomQuestion(
   if (patch.type !== undefined) row.type = patch.type;
   if (patch.options !== undefined) row.options = patch.options;
   if (patch.disqualifyAnswers !== undefined) row.disqualify_answers = patch.disqualifyAnswers;
-  if (patch.lowQualityAnswers !== undefined) row.low_quality_answers = patch.lowQualityAnswers;
+  if (patch.answerRoutes !== undefined) row.answer_routes = patch.answerRoutes;
   if (patch.helperText !== undefined) row.helper_text = patch.helperText;
   if (patch.required !== undefined) row.required = patch.required;
   if (Object.keys(row).length === 0) return;

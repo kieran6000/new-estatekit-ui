@@ -183,10 +183,11 @@ export interface CustomQuestion {
   /** Choice answers that mark a lead as NOT a good fit. Picking one sends the
    * visitor to a polite "not a fit" screen and does NOT create a lead. */
   disqualifyAnswers?: string[];
-  /** Choice answers that still create a lead but mark it weak: no Facebook
-   * conversion is reported for it, and the form adds one confirmation step.
-   * For answers that are unwanted but not worth turning away outright. */
-  lowQualityAnswers?: string[];
+  /** Where each answer sends them. Keys are the answer text; values are
+   * "next" | "q:<questionId>" | "end:thanks" | "end:not_a_fit" | "end:<endingId>".
+   * A missing key means carry on to the next question. The behaviour of an
+   * ending (lead / quiet lead / no lead) lives on the ending, not here. */
+  answerRoutes?: Record<string, string>;
   /** Small example/caption text shown under the question — mainly for "address". */
   helperText?: string;
   /** Blocks "Next Step" until answered. Choice-type questions already can't
