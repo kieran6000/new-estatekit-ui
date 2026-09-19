@@ -4,6 +4,7 @@ import {
   AppBar,
   Box,
   Button,
+  Checkbox,
   Chip,
   CircularProgress,
   Dialog,
@@ -15,7 +16,6 @@ import {
   Menu,
   MenuItem,
   Radio,
-  Rating,
   RadioGroup,
   FormControlLabel,
   Skeleton,
@@ -1274,17 +1274,8 @@ function CapiSettings({ pixelId }: { pixelId: string }) {
   );
 }
 
-/**
- * What each star rating means. Three states, no combinations to reason about.
- *
- * 3 is the default so an untouched form reads as all-good at a glance, and the
- * rating only ever goes down when the agent deliberately marks an answer.
- */
-const STAR_META: Record<number, { label: string; color: string }> = {
-  3: { label: "Good lead", color: "#1e8e3e" },
-  2: { label: "Take it, don't count it", color: "#b45309" },
-  1: { label: "Don't take it at all", color: "#b3261e" },
-};
+/** What to do with the answers marked bad. Asked once per question. */
+type BadAnswerTreatment = "stop" | "dont_count";
 
 function EditQuestionRow({ pageId, question, onDone }: { pageId: string; question: CustomQuestion; onDone: () => void }) {
   const updateQuestion = useUpdateCustomQuestion(pageId);
@@ -1292,8 +1283,15 @@ function EditQuestionRow({ pageId, question, onDone }: { pageId: string; questio
   const [helperText, setHelperText] = useState(question.helperText ?? "");
   const [required, setRequired] = useState(question.required);
   const [optionsText, setOptionsText] = useState((question.options ?? []).join(", "));
-  const [disqualify, setDisqualify] = useState<string[]>(question.disqualifyAnswers ?? []);
-  const [lowQuality, setLowQuality] = useState<string[]>(question.lowQualityAnswers ?? []);
+  // One list of bad answers plus one decision, rather than a setting on every
+  // answer. Both database columns still exist — which one the list is saved to
+  // is just the treatment — so the form engine and the migration are unchanged.
+  const [bad, setBad] = useState<string[]>(() => [
+    ...new Set([...(question.disqualifyAnswers ?? []), ...(question.lowQualityAnswers ?? [])]),
+  ]);
+  const [treatment, setTreatment] = useState<BadAnswerTreatment>(
+    (question.lowQualityAnswers?.length ?? 0) > 0 ? "dont_count" : "stop",
+  );
 
   const isChoice = question.type === "multiple_choice" || question.type === "yes_no";
   const currentOptions =
@@ -1301,21 +1299,13 @@ function EditQuestionRow({ pageId, question, onDone }: { pageId: string; questio
       ? ["Yes", "No"]
       : optionsText.split(",").map((o) => o.trim()).filter(Boolean);
 
-  // Ratings are stored as the two existing lists rather than a number, so the
-  // form engine and older pages keep working unchanged. Setting one always
-  // clears the other — an answer can never be in both.
-  function starsFor(opt: string): number {
-    if (disqualify.includes(opt)) return 1;
-    if (lowQuality.includes(opt)) return 2;
-    return 3;
-  }
-  function setStars(opt: string, stars: number) {
-    setDisqualify((d) => (stars === 1 ? [...new Set([...d, opt])] : d.filter((x) => x !== opt)));
-    setLowQuality((l) => (stars === 2 ? [...new Set([...l, opt])] : l.filter((x) => x !== opt)));
+  function toggleBad(opt: string) {
+    setBad((b) => (b.includes(opt) ? b.filter((x) => x !== opt) : [...b, opt]));
   }
 
   async function save() {
     if (!label.trim()) return;
+    const badInOptions = bad.filter((o) => currentOptions.includes(o));
     const options = question.type === "multiple_choice"
       ? optionsText.split(",").map((o) => o.trim()).filter(Boolean)
       : question.options;
@@ -1326,12 +1316,13 @@ function EditQuestionRow({ pageId, question, onDone }: { pageId: string; questio
         required,
         ...(question.type === "address" ? { helperText: helperText.trim() } : {}),
         ...(question.type === "multiple_choice" ? { options } : {}),
-        // Drop settings for options that no longer exist, so renaming an
-        // option can't leave a rule pointing at nothing.
+        // The ticked answers go into whichever column matches the treatment,
+        // and the other is cleared. Options that no longer exist are dropped,
+        // so renaming one can't leave a rule pointing at nothing.
         ...(isChoice
           ? {
-              disqualifyAnswers: disqualify.filter((o) => currentOptions.includes(o)),
-              lowQualityAnswers: lowQuality.filter((o) => currentOptions.includes(o)),
+              disqualifyAnswers: treatment === "stop" ? badInOptions : [],
+              lowQualityAnswers: treatment === "dont_count" ? badInOptions : [],
             }
           : {}),
       },
@@ -1352,41 +1343,47 @@ function EditQuestionRow({ pageId, question, onDone }: { pageId: string; questio
       {isChoice && currentOptions.length > 0 && (
         <Box sx={{ bgcolor: tokens.surface2, border: `1px solid ${tokens.divider2}`, borderRadius: "6px", p: "10px 12px" }}>
           <Typography sx={{ fontSize: 12.5, fontWeight: 600, color: "text.secondary", mb: 0.25 }}>
-            How good is each answer?
+            Which answers are bad leads?
           </Typography>
-          <Typography sx={{ fontSize: 11.5, color: "text.secondary", mb: 1 }}>
-            Everything starts at 3 stars. Only drop one if an answer tells you it is not a real lead.
+          <Typography sx={{ fontSize: 11.5, color: "text.secondary", mb: 0.5 }}>
+            Tick any answer that means you don&apos;t want the lead. Most forms need none.
           </Typography>
+
           {currentOptions.map((opt) => (
-            <Box
+            <FormControlLabel
               key={opt}
-              sx={{ py: 0.75, borderTop: `1px solid ${tokens.divider2}`, "&:first-of-type": { borderTop: 0 } }}
-            >
-              <Typography sx={{ fontSize: 13.5, wordBreak: "break-word" }}>{opt}</Typography>
-              {/* Stars over a dropdown: the whole list can be read at a glance
-                  instead of three words per row. The label spells out what the
-                  rating actually does, since stars alone say "how good" but
-                  never "what happens". */}
-              <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 0.25, flexWrap: "wrap" }}>
-                <Rating
-                  size="small"
-                  max={3}
-                  value={starsFor(opt)}
-                  // Clicking the current star would otherwise clear to null;
-                  // there is no "no rating" state here.
-                  onChange={(_e, v) => v && setStars(opt, v)}
-                  sx={{ color: STAR_META[starsFor(opt)].color }}
-                />
-                <Typography sx={{ fontSize: 12.5, color: STAR_META[starsFor(opt)].color, fontWeight: 500 }}>
-                  {STAR_META[starsFor(opt)].label}
-                </Typography>
-              </Box>
-            </Box>
+              control={<Checkbox size="small" checked={bad.includes(opt)} onChange={() => toggleBad(opt)} />}
+              label={<Typography sx={{ fontSize: 13.5 }}>{opt}</Typography>}
+              sx={{ display: "flex", m: 0 }}
+            />
           ))}
-          <Typography sx={{ fontSize: 11.5, color: "text.disabled", mt: 1, lineHeight: 1.5 }}>
-            2 stars still gives you the lead &mdash; Facebook just isn&apos;t told it converted, so it
-            stops looking for more like it.
-          </Typography>
+
+          {/* Only appears once something is ticked. With nothing marked there
+              is no decision to make, and an always-visible radio would just be
+              one more thing to read past. Asked once for the whole question
+              rather than per answer — nobody wants to reject one bad answer and
+              quietly keep another. */}
+          {bad.length > 0 && (
+            <Box sx={{ mt: 1.25, pt: 1.25, borderTop: `1px solid ${tokens.divider2}` }}>
+              <Typography sx={{ fontSize: 12.5, fontWeight: 600, color: "text.secondary", mb: 0.25 }}>
+                What happens to them?
+              </Typography>
+              <RadioGroup value={treatment} onChange={(e) => setTreatment(e.target.value as BadAnswerTreatment)}>
+                <FormControlLabel
+                  value="stop"
+                  control={<Radio size="small" />}
+                  label={<Typography sx={{ fontSize: 13.5 }}>Don&apos;t save the lead &mdash; show a polite &quot;not a fit&quot; page</Typography>}
+                  sx={{ m: 0, mt: 0.25 }}
+                />
+                <FormControlLabel
+                  value="dont_count"
+                  control={<Radio size="small" />}
+                  label={<Typography sx={{ fontSize: 13.5 }}>Save the lead, but don&apos;t count it on Facebook</Typography>}
+                  sx={{ m: 0, mt: 0.25 }}
+                />
+              </RadioGroup>
+            </Box>
+          )}
         </Box>
       )}
 
