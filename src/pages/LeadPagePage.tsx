@@ -15,6 +15,7 @@ import {
   Menu,
   MenuItem,
   Radio,
+  Rating,
   RadioGroup,
   FormControlLabel,
   Skeleton,
@@ -1273,8 +1274,17 @@ function CapiSettings({ pixelId }: { pixelId: string }) {
   );
 }
 
-/** What a single answer does. Three states, no combinations to reason about. */
-type AnswerAction = "carry_on" | "dont_count" | "stop";
+/**
+ * What each star rating means. Three states, no combinations to reason about.
+ *
+ * 3 is the default so an untouched form reads as all-good at a glance, and the
+ * rating only ever goes down when the agent deliberately marks an answer.
+ */
+const STAR_META: Record<number, { label: string; color: string }> = {
+  3: { label: "Good lead", color: "#1e8e3e" },
+  2: { label: "Take it, don't count it", color: "#b45309" },
+  1: { label: "Don't take it at all", color: "#b3261e" },
+};
 
 function EditQuestionRow({ pageId, question, onDone }: { pageId: string; question: CustomQuestion; onDone: () => void }) {
   const updateQuestion = useUpdateCustomQuestion(pageId);
@@ -1291,16 +1301,17 @@ function EditQuestionRow({ pageId, question, onDone }: { pageId: string; questio
       ? ["Yes", "No"]
       : optionsText.split(",").map((o) => o.trim()).filter(Boolean);
 
-  // Three mutually exclusive actions, stored as two lists — so setting one
-  // always clears the other and an answer can never be in both.
-  function answerAction(opt: string): AnswerAction {
-    if (disqualify.includes(opt)) return "stop";
-    if (lowQuality.includes(opt)) return "dont_count";
-    return "carry_on";
+  // Ratings are stored as the two existing lists rather than a number, so the
+  // form engine and older pages keep working unchanged. Setting one always
+  // clears the other — an answer can never be in both.
+  function starsFor(opt: string): number {
+    if (disqualify.includes(opt)) return 1;
+    if (lowQuality.includes(opt)) return 2;
+    return 3;
   }
-  function setAnswerAction(opt: string, action: AnswerAction) {
-    setDisqualify((d) => (action === "stop" ? [...new Set([...d, opt])] : d.filter((x) => x !== opt)));
-    setLowQuality((l) => (action === "dont_count" ? [...new Set([...l, opt])] : l.filter((x) => x !== opt)));
+  function setStars(opt: string, stars: number) {
+    setDisqualify((d) => (stars === 1 ? [...new Set([...d, opt])] : d.filter((x) => x !== opt)));
+    setLowQuality((l) => (stars === 2 ? [...new Set([...l, opt])] : l.filter((x) => x !== opt)));
   }
 
   async function save() {
@@ -1341,30 +1352,40 @@ function EditQuestionRow({ pageId, question, onDone }: { pageId: string; questio
       {isChoice && currentOptions.length > 0 && (
         <Box sx={{ bgcolor: tokens.surface2, border: `1px solid ${tokens.divider2}`, borderRadius: "6px", p: "10px 12px" }}>
           <Typography sx={{ fontSize: 12.5, fontWeight: 600, color: "text.secondary", mb: 0.25 }}>
-            If they pick this, what happens?
+            How good is each answer?
           </Typography>
-          <Typography sx={{ fontSize: 11.5, color: "text.secondary", mb: 1.25 }}>
-            Leave these on "Carry on" unless an answer tells you it is not a real lead.
+          <Typography sx={{ fontSize: 11.5, color: "text.secondary", mb: 1 }}>
+            Everything starts at 3 stars. Only drop one if an answer tells you it is not a real lead.
           </Typography>
           {currentOptions.map((opt) => (
-            <Box key={opt} sx={{ display: "flex", alignItems: "center", gap: 1, py: 0.5, flexWrap: "wrap" }}>
-              <Typography sx={{ fontSize: 13.5, flex: 1, minWidth: 90, wordBreak: "break-word" }}>{opt}</Typography>
-              <TextField
-                select
-                size="small"
-                value={answerAction(opt)}
-                onChange={(e) => setAnswerAction(opt, e.target.value as AnswerAction)}
-                sx={{ minWidth: 200, "& .MuiInputBase-input": { fontSize: 13, py: 0.75 } }}
-              >
-                <MenuItem value="carry_on" sx={{ fontSize: 13 }}>Carry on</MenuItem>
-                <MenuItem value="dont_count" sx={{ fontSize: 13 }}>Take it, don&apos;t count</MenuItem>
-                <MenuItem value="stop" sx={{ fontSize: 13 }}>Stop &mdash; not a lead</MenuItem>
-              </TextField>
+            <Box
+              key={opt}
+              sx={{ py: 0.75, borderTop: `1px solid ${tokens.divider2}`, "&:first-of-type": { borderTop: 0 } }}
+            >
+              <Typography sx={{ fontSize: 13.5, wordBreak: "break-word" }}>{opt}</Typography>
+              {/* Stars over a dropdown: the whole list can be read at a glance
+                  instead of three words per row. The label spells out what the
+                  rating actually does, since stars alone say "how good" but
+                  never "what happens". */}
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 0.25, flexWrap: "wrap" }}>
+                <Rating
+                  size="small"
+                  max={3}
+                  value={starsFor(opt)}
+                  // Clicking the current star would otherwise clear to null;
+                  // there is no "no rating" state here.
+                  onChange={(_e, v) => v && setStars(opt, v)}
+                  sx={{ color: STAR_META[starsFor(opt)].color }}
+                />
+                <Typography sx={{ fontSize: 12.5, color: STAR_META[starsFor(opt)].color, fontWeight: 500 }}>
+                  {STAR_META[starsFor(opt)].label}
+                </Typography>
+              </Box>
             </Box>
           ))}
-          <Typography sx={{ fontSize: 11.5, color: "text.disabled", mt: 0.75, lineHeight: 1.5 }}>
-            <strong>Take it, don&apos;t count</strong> still gives you the lead &mdash; Facebook just
-            isn&apos;t told it converted, so it stops looking for more like it.
+          <Typography sx={{ fontSize: 11.5, color: "text.disabled", mt: 1, lineHeight: 1.5 }}>
+            2 stars still gives you the lead &mdash; Facebook just isn&apos;t told it converted, so it
+            stops looking for more like it.
           </Typography>
         </Box>
       )}
