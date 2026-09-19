@@ -86,20 +86,35 @@ export async function addCustomQuestion(
     .maybeSingle();
   const nextOrder = (maxRow?.sort_order ?? -1) + 1;
 
-  const { error } = await supabase.from("custom_questions").insert({
+  const row: Record<string, unknown> = {
     page_id: pageId,
     agent_id: agentId,
     label: data.label,
     type: data.type,
     options: data.options ?? null,
     disqualify_answers: data.disqualifyAnswers ?? [],
-    answer_routes: data.answerRoutes ?? {},
     helper_text: data.helperText ?? null,
     required: data.required,
     is_default: false,
     sort_order: nextOrder,
-  });
-  if (error) throw new Error(error.message);
+  };
+  // Same guard as updateCustomQuestion: adding a question must not depend on
+  // the routing column existing. The column has a default, so omitting it is
+  // harmless once the migration lands too.
+  if (!answerRoutesUnsupported) row.answer_routes = data.answerRoutes ?? {};
+
+  const { error } = await supabase.from("custom_questions").insert(row);
+  if (!error) return;
+
+  if ("answer_routes" in row && isMissingColumnError(error.message)) {
+    answerRoutesUnsupported = true;
+    console.warn("answer_routes column not present — adding without routing", error.message);
+    delete row.answer_routes;
+    const { error: retryError } = await supabase.from("custom_questions").insert(row);
+    if (retryError) throw new Error(retryError.message);
+    return;
+  }
+  throw new Error(error.message);
 }
 
 export async function updateCustomQuestion(
@@ -117,11 +132,36 @@ export async function updateCustomQuestion(
   if (patch.helperText !== undefined) row.helper_text = patch.helperText;
   if (patch.required !== undefined) row.required = patch.required;
   if (Object.keys(row).length === 0) return;
-  const { error } = await supabase
-    .from("custom_questions")
-    .update(row)
-    .eq("id", id);
-  if (error) throw new Error(error.message);
+
+  // answer_routes is newer than some deployments of the database. Saving a
+  // question is core work and must not fail just because routing hasn't been
+  // migrated yet, so a schema complaint retries once without it — the rest of
+  // the edit still lands, and routing quietly does nothing until the column
+  // exists. Remembered for the session so this costs one failed call, not one
+  // per save.
+  if (answerRoutesUnsupported) delete row.answer_routes;
+
+  const { error } = await supabase.from("custom_questions").update(row).eq("id", id);
+  if (!error) return;
+
+  if ("answer_routes" in row && isMissingColumnError(error.message)) {
+    answerRoutesUnsupported = true;
+    console.warn("answer_routes column not present — saving without routing", error.message);
+    delete row.answer_routes;
+    const { error: retryError } = await supabase.from("custom_questions").update(row).eq("id", id);
+    if (retryError) throw new Error(retryError.message);
+    return;
+  }
+  throw new Error(error.message);
+}
+
+/** Set once the database rejects answer_routes, so later saves skip it. */
+let answerRoutesUnsupported = false;
+
+/** PostgREST wording for "that column/table isn't in my schema cache". */
+function isMissingColumnError(message: string): boolean {
+  const m = message.toLowerCase();
+  return m.includes("schema cache") || m.includes("column") || m.includes("answer_routes");
 }
 
 export async function removeCustomQuestion(id: string): Promise<void> {

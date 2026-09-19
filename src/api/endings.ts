@@ -57,6 +57,9 @@ function toEnding(r: EndingRow): PageEnding {
  * which is exactly right.
  */
 export async function listEndings(pageId: string): Promise<PageEnding[]> {
+  // Skip the request entirely when the table isn't there, rather than firing a
+  // 404 from every component that wants endings.
+  if (!(await endingsAvailable())) return [];
   const { data, error } = await supabase
     .from("lead_page_endings")
     .select("id, page_id, name, headline, subtext, outcome, sort_order")
@@ -69,16 +72,30 @@ export async function listEndings(pageId: string): Promise<PageEnding[]> {
   return (data ?? []).map((r) => toEnding(r as EndingRow));
 }
 
-/** True once the endings table exists. Used to hide the End pages section
- *  entirely rather than offering an Add button that can only fail. */
-export async function endingsAvailable(): Promise<boolean> {
-  const { error } = await supabase.from("lead_page_endings").select("id").limit(1);
-  return !error;
+/**
+ * Whether the endings table exists at all.
+ *
+ * Probed once per app load and shared by every caller — several components ask
+ * for endings, and without this each one produced its own 404 on a database
+ * that hasn't had the migration applied. One line in the console, not a wall.
+ */
+let availability: Promise<boolean> | null = null;
+
+export function endingsAvailable(): Promise<boolean> {
+  if (!availability) {
+    availability = (async () => {
+      const { error } = await supabase.from("lead_page_endings").select("id").limit(1);
+      if (error) console.warn("End pages aren't set up on this database yet:", error.message);
+      return !error;
+    })();
+  }
+  return availability;
 }
 
 /** Public read for the live landing page — no session, and never throws: a
  *  visitor's form must keep working whatever happens here. */
 export async function listEndingsPublic(pageId: string): Promise<PageEnding[]> {
+  if (!(await endingsAvailable())) return [];
   const { data, error } = await supabase
     .from("lead_page_endings")
     .select("id, page_id, name, headline, subtext, outcome, sort_order")
