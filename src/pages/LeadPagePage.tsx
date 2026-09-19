@@ -65,7 +65,7 @@ import { useSnack } from "../hooks/useSnack";
 import LeadCaptureForm from "../components/LeadCaptureForm";
 import LeadPageFunnelStats from "../components/LeadPageFunnelStats";
 import { getCapiConfig, saveCapiConfig, listCapiEvents } from "../api/capi";
-import { listEndings, addEnding, updateEnding, deleteEnding, type PageEnding, type EndingOutcome } from "../api/endings";
+import { listEndings, addEnding, updateEnding, deleteEnding, endingsAvailable, type PageEnding, type EndingOutcome } from "../api/endings";
 import { timeAgo } from "../lib/timeAgo";
 
 export default function LeadPagePage() {
@@ -420,9 +420,9 @@ export default function LeadPagePage() {
               }} />
             </Section>
 
-            <Section title="End pages">
-              <EndPagesSection pageId={page.id} />
-            </Section>
+            {/* Renders its own Section, or nothing at all when end pages
+                aren't available — no empty titled box. */}
+            <EndPagesSection pageId={page.id} />
 
             {isOperator && (
               <Section title="Recent sales (social proof)">
@@ -1186,9 +1186,18 @@ const OUTCOME_LABEL: Record<EndingOutcome, { title: string; help: string }> = {
 function EndPagesSection({ pageId }: { pageId: string }) {
   const qc = useQueryClient();
   const showSnack = useSnack();
+  // Hidden outright until the endings table exists, rather than offering an
+  // Add button that can only fail. Cached for the session — the answer only
+  // changes when a migration is applied.
+  const { data: available, isLoading: checking } = useQuery({
+    queryKey: ["endingsAvailable"],
+    queryFn: endingsAvailable,
+    staleTime: Infinity,
+  });
   const { data: endings = [] } = useQuery({
     queryKey: ["pageEndings", pageId],
     queryFn: () => listEndings(pageId),
+    enabled: available === true,
   });
   const [newName, setNewName] = useState("");
   const refresh = () => qc.invalidateQueries({ queryKey: ["pageEndings", pageId] });
@@ -1207,8 +1216,11 @@ function EndPagesSection({ pageId }: { pageId: string }) {
     }
   }
 
+  if (checking || available === false) return null;
+
   return (
-    <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+    <Section title="End pages">
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
       <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
         Every page already has a thank-you page and a "not a fit" page. Add more here if you
         want different answers to finish differently.
@@ -1232,7 +1244,8 @@ function EndPagesSection({ pageId }: { pageId: string }) {
           Add
         </Button>
       </Box>
-    </Box>
+      </Box>
+    </Section>
   );
 }
 

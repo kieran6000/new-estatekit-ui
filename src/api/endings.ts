@@ -46,23 +46,48 @@ function toEnding(r: EndingRow): PageEnding {
   };
 }
 
+/**
+ * Never throws.
+ *
+ * End pages are an optional extra on top of a form that works without them, so
+ * a read failure must not take the editor or the live landing page down with
+ * it. That matters most before the migration has been applied: the table
+ * genuinely doesn't exist yet, and every page that asks for endings would
+ * otherwise break. Returning an empty list degrades to "no custom endings",
+ * which is exactly right.
+ */
 export async function listEndings(pageId: string): Promise<PageEnding[]> {
   const { data, error } = await supabase
     .from("lead_page_endings")
     .select("id, page_id, name, headline, subtext, outcome, sort_order")
     .eq("page_id", pageId)
     .order("sort_order", { ascending: true });
-  if (error) throw new Error(error.message);
+  if (error) {
+    console.error("Couldn't load end pages", error.message);
+    return [];
+  }
   return (data ?? []).map((r) => toEnding(r as EndingRow));
 }
 
-/** Public read for the live landing page — no session. */
+/** True once the endings table exists. Used to hide the End pages section
+ *  entirely rather than offering an Add button that can only fail. */
+export async function endingsAvailable(): Promise<boolean> {
+  const { error } = await supabase.from("lead_page_endings").select("id").limit(1);
+  return !error;
+}
+
+/** Public read for the live landing page — no session, and never throws: a
+ *  visitor's form must keep working whatever happens here. */
 export async function listEndingsPublic(pageId: string): Promise<PageEnding[]> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("lead_page_endings")
     .select("id, page_id, name, headline, subtext, outcome, sort_order")
     .eq("page_id", pageId)
     .order("sort_order", { ascending: true });
+  if (error) {
+    console.error("Couldn't load end pages", error.message);
+    return [];
+  }
   return (data ?? []).map((r) => toEnding(r as EndingRow));
 }
 
