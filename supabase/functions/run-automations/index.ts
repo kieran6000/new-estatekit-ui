@@ -6,7 +6,8 @@ const TEXTMEBOT_URL = "https://api.textmebot.com/send.php";
 const APP_URL = "https://leads.estatekit.co";
 const DISCORD_CLIENT_ACTIVITY = "https://discord.com/api/webhooks/1545010946647531660/JGPFITtjAXpove1j06lPUBrraqK5j0A_zm_0B7MAbTBpzr6qzSfG-NPigYtRGewpyMf-";
 
-// Quiet hours: agents should never get a WhatsApp outside these local hours.
+// Quiet hours for FOLLOW-UP WhatsApps only — new-lead alerts are exempt and go
+// out at any hour (see isNewLeadAlert in processRun).
 // SAST is UTC+2 year-round (no DST). Sends due outside the window are pushed
 // to the next 08:00 SAST rather than fired at night.
 const SAST_OFFSET_HOURS = 2;
@@ -163,10 +164,22 @@ async function processRun(supabase: SupabaseClient, run: RunRow) {
     return;
   }
 
-  // Quiet hours only gate outbound WhatsApp. A send due at night is deferred to
-  // the next morning (run kept pending, step not advanced) so no one is pinged
-  // at 10pm. State-only steps (reminder/stage) still run anytime.
-  if (step.action_type === "send_whatsapp") {
+  const { data: automation } = await supabase
+    .from("automations")
+    .select("name, trigger_type")
+    .eq("id", run.automation_id)
+    .maybeSingle();
+
+  // A brand-new lead is time-critical — ringing back within minutes is most of
+  // the reason this product works — so those alerts go out at any hour.
+  // Follow-up nudges (stage changes, reminders) are not urgent and at 11pm are
+  // just noise, so they still defer to the next morning.
+  const isNewLeadAlert = automation?.trigger_type === "lead_created";
+
+  // Quiet hours only gate outbound WhatsApp. A deferred send keeps the run
+  // pending without advancing the step. State-only steps (reminder/stage) and
+  // new-lead alerts run anytime.
+  if (step.action_type === "send_whatsapp" && !isNewLeadAlert) {
     const defer = quietHoursDeferUntil(new Date());
     if (defer) {
       await supabase
@@ -176,12 +189,6 @@ async function processRun(supabase: SupabaseClient, run: RunRow) {
       return;
     }
   }
-
-  const { data: automation } = await supabase
-    .from("automations")
-    .select("name")
-    .eq("id", run.automation_id)
-    .maybeSingle();
 
   const linkType = inferLinkType(automation?.name ?? "");
   const template = run.template_override || step.template_text;
