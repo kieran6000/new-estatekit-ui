@@ -12,7 +12,6 @@ import {
   DialogTitle,
   IconButton,
   InputAdornment,
-  ListSubheader,
   Menu,
   MenuItem,
   Radio,
@@ -65,7 +64,6 @@ import { useSnack } from "../hooks/useSnack";
 import LeadCaptureForm from "../components/LeadCaptureForm";
 import LeadPageFunnelStats from "../components/LeadPageFunnelStats";
 import { getCapiConfig, saveCapiConfig, listCapiEvents } from "../api/capi";
-import { listEndings, addEnding, updateEnding, deleteEnding, endingsAvailable, type PageEnding, type EndingOutcome } from "../api/endings";
 import { timeAgo } from "../lib/timeAgo";
 
 export default function LeadPagePage() {
@@ -420,10 +418,6 @@ export default function LeadPagePage() {
               }} />
             </Section>
 
-            {/* Renders its own Section, or nothing at all when end pages
-                aren't available — no empty titled box. */}
-            <EndPagesSection pageId={page.id} />
-
             {isOperator && (
               <Section title="Recent sales (social proof)">
                 <RecentSalesEditor />
@@ -620,12 +614,6 @@ function FbFormSource({
 
 function PreviewAndSubmit({ page, pipelineKind }: { page: LeadPage; pipelineKind: PipelineKind }) {
   const { data: customQuestions = [] } = useCustomQuestions(page.id);
-  // So the agent can walk their own routing and see which ending each answer
-  // actually reaches, rather than trusting the dropdowns.
-  const { data: endings = [] } = useQuery({
-    queryKey: ["pageEndings", page.id],
-    queryFn: () => listEndings(page.id),
-  });
   const showSnack = useSnack();
   return (
     // Preview only: filling this in on the dashboard must never create a lead
@@ -634,7 +622,6 @@ function PreviewAndSubmit({ page, pipelineKind }: { page: LeadPage; pipelineKind
       page={page}
       pipelineKind={pipelineKind}
       customQuestions={customQuestions}
-      endings={endings}
       preview
       onSubmit={() => showSnack("Preview only — nothing was saved")}
     />
@@ -1068,11 +1055,6 @@ function CustomQuestionEditor({
   onUpgrade: () => void;
 }) {
   const { data: questions = [] } = useCustomQuestions(pageId);
-  // Needed here so each answer's "what happens next" list can offer them.
-  const { data: endings = [] } = useQuery({
-    queryKey: ["pageEndings", pageId],
-    queryFn: () => listEndings(pageId),
-  });
   const addQuestion = useAddCustomQuestion(pageId);
   const removeQuestion = useRemoveCustomQuestion(pageId);
   const moveQuestion = useMoveCustomQuestion(pageId);
@@ -1097,15 +1079,7 @@ function CustomQuestionEditor({
     <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
       {questions.map((q, i) =>
         editingId === q.id ? (
-          <EditQuestionRow
-            key={q.id}
-            pageId={pageId}
-            question={q}
-            // Only questions after this one — routing backwards would loop.
-            laterQuestions={questions.slice(i + 1)}
-            endings={endings}
-            onDone={() => setEditingId(null)}
-          />
+          <EditQuestionRow key={q.id} pageId={pageId} question={q} onDone={() => setEditingId(null)} />
         ) : (
           <Box key={q.id} sx={{ display: "flex", alignItems: "center", gap: 1, p: "10px 12px", border: `1px solid ${tokens.divider}`, borderRadius: "6px" }}>
             {q.type === "address" && <PlaceIcon fontSize="small" sx={{ color: "text.secondary" }} />}
@@ -1165,183 +1139,6 @@ function CustomQuestionEditor({
           <Button startIcon={<AddIcon fontSize="small" />} onClick={add} variant="contained" size="small" sx={{ alignSelf: "flex-start" }}>
             Add question
           </Button>
-        </Box>
-      )}
-    </Box>
-  );
-}
-
-/** What each ending does, in the agent's words. One choice, not a set of
- *  switches — every real combination is one of these three. */
-const OUTCOME_LABEL: Record<EndingOutcome, { title: string; help: string }> = {
-  lead: { title: "A real lead — call them", help: "Saved to your leads. Facebook is told it's a conversion." },
-  quiet_lead: { title: "A lead, but don't tell Facebook", help: "Saved to your leads. Facebook isn't told, so it stops looking for more like this." },
-  no_lead: { title: "Not a lead — polite goodbye", help: "Nothing is saved. They just see this page." },
-};
-
-/**
- * The page's end pages. Two always exist (the thank-you and "not a fit"); this
- * is for making extra ones an answer can be routed to.
- */
-function EndPagesSection({ pageId }: { pageId: string }) {
-  const qc = useQueryClient();
-  const showSnack = useSnack();
-  // Hidden outright until the endings table exists, rather than offering an
-  // Add button that can only fail. Cached for the session — the answer only
-  // changes when a migration is applied.
-  const { data: available, isLoading: checking } = useQuery({
-    queryKey: ["endingsAvailable"],
-    queryFn: endingsAvailable,
-    staleTime: Infinity,
-  });
-  const { data: endings = [] } = useQuery({
-    queryKey: ["pageEndings", pageId],
-    queryFn: () => listEndings(pageId),
-    enabled: available === true,
-  });
-  const [newName, setNewName] = useState("");
-  const refresh = () => qc.invalidateQueries({ queryKey: ["pageEndings", pageId] });
-
-  async function add() {
-    const name = newName.trim();
-    if (!name) return;
-    try {
-      await addEnding(pageId, name);
-      setNewName("");
-      await refresh();
-      showSnack("End page added");
-    } catch (e) {
-      console.error(e);
-      showSnack("Couldn't add that. Try again.");
-    }
-  }
-
-  if (checking || available === false) return null;
-
-  return (
-    <Section title="End pages">
-      <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
-      <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
-        Every page already has a thank-you page and a "not a fit" page. Add more here if you
-        want different answers to finish differently.
-      </Typography>
-
-      {endings.map((e) => (
-        <EndPageRow key={e.id} ending={e} onChanged={refresh} />
-      ))}
-
-      <Box sx={{ display: "flex", gap: 1 }}>
-        <TextField
-          label="New end page name"
-          placeholder="e.g. Too early"
-          size="small"
-          value={newName}
-          onChange={(ev) => setNewName(ev.target.value)}
-          onKeyDown={(ev) => { if (ev.key === "Enter") add(); }}
-          fullWidth
-        />
-        <Button variant="contained" onClick={add} disabled={!newName.trim()} sx={{ whiteSpace: "nowrap" }}>
-          Add
-        </Button>
-      </Box>
-      </Box>
-    </Section>
-  );
-}
-
-function EndPageRow({ ending, onChanged }: { ending: PageEnding; onChanged: () => void }) {
-  const showSnack = useSnack();
-  const [headline, setHeadline] = useState(ending.headline);
-  const [subtext, setSubtext] = useState(ending.subtext);
-  const [outcome, setOutcome] = useState<EndingOutcome>(ending.outcome);
-  const [open, setOpen] = useState(false);
-
-  async function save(patch: Partial<Pick<PageEnding, "headline" | "subtext" | "outcome">>) {
-    try {
-      await updateEnding(ending.id, patch);
-      onChanged();
-    } catch (e) {
-      console.error(e);
-      showSnack("That didn't save. Try again.");
-    }
-  }
-
-  async function remove() {
-    if (!window.confirm(`Delete "${ending.name}"? Any answers pointing here go back to the next question.`)) return;
-    try {
-      await deleteEnding(ending.id);
-      onChanged();
-      showSnack("End page deleted");
-    } catch (e) {
-      console.error(e);
-      showSnack("Couldn't delete that. Try again.");
-    }
-  }
-
-  return (
-    <Box sx={{ border: `1px solid ${tokens.divider}`, borderRadius: "6px" }}>
-      <Box
-        onClick={() => setOpen((v) => !v)}
-        sx={{ display: "flex", alignItems: "center", gap: 1, p: "10px 12px", cursor: "pointer" }}
-      >
-        <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Typography sx={{ fontSize: 14, fontWeight: 500 }}>{ending.name}</Typography>
-          <Typography sx={{ fontSize: 12, color: "text.secondary" }}>{OUTCOME_LABEL[outcome].title}</Typography>
-        </Box>
-        <IconButton size="small" onClick={(e) => { e.stopPropagation(); remove(); }} aria-label={`Delete ${ending.name}`}>
-          <DeleteOutlineIcon fontSize="small" />
-        </IconButton>
-      </Box>
-
-      {open && (
-        <Box sx={{ p: "0 12px 12px", display: "flex", flexDirection: "column", gap: 1.25 }}>
-          <TextField
-            label="Headline"
-            size="small"
-            value={headline}
-            onChange={(e) => setHeadline(e.target.value)}
-            onBlur={() => headline !== ending.headline && save({ headline })}
-            helperText="{name} is replaced with what they typed"
-            fullWidth
-          />
-          <TextField
-            label="Message"
-            size="small"
-            value={subtext}
-            onChange={(e) => setSubtext(e.target.value)}
-            onBlur={() => subtext !== ending.subtext && save({ subtext })}
-            fullWidth
-            multiline
-            minRows={2}
-          />
-          <Box>
-            <Typography sx={{ fontSize: 12.5, fontWeight: 600, color: "text.secondary", mb: 0.5 }}>
-              What is this?
-            </Typography>
-            <RadioGroup
-              value={outcome}
-              onChange={(e) => {
-                const v = e.target.value as EndingOutcome;
-                setOutcome(v);
-                save({ outcome: v });
-              }}
-            >
-              {(Object.keys(OUTCOME_LABEL) as EndingOutcome[]).map((key) => (
-                <FormControlLabel
-                  key={key}
-                  value={key}
-                  control={<Radio size="small" />}
-                  label={
-                    <Box>
-                      <Typography sx={{ fontSize: 13.5 }}>{OUTCOME_LABEL[key].title}</Typography>
-                      <Typography sx={{ fontSize: 11.5, color: "text.secondary" }}>{OUTCOME_LABEL[key].help}</Typography>
-                    </Box>
-                  }
-                  sx={{ alignItems: "flex-start", mt: 0.5, ml: 0 }}
-                />
-              ))}
-            </RadioGroup>
-          </Box>
         </Box>
       )}
     </Box>
@@ -1476,32 +1273,17 @@ function CapiSettings({ pixelId }: { pixelId: string }) {
   );
 }
 
-function EditQuestionRow({
-  pageId,
-  question,
-  laterQuestions = [],
-  endings = [],
-  onDone,
-}: {
-  pageId: string;
-  question: CustomQuestion;
-  laterQuestions?: CustomQuestion[];
-  endings?: PageEnding[];
-  onDone: () => void;
-}) {
+/** What a single answer does. Three states, no combinations to reason about. */
+type AnswerAction = "carry_on" | "dont_count" | "stop";
+
+function EditQuestionRow({ pageId, question, onDone }: { pageId: string; question: CustomQuestion; onDone: () => void }) {
   const updateQuestion = useUpdateCustomQuestion(pageId);
   const [label, setLabel] = useState(question.label);
   const [helperText, setHelperText] = useState(question.helperText ?? "");
   const [required, setRequired] = useState(question.required);
   const [optionsText, setOptionsText] = useState((question.options ?? []).join(", "));
   const [disqualify, setDisqualify] = useState<string[]>(question.disqualifyAnswers ?? []);
-  // Seeded from disqualifyAnswers so a page built before routing existed opens
-  // showing what it actually does, rather than "Next question" for everything.
-  const [routes, setRoutes] = useState<Record<string, string>>(() => {
-    const seeded: Record<string, string> = { ...(question.answerRoutes ?? {}) };
-    for (const opt of question.disqualifyAnswers ?? []) seeded[opt] ??= "end:not_a_fit";
-    return seeded;
-  });
+  const [lowQuality, setLowQuality] = useState<string[]>(question.lowQualityAnswers ?? []);
 
   const isChoice = question.type === "multiple_choice" || question.type === "yes_no";
   const currentOptions =
@@ -1509,18 +1291,16 @@ function EditQuestionRow({
       ? ["Yes", "No"]
       : optionsText.split(",").map((o) => o.trim()).filter(Boolean);
 
-  function setRoute(opt: string, value: string) {
-    setRoutes((r) => {
-      const next = { ...r };
-      if (value === "next") delete next[opt];
-      else next[opt] = value;
-      return next;
-    });
-    // disqualifyAnswers is the old way of saying "end:not_a_fit". Keep the two
-    // in step so older pages and the form engine never disagree.
-    setDisqualify((d) =>
-      value === "end:not_a_fit" ? [...new Set([...d, opt])] : d.filter((x) => x !== opt),
-    );
+  // Three mutually exclusive actions, stored as two lists — so setting one
+  // always clears the other and an answer can never be in both.
+  function answerAction(opt: string): AnswerAction {
+    if (disqualify.includes(opt)) return "stop";
+    if (lowQuality.includes(opt)) return "dont_count";
+    return "carry_on";
+  }
+  function setAnswerAction(opt: string, action: AnswerAction) {
+    setDisqualify((d) => (action === "stop" ? [...new Set([...d, opt])] : d.filter((x) => x !== opt)));
+    setLowQuality((l) => (action === "dont_count" ? [...new Set([...l, opt])] : l.filter((x) => x !== opt)));
   }
 
   async function save() {
@@ -1535,14 +1315,12 @@ function EditQuestionRow({
         required,
         ...(question.type === "address" ? { helperText: helperText.trim() } : {}),
         ...(question.type === "multiple_choice" ? { options } : {}),
+        // Drop settings for options that no longer exist, so renaming an
+        // option can't leave a rule pointing at nothing.
         ...(isChoice
           ? {
               disqualifyAnswers: disqualify.filter((o) => currentOptions.includes(o)),
-              // Drop routes for options that no longer exist, so renaming an
-              // option can't leave a rule pointing at nothing.
-              answerRoutes: Object.fromEntries(
-                Object.entries(routes).filter(([opt]) => currentOptions.includes(opt)),
-              ),
+              lowQualityAnswers: lowQuality.filter((o) => currentOptions.includes(o)),
             }
           : {}),
       },
@@ -1566,7 +1344,7 @@ function EditQuestionRow({
             If they pick this, what happens?
           </Typography>
           <Typography sx={{ fontSize: 11.5, color: "text.secondary", mb: 1.25 }}>
-            Leave everything on "Next question" unless you want to send an answer somewhere else.
+            Leave these on "Carry on" unless an answer tells you it is not a real lead.
           </Typography>
           {currentOptions.map((opt) => (
             <Box key={opt} sx={{ display: "flex", alignItems: "center", gap: 1, py: 0.5, flexWrap: "wrap" }}>
@@ -1574,33 +1352,20 @@ function EditQuestionRow({
               <TextField
                 select
                 size="small"
-                value={routes[opt] ?? "next"}
-                onChange={(e) => setRoute(opt, e.target.value)}
-                sx={{ minWidth: 190, "& .MuiInputBase-input": { fontSize: 13, py: 0.75 } }}
+                value={answerAction(opt)}
+                onChange={(e) => setAnswerAction(opt, e.target.value as AnswerAction)}
+                sx={{ minWidth: 200, "& .MuiInputBase-input": { fontSize: 13, py: 0.75 } }}
               >
-                <MenuItem value="next">Next question</MenuItem>
-                {laterQuestions.length > 0 && <ListSubheader sx={{ fontSize: 11, lineHeight: 2 }}>Skip ahead to</ListSubheader>}
-                {laterQuestions.map((q) => (
-                  <MenuItem key={q.id} value={`q:${q.id}`} sx={{ fontSize: 13 }}>
-                    {q.label.length > 34 ? `${q.label.slice(0, 34)}…` : q.label}
-                  </MenuItem>
-                ))}
-                <ListSubheader sx={{ fontSize: 11, lineHeight: 2 }}>Finish here</ListSubheader>
-                <MenuItem value="end:thanks" sx={{ fontSize: 13 }}>Thank-you page</MenuItem>
-                <MenuItem value="end:not_a_fit" sx={{ fontSize: 13 }}>Not a fit (no lead)</MenuItem>
-                {endings.map((e) => (
-                  <MenuItem key={e.id} value={`end:${e.id}`} sx={{ fontSize: 13 }}>
-                    {e.name}
-                  </MenuItem>
-                ))}
+                <MenuItem value="carry_on" sx={{ fontSize: 13 }}>Carry on</MenuItem>
+                <MenuItem value="dont_count" sx={{ fontSize: 13 }}>Take it, don&apos;t count</MenuItem>
+                <MenuItem value="stop" sx={{ fontSize: 13 }}>Stop &mdash; not a lead</MenuItem>
               </TextField>
             </Box>
           ))}
-          {endings.length === 0 && (
-            <Typography sx={{ fontSize: 11.5, color: "text.disabled", mt: 0.5 }}>
-              Want a different ending? Add one under "End pages" below.
-            </Typography>
-          )}
+          <Typography sx={{ fontSize: 11.5, color: "text.disabled", mt: 0.75, lineHeight: 1.5 }}>
+            <strong>Take it, don&apos;t count</strong> still gives you the lead &mdash; Facebook just
+            isn&apos;t told it converted, so it stops looking for more like it.
+          </Typography>
         </Box>
       )}
 

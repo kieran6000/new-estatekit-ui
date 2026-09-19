@@ -12,7 +12,6 @@ import { LEAD_FORM_TEMPLATE } from "../lib/leadFormTemplate";
 import { readableOn } from "../lib/contrast";
 import { trackPageEvent } from "../lib/pageTracking";
 import type { CustomQuestion, LeadPage, PipelineKind } from "../types";
-import type { PageEnding } from "../api/endings";
 
 type Phase = "intro" | "steps" | "done";
 type StepDef = { kind: "question"; question: CustomQuestion } | { kind: "contact" };
@@ -43,14 +42,10 @@ export default function LeadCaptureForm({
   showHeader = true,
   onSubmit,
   preview = false,
-  endings = [],
 }: {
   page: LeadPage;
   pipelineKind: PipelineKind;
   customQuestions: CustomQuestion[];
-  /** Custom end pages this form can route to. Built-in "thanks" and
-   *  "not a fit" endings always exist and aren't in this list. */
-  endings?: PageEnding[];
   /** false when a parent page renders its own full-width navbar instead. */
   showHeader?: boolean;
   onSubmit: (values: {
@@ -58,14 +53,11 @@ export default function LeadCaptureForm({
     phone: string;
     email: string;
     answers: { q: string; a: string }[];
-    /** "weak" when the end page they reached is a "quiet lead": a real lead the
-     *  agent wants, deliberately not reported to Facebook. Teaching the pixel to
-     *  find more of a poor lead is worse than not reporting it at all. */
+    /** "weak" when they picked an answer the agent flagged as not worth
+     *  counting. The caller uses this to decide whether to report a conversion
+     *  to Facebook — teaching the pixel to find more of a poor lead is worse
+     *  than not reporting it at all. */
     quality: "good" | "weak";
-    /** Set when an answer routed them to a custom end page. The caller must
-     *  then leave this component mounted to render it, rather than navigating
-     *  to the shared /thank-you route. */
-    customEnding: boolean;
   }) => void;
   /** Dashboard preview — never records a lead or fires tracking. */
   preview?: boolean;
@@ -82,10 +74,7 @@ export default function LeadCaptureForm({
   const [email, setEmail] = useState("");
   const [errors, setErrors] = useState<FieldErrors>({});
   const [submittedName, setSubmittedName] = useState("");
-  // Which end page they landed on. null = the page's normal thank-you.
-  const [ending, setEnding] = useState<PageEnding | null>(null);
-  // True when the ending they hit doesn't create a lead at all.
-  const [noLead, setNoLead] = useState(false);
+  const [disqualified, setDisqualified] = useState(false);
 
   const steps: StepDef[] = [...customQuestions.map((question) => ({ kind: "question" as const, question })), { kind: "contact" }];
   const [stepIndex, setStepIndex] = useState(0);
@@ -96,16 +85,13 @@ export default function LeadCaptureForm({
 
   // Funnel tracking for the published page — never fires in the dashboard
   // preview. Each step counts once per visitor session.
-  // Questions actually put in front of them. Routing can skip past questions,
-  // and a skipped question is "not asked" — not "unanswered".
+  // Questions actually put in front of them. A question can be skipped when an
+  // answer ends the form early, and a skipped question is "not asked" rather
+  // than "unanswered".
   const visitedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (phase === "steps" && step.kind === "question") visitedRef.current.add(step.question.id);
   }, [phase, step]);
-
-  // Set when an answer routes to an end page that still creates a lead: we jump
-  // to the contact step first, then land on that ending after submitting.
-  const [pendingEnding, setPendingEnding] = useState<{ ending: PageEnding | null; quiet: boolean } | null>(null);
 
   const startedRef = useRef(false);
   function markStarted() {
@@ -136,9 +122,8 @@ export default function LeadCaptureForm({
     const all = { ...answers, ...latest };
     // Last line of defence: never let a lead through with a required question
     // unanswered — send them back to the first one they missed.
-    // Required only counts for questions they were actually shown. A jump can
-    // legitimately skip past a required question, and blocking on it would
-    // trap them on a step they were never meant to see.
+    // Required only counts for questions they were actually shown, so an
+    // unseen question can never trap them on a step they never reached.
     const missing = customQuestions.findIndex(
       (q) => q.required && visitedRef.current.has(q.id) && !(all[q.id] ?? "").trim(),
     );
@@ -149,8 +134,8 @@ export default function LeadCaptureForm({
     }
     submittedRef.current = true;
     if (!preview) trackPageEvent(page.id, "submit");
-    // Only report what they were actually asked — a question skipped by a jump
-    // would otherwise show up as an unanswered blank on the agent's lead.
+    // Only report what they were actually asked — an unseen question would
+    // otherwise show up as an unanswered blank on the agent's lead.
     const answerList = customQuestions
       .filter((q) => visitedRef.current.has(q.id))
       .map((q) => ({ q: q.label, a: all[q.id] ?? "" }));
@@ -159,10 +144,12 @@ export default function LeadCaptureForm({
       phone,
       email: email.trim(),
       answers: answerList,
-      quality: pendingEnding?.quiet ? "weak" : "good",
-      customEnding: !!pendingEnding?.ending,
+      // Graded from the final answers rather than tracked as they go, so
+      // going back and changing an answer grades what they actually sent.
+      quality: customQuestions.some((q) => q.lowQualityAnswers?.includes((all[q.id] ?? "").trim()))
+        ? "weak"
+        : "good",
     });
-    setEnding(pendingEnding?.ending ?? null);
     setSubmittedName(name.split(" ")[0] || "there");
     setPhase("done");
   }
@@ -190,57 +177,19 @@ export default function LeadCaptureForm({
     goNext();
   }
 
-  /** Where an answer sends them. Absent or "next" means carry on. */
-  function routeFor(question: CustomQuestion, value: string): string {
-    // disqualifyAnswers predates routing; treat it as a route to the built-in
-    // "not a fit" ending so existing pages keep working untouched.
-    if (question.disqualifyAnswers?.includes(value)) return "end:not_a_fit";
-    return question.answerRoutes?.[value] ?? "next";
-  }
-
-  /** Send them to an end page. `route` is one of the "end:*" values. */
-  function goToEnding(route: string, label: string, value: string, latest: Record<string, string>) {
-    const id = route.slice("end:".length);
-    const custom = id === "thanks" || id === "not_a_fit" ? null : endings.find((e) => e.id === id) ?? null;
-    const outcome = id === "not_a_fit" ? "no_lead" : custom?.outcome ?? "lead";
-
-    if (outcome === "no_lead") {
-      if (!preview) trackPageEvent(page.id, "disqualified", `${label}: ${value}`);
-      setNoLead(true);
-      setEnding(custom);
-      setPhase("done");
-      return;
-    }
-    // Still a lead — but we haven't asked for their details yet, so jump them
-    // to the contact step and remember where to land afterwards.
-    setPendingEnding({ ending: custom, quiet: outcome === "quiet_lead" });
-    setAnswers((a) => ({ ...a, ...latest }));
-    setStepIndex(steps.length - 1);
-  }
-
   function pickChoice(questionId: string, value: string) {
     markStarted();
     setAnswers((a) => ({ ...a, [questionId]: value }));
     setErrors({});
 
-    const question = step.kind === "question" ? step.question : null;
-    const route = question ? routeFor(question, value) : "next";
-
-    if (route.startsWith("end:")) {
-      goToEnding(route, question?.label ?? "", value, { [questionId]: value });
+    // A "stop — not a lead" answer ends the flow on a polite screen, and no
+    // lead is created. The other two cases (carry on, and take-but-don't-count)
+    // both continue normally; the difference only shows up at submit.
+    if (step.kind === "question" && step.question.disqualifyAnswers?.includes(value)) {
+      if (!preview) trackPageEvent(page.id, "disqualified", `${step.question.label}: ${value}`);
+      setDisqualified(true);
+      setPhase("done");
       return;
-    }
-    if (route.startsWith("q:")) {
-      // Jump. Questions skipped this way were never asked, so they must not be
-      // treated as unanswered required questions later — see visitedIds.
-      const targetId = route.slice(2);
-      const target = steps.findIndex((s) => s.kind === "question" && s.question.id === targetId);
-      if (target !== -1) {
-        setStepIndex(target);
-        return;
-      }
-      // The target question was deleted — fall through to normal advance rather
-      // than stranding the visitor.
     }
 
     // Auto-advance: a tap on a choice is itself the "next" action — no extra button press.
@@ -386,11 +335,7 @@ export default function LeadCaptureForm({
             </>
           )}
 
-          {phase === "done" && (
-            noLead
-              ? <DisqualifiedScreen page={page} ending={ending} />
-              : <ThankYouScreen page={page} name={submittedName} ending={ending} />
-          )}
+          {phase === "done" && (disqualified ? <DisqualifiedScreen page={page} /> : <ThankYouScreen page={page} name={submittedName} />)}
         </Box>
       </Box>
     </Box>
@@ -409,7 +354,7 @@ export function HeaderBrand({ page }: { page: LeadPage }) {
   );
 }
 
-function ThankYouScreen({ page, name, ending }: { page: LeadPage; name: string; ending?: PageEnding | null }) {
+function ThankYouScreen({ page, name }: { page: LeadPage; name: string }) {
   const hasPhoto = !!page.profilePhotoDataUrl;
   const size = hasPhoto ? 76 : 96;
   return (
@@ -477,32 +422,23 @@ function ThankYouScreen({ page, name, ending }: { page: LeadPage; name: string; 
           </Box>
         )}
       </Box>
-      {/* A custom end page overrides the wording; everything else about the
-          screen (photo, ring animation, branding) stays identical. */}
-      <Typography sx={{ fontSize: 20, fontWeight: 700 }}>
-        {(ending?.headline || page.thankYouHeadline).replace("{name}", name)}
-      </Typography>
-      <Typography sx={{ fontSize: 14, color: "text.secondary", mt: 1 }}>
-        {ending?.subtext || page.thankYouSubtext}
-      </Typography>
+      <Typography sx={{ fontSize: 20, fontWeight: 700 }}>{page.thankYouHeadline.replace("{name}", name)}</Typography>
+      <Typography sx={{ fontSize: 14, color: "text.secondary", mt: 1 }}>{page.thankYouSubtext}</Typography>
     </Box>
   );
 }
 
-/** Shown when an answer routes to an ending that creates no lead — polite,
- *  nothing saved. A custom end page can replace the wording. */
-function DisqualifiedScreen({ page, ending }: { page: LeadPage; ending?: PageEnding | null }) {
+/** Shown when a visitor picks a "stop — not a lead" answer — polite, no lead saved. */
+function DisqualifiedScreen({ page }: { page: LeadPage }) {
   return (
     <Box sx={{ textAlign: "center", m: "auto 0" }}>
       <Box sx={{ width: 72, height: 72, borderRadius: "50%", bgcolor: `${page.accentColor}14`, display: "flex", alignItems: "center", justifyContent: "center", mx: "auto", mb: 2.5 }}>
         <Typography sx={{ fontSize: 34 }}>🙏</Typography>
       </Box>
-      <Typography sx={{ fontSize: 20, fontWeight: 700 }}>
-        {ending?.headline || "Thanks for your interest!"}
-      </Typography>
+      <Typography sx={{ fontSize: 20, fontWeight: 700 }}>Thanks for your interest!</Typography>
       <Typography sx={{ fontSize: 14, color: "text.secondary", mt: 1, lineHeight: 1.6 }}>
-        {ending?.subtext ||
-          "Based on your answers, this might not be the right time for a valuation. If anything changes, we'd love to help down the line."}
+        Based on your answers, this might not be the right time for a valuation. If anything changes,
+        we'd love to help down the line.
       </Typography>
     </Box>
   );

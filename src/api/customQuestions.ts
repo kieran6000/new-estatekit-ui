@@ -8,7 +8,7 @@ interface CqRow {
   type: string;
   options: string[] | null;
   disqualify_answers: string[] | null;
-  answer_routes: Record<string, string> | null;
+  low_quality_answers: string[] | null;
   helper_text: string | null;
   required: boolean;
   is_default: boolean;
@@ -23,7 +23,7 @@ function rowToQuestion(r: CqRow): CustomQuestion {
     type: r.type as CustomQuestion["type"],
     options: r.options ?? undefined,
     disqualifyAnswers: r.disqualify_answers ?? undefined,
-    answerRoutes: r.answer_routes ?? undefined,
+    lowQualityAnswers: r.low_quality_answers ?? undefined,
     helperText: r.helper_text ?? undefined,
     required: r.required,
     isDefault: r.is_default,
@@ -67,7 +67,7 @@ export interface NewCustomQuestion {
   type: CustomQuestion["type"];
   options?: string[];
   disqualifyAnswers?: string[];
-  answerRoutes?: Record<string, string>;
+  lowQualityAnswers?: string[];
   helperText?: string;
   required: boolean;
 }
@@ -101,15 +101,15 @@ export async function addCustomQuestion(
   // Same guard as updateCustomQuestion: adding a question must not depend on
   // the routing column existing. The column has a default, so omitting it is
   // harmless once the migration lands too.
-  if (!answerRoutesUnsupported) row.answer_routes = data.answerRoutes ?? {};
+  if (!lowQualityUnsupported) row.low_quality_answers = data.lowQualityAnswers ?? [];
 
   const { error } = await supabase.from("custom_questions").insert(row);
   if (!error) return;
 
-  if ("answer_routes" in row && isMissingColumnError(error.message)) {
-    answerRoutesUnsupported = true;
-    console.warn("answer_routes column not present — adding without routing", error.message);
-    delete row.answer_routes;
+  if ("low_quality_answers" in row && isMissingColumnError(error.message)) {
+    lowQualityUnsupported = true;
+    console.warn("low_quality_answers column not present — adding without it", error.message);
+    delete row.low_quality_answers;
     const { error: retryError } = await supabase.from("custom_questions").insert(row);
     if (retryError) throw new Error(retryError.message);
     return;
@@ -120,7 +120,7 @@ export async function addCustomQuestion(
 export async function updateCustomQuestion(
   id: string,
   patch: Partial<
-    Pick<CustomQuestion, "label" | "type" | "options" | "disqualifyAnswers" | "answerRoutes" | "helperText" | "required">
+    Pick<CustomQuestion, "label" | "type" | "options" | "disqualifyAnswers" | "lowQualityAnswers" | "helperText" | "required">
   >,
 ): Promise<void> {
   const row: Record<string, unknown> = {};
@@ -128,26 +128,26 @@ export async function updateCustomQuestion(
   if (patch.type !== undefined) row.type = patch.type;
   if (patch.options !== undefined) row.options = patch.options;
   if (patch.disqualifyAnswers !== undefined) row.disqualify_answers = patch.disqualifyAnswers;
-  if (patch.answerRoutes !== undefined) row.answer_routes = patch.answerRoutes;
+  if (patch.lowQualityAnswers !== undefined) row.low_quality_answers = patch.lowQualityAnswers;
   if (patch.helperText !== undefined) row.helper_text = patch.helperText;
   if (patch.required !== undefined) row.required = patch.required;
   if (Object.keys(row).length === 0) return;
 
-  // answer_routes is newer than some deployments of the database. Saving a
+  // low_quality_answers is newer than some deployments of the database. Saving a
   // question is core work and must not fail just because routing hasn't been
   // migrated yet, so a schema complaint retries once without it — the rest of
   // the edit still lands, and routing quietly does nothing until the column
   // exists. Remembered for the session so this costs one failed call, not one
   // per save.
-  if (answerRoutesUnsupported) delete row.answer_routes;
+  if (lowQualityUnsupported) delete row.low_quality_answers;
 
   const { error } = await supabase.from("custom_questions").update(row).eq("id", id);
   if (!error) return;
 
-  if ("answer_routes" in row && isMissingColumnError(error.message)) {
-    answerRoutesUnsupported = true;
-    console.warn("answer_routes column not present — saving without routing", error.message);
-    delete row.answer_routes;
+  if ("low_quality_answers" in row && isMissingColumnError(error.message)) {
+    lowQualityUnsupported = true;
+    console.warn("low_quality_answers column not present — saving without it", error.message);
+    delete row.low_quality_answers;
     const { error: retryError } = await supabase.from("custom_questions").update(row).eq("id", id);
     if (retryError) throw new Error(retryError.message);
     return;
@@ -155,13 +155,13 @@ export async function updateCustomQuestion(
   throw new Error(error.message);
 }
 
-/** Set once the database rejects answer_routes, so later saves skip it. */
-let answerRoutesUnsupported = false;
+/** Set once the database rejects low_quality_answers, so later saves skip it. */
+let lowQualityUnsupported = false;
 
 /** PostgREST wording for "that column/table isn't in my schema cache". */
 function isMissingColumnError(message: string): boolean {
   const m = message.toLowerCase();
-  return m.includes("schema cache") || m.includes("column") || m.includes("answer_routes");
+  return m.includes("schema cache") || m.includes("column") || m.includes("low_quality_answers");
 }
 
 export async function removeCustomQuestion(id: string): Promise<void> {

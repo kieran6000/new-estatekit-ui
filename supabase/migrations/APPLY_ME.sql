@@ -5,52 +5,20 @@
 -- It is the three 20260919_* migrations in one block, in order. Safe to run
 -- more than once — every statement is guarded.
 --
--- Until this runs, the app is fine: end pages and the Conversions API panel
--- stay hidden, and forms work exactly as they did before.
+-- Until this runs the app is fine: the Conversions API panel stays hidden, the
+-- per-answer setting silently does nothing, and forms work exactly as before.
 -- ============================================================================
 
 
 -- ---------------------------------------------------------------------------
--- 1. Answer routing + custom end pages
+-- 1. Lead quality: answers you take but do not count as conversions
 -- ---------------------------------------------------------------------------
 
 alter table public.custom_questions
-  add column if not exists answer_routes jsonb not null default '{}'::jsonb;
+  add column if not exists low_quality_answers text[] not null default '{}'::text[];
 
-comment on column public.custom_questions.answer_routes is
-  'Answer text -> destination. Values: next | q:<question_id> | end:thanks | end:not_a_fit | end:<ending_id>. Absent means carry on.';
-
-create table if not exists public.lead_page_endings (
-  id uuid primary key default gen_random_uuid(),
-  page_id uuid not null references public.lead_pages(id) on delete cascade,
-  agent_id uuid not null,
-  name text not null default 'End page',
-  headline text not null default 'Thanks!',
-  subtext text not null default '',
-  -- lead        a real lead; reported to Facebook as a conversion
-  -- quiet_lead  a real lead, but NOT reported to Facebook
-  -- no_lead     not a lead at all; a polite goodbye
-  outcome text not null default 'lead',
-  sort_order integer not null default 0,
-  created_at timestamptz not null default now(),
-  constraint lead_page_endings_outcome_check
-    check (outcome in ('lead', 'quiet_lead', 'no_lead'))
-);
-
-alter table public.lead_page_endings enable row level security;
-
-drop policy if exists "Anyone can read lead page endings" on public.lead_page_endings;
-create policy "Anyone can read lead page endings"
-  on public.lead_page_endings for select using (true);
-
-drop policy if exists "Agents manage own endings" on public.lead_page_endings;
-create policy "Agents manage own endings"
-  on public.lead_page_endings for all
-  using (agent_id = auth.uid() or is_operator())
-  with check (agent_id = auth.uid() or is_operator());
-
-create index if not exists lead_page_endings_page_idx
-  on public.lead_page_endings (page_id, sort_order);
+comment on column public.custom_questions.low_quality_answers is
+  'Answers that still create a lead but are not reported to Facebook as a conversion. Distinct from disqualify_answers, which creates no lead at all.';
 
 alter table public.leads
   add column if not exists quality text not null default 'good';
@@ -145,16 +113,13 @@ where a.trigger_type = 'daily_digest'
 -- ---------------------------------------------------------------------------
 -- Check it worked
 -- ---------------------------------------------------------------------------
-select 'lead_page_endings' as object,
-       to_regclass('public.lead_page_endings') is not null as ok
-union all
-select 'fb_capi_config', to_regclass('public.fb_capi_config') is not null
+select 'fb_capi_config' as object, to_regclass('public.fb_capi_config') is not null as ok
 union all
 select 'fb_capi_events', to_regclass('public.fb_capi_events') is not null
 union all
-select 'custom_questions.answer_routes',
+select 'custom_questions.low_quality_answers',
        exists (select 1 from information_schema.columns
-               where table_name = 'custom_questions' and column_name = 'answer_routes')
+               where table_name = 'custom_questions' and column_name = 'low_quality_answers')
 union all
 select 'leads.quality',
        exists (select 1 from information_schema.columns
