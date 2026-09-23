@@ -50,6 +50,31 @@ async function cachedPageToken(pageId: string): Promise<string | null> {
   return (data?.access_token as string) ?? null;
 }
 
+const FORM_CACHE_HOURS = 24;
+
+// The list for a page is stored in the same table under a "page:<id>" key, so
+// the forms list survives a throttle exactly like a single form does.
+function listCacheKey(pageId: string): string {
+  return `page:${pageId}`;
+}
+
+function isFresh(fetchedAt: string): boolean {
+  return Date.now() - Date.parse(fetchedAt) < FORM_CACHE_HOURS * 3600 * 1000;
+}
+
+async function readFormCache(key: string): Promise<{ payload: unknown; fetched_at: string } | null> {
+  const { data } = await supabase
+    .from("fb_form_cache").select("payload, fetched_at").eq("form_id", key).maybeSingle();
+  return data ?? null;
+}
+
+async function writeFormCache(key: string, pageId: string | null, payload: unknown): Promise<void> {
+  await supabase.from("fb_form_cache").upsert(
+    { form_id: key, page_id: pageId, payload, fetched_at: new Date().toISOString() },
+    { onConflict: "form_id" },
+  );
+}
+
 async function cachePageToken(pageId: string, token: string): Promise<void> {
   await supabase.from("fb_page_tokens").upsert(
     { page_id: pageId, access_token: token, updated_at: new Date().toISOString() },
@@ -127,11 +152,21 @@ Deno.serve(async (req) => {
 
   let pageId = "";
   try {
-    ({ pageId } = await req.json());
+    const body = await req.json();
+    pageId = body.pageId;
     if (!pageId) return json({ error: "pageId required" }, 400);
 
     const tokens: { name: string; value: string }[] = [];
-    if (await backoffActive()) return json({ error: "rate_limited" }, 503);
+    // Cached list first, so the Add-lead-source dialog keeps working while
+    // Facebook is throttling us.
+    const cached = await readFormCache(listCacheKey(pageId));
+    // See get-fb-form: deliberate one-off override to warm the cache.
+    const force = body.force === true;
+    const throttled = !force && (await backoffActive());
+    if (cached && (isFresh(cached.fetched_at) || throttled)) {
+      return json({ ...(cached.payload as Record<string, unknown>), cached: true });
+    }
+    if (throttled) return json({ error: "rate_limited" }, 503);
 
     for (const name of TOKEN_NAMES) {
       const { data } = await supabase.rpc("get_secret", { secret_name: name });
@@ -152,7 +187,9 @@ Deno.serve(async (req) => {
         continue;
       }
       try {
-        return json({ forms: await fetchForms(pageId, pageToken) });
+        const forms = await fetchForms(pageId, pageToken);
+        await writeFormCache(listCacheKey(pageId), pageId, { forms, noAccess: false });
+        return json({ forms });
       } catch (e) {
         if (e instanceof RateLimited) throw e;
         attempts.push(`${name} page-token: ${messageOf(e)}`);
@@ -162,7 +199,9 @@ Deno.serve(async (req) => {
     // Raw tokens only as a last resort.
     for (const { name, value } of tokens) {
       try {
-        return json({ forms: await fetchForms(pageId, value) });
+        const forms = await fetchForms(pageId, value);
+        await writeFormCache(listCacheKey(pageId), pageId, { forms, noAccess: false });
+        return json({ forms });
       } catch (e) {
         if (e instanceof RateLimited) throw e;
         attempts.push(`${name} direct: ${messageOf(e)}`);
@@ -172,6 +211,7 @@ Deno.serve(async (req) => {
     // None of our tokens can read this page. Details go to the logs only —
     // the app shows a plain "no access" message.
     console.warn(`list-fb-forms: no access to page ${pageId}:`, attempts.join(" | "));
+    if (cached) return json({ ...(cached.payload as Record<string, unknown>), cached: true, stale: true });
     return json({ forms: [], noAccess: true });
   } catch (err) {
     if (err instanceof RateLimited) {

@@ -50,6 +50,25 @@ async function cachedPageToken(pageId: string): Promise<string | null> {
   return (data?.access_token as string) ?? null;
 }
 
+const FORM_CACHE_HOURS = 24;
+
+function isFresh(fetchedAt: string): boolean {
+  return Date.now() - Date.parse(fetchedAt) < FORM_CACHE_HOURS * 3600 * 1000;
+}
+
+async function readFormCache(formId: string): Promise<{ payload: unknown; fetched_at: string } | null> {
+  const { data } = await supabase
+    .from("fb_form_cache").select("payload, fetched_at").eq("form_id", formId).maybeSingle();
+  return data ?? null;
+}
+
+async function writeFormCache(formId: string, pageId: string | null, payload: unknown): Promise<void> {
+  await supabase.from("fb_form_cache").upsert(
+    { form_id: formId, page_id: pageId, payload, fetched_at: new Date().toISOString() },
+    { onConflict: "form_id" },
+  );
+}
+
 async function cachePageToken(pageId: string, token: string): Promise<void> {
   await supabase.from("fb_page_tokens").upsert(
     { page_id: pageId, access_token: token, updated_at: new Date().toISOString() },
@@ -144,7 +163,21 @@ Deno.serve(async (req) => {
     formId = body.formId;
     if (!formId) return json({ error: "formId required" }, 400);
 
-    if (await backoffActive()) return json({ error: "rate_limited" }, 503);
+    // A published form's questions effectively never change, so Facebook only
+    // needs asking once. Serving the cache first is what makes this page work
+    // during a throttle instead of showing "Facebook is busy" for 20 minutes.
+    const cached = await readFormCache(formId);
+    // Operator escape hatch: ignore our own backoff for one deliberate call.
+    // Used to warm the cache as soon as Facebook recovers, instead of waiting
+    // out a timer that only exists to protect the quota. One call is cheap; if
+    // Facebook is still throttling, the backoff simply re-arms.
+    const force = body.force === true;
+    const throttled = !force && (await backoffActive());
+    if (cached && (isFresh(cached.fetched_at) || throttled)) {
+      return json({ ...(cached.payload as Record<string, unknown>), cached: true });
+    }
+    // Nothing cached and Facebook is off-limits — only now is it a real failure.
+    if (throttled) return json({ error: "rate_limited" }, 503);
 
     const tokens: string[] = [];
     for (const name of TOKEN_NAMES) {
@@ -171,6 +204,9 @@ Deno.serve(async (req) => {
         try {
           const form = await fetchForm(formId, t);
           const page = pageId ? await fetchPage(pageId, t) : null;
+          // Cached so the next visit — and any visit during a throttle —
+          // costs Facebook nothing.
+          await writeFormCache(formId, pageId, { form, page });
           return json({ form, page });
         } catch (e) {
           if (e instanceof RateLimited) throw e;
@@ -181,6 +217,7 @@ Deno.serve(async (req) => {
 
     // Details go to the logs only — the app shows a plain "no access" message.
     console.warn(`get-fb-form: no access to form ${formId}:`, attempts.join(" | "));
+    if (cached) return json({ ...(cached.payload as Record<string, unknown>), cached: true, stale: true });
     return json({ form: null, page: null, noAccess: true });
   } catch (err) {
     if (err instanceof RateLimited) {
