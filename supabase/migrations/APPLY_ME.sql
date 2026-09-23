@@ -147,14 +147,14 @@ comment on column public.agent_profiles.avatar_url is
 --    wording, so no custom work per client.
 -- ---------------------------------------------------------------------------
 
-do $
+do $$
 begin
   if exists (select 1 from pg_constraint where conname = 'pipelines_kind_check') then
     alter table public.pipelines drop constraint pipelines_kind_check;
   end if;
   alter table public.pipelines
     add constraint pipelines_kind_check check (kind in ('seller', 'buyer', 'general'));
-end $;
+end $$;
 
 
 -- ---------------------------------------------------------------------------
