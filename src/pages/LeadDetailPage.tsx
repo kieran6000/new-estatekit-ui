@@ -9,16 +9,16 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import CallIcon from "@mui/icons-material/Call";
 import ArchiveOutlinedIcon from "@mui/icons-material/ArchiveOutlined";
 import { tokens } from "../theme";
-import { getLeadSourceAd, moveLeadToPipeline, setLeadArchived } from "../api/leads";
+import { getLeadSourceAd, moveLeadToPipeline, setLeadArchived, setCommissionReceived } from "../api/leads";
 import { useLead, useUpdateLeadNote, useUpdateLeadStage } from "../hooks/useLeads";
 import { usePipelines } from "../hooks/usePipelines";
 import { getPipelinePublic } from "../api/pipelines";
 import { useSnack } from "../hooks/useSnack";
-import { PIPELINE_STAGES } from "../types";
+import { PIPELINE_STAGES, stageLabel } from "../types";
 import { stageForKind, STEP_FOR_STAGE } from "../lib/stageLogic";
 import { prettyAnswer, maskPhone } from "../lib/format";
 import { describeAttribution, type AdAttribution } from "../lib/adAttribution";
-import { timeAgo } from "../lib/timeAgo";
+import { timeAgo, whenLabel } from "../lib/timeAgo";
 import { useIsOperator } from "../hooks/useAutomations";
 import { useCanSeeFullPhone } from "../hooks/useTier";
 import StageMenu from "../components/StageMenu";
@@ -118,7 +118,7 @@ export default function LeadDetailPage() {
 
       <Box sx={{ maxWidth: 720, mx: "auto", pb: 3 }}>
         <Box sx={{ display: "flex", gap: 1.25, m: "14px 16px 0" }}>
-          <StageMenu current={lead.stage} stages={stagesForPipeline} onPick={handleStagePick}>
+          <StageMenu current={lead.stage} stages={stagesForPipeline} kind={pipelineKind} onPick={handleStagePick}>
             {(open) => (
               <Box
                 component="button"
@@ -173,7 +173,7 @@ export default function LeadDetailPage() {
         <Section title="Contact">
           <Row k="Phone" v={canSeeFullPhone ? lead.phone : maskPhone(lead.phone)} />
           <Row k="Email" v={lead.email || ""} />
-          <Row k="Stage" v={lead.stage} />
+          <Row k="Stage" v={stageLabel(lead.stage, pipelineKind)} />
           <Row k="Received" v={timeAgo(lead.created_at)} />
           <Row k="Next" v={lead.next_label} />
         </Section>
@@ -201,6 +201,14 @@ export default function LeadDetailPage() {
             {saveState}
           </Typography>
         </Section>
+
+        {/* Only once there's money to talk about. Until someone ticks this the
+            commission is expected, not earned — see useOverview. */}
+        {!!lead.commission && (
+          <Section title="Commission">
+            <CommissionRow lead={lead} />
+          </Section>
+        )}
 
         {/* The ad that produced this lead, resolved from its Facebook lead id.
             Falls back to the captured landing-page attribution when there's no
@@ -291,6 +299,59 @@ export default function LeadDetailPage() {
 
 /** Shows the Facebook ad this lead clicked, when there is one. Website leads and
  *  ads we can't read simply render nothing rather than an empty shell. */
+/**
+ * Expected vs received, and the one tick that moves it between them.
+ *
+ * Deliberately not automatic off a stage: a mandate can be signed months
+ * before the property transfers, and only the agent knows when the money
+ * actually landed.
+ */
+function CommissionRow({ lead }: { lead: LeadRow }) {
+  const qc = useQueryClient();
+  const showSnack = useSnack();
+  const [busy, setBusy] = useState(false);
+  const received = !!lead.commission_received_at;
+
+  async function toggle(next: boolean) {
+    setBusy(true);
+    try {
+      await setCommissionReceived(lead.id, next);
+      await qc.invalidateQueries({ queryKey: ["leads"] });
+      await qc.invalidateQueries({ queryKey: ["overview"] });
+      showSnack(next ? "Marked as received" : "Back to expected");
+    } catch (e) {
+      console.error(e);
+      showSnack("That didn't save. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Box sx={{ p: "12px 16px", display: "flex", alignItems: "center", gap: 1.5, flexWrap: "wrap" }}>
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Typography sx={{ fontSize: 20, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+          R{(lead.commission ?? 0).toLocaleString("en-ZA")}
+        </Typography>
+        <Typography sx={{ fontSize: 13, color: received ? "#1b5e20" : "text.secondary" }}>
+          {received
+            ? `Received ${whenLabel(lead.commission_received_at).replace(/ at .*/, "")}`
+            : "Expected — not received yet"}
+        </Typography>
+      </Box>
+      <Button
+        variant={received ? "outlined" : "contained"}
+        size="small"
+        disabled={busy}
+        onClick={() => toggle(!received)}
+        sx={{ textTransform: "none", whiteSpace: "nowrap" }}
+      >
+        {received ? "Undo" : "Mark as received"}
+      </Button>
+    </Box>
+  );
+}
+
 /**
  * What we know about where a lead came from when there's no ad to show —
  * website leads, or a Facebook ad we can't read. Renders nothing at all rather

@@ -40,6 +40,16 @@ export const MAIN_OUTCOME_OPTIONS: Record<PipelineKind, MainOutcomeOption[]> = {
     { icon: "block", label: "Not buying", stage: "Lost" },
     { icon: "wrong_number", label: "Wrong number", stage: "Invalid Number" },
   ],
+  // Neutral wording over the seller stages, so a recruitment (or any other)
+  // pipeline gets the same call-logging flow without a word about property.
+  general: [
+    { icon: "event", label: "Booked a meeting", stage: "Booked" },
+    { icon: "chat", label: "Spoke — following up", stage: "Contacted" },
+    { icon: "no_answer", label: "No answer", stage: "No Answer" },
+    { icon: "premium", label: "Signed up", stage: "Mandate Signed" },
+    { icon: "block", label: "Not interested", stage: "Lost" },
+    { icon: "wrong_number", label: "Wrong number", stage: "Invalid Number" },
+  ],
 };
 
 export function pipelineKindFor(lead: Pick<LeadRow, "pipeline_id">, pipelines: Pipeline[]): PipelineKind {

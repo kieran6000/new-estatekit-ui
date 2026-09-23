@@ -111,6 +111,53 @@ where a.trigger_type = 'daily_digest'
 
 
 -- ---------------------------------------------------------------------------
+-- 4. Commission: expected vs actually received
+--    A signed mandate is permission to sell, not a sale. Without this the
+--    Overview counted a mandate as money in the bank the day it was signed,
+--    so "actual profit" and "actual ROI" were reporting cash nobody had.
+-- ---------------------------------------------------------------------------
+
+alter table public.leads
+  add column if not exists commission_received_at timestamptz;
+
+comment on column public.leads.commission_received_at is
+  'When the commission was actually banked. Null = still only expected. Only leads with this set count toward earned commission on the Overview.';
+
+create index if not exists leads_commission_received_idx
+  on public.leads (commission_received_at) where commission_received_at is not null;
+
+
+-- ---------------------------------------------------------------------------
+-- 5. Agent profile photo, separate from the sidebar logo
+--    One field was doing both jobs, so a client photo sat where an agency
+--    logo belonged.
+-- ---------------------------------------------------------------------------
+
+alter table public.agent_profiles
+  add column if not exists avatar_url text;
+
+comment on column public.agent_profiles.avatar_url is
+  'The agent''s face. sidebar_logo_url stays the agency/brand mark.';
+
+
+-- ---------------------------------------------------------------------------
+-- 6. "General" pipeline kind
+--    Third preset alongside seller and buyer, for lead types that are neither
+--    (recruitment being the reason it exists). Same stage machinery, generic
+--    wording, so no custom work per client.
+-- ---------------------------------------------------------------------------
+
+do $
+begin
+  if exists (select 1 from pg_constraint where conname = 'pipelines_kind_check') then
+    alter table public.pipelines drop constraint pipelines_kind_check;
+  end if;
+  alter table public.pipelines
+    add constraint pipelines_kind_check check (kind in ('seller', 'buyer', 'general'));
+end $;
+
+
+-- ---------------------------------------------------------------------------
 -- Check it worked
 -- ---------------------------------------------------------------------------
 select 'fb_capi_config' as object, to_regclass('public.fb_capi_config') is not null as ok
@@ -126,4 +173,16 @@ select 'leads.quality',
                where table_name = 'leads' and column_name = 'quality')
 union all
 select 'daily_digest automation',
-       exists (select 1 from public.automations where trigger_type = 'daily_digest');
+       exists (select 1 from public.automations where trigger_type = 'daily_digest')
+union all
+select 'leads.commission_received_at',
+       exists (select 1 from information_schema.columns
+               where table_name = 'leads' and column_name = 'commission_received_at')
+union all
+select 'agent_profiles.avatar_url',
+       exists (select 1 from information_schema.columns
+               where table_name = 'agent_profiles' and column_name = 'avatar_url')
+union all
+select 'pipelines allows general',
+       pg_get_constraintdef(oid) like '%general%'
+       from pg_constraint where conname = 'pipelines_kind_check';

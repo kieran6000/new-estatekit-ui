@@ -92,6 +92,9 @@ export interface AgentProfile {
   fbPageId: string | null;
   sidebarColor: string;
   sidebarLogoUrl: string | null;
+  /** The agent's face. Kept separate from sidebarLogoUrl so a real agency logo
+   *  can live there without losing the person's photo. */
+  avatarUrl: string | null;
   onboarded: boolean;
 }
 
@@ -111,6 +114,7 @@ interface ProfileRow {
   fb_page_id: string | null;
   sidebar_color: string;
   sidebar_logo_url: string | null;
+  avatar_url: string | null;
   onboarded: boolean;
 }
 
@@ -131,6 +135,7 @@ function rowToProfile(r: ProfileRow): AgentProfile {
     fbPageId: r.fb_page_id,
     sidebarColor: r.sidebar_color || "#111827",
     sidebarLogoUrl: r.sidebar_logo_url,
+    avatarUrl: r.avatar_url ?? null,
     onboarded: r.onboarded,
   };
 }
@@ -185,6 +190,7 @@ export async function upsertProfile(
   if (patch.renewalDate !== undefined) row.renewal_date = patch.renewalDate;
   if (patch.sidebarColor !== undefined) row.sidebar_color = patch.sidebarColor;
   if (patch.sidebarLogoUrl !== undefined) row.sidebar_logo_url = patch.sidebarLogoUrl;
+  if (patch.avatarUrl !== undefined) row.avatar_url = patch.avatarUrl;
   if (patch.fbPageId !== undefined) row.fb_page_id = patch.fbPageId;
   if (patch.fbAdAccountId !== undefined) row.fb_ad_account_id = patch.fbAdAccountId;
   if (patch.onboarded !== undefined) row.onboarded = patch.onboarded;

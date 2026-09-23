@@ -48,6 +48,7 @@ export default function AccountPage() {
 
   const [saveState, setSaveState] = useState<"" | "saving" | "saved" | "error">("");
   const [logoUploading, setLogoUploading] = useState(false);
+  const [avatarUploading, setAvatarUploading] = useState(false);
   const [stopping, setStopping] = useState(false);
   async function emergencyStop() {
     setStopping(true);
@@ -71,6 +72,7 @@ export default function AccountPage() {
     renewalDate: "",
     sidebarColor: "#111827",
     sidebarLogoUrl: null as string | null,
+    avatarUrl: null as string | null,
     fbPageId: "",
     fbAdAccountId: "",
   });
@@ -86,6 +88,7 @@ export default function AccountPage() {
         renewalDate: profile.renewalDate ?? "",
         sidebarColor: profile.sidebarColor || "#111827",
         sidebarLogoUrl: profile.sidebarLogoUrl,
+        avatarUrl: profile.avatarUrl,
         fbPageId: profile.fbPageId ?? "",
         fbAdAccountId: profile.fbAdAccountId ?? "",
       });
@@ -167,6 +170,52 @@ export default function AccountPage() {
     } finally {
       setLogoUploading(false);
       setTimeout(() => URL.revokeObjectURL(previewUrl), 3000);
+    }
+  }
+
+  // Same flow as the logo, but writes avatar_url. Separate on purpose: the
+  // sidebar logo is the agency brand, this is the person — using one field for
+  // both meant a client photo sat where a real logo belonged.
+  async function onAvatarUpload(file: File | null) {
+    if (!file || !user) return;
+    if (file.size > 2 * 1024 * 1024) { showSnack("Image must be under 2 MB"); return; }
+    const ext = file.name.split(".").pop() || "png";
+    const path = `${user.id}/avatar-${Date.now()}.${ext}`;
+    const prev = form.avatarUrl;
+    const previewUrl = URL.createObjectURL(file);
+    setForm((f) => ({ ...f, avatarUrl: previewUrl }));
+    setAvatarUploading(true);
+    try {
+      const { error } = await supabase.storage.from("logos").upload(path, file, { upsert: true });
+      if (error) throw error;
+      const { data: urlData } = supabase.storage.from("logos").getPublicUrl(path);
+      await upsertProfile({ avatarUrl: urlData.publicUrl }, profile?.agentId);
+      setForm((f) => ({ ...f, avatarUrl: urlData.publicUrl }));
+      await queryClient.invalidateQueries({ queryKey: ["myProfile"] });
+      await queryClient.invalidateQueries({ queryKey: ["agentProfiles"] });
+      showSnack("Photo uploaded");
+    } catch (e) {
+      setForm((f) => ({ ...f, avatarUrl: prev }));
+      console.error(e);
+      showSnack("Couldn't upload the photo. Try again.");
+    } finally {
+      setAvatarUploading(false);
+      setTimeout(() => URL.revokeObjectURL(previewUrl), 3000);
+    }
+  }
+
+  async function onAvatarRemove() {
+    const prev = form.avatarUrl;
+    setForm((f) => ({ ...f, avatarUrl: null }));
+    try {
+      await upsertProfile({ avatarUrl: null }, profile?.agentId);
+      await queryClient.invalidateQueries({ queryKey: ["myProfile"] });
+      await queryClient.invalidateQueries({ queryKey: ["agentProfiles"] });
+      showSnack("Photo removed");
+    } catch (e) {
+      setForm((f) => ({ ...f, avatarUrl: prev }));
+      console.error(e);
+      showSnack("Couldn't remove the photo. Try again.");
     }
   }
 
@@ -303,6 +352,9 @@ export default function AccountPage() {
 
                 <Box>
                   <Typography sx={{ fontSize: 13, color: "text.secondary", mb: 1 }}>Logo</Typography>
+                  <Typography sx={{ fontSize: 11.5, color: "text.disabled", mb: 1, mt: -0.5 }}>
+                    The agency or brand mark shown at the top of the sidebar.
+                  </Typography>
                   <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
                     <Box sx={{ position: "relative" }}>
                       <Box
@@ -341,6 +393,56 @@ export default function AccountPage() {
                     </Box>
                     <Typography sx={{ fontSize: 12, color: logoUploading ? "text.secondary" : "text.secondary" }}>
                       {logoUploading ? "Uploading…" : form.sidebarLogoUrl ? "Click to replace" : "Upload your logo"}
+                    </Typography>
+                  </Box>
+                </Box>
+
+                {/* Separate from the logo so a real agency mark can live above
+                    while the account still has a face. Round, because that is
+                    what it is — a photo of a person, not a brand. */}
+                <Box>
+                  <Typography sx={{ fontSize: 13, color: "text.secondary", mb: 1 }}>Profile photo</Typography>
+                  <Typography sx={{ fontSize: 11.5, color: "text.disabled", mb: 1, mt: -0.5 }}>
+                    The agent&apos;s face. Shown next to their name in the account switcher.
+                  </Typography>
+                  <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
+                    <Box sx={{ position: "relative" }}>
+                      <Box
+                        component="label"
+                        sx={{
+                          width: 64, height: 64, borderRadius: "50%",
+                          border: `2px dashed ${form.avatarUrl ? tokens.primary : tokens.divider}`,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          cursor: avatarUploading ? "default" : "pointer", overflow: "hidden",
+                          bgcolor: tokens.bg,
+                          opacity: avatarUploading ? 0.5 : 1,
+                          "&:hover": avatarUploading ? undefined : { borderColor: tokens.primary },
+                        }}
+                      >
+                        {form.avatarUrl ? (
+                          <Box component="img" src={form.avatarUrl} alt="" sx={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        ) : (
+                          <AddIcon sx={{ fontSize: 20, color: "text.disabled" }} />
+                        )}
+                        <input type="file" hidden accept="image/*" disabled={avatarUploading} onChange={(e) => onAvatarUpload(e.target.files?.[0] ?? null)} />
+                      </Box>
+                      {avatarUploading && (
+                        <Box sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          <CircularProgress size={22} thickness={5} />
+                        </Box>
+                      )}
+                      {form.avatarUrl && !avatarUploading && (
+                        <IconButton
+                          size="small"
+                          onClick={onAvatarRemove}
+                          sx={{ position: "absolute", top: -4, right: -4, width: 20, height: 20, bgcolor: "#e0e0e0", "&:hover": { bgcolor: "#bdbdbd" } }}
+                        >
+                          <CloseIcon sx={{ fontSize: 12 }} />
+                        </IconButton>
+                      )}
+                    </Box>
+                    <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
+                      {avatarUploading ? "Uploading…" : form.avatarUrl ? "Click to replace" : "Upload a photo"}
                     </Typography>
                   </Box>
                 </Box>

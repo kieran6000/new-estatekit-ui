@@ -90,6 +90,27 @@ async function agentNameMap(ids: string[]): Promise<Map<string, string>> {
   return new Map((data ?? []).map((p) => [p.agent_id, p.display_name || p.company || "Unknown account"]));
 }
 
+/**
+ * Mark a lead's commission as actually banked (or undo it).
+ *
+ * Tolerates the column not existing yet, same as the custom-question writes:
+ * the Overview simply reports nothing as earned until the migration is applied,
+ * which is still more truthful than counting a signed mandate as money in.
+ */
+export async function setCommissionReceived(id: string, received: boolean): Promise<void> {
+  const { error } = await supabase
+    .from("leads")
+    .update({ commission_received_at: received ? new Date().toISOString() : null })
+    .eq("id", id);
+  if (!error) return;
+  const m = error.message.toLowerCase();
+  if (m.includes("schema cache") || m.includes("commission_received_at")) {
+    console.warn("commission_received_at column not present — run the pending migration", error.message);
+    throw new Error("Not set up yet");
+  }
+  throw new Error(error.message);
+}
+
 export async function setLeadArchived(id: string, archived: boolean): Promise<void> {
   const { error } = await supabase.from("leads").update({ archived }).eq("id", id);
   if (error) throw new Error(error.message);

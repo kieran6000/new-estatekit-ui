@@ -69,7 +69,9 @@ export default function AccountSwitcher({ variant = "dark" }: { variant?: "dark"
   const activeName = activeProfile ? name(activeProfile) : "Select account";
   const activeInitial = activeName[0].toUpperCase();
   const activeArea = cityOf(activeProfile?.area) || activeProfile?.company || "";
-  const activePfp = activeProfile?.sidebar_logo_url || pageAvatar(activeProfile?.fb_page_id) || null;
+  // The person first, then their Facebook page picture, then the brand logo —
+  // a logo is a poor stand-in for a face in a list of people.
+  const activePfp = activeProfile?.avatar_url || pageAvatar(activeProfile?.fb_page_id) || activeProfile?.sidebar_logo_url || null;
 
   const filtered = search
     ? profiles.filter((p) => name(p).toLowerCase().includes(search.toLowerCase()))
@@ -145,7 +147,7 @@ export default function AccountSwitcher({ variant = "dark" }: { variant?: "dark"
                 sx={{ py: 1, pl: 2, pr: 1 }}
               >
                 <ListItemAvatar sx={{ minWidth: 44 }}>
-                  <Avatar src={p.sidebar_logo_url ?? pageAvatar(p.fb_page_id) ?? undefined} sx={{ width: 34, height: 34, bgcolor: isActive ? "#6366f1" : "#e0e0e0", color: isActive ? "#fff" : "#666", fontSize: 14, fontWeight: 700 }}>
+                  <Avatar src={p.avatar_url ?? pageAvatar(p.fb_page_id) ?? p.sidebar_logo_url ?? undefined} sx={{ width: 34, height: 34, bgcolor: isActive ? "#6366f1" : "#e0e0e0", color: isActive ? "#fff" : "#666", fontSize: 14, fontWeight: 700 }}>
                     {pName[0].toUpperCase()}
                   </Avatar>
                 </ListItemAvatar>

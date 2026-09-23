@@ -82,7 +82,7 @@ export async function getActiveAgentId(): Promise<string> {
 }
 
 export async function listAgentProfiles(): Promise<
-  { agent_id: string; display_name: string | null; whatsapp_number: string | null; area: string | null; company: string | null; sidebar_logo_url: string | null; fb_ad_account_id: string | null; fb_page_id: string | null }[]
+  { agent_id: string; display_name: string | null; whatsapp_number: string | null; area: string | null; company: string | null; sidebar_logo_url: string | null; avatar_url?: string | null; fb_ad_account_id: string | null; fb_page_id: string | null }[]
 > {
   const { data, error } = await supabase
     .from("agent_profiles")

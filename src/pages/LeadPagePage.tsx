@@ -546,8 +546,13 @@ function FbFormSource({
     enabled: !!page.fbFormId,
     staleTime: 10 * 60_000,
     retry: false,
+    // Facebook quota is app-wide and shared by every client. Refetching this
+    // whenever the tab regains focus spent it for no benefit — the form
+    // definition barely changes.
+    refetchOnWindowFocus: false,
   });
   const form = data?.form;
+  const rateLimited = data?.rateLimited === true;
   const fbName = data?.page?.name || pageName;
   const fbAvatar = data?.page?.picture || avatarUrl;
 
@@ -559,11 +564,16 @@ function FbFormSource({
         <Section title="Form questions">
           {isLoading ? (
             <Skeleton variant="rounded" height={160} sx={{ borderRadius: "8px" }} />
-          ) : error || data?.noAccess ? (
+          ) : error || data?.noAccess || rateLimited ? (
             <Typography sx={{ fontSize: 13, color: "text.secondary" }}>
               {data?.noAccess
                 ? "EstateKit doesn't have access to this Facebook page, so the form's questions can't be shown."
-                : "Couldn't load this form from Facebook right now. Try again in a minute."}
+                : rateLimited
+                  // Not a fault — Facebook throttles the whole app for a few
+                  // minutes. Saying "try again" invites the retrying that
+                  // caused it, so the wording tells them to leave it alone.
+                  ? "Facebook is busy right now, so the questions can't be shown for a few minutes. Nothing is broken and your leads are still coming in."
+                  : "Couldn't load this form from Facebook right now. Try again in a minute."}
             </Typography>
           ) : form ? (
             <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
@@ -604,7 +614,9 @@ function FbFormSource({
             />
           ) : (
             <Typography sx={{ fontSize: 13, color: "text.secondary" }}>
-              Preview unavailable — couldn't load the form from Facebook.
+              {rateLimited
+                ? "Facebook is busy right now. The preview will come back on its own in a few minutes."
+                : "Preview unavailable — couldn't load the form from Facebook."}
             </Typography>
           )}
         </Section>
@@ -747,7 +759,7 @@ function AddPageDialog({
   const [fbFormId, setFbFormId] = useState("");
   const [loadingForms, setLoadingForms] = useState(false);
   // Why the form list is empty, when it isn't simply "no forms on the page".
-  const [formsProblem, setFormsProblem] = useState<"no_access" | "failed" | null>(null);
+  const [formsProblem, setFormsProblem] = useState<"no_access" | "failed" | "busy" | null>(null);
   const addPage = useAddLeadPage();
   const posthog = usePostHog();
 
@@ -770,10 +782,10 @@ function AddPageDialog({
       setLoadingForms(true);
       setFormsProblem(null);
       try {
-        const { forms, noAccess } = await listFbForms(fbPageId);
+        const { forms, noAccess, rateLimited } = await listFbForms(fbPageId);
         if (!cancelled) {
           setFbForms(forms);
-          setFormsProblem(noAccess ? "no_access" : null);
+          setFormsProblem(noAccess ? "no_access" : rateLimited ? "busy" : null);
         }
       } catch {
         if (!cancelled) {
@@ -858,11 +870,13 @@ function AddPageDialog({
                 <Typography sx={{ fontSize: 13, color: "text.secondary", mb: 1 }}>
                   {formsProblem === "no_access"
                     ? "EstateKit doesn't have access to this Facebook page's forms yet."
-                    : formsProblem === "failed"
-                      ? "Couldn't load forms from Facebook. Try again in a minute."
-                      : fbPageId
-                        ? "No forms found on this Facebook page."
-                        : "No Facebook page linked to this account."}
+                    : formsProblem === "busy"
+                      ? "Facebook is busy right now. Your forms will show again in a few minutes — you can still create the source and pick the form after."
+                      : formsProblem === "failed"
+                        ? "Couldn't load forms from Facebook. Try again in a minute."
+                        : fbPageId
+                          ? "No forms found on this Facebook page."
+                          : "No Facebook page linked to this account."}
                 </Typography>
                 <Button
                   size="small"

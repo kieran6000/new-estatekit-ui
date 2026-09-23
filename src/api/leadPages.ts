@@ -190,12 +190,16 @@ export interface FbFormResult {
   page: FbPageInfo | null;
   /** None of our Facebook tokens can read this page. */
   noAccess: boolean;
+  /** Facebook is throttling the app right now — temporary, not a misconfiguration. */
+  rateLimited?: boolean;
 }
 
 export interface FbFormsResult {
   forms: FbForm[];
   /** None of our Facebook tokens can read this page. */
   noAccess: boolean;
+  /** Facebook is throttling the app right now — temporary, not a misconfiguration. */
+  rateLimited?: boolean;
 }
 
 /** On a non-2xx response supabase-js leaves `data` null and hides the body in
@@ -213,22 +217,43 @@ async function functionErrorMessage(error: unknown): Promise<string> {
   return error instanceof Error ? error.message : "Request failed";
 }
 
+/**
+ * Facebook's rate limit is app-wide, and throwing on it makes it worse.
+ *
+ * React Query doesn't apply staleTime to a rejected query, so a thrown rate
+ * limit refetched on every window focus and every remount — each attempt
+ * spending more of the quota that was already exhausted, which kept it
+ * exhausted. The app was driving its own outage.
+ *
+ * Returning a value instead means the result is cached like any success:
+ * staleTime holds, nothing refires on focus, and the quota gets a chance to
+ * recover. The UI reads `rateLimited` and says so in plain words.
+ */
+function isRateLimited(message: string): boolean {
+  const m = message.toLowerCase();
+  return m.includes("rate_limited") || m.includes("rate limit") || m.includes("(#4)") || m.includes("#17");
+}
+
 export async function getFbForm(fbPageId: string | null, formId: string): Promise<FbFormResult> {
   const { data, error } = await supabase.functions.invoke("get-fb-form", {
     body: { pageId: fbPageId, formId },
   });
   if (error) {
-    console.error("get-fb-form error:", await functionErrorMessage(error));
+    const message = await functionErrorMessage(error);
+    console.error("get-fb-form error:", message);
+    if (isRateLimited(message)) return { form: null, page: null, noAccess: false, rateLimited: true };
     throw new Error("Couldn't load form");
   }
   if (data?.error) {
     console.error("get-fb-form API error:", data.error);
+    if (isRateLimited(String(data.error))) return { form: null, page: null, noAccess: false, rateLimited: true };
     throw new Error("Couldn't load form");
   }
   return {
     form: (data?.form ?? null) as FbFormDetail | null,
     page: (data?.page ?? null) as FbPageInfo | null,
     noAccess: data?.noAccess === true,
+    rateLimited: false,
   };
 }
 
@@ -237,14 +262,17 @@ export async function listFbForms(fbPageId: string): Promise<FbFormsResult> {
     body: { pageId: fbPageId },
   });
   if (error) {
-    console.error("list-fb-forms error:", await functionErrorMessage(error));
+    const message = await functionErrorMessage(error);
+    console.error("list-fb-forms error:", message);
+    if (isRateLimited(message)) return { forms: [], noAccess: false, rateLimited: true };
     throw new Error("Couldn't load forms");
   }
   if (data?.error) {
     console.error("list-fb-forms API error:", data.error);
+    if (isRateLimited(String(data.error))) return { forms: [], noAccess: false, rateLimited: true };
     throw new Error("Couldn't load forms");
   }
-  return { forms: (data?.forms ?? []) as FbForm[], noAccess: data?.noAccess === true };
+  return { forms: (data?.forms ?? []) as FbForm[], noAccess: data?.noAccess === true, rateLimited: false };
 }
 
 export interface LeadPageFunnel {

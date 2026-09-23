@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { listLeads } from "../api/leads";
 import { getMyProfile, getFbAdInsights } from "../api/agentProfile";
+import { DEAD_STAGES } from "../types";
 import type { LeadRow, Stage } from "../types";
 
 export type OverviewPeriod = "This month" | "Last 30 days" | "Last 7 days" | "Lifetime" | "Custom";
@@ -111,12 +112,20 @@ function buildRows(leads: LeadRow[], dailySpend: Record<string, number>, from: s
     if (REACHED.includes(l.stage)) row.leadsReached += 1;
     if (APPTS.includes(l.stage)) row.appts += 1;
     if (APPTS_HELD.includes(l.stage)) row.apptsHeld += 1;
-    if (WINS.includes(l.stage)) {
-      row.mandates += 1;
-      row.commEarned += l.commission ?? 0;
-    }
-    if (l.commission && l.stage !== "Lost" && l.stage !== "Invalid Number") {
+    if (WINS.includes(l.stage)) row.mandates += 1;
+
+    // Expected vs earned are different things and used to be the same number.
+    //
+    // A signed mandate is permission to sell, not a sale — the money only
+    // exists once the property transfers and the agency is paid. Counting it
+    // as earned the moment the mandate was signed made "actual profit" and
+    // "actual ROI" report money nobody had received yet.
+    //
+    // Earned now means exactly one thing: someone ticked "commission
+    // received" on the lead.
+    if (l.commission && !DEAD_STAGES.includes(l.stage)) {
       row.commExpected += l.commission;
+      if (l.commission_received_at) row.commEarned += l.commission;
     }
   }
 

@@ -36,4 +36,17 @@ export const LEAD_FORM_TEMPLATE: Record<PipelineKind, LeadFormTemplate> = {
     defaultThankYouHeadline: "Thanks {name}, we're on it",
     defaultThankYouSubtext: "We'll be in touch shortly with matching listings.",
   },
+  // Written for recruitment, since that's what prompted it, but deliberately
+  // vague enough to edit into anything. Seed copy only — every word here is
+  // editable the moment the page exists.
+  general: {
+    addressLabel: "Which area are you based in?",
+    addressHelperText: "e.g. Centurion, Pretoria",
+    secondQuestionLabel: "How much experience do you have?",
+    secondOptions: ["No experience yet", "Less than a year", "1–3 years", "3+ years"],
+    defaultHeadline: "Interested in joining the team? Let's talk.",
+    defaultCta: "Send my details",
+    defaultThankYouHeadline: "Thanks {name}, we've got your details",
+    defaultThankYouSubtext: "We'll be in touch shortly for a quick chat.",
+  },
 };

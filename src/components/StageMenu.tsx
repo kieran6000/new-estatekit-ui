@@ -1,16 +1,21 @@
 import { useState, type MouseEvent, type ReactNode } from "react";
 import { Menu, MenuItem } from "@mui/material";
-import type { Stage } from "../types";
+import { stageLabel } from "../types";
+import type { PipelineKind, Stage } from "../types";
 
 export default function StageMenu({
   current,
   stages,
+  kind = "seller",
   onPick,
   children,
 }: {
   current: Stage;
-  /** The current lead's pipeline stage list — Seller and Buyer pipelines have different stages. */
+  /** The current lead's pipeline stage list — each pipeline kind differs. */
   stages: Stage[];
+  /** Only changes the wording. A "general" pipeline stores the same stages but
+   *  shows neutral labels, so a recruitment lead never reads "Mandate Signed". */
+  kind?: PipelineKind;
   onPick: (stage: Stage) => void;
   children: (open: (e: MouseEvent<HTMLElement>) => void) => ReactNode;
 }) {
@@ -28,7 +33,7 @@ export default function StageMenu({
               onPick(s);
             }}
           >
-            {s}
+            {stageLabel(s, kind)}
           </MenuItem>
         ))}
       </Menu>

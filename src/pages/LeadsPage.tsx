@@ -43,6 +43,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePostHog } from "@posthog/react";
 import { tokens } from "../theme";
 import { DEAD_STAGES, PIPELINE_KIND_LABEL, PIPELINE_STAGES, type LeadRow, type OutcomeStep, type Pipeline, type PipelineKind, type Stage } from "../types";
+import { stageLabel } from "../types";
 import { dueLeads, pipelineKindFor, sortLeadsForList, STEP_FOR_STAGE, computeStagePatch, stageForKind } from "../lib/stageLogic";
 import { timeAgo } from "../lib/timeAgo";
 import { useLeads, useUpdateLeadStage } from "../hooks/useLeads";
@@ -564,6 +565,7 @@ export default function LeadsPage() {
       <LeadsTable
         leads={filtered}
         stages={stagesForPipeline}
+        kind={activePipeline.kind}
         filter={filter}
         selectable={selectMode}
         selected={selected}
@@ -884,6 +886,9 @@ function AddPipelineDialog({ open, onClose, onCreated }: { open: boolean; onClos
         <RadioGroup value={kind} onChange={(e) => setKind(e.target.value as PipelineKind)}>
           <FormControlLabel value="seller" control={<Radio />} label="Seller-style (New Lead → Mandate Signed)" />
           <FormControlLabel value="buyer" control={<Radio />} label="Buyer-style (New Lead → Bought)" />
+          {/* For anything that isn't buying or selling — recruitment, referrals,
+              a new offer. Same machinery, neutral wording, no custom work. */}
+          <FormControlLabel value="general" control={<Radio />} label="General (New Lead → Signed up)" />
         </RadioGroup>
         <TextField label="Pipeline name" placeholder={PIPELINE_KIND_LABEL[kind].replace("-style", "")} value={name} onChange={(e) => setName(e.target.value)} fullWidth autoFocus />
       </DialogContent>
@@ -900,6 +905,7 @@ function AddPipelineDialog({ open, onClose, onCreated }: { open: boolean; onClos
 function LeadsTable({
   leads,
   stages,
+  kind,
   filter,
   selectable,
   selected,
@@ -911,6 +917,8 @@ function LeadsTable({
 }: {
   leads: LeadRow[];
   stages: Stage[];
+  /** Only affects wording — a "general" pipeline shows neutral stage names. */
+  kind: PipelineKind;
   filter: "All" | Stage;
   selectable: boolean;
   selected: Set<string>;
@@ -923,7 +931,7 @@ function LeadsTable({
   const isMobile = useMediaQuery("(max-width:639px)");
   const canSeeFullPhone = useCanSeeFullPhone();
   if (isMobile) {
-    return <MobileLeadsList leads={leads} stages={stages} filter={filter} selectable={selectable} selected={selected} onToggleSelect={onToggleSelect} onRowSelect={onRowSelect} onOpen={onOpen} onCall={onCall} onStagePick={onStagePick} />;
+    return <MobileLeadsList leads={leads} stages={stages} kind={kind} filter={filter} selectable={selectable} selected={selected} onToggleSelect={onToggleSelect} onRowSelect={onRowSelect} onOpen={onOpen} onCall={onCall} onStagePick={onStagePick} />;
   }
 
   if (leads.length === 0) {
@@ -961,14 +969,14 @@ function LeadsTable({
           </Typography>
         </TableCell>
         <TableCell>
-          <StageMenu current={l.stage} stages={stages} onPick={(s) => onStagePick(l.id, s)}>
+          <StageMenu current={l.stage} stages={stages} kind={kind} onPick={(s) => onStagePick(l.id, s)}>
             {(open) => (
               <Box
                 component="button"
                 onClick={(e) => { e.stopPropagation(); open(e); }}
                 sx={{ border: 0, bgcolor: "transparent", fontSize: 14, color: "inherit", display: "inline-flex", alignItems: "center", gap: 0.75, cursor: "pointer", p: "6px 0" }}
               >
-                {l.stage}
+                {stageLabel(l.stage, kind)}
               </Box>
             )}
           </StageMenu>
@@ -1042,7 +1050,7 @@ function LeadsTable({
                 return [
                   <TableRow key={"hd-" + st}>
                     <TableCell colSpan={selectable ? 5 : 4} sx={{ bgcolor: tokens.surface2, fontSize: 12, fontWeight: 500, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.04em", height: 34 }}>
-                      {st} ({g.length})
+                      {stageLabel(st, kind)} ({g.length})
                     </TableCell>
                   </TableRow>,
                   ...rows(g),
@@ -1058,6 +1066,7 @@ function LeadsTable({
 function MobileLeadsList({
   leads,
   stages,
+  kind,
   filter,
   selectable,
   selected,
@@ -1069,6 +1078,8 @@ function MobileLeadsList({
 }: {
   leads: LeadRow[];
   stages: Stage[];
+  /** Only affects wording — a "general" pipeline shows neutral stage names. */
+  kind: PipelineKind;
   filter: "All" | Stage;
   selectable: boolean;
   selected: Set<string>;
@@ -1116,7 +1127,7 @@ function MobileLeadsList({
         {timeAgo(l.created_at)}
       </Typography>
       <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mt: 0.75 }}>
-        <StageMenu current={l.stage} stages={stages} onPick={(s) => onStagePick(l.id, s)}>
+        <StageMenu current={l.stage} stages={stages} kind={kind} onPick={(s) => onStagePick(l.id, s)}>
           {(open) => (
             <Box
               component="button"
@@ -1173,7 +1184,7 @@ function MobileLeadsList({
                 key={"hd-" + st}
                 sx={{ bgcolor: tokens.surface2, fontSize: 12, fontWeight: 500, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.04em", p: "8px 16px", borderBottom: `1px solid ${tokens.divider}` }}
               >
-                {st} ({g.length})
+                {stageLabel(st, kind)} ({g.length})
               </Box>,
               ...g.map((l, i) => card(l, i)),
             ];

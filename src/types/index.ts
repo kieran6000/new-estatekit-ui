@@ -12,14 +12,39 @@ export type Stage =
 
 /** The two built-in pipeline shapes. A pipeline's stage list is always one of
  * these two presets — there is no custom-stage editor. */
-export type PipelineKind = "seller" | "buyer";
+/**
+ * "general" exists so a lead type that is neither buying nor selling
+ * (recruitment being the reason it was added) needs no custom work: the same
+ * stage machinery, automations, action logging and reminders, with neutral
+ * wording. It deliberately reuses the seller stage list so every stage-driven
+ * feature keeps working untouched — only the words an agent reads differ,
+ * via stageLabel().
+ */
+export type PipelineKind = "seller" | "buyer" | "general";
 
 export const PIPELINE_STAGES: Record<PipelineKind, Stage[]> = {
   seller: ["New Lead", "No Answer", "Contacted", "Booked", "Mandate Signed", "Lost", "Invalid Number"],
   buyer: ["New Lead", "No Answer", "Contacted", "Viewing Booked", "Offer Made", "Bought", "Lost", "Invalid Number"],
+  general: ["New Lead", "No Answer", "Contacted", "Booked", "Mandate Signed", "Lost", "Invalid Number"],
 };
 
-export const PIPELINE_KIND_LABEL: Record<PipelineKind, string> = { seller: "Seller", buyer: "Buyer" };
+/** Per-kind wording for a stage. Only "general" renames anything; the others
+ *  fall through to the stage's own name so nothing existing shifts. */
+const STAGE_LABEL: Partial<Record<PipelineKind, Partial<Record<Stage, string>>>> = {
+  general: { Booked: "Meeting booked", "Mandate Signed": "Signed up" },
+};
+
+/** The label to show for a stage in a given pipeline. Storage always uses the
+ *  real Stage value — this is presentation only. */
+export function stageLabel(stage: Stage, kind: PipelineKind): string {
+  return STAGE_LABEL[kind]?.[stage] ?? stage;
+}
+
+export const PIPELINE_KIND_LABEL: Record<PipelineKind, string> = {
+  seller: "Seller",
+  buyer: "Buyer",
+  general: "General",
+};
 
 /** A named pipeline instance. `kind` fixes its stage list — adding a pipeline
  * only ever means picking a preset + a name, never authoring stages. */
@@ -58,6 +83,10 @@ export interface LeadRow {
   updated_at: string;
   /** Archived leads are kept but hidden from the working list. */
   archived?: boolean;
+  /** When the commission was actually banked. Null means the money is still
+   * only expected — a signed mandate is permission to sell, not a sale. Only
+   * leads with this set count toward earned commission on the Overview. */
+  commission_received_at?: string | null;
   /** Facebook ad this lead came from, resolved lazily from fb_lead_id. */
   fb_ad_id?: string | null;
   /** Ad/traffic parameters captured on the landing page at first visit
