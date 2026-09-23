@@ -93,6 +93,32 @@ create index if not exists fb_capi_events_created_idx on public.fb_capi_events (
 --    the wording — it messages real client agents.
 -- ---------------------------------------------------------------------------
 
+-- trigger_type is constrained to a fixed list, so 'daily_digest' has to be
+-- allowed before it can be inserted. The allowed set is rebuilt from whatever
+-- is already in the table plus the known types, so this can never fail on
+-- existing rows no matter what they contain.
+do $$
+declare
+  allowed text;
+begin
+  if exists (select 1 from pg_constraint where conname = 'automations_trigger_type_check') then
+    alter table public.automations drop constraint automations_trigger_type_check;
+  end if;
+
+  select string_agg(quote_literal(t), ', ')
+    into allowed
+  from (
+    select distinct trigger_type as t from public.automations
+    union
+    select unnest(array['lead_created', 'stage_changed', 'reminder_due', 'daily_digest'])
+  ) s;
+
+  execute format(
+    'alter table public.automations add constraint automations_trigger_type_check check (trigger_type in (%s))',
+    allowed
+  );
+end $$;
+
 insert into public.automations (name, trigger_type, trigger_stage, enabled)
 select 'Daily — leads still to update', 'daily_digest', null, false
 where not exists (
