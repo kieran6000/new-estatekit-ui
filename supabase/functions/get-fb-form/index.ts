@@ -22,6 +22,42 @@ const TOKEN_NAMES = ["FB_ACCESS_TOKEN", "FB_ACCESS_TOKEN_2", "FB_ACCESS_TOKEN_AL
 const RATE_LIMIT_CODES = new Set([4, 17, 32, 613]);
 class RateLimited extends Error {}
 
+const BACKOFF_MINUTES = 20;
+
+/** Facebook throttles per APP, so one client's burst blocks everyone. While a
+ *  backoff is active no function calls Graph at all — every call made while
+ *  throttled spends quota that is already gone, which is how a short throttle
+ *  became a permanent one. */
+async function backoffActive(): Promise<boolean> {
+  const { data } = await supabase.from("fb_api_state").select("backoff_until").eq("id", true).maybeSingle();
+  return !!data?.backoff_until && new Date(data.backoff_until) > new Date();
+}
+
+async function startBackoff(reason: string): Promise<void> {
+  await supabase.from("fb_api_state").update({
+    backoff_until: new Date(Date.now() + BACKOFF_MINUTES * 60_000).toISOString(),
+    last_error: reason.slice(0, 500),
+    updated_at: new Date().toISOString(),
+  }).eq("id", true);
+}
+
+/** Page tokens do not change, so they are cached in the database. Resolving
+ *  them from Graph every request (via me/accounts, our most expensive call)
+ *  was the bulk of the quota being spent. */
+async function cachedPageToken(pageId: string): Promise<string | null> {
+  const { data } = await supabase
+    .from("fb_page_tokens").select("access_token").eq("page_id", pageId).maybeSingle();
+  return (data?.access_token as string) ?? null;
+}
+
+async function cachePageToken(pageId: string, token: string): Promise<void> {
+  await supabase.from("fb_page_tokens").upsert(
+    { page_id: pageId, access_token: token, updated_at: new Date().toISOString() },
+    { onConflict: "page_id" },
+  );
+}
+
+
 function throwIfRateLimited(data: { error?: { code?: number; message?: string } }) {
   if (data?.error?.code && RATE_LIMIT_CODES.has(data.error.code)) throw new RateLimited(data.error.message);
 }
@@ -48,11 +84,16 @@ function json(body: unknown, status = 200) {
 // Same lookup as list-fb-forms: ask the page for its token first (works for
 // pages shared through Business Settings), then fall back to me/accounts.
 async function getPageToken(pageId: string, userToken: string): Promise<string | null> {
+  const cached = await cachedPageToken(pageId);
+  if (cached) return cached;
   try {
     const res = await fetch(`${GRAPH}/${pageId}?fields=access_token&access_token=${userToken}`);
     const data = await res.json();
     throwIfRateLimited(data);
-    if (res.ok && !data.error && data.access_token) return data.access_token as string;
+    if (res.ok && !data.error && data.access_token) {
+      await cachePageToken(pageId, data.access_token);
+      return data.access_token as string;
+    }
   } catch (e) {
     if (e instanceof RateLimited) throw e;
   }
@@ -65,7 +106,10 @@ async function getPageToken(pageId: string, userToken: string): Promise<string |
     throwIfRateLimited(data);
     if (!res.ok || data.error) return null;
     const match = (data.data || []).find((p: { id: string }) => p.id === pageId);
-    if (match?.access_token) return match.access_token as string;
+    if (match?.access_token) {
+      await cachePageToken(pageId, match.access_token);
+      return match.access_token as string;
+    }
     url = data.paging?.next ?? null;
   }
   return null;
@@ -99,6 +143,8 @@ Deno.serve(async (req) => {
     const pageId: string | null = body.pageId ?? null;
     formId = body.formId;
     if (!formId) return json({ error: "formId required" }, 400);
+
+    if (await backoffActive()) return json({ error: "rate_limited" }, 503);
 
     const tokens: string[] = [];
     for (const name of TOKEN_NAMES) {
@@ -139,6 +185,7 @@ Deno.serve(async (req) => {
   } catch (err) {
     if (err instanceof RateLimited) {
       console.warn(`get-fb-form: Facebook rate limit hit (form ${formId}):`, err.message);
+      await startBackoff(err.message);
       return json({ error: "rate_limited" }, 503);
     }
     console.error("get-fb-form failed:", err);

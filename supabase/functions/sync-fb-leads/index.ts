@@ -20,19 +20,82 @@ function json(body: unknown, status = 200) {
 interface FieldDatum { name: string; values: string[] }
 interface FbLead { id: string; created_time: string; field_data: FieldDatum[] }
 
+const RATE_LIMIT_CODES = new Set([4, 17, 32, 613]);
+
+/** Facebook is throttling the whole app — stop everything until this passes.
+ *  Each call made while throttled spends quota that is already gone, which is
+ *  how a short throttle turned into a permanent one. */
+async function backoffActive(): Promise<boolean> {
+  const { data } = await supabase.from("fb_api_state").select("backoff_until").eq("id", true).maybeSingle();
+  return !!data?.backoff_until && new Date(data.backoff_until) > new Date();
+}
+
+async function startBackoff(minutes: number, reason: string): Promise<void> {
+  await supabase.from("fb_api_state").update({
+    backoff_until: new Date(Date.now() + minutes * 60_000).toISOString(),
+    last_error: reason.slice(0, 500),
+    updated_at: new Date().toISOString(),
+  }).eq("id", true);
+}
+
+function rateLimitCode(data: { error?: { code?: number } }): boolean {
+  return !!data?.error?.code && RATE_LIMIT_CODES.has(data.error.code);
+}
+
+/**
+ * Page tokens, cached in the database.
+ *
+ * These are derived from long-lived user tokens and don't change, yet this
+ * resolved them by paging me/accounts?limit=200 — our single most expensive
+ * call — once per agent, every run, every 5 minutes. That one lookup was the
+ * bulk of the app's Facebook quota.
+ *
+ * Now Graph is only consulted when there's no cached token for the page.
+ */
 async function getPageToken(pageId: string, tokens: string[]): Promise<string | null> {
+  const { data: cached } = await supabase
+    .from("fb_page_tokens").select("access_token").eq("page_id", pageId).maybeSingle();
+  if (cached?.access_token) return cached.access_token as string;
+
   for (const userToken of tokens) {
+    // Ask for this page directly before falling back to listing every page the
+    // token can see — one call instead of potentially several.
+    const direct = await fetch(`${GRAPH}/${pageId}?fields=access_token&access_token=${userToken}`);
+    const directData = await direct.json();
+    if (rateLimitCode(directData)) {
+      await startBackoff(20, directData.error?.message ?? "rate limited");
+      return null;
+    }
+    if (direct.ok && directData?.access_token) {
+      await cachePageToken(pageId, directData.access_token);
+      return directData.access_token as string;
+    }
+
     let url: string | null = `${GRAPH}/me/accounts?fields=id,access_token&limit=200&access_token=${userToken}`;
     while (url) {
       const res = await fetch(url);
       const data = await res.json();
+      if (rateLimitCode(data)) {
+        await startBackoff(20, data.error?.message ?? "rate limited");
+        return null;
+      }
       if (!res.ok || data.error) break;
       const match = (data.data || []).find((p: { id: string }) => p.id === pageId);
-      if (match?.access_token) return match.access_token as string;
+      if (match?.access_token) {
+        await cachePageToken(pageId, match.access_token);
+        return match.access_token as string;
+      }
       url = data.paging?.next ?? null;
     }
   }
   return null;
+}
+
+async function cachePageToken(pageId: string, token: string): Promise<void> {
+  await supabase.from("fb_page_tokens").upsert(
+    { page_id: pageId, access_token: token, updated_at: new Date().toISOString() },
+    { onConflict: "page_id" },
+  );
 }
 
 function extract(fieldData: FieldDatum[]) {
@@ -95,6 +158,12 @@ Deno.serve(async (req) => {
     const sinceFilter = sinceDays && sinceDays > 0
       ? `&filtering=${encodeURIComponent(JSON.stringify([{ field: "time_created", operator: "GREATER_THAN", value: Math.floor(Date.now() / 1000) - sinceDays * 86400 }]))}`
       : "";
+
+    // Nothing at all while Facebook is throttling the app. The webhook still
+    // delivers leads in the meantime; this poll is only the safety net.
+    if (await backoffActive()) {
+      return json({ skipped: "facebook backoff active", inserted: 0 });
+    }
 
     const tokens: string[] = [];
     for (const name of TOKEN_NAMES) {
@@ -172,9 +241,31 @@ Deno.serve(async (req) => {
         for (const t of tryTokens) {
           const res = await fetch(`${GRAPH}/${fbPageId}/leadgen_forms?fields=id,name&limit=200&access_token=${t}`);
           const data = await res.json();
+          if (rateLimitCode(data)) {
+            await startBackoff(20, data.error?.message ?? "rate limited");
+            return json({ stopped: "facebook rate limit", inserted: totalInserted, summary });
+          }
           if (res.ok && !data.error) { forms = (data.data || []).map((f: { id: string; name: string }) => ({ id: f.id, name: f.name })); break; }
         }
         if (!forms) { summary.push({ agent: a.display_name, error: "forms fetch failed" }); continue; }
+
+        // Only forms that have ever produced a lead for this agent, plus
+        // anything created recently enough to still be worth watching.
+        //
+        // A page accumulates every form an agent has ever made — old campaigns,
+        // duplicates, tests. Polling all of them every run meant most calls
+        // came back empty forever, and that volume is what exhausted the app's
+        // quota. Forms that have never delivered a lead are picked up by the
+        // webhook instead, which costs nothing.
+        const { data: seen } = await supabase
+          .from("leads").select("fb_lead_id").eq("agent_id", a.agent_id)
+          .not("fb_lead_id", "is", null).limit(1);
+        if (seen && seen.length > 0) {
+          const { data: activeForms } = await supabase
+            .from("lead_pages").select("fb_form_id").eq("agent_id", a.agent_id).not("fb_form_id", "is", null);
+          const linked = new Set((activeForms ?? []).map((f) => f.fb_form_id as string));
+          if (linked.size > 0) forms = forms.filter((f) => linked.has(f.id));
+        }
 
         let inserted = 0;
         for (const form of forms) {
