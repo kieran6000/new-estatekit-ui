@@ -44,7 +44,7 @@ import { usePostHog } from "@posthog/react";
 import { tokens } from "../theme";
 import { DEAD_STAGES, PIPELINE_KIND_LABEL, PIPELINE_STAGES, type LeadRow, type OutcomeStep, type Pipeline, type PipelineKind, type Stage } from "../types";
 import { stageLabel } from "../types";
-import { dueLeads, pipelineKindFor, sortLeadsForList, STEP_FOR_STAGE, computeStagePatch, stageForKind } from "../lib/stageLogic";
+import { dueLeads, pipelineKindFor, sortLeadsForList, stepForStage, computeStagePatch, stageForKind } from "../lib/stageLogic";
 import { timeAgo } from "../lib/timeAgo";
 import { useLeads, useUpdateLeadStage } from "../hooks/useLeads";
 import { useAddPipeline, usePipelines, useSyncPipelineSheet } from "../hooks/usePipelines";
@@ -232,7 +232,7 @@ export default function LeadsPage() {
   function handleStagePick(id: string, stage: Stage) {
     const lead = leads.find((l) => l.id === id);
     if (!lead) return;
-    const step = STEP_FOR_STAGE[stage];
+    const step = stepForStage(stage, activePipeline?.kind ?? "seller");
     if (step) {
       setStageSheet({ leadId: id, step, stage });
       return;

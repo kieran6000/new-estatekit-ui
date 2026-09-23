@@ -122,7 +122,11 @@ export default function OverviewPage() {
   // Overview KPIs, scoped to one pipeline at a time — "All pipelines" by
   // default. Meta spend isn't split per-pipeline, so cost/lead etc. are only
   // an approximation once you narrow to a single pipeline (noted in the caption).
-  const { data: pipelines = [] } = usePipelines();
+  // Recruitment and other non-property pipelines are deliberately absent from
+  // the Overview — see useOverview. Offering them in the filter would imply
+  // numbers that are excluded from every row.
+  const { data: allPipelines = [] } = usePipelines();
+  const pipelines = allPipelines.filter((p) => p.kind !== "general");
   const [pipelineFilter, setPipelineFilter] = useState<string | "all">("all");
   const [pipelineMenuAnchor2, setPipelineMenuAnchor2] = useState<HTMLElement | null>(null);
   const pipelineIdFilter = pipelineFilter === "all" ? null : pipelineFilter;

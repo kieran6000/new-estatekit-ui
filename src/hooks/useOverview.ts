@@ -1,8 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { listLeads } from "../api/leads";
+import { listPipelines } from "../api/pipelines";
 import { getMyProfile, getFbAdInsights } from "../api/agentProfile";
 import { DEAD_STAGES } from "../types";
-import type { LeadRow, Stage } from "../types";
+import type { LeadRow, Pipeline, Stage } from "../types";
 
 export type OverviewPeriod = "This month" | "Last 30 days" | "Last 7 days" | "Lifetime" | "Custom";
 export interface DateRange { from: string; to: string }
@@ -161,8 +162,21 @@ export function useOverview(period: OverviewPeriod, range?: DateRange, pipelineI
     // For a custom range, wait until both ends are set.
     enabled: period !== "Custom" || (!!range?.from && !!range?.to),
     queryFn: async (): Promise<OverviewComputedRow[]> => {
-      const [allLeads, dailySpend] = await Promise.all([listLeads(), loadDailySpend(from)]);
-      const leads = pipelineId ? allLeads.filter((l) => l.pipeline_id === pipelineId) : allLeads;
+      const [allLeads, dailySpend, pipelines] = await Promise.all([
+        listLeads(),
+        loadDailySpend(from),
+        listPipelines().catch(() => [] as Pipeline[]),
+      ]);
+
+      // "general" pipelines (recruitment and anything else that isn't buying or
+      // selling property) are kept out of the Overview entirely. Their leads
+      // cost nothing in ad spend and never produce commission, so counting them
+      // would quietly drag cost-per-lead down and make the property numbers —
+      // the ones actually used to run campaigns — look better than they are.
+      const excluded = new Set(pipelines.filter((p) => p.kind === "general").map((p) => p.id));
+      const scoped = allLeads.filter((l) => !excluded.has(l.pipeline_id));
+
+      const leads = pipelineId ? scoped.filter((l) => l.pipeline_id === pipelineId) : scoped;
       return buildRows(leads, dailySpend, from, to);
     },
   });

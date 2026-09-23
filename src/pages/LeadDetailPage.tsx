@@ -15,7 +15,7 @@ import { usePipelines } from "../hooks/usePipelines";
 import { getPipelinePublic } from "../api/pipelines";
 import { useSnack } from "../hooks/useSnack";
 import { PIPELINE_STAGES, stageLabel } from "../types";
-import { stageForKind, STEP_FOR_STAGE } from "../lib/stageLogic";
+import { stageForKind, stepForStage } from "../lib/stageLogic";
 import { prettyAnswer, maskPhone } from "../lib/format";
 import { describeAttribution, type AdAttribution } from "../lib/adAttribution";
 import { timeAgo, whenLabel } from "../lib/timeAgo";
@@ -92,7 +92,7 @@ export default function LeadDetailPage() {
   const stagesForPipeline = PIPELINE_STAGES[pipelineKind];
 
   function handleStagePick(stage: Stage) {
-    const step = STEP_FOR_STAGE[stage];
+    const step = stepForStage(stage, pipelineKind);
     if (step) {
       setStageStep({ step, stage });
       return;

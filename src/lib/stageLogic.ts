@@ -14,6 +14,19 @@ export const STEP_FOR_STAGE: Partial<Record<Stage, OutcomeStep>> = {
   Bought: "commission",
 };
 
+/**
+ * The follow-up step for a stage, in the context of a pipeline kind.
+ *
+ * A "general" pipeline reuses the seller stages, so without this a recruitment
+ * lead reaching "Signed up" would be asked for a commission amount — a
+ * meaningless question about a job applicant. Everything else is identical.
+ */
+export function stepForStage(stage: Stage, kind: PipelineKind): OutcomeStep | undefined {
+  const step = STEP_FOR_STAGE[stage];
+  if (kind === "general" && step === "commission") return undefined;
+  return step;
+}
+
 export interface MainOutcomeOption {
   icon: "event" | "chat" | "no_answer" | "premium" | "offer" | "block" | "wrong_number";
   label: string;

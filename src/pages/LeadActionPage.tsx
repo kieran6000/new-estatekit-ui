@@ -32,7 +32,7 @@ import { useLeadWithStatus, useUpdateLeadNote, useUpdateLeadStage } from "../hoo
 import { usePipelines } from "../hooks/usePipelines";
 import { getPipelinePublic } from "../api/pipelines";
 import { useSnack } from "../hooks/useSnack";
-import { MAIN_OUTCOME_OPTIONS, STEP_FOR_STAGE, type MainOutcomeOption } from "../lib/stageLogic";
+import { MAIN_OUTCOME_OPTIONS, stepForStage, type MainOutcomeOption } from "../lib/stageLogic";
 import { prettyAnswer } from "../lib/format";
 import { timeAgo, whenLabel, isUpcoming } from "../lib/timeAgo";
 import { trackActivity } from "../lib/activity";
@@ -204,7 +204,7 @@ function LeadActionUI({
       logTokenOutcome(opt.stage, true, opt.label);
       return;
     }
-    const sub = STEP_FOR_STAGE[opt.stage];
+    const sub = stepForStage(opt.stage, pipelineKind);
     if (sub) {
       setStageSheet({ step: sub, stage: opt.stage });
       return;

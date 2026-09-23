@@ -23,7 +23,7 @@ import WorkspacePremiumIcon from "@mui/icons-material/WorkspacePremium";
 import RequestQuoteIcon from "@mui/icons-material/RequestQuote";
 import BlockIcon from "@mui/icons-material/Block";
 import CloseFullscreenIcon from "@mui/icons-material/CallEnd";
-import { defaultReminderISO, MAIN_OUTCOME_OPTIONS, STEP_FOR_STAGE, type MainOutcomeOption } from "../lib/stageLogic";
+import { defaultReminderISO, MAIN_OUTCOME_OPTIONS, stepForStage, type MainOutcomeOption } from "../lib/stageLogic";
 import { trackActivity } from "../lib/activity";
 import { useUpdateLeadStage } from "../hooks/useLeads";
 import type { LeadRow, OutcomeStep, PipelineKind, Stage, StageChangeExtra } from "../types";
@@ -104,7 +104,7 @@ export default function OutcomeSheet({
     finish(outcomeSnack(toStage), toStage);
   }
   function pickMain(option: MainOutcomeOption) {
-    const subStep = STEP_FOR_STAGE[option.stage];
+    const subStep = stepForStage(option.stage, pipelineKind);
     if (subStep) {
       setTargetStage(option.stage);
       setStep(subStep);
