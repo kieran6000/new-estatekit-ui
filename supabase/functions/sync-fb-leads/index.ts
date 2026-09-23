@@ -152,7 +152,13 @@ Deno.serve(async (req) => {
     const b = req.method === "POST" ? await req.json().catch(() => ({})) : {};
     const onlyAgentId: string | null = b.agentId ?? null;
     const onlyFormId: string | null = b.formId ?? null;
-    const sinceDays: number | null = typeof b.sinceDays === "number" ? b.sinceDays : null;
+    // Without a window this asked Facebook for every lead a form has ever
+    // collected, every run — 544 leads paged 200 at a time, to insert none of
+    // them, every 15 minutes. The poll only exists to catch what the webhook
+    // dropped, so a week is generous; anything older is a backfill, and a
+    // backfill can pass sinceDays explicitly.
+    const DEFAULT_SINCE_DAYS = 7;
+    const sinceDays: number = typeof b.sinceDays === "number" ? b.sinceDays : DEFAULT_SINCE_DAYS;
     const includePageForms: boolean = b.includePageForms === true;
     const silent: boolean = b.silent === true;
     const sinceFilter = sinceDays && sinceDays > 0
