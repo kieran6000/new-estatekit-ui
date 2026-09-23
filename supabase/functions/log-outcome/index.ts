@@ -33,7 +33,7 @@ function reminderISO(days: number): string {
 /** Mirrors computeStagePatch in src/lib/stageLogic.ts — the SOP for each stage.
  *  Logged-out logging skips the follow-up questions, so sensible defaults are
  *  applied (the agent can refine later in the dashboard). */
-function stagePatch(stage: string): Record<string, unknown> {
+function stagePatch(stage: string, appointmentAt?: string | null): Record<string, unknown> {
   if (stage === "Contacted" || stage === "Offer Made") {
     return { due: false, next_label: "Follow up in 2 days", reminder_at: reminderISO(2) };
   }
@@ -41,6 +41,17 @@ function stagePatch(stage: string): Record<string, unknown> {
     return { due: true, next_label: "Retry today", reminder_at: new Date().toISOString() };
   }
   if (stage === "Booked" || stage === "Viewing Booked") {
+    // An appointment without a date is the thing that made a diary impossible:
+    // agents were logging "Booked" from the WhatsApp link and the date was
+    // never captured anywhere a query could read. When the caller supplies one
+    // it becomes a real reminder; the fallback only exists for older clients.
+    if (appointmentAt) {
+      const when = new Date(appointmentAt);
+      const label = "Appt " + when.toLocaleString("en-ZA", {
+        day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false,
+      });
+      return { due: false, next_label: label, reminder_at: when.toISOString() };
+    }
     return { due: false, next_label: "Appt set", reminder_at: null };
   }
   if (stage === "Mandate Signed" || stage === "Bought") {
@@ -56,7 +67,7 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
 
   try {
-    const { token, stage } = await req.json();
+    const { token, stage, at } = await req.json();
     if (!token || !stage) return json({ error: "token and stage required" }, 400);
 
     const admin = createClient(SUPABASE_URL, SERVICE_KEY);
@@ -103,7 +114,7 @@ Deno.serve(async (req) => {
     });
     const { error } = await writer
       .from("leads")
-      .update({ stage, ...stagePatch(stage) })
+      .update({ stage, ...stagePatch(stage, typeof at === "string" ? at : null) })
       .eq("id", lead.id);
     if (error) return json({ error: error.message }, 500);
 

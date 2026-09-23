@@ -3,9 +3,12 @@ import type { LeadRow, PipelineKind, Stage } from "../types";
 
 /** Log an outcome using only the share token — works when the agent isn't
  *  signed in (the WhatsApp action-link case). */
-export async function logOutcomeByToken(token: string, stage: Stage): Promise<void> {
+export async function logOutcomeByToken(token: string, stage: Stage, at?: string | null): Promise<void> {
   const { data, error } = await supabase.functions.invoke("log-outcome", {
-    body: { token, stage },
+    // `at` is the appointment time for Booked / Viewing Booked. Without it the
+    // server has no date to store and the appointment can never appear in a
+    // diary — which is exactly what was happening.
+    body: { token, stage, at: at ?? null },
   });
   if (error) throw new Error(error.message);
   if (data?.error) throw new Error(data.error);

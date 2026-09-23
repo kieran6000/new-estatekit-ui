@@ -127,6 +127,8 @@ function LeadActionUI({
   // whole point of the screen: the agent must never be left wondering whether
   // the tap worked. A snackbar alone isn't enough — it disappears.
   const [logged, setLogged] = useState<{ stage: Stage; label: string; status: "saving" | "saved" | "failed" } | null>(null);
+  // Set while the "when is it?" step is on screen for a booked outcome.
+  const [askWhen, setAskWhen] = useState<{ stage: Stage; label: string } | null>(null);
 
   // The page can't hear the call, but it can tell when they leave for the dialer
   // and come back. We arm a pending call on tap (so an un-logged call resurfaces
@@ -164,14 +166,14 @@ function LeadActionUI({
     );
   }
 
-  function logTokenOutcome(stage: Stage, offerUndo: boolean, label?: string) {
+  function logTokenOutcome(stage: Stage, offerUndo: boolean, label?: string, at?: string | null) {
     if (!token || !lead) return;
     const prevStage = lead.stage as Stage;
     if (stage === prevStage) return;
     setTokenStage(stage);            // instant
     setLogged({ stage, label: label ?? labelForStage(stage, pipelineKind), status: "saving" });
     clearPendingCall();
-    logOutcomeByToken(token, stage)
+    logOutcomeByToken(token, stage, at)
       .then(() => {
         setLogged((l) => (l && l.stage === stage ? { ...l, status: "saved" } : l));
         // The server works out the follow-up (next_label / reminder_at) from the
@@ -183,7 +185,7 @@ function LeadActionUI({
       .catch(() => {
         setTokenStage(prevStage);    // roll back the optimistic change
         setLogged((l) => (l && l.stage === stage ? { ...l, status: "failed" } : l));
-        showSnack("Couldn't save — try again", () => logTokenOutcome(stage, offerUndo, label), "Retry");
+        showSnack("Couldn't save — try again", () => logTokenOutcome(stage, offerUndo, label, at), "Retry");
       });
   }
 
@@ -193,6 +195,12 @@ function LeadActionUI({
     // (when? / commission) are skipped — sensible defaults are applied server
     // side and can be refined later in the dashboard.
     if (!canEdit) {
+      // An appointment with no time is the reason none of them could ever show
+      // in a diary. Ask before writing rather than storing a bare "Appt set".
+      if (opt.stage === "Booked" || opt.stage === "Viewing Booked") {
+        setAskWhen({ stage: opt.stage, label: opt.label });
+        return;
+      }
       logTokenOutcome(opt.stage, true, opt.label);
       return;
     }
@@ -409,7 +417,17 @@ function LeadActionUI({
             {/* Once something is logged this visit, the dropdown is replaced by a
                 plain statement of what was saved and what happens next. The
                 agent should never have to guess whether the tap worked. */}
-            {logged ? (
+            {askWhen ? (
+              <WhenIsItStep
+                label={askWhen.stage === "Viewing Booked" ? "When is the viewing?" : "When is the appointment?"}
+                onCancel={() => setAskWhen(null)}
+                onPick={(iso) => {
+                  const picked = askWhen;
+                  setAskWhen(null);
+                  logTokenOutcome(picked.stage, true, picked.label, iso);
+                }}
+              />
+            ) : logged ? (
               <LoggedConfirmation
                 label={logged.label}
                 status={logged.status}
@@ -518,6 +536,99 @@ function LeadActionUI({
  *  appointment" rather than the bare stage name. Falls back to the stage. */
 function labelForStage(stage: Stage, kind: PipelineKind): string {
   return MAIN_OUTCOME_OPTIONS[kind].find((o) => o.stage === stage)?.label ?? stage;
+}
+
+/** Local datetime string for an `<input type="datetime-local">`, which wants
+ *  wall-clock time with no timezone suffix. */
+function toLocalInput(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function atHour(daysAhead: number, hour: number): Date {
+  const d = new Date();
+  d.setDate(d.getDate() + daysAhead);
+  d.setHours(hour, 0, 0, 0);
+  return d;
+}
+
+/**
+ * "When is it?" — the step that was missing.
+ *
+ * Booking from the WhatsApp link used to write `reminder_at: null` and a label
+ * of "Appt set", so the appointment existed but its time did not. Agents were
+ * typing dates into the label by hand ("Appointment Sep 8") where nothing could
+ * read them. One tap here produces a real timestamp.
+ *
+ * Three shortcuts cover the common cases; the picker is right there for the
+ * rest, pre-filled so it's never an empty field to stare at.
+ */
+function WhenIsItStep({
+  label,
+  onPick,
+  onCancel,
+}: {
+  label: string;
+  onPick: (iso: string) => void;
+  onCancel: () => void;
+}) {
+  const [custom, setCustom] = useState(() => toLocalInput(atHour(1, 9)));
+
+  const quick: { text: string; at: Date }[] = [
+    { text: "Today", at: atHour(0, Math.min(new Date().getHours() + 2, 18)) },
+    { text: "Tomorrow 9am", at: atHour(1, 9) },
+    { text: "Tomorrow 2pm", at: atHour(1, 14) },
+  ];
+
+  return (
+    <Box sx={{ bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "8px", p: "12px 14px" }}>
+      <Typography sx={{ fontSize: 15, fontWeight: 700, mb: 0.25 }}>{label}</Typography>
+      <Typography sx={{ fontSize: 12.5, color: "text.secondary", mb: 1.25 }}>
+        We'll remind you before it.
+      </Typography>
+
+      <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", mb: 1.5 }}>
+        {quick.map((q) => (
+          <Button
+            key={q.text}
+            onClick={() => onPick(q.at.toISOString())}
+            variant="outlined"
+            sx={{ textTransform: "none", fontWeight: 600, flex: "1 1 auto", minWidth: 110, py: 1 }}
+          >
+            {q.text}
+          </Button>
+        ))}
+      </Box>
+
+      <TextField
+        type="datetime-local"
+        label="Or pick a time"
+        value={custom}
+        onChange={(e) => setCustom(e.target.value)}
+        size="small"
+        fullWidth
+        slotProps={{ inputLabel: { shrink: true } }}
+      />
+
+      <Box sx={{ display: "flex", gap: 1, mt: 1.5 }}>
+        <Button onClick={onCancel} sx={{ textTransform: "none", color: "text.secondary" }}>
+          Back
+        </Button>
+        <Box sx={{ flex: 1 }} />
+        <Button
+          variant="contained"
+          disabled={!custom}
+          onClick={() => {
+            const d = new Date(custom);
+            if (!Number.isNaN(d.getTime())) onPick(d.toISOString());
+          }}
+          sx={{ textTransform: "none", fontWeight: 700, px: 3 }}
+        >
+          Save
+        </Button>
+      </Box>
+    </Box>
+  );
 }
 
 /**
