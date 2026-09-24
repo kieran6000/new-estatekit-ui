@@ -88,7 +88,13 @@ export default function LeadPagePage() {
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   const page: LeadPage | undefined = pages.find((p) => p.id === pageId) ?? pages[0];
-  const pipeline: Pipeline | undefined = pipelines.find((p) => p.id === page?.pipelineId);
+  // A page can point at a pipeline this account can't see — it happens when the
+  // page was created while a different account was active. Falling back keeps
+  // the page openable: without this, one such page made every lead source
+  // disappear behind "No lead sources yet", because the screen below bails out
+  // on a missing pipeline and the page picker never gets a chance to render.
+  const linkedPipeline: Pipeline | undefined = pipelines.find((p) => p.id === page?.pipelineId);
+  const pipeline: Pipeline | undefined = linkedPipeline ?? pipelines[0];
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const [form, setForm] = useState({
@@ -236,7 +242,9 @@ export default function LeadPagePage() {
           </MenuItem>
         </Menu>
         <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
-          Sends leads to <b style={{ color: tokens.ink }}>{pipeline.name}</b> pipeline
+          {linkedPipeline
+            ? <>Sends leads to <b style={{ color: tokens.ink }}>{pipeline.name}</b> pipeline</>
+            : <>This page isn't linked to one of your pipelines yet — pick one below</>}
         </Typography>
       </Box>
 
