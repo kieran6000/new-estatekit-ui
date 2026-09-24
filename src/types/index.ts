@@ -193,6 +193,10 @@ export interface LeadPage {
   thankYouHeadline: string;
   thankYouSubtext: string;
   fbPixelId: string;
+  /** The Facebook page this source's form lives on. Null means "the agent's
+   * own page" — true for every source until someone adds a second page, so
+   * existing rows keep working untouched. See SPEC-multi-page-agents.md. */
+  fbPageId: string | null;
   sourceType: "website" | "fb_form";
   fbFormId: string | null;
   fbFormName: string | null;

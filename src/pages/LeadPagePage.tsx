@@ -45,7 +45,7 @@ import { tokens } from "../theme";
 import { PIPELINE_KIND_LABEL, type CustomQuestion, type LeadPage, type Pipeline, type PipelineKind, type QuestionType } from "../types";
 import { useAddLeadPage, useDeleteLeadPage, useLeadPages, useUpdateLeadPage } from "../hooks/useLeadPages";
 import { usePipelines } from "../hooks/usePipelines";
-import { getFbForm, listFbForms, type FbForm } from "../api/leadPages";
+import { getFbForm, listFbForms, listFbPages, type FbForm } from "../api/leadPages";
 import FbFormPreview from "../components/FbFormPreview";
 import { getMyProfile } from "../api/agentProfile";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -542,7 +542,9 @@ function FbFormSource({
 }) {
   const { data, isLoading, error } = useQuery({
     queryKey: ["fbForm", page.fbFormId],
-    queryFn: () => getFbForm(fbPageId, page.fbFormId!),
+    // The source knows which page its form lives on; the profile is only the
+    // default. Passing the wrong page made the preview show the wrong brand.
+    queryFn: () => getFbForm(page.fbPageId ?? fbPageId, page.fbFormId!),
     enabled: !!page.fbFormId,
     staleTime: 10 * 60_000,
     retry: false,
@@ -739,6 +741,85 @@ function ShareSection({ page, onUpdateSlug }: { page: LeadPage; onUpdateSlug: (s
   );
 }
 
+/**
+ * Which Facebook page a lead source reads its forms from.
+ *
+ * Collapsed to a single line by default, because the agent profile page is
+ * right for almost everyone and a page dropdown here would be a decision
+ * nobody asked for. It only expands when someone genuinely has a second page —
+ * a separate brand, market or recruitment page — which is the case the
+ * dashboard previously could not handle at all.
+ *
+ * The page list is fetched only on expand: it goes to me/accounts, the most
+ * expensive Graph call we make, so it must never load speculatively.
+ */
+function FbPagePicker({
+  agentPageId,
+  selectedPageId,
+  open,
+  onOpen,
+  onPick,
+}: {
+  agentPageId: string | null;
+  selectedPageId: string | null;
+  open: boolean;
+  onOpen: () => void;
+  onPick: (pageId: string | null) => void;
+}) {
+  const { data: pages = [], isFetching } = useQuery({
+    queryKey: ["fbPages"],
+    queryFn: listFbPages,
+    enabled: open,
+    staleTime: 60 * 60_000,
+    refetchOnWindowFocus: false,
+  });
+
+  const activeId = selectedPageId ?? agentPageId;
+  const activeName = pages.find((p) => p.id === activeId)?.name;
+
+  if (!open) {
+    return (
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1.5, flexWrap: "wrap" }}>
+        <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
+          {selectedPageId
+            ? `Forms from ${activeName ?? selectedPageId}`
+            : "Forms from this account's Facebook page"}
+        </Typography>
+        <Box
+          component="button"
+          onClick={onOpen}
+          sx={{ p: 0, border: 0, bgcolor: "transparent", cursor: "pointer", font: "inherit", fontSize: 12.5, color: tokens.primary, textDecoration: "underline" }}
+        >
+          Use a different page
+        </Box>
+      </Box>
+    );
+  }
+
+  return (
+    <Box sx={{ mb: 1.5 }}>
+      <TextField
+        select
+        size="small"
+        label="Facebook page"
+        value={activeId ?? ""}
+        onChange={(e) => onPick(e.target.value === agentPageId ? null : e.target.value)}
+        helperText={isFetching ? "Loading pages from Facebook…" : "Only change this if the form lives on another page"}
+        fullWidth
+      >
+        {agentPageId && (
+          <MenuItem value={agentPageId}>
+            {pages.find((p) => p.id === agentPageId)?.name ?? "This account's page"}
+          </MenuItem>
+        )}
+        {pages.filter((p) => p.id !== agentPageId).map((p) => (
+          <MenuItem key={p.id} value={p.id} sx={{ fontSize: 13.5 }}>{p.name}</MenuItem>
+        ))}
+      </TextField>
+    </Box>
+  );
+}
+
 function AddPageDialog({
   open,
   pipelines,
@@ -758,6 +839,12 @@ function AddPageDialog({
   const [fbForms, setFbForms] = useState<FbForm[]>([]);
   const [fbFormId, setFbFormId] = useState("");
   const [loadingForms, setLoadingForms] = useState(false);
+  // Which Facebook page to read forms from. Defaults to the agent's own, so a
+  // single-page client never makes this choice. Only differs when they
+  // deliberately open the picker.
+  const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
+  const [pickingPage, setPickingPage] = useState(false);
+  const effectivePageId = selectedPageId ?? fbPageId;
   // Why the form list is empty, when it isn't simply "no forms on the page".
   const [formsProblem, setFormsProblem] = useState<"no_access" | "failed" | "busy" | null>(null);
   const addPage = useAddLeadPage();
@@ -771,18 +858,20 @@ function AddPageDialog({
       setFbForms([]);
       setFbFormId("");
       setFormsProblem(null);
+      setSelectedPageId(null);
+      setPickingPage(false);
     }
   }, [open, pipelines]);
 
   useEffect(() => {
     if (sourceType !== "fb_form" || !open) return;
-    if (!fbPageId) { setFbForms([]); setFormsProblem(null); return; }
+    if (!effectivePageId) { setFbForms([]); setFormsProblem(null); return; }
     let cancelled = false;
     (async () => {
       setLoadingForms(true);
       setFormsProblem(null);
       try {
-        const { forms, noAccess, rateLimited } = await listFbForms(fbPageId);
+        const { forms, noAccess, rateLimited } = await listFbForms(effectivePageId);
         if (!cancelled) {
           setFbForms(forms);
           setFormsProblem(noAccess ? "no_access" : rateLimited ? "busy" : null);
@@ -796,7 +885,7 @@ function AddPageDialog({
       if (!cancelled) setLoadingForms(false);
     })();
     return () => { cancelled = true; };
-  }, [sourceType, open, fbPageId]);
+  }, [sourceType, open, effectivePageId]);
 
   const selectedForm = fbForms.find((f) => f.id === fbFormId);
 
@@ -814,6 +903,9 @@ function AddPageDialog({
       sourceType,
       fbFormId: selectedForm?.id,
       fbFormName: selectedForm?.name,
+      // Null when it is the agent's own page, so the row keeps the existing
+      // "fall back to the profile" behaviour rather than pinning a duplicate.
+      fbPageId: selectedPageId,
     });
     posthog.capture("lead_page_added", { preset: pipeline.kind, sourceType });
     onClose();
@@ -846,6 +938,17 @@ function AddPageDialog({
           <TextField label="Page name" value={name} onChange={(e) => setName(e.target.value)} fullWidth autoFocus />
         ) : (
           <Box>
+            {/* Which page these forms come from. Hidden behind a link, because
+                almost every agent has exactly one page and should not have to
+                think about this at all. Only someone running a second brand or
+                market ever opens it. */}
+            <FbPagePicker
+              agentPageId={fbPageId}
+              selectedPageId={selectedPageId}
+              open={pickingPage}
+              onOpen={() => setPickingPage(true)}
+              onPick={(id) => { setSelectedPageId(id); setFbFormId(""); setPickingPage(false); }}
+            />
             {loadingForms ? (
               <Box sx={{ display: "flex", alignItems: "center", gap: 1, py: 1 }}>
                 <CircularProgress size={18} />

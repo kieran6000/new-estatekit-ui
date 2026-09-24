@@ -189,7 +189,7 @@ Deno.serve(async (req) => {
 
     // ---- 1) Explicitly connected fb_form lead pages (one form each) ----
     let q = supabase.from("lead_pages")
-      .select("id, agent_id, pipeline_id, fb_form_id, fb_form_name")
+      .select("id, agent_id, pipeline_id, fb_form_id, fb_form_name, fb_page_id")
       .eq("source_type", "fb_form").not("fb_form_id", "is", null);
     if (onlyAgentId) q = q.eq("agent_id", onlyAgentId);
     if (onlyFormId) q = q.eq("fb_form_id", onlyFormId);
@@ -198,8 +198,15 @@ Deno.serve(async (req) => {
 
     for (const page of pages || []) {
       const formId = page.fb_form_id as string;
-      const { data: prof } = await supabase.from("agent_profiles").select("fb_page_id").eq("agent_id", page.agent_id).maybeSingle();
-      const fbPageId = prof?.fb_page_id as string | undefined;
+      // The source knows which page its form lives on; the agent profile is
+      // only the default. Resolving the profile page for a form that lives
+      // elsewhere meant a page-token lookup that could never match, spending
+      // quota before falling back to raw user tokens.
+      let fbPageId = (page as { fb_page_id?: string | null }).fb_page_id ?? undefined;
+      if (!fbPageId) {
+        const { data: prof } = await supabase.from("agent_profiles").select("fb_page_id").eq("agent_id", page.agent_id).maybeSingle();
+        fbPageId = prof?.fb_page_id as string | undefined;
+      }
       const pt = fbPageId ? await pageToken(fbPageId) : null;
       const tryTokens = pt ? [pt, ...tokens] : [...tokens];
 

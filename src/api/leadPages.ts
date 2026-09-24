@@ -22,6 +22,7 @@ interface LeadPageRow {
   thank_you_headline: string;
   thank_you_subtext: string;
   fb_pixel_id: string;
+  fb_page_id: string | null;
   source_type: string;
   fb_form_id: string | null;
   fb_form_name: string | null;
@@ -49,6 +50,7 @@ function rowToPage(r: LeadPageRow): LeadPage {
     thankYouHeadline: r.thank_you_headline,
     thankYouSubtext: r.thank_you_subtext,
     fbPixelId: r.fb_pixel_id,
+    fbPageId: r.fb_page_id ?? null,
     sourceType: (r.source_type as "website" | "fb_form") || "website",
     fbFormId: r.fb_form_id,
     fbFormName: r.fb_form_name,
@@ -79,6 +81,7 @@ function patchToRow(
   if (p.thankYouSubtext !== undefined)
     m.thank_you_subtext = p.thankYouSubtext;
   if (p.fbPixelId !== undefined) m.fb_pixel_id = p.fbPixelId;
+  if (p.fbPageId !== undefined) m.fb_page_id = p.fbPageId;
   if (p.sourceType !== undefined) m.source_type = p.sourceType;
   if (p.fbFormId !== undefined) m.fb_form_id = p.fbFormId;
   if (p.fbFormName !== undefined) m.fb_form_name = p.fbFormName;
@@ -120,7 +123,7 @@ export async function addLeadPage(
   name: string,
   pipelineId: string,
   _kind: PipelineKind,
-  opts?: { sourceType?: "website" | "fb_form"; fbFormId?: string; fbFormName?: string },
+  opts?: { sourceType?: "website" | "fb_form"; fbFormId?: string; fbFormName?: string; fbPageId?: string | null },
 ): Promise<LeadPage> {
   const agentId = await getActiveAgentId();
   const slug = name
@@ -132,6 +135,9 @@ export async function addLeadPage(
   if (opts?.sourceType) row.source_type = opts.sourceType;
   if (opts?.fbFormId) row.fb_form_id = opts.fbFormId;
   if (opts?.fbFormName) row.fb_form_name = opts.fbFormName;
+  // Only stored when it differs from the agent's own page; null keeps the
+  // existing "use the profile's page" behaviour.
+  if (opts?.fbPageId) row.fb_page_id = opts.fbPageId;
   const { data, error } = await supabase
     .from("lead_pages")
     .insert(row)
@@ -139,6 +145,32 @@ export async function addLeadPage(
     .single();
   if (error) throw new Error(error.message);
   return rowToPage(data as LeadPageRow);
+}
+
+export interface FbPage {
+  id: string;
+  name: string;
+}
+
+/**
+ * Every Facebook page our tokens can see.
+ *
+ * Only called when someone actually opens the page picker — it goes to
+ * me/accounts, which is the most expensive call we make, and the whole point of
+ * the recent quota work was to stop paying for it on every render. Callers
+ * should cache it hard (see the staleTime on the picker query).
+ */
+export async function listFbPages(): Promise<FbPage[]> {
+  const { data, error } = await supabase.functions.invoke("discover-fb-pages", { body: {} });
+  if (error) {
+    console.error("discover-fb-pages error:", await functionErrorMessage(error));
+    return [];
+  }
+  const pages = (data?.pages ?? data?.data ?? []) as { id?: string; name?: string }[];
+  return pages
+    .filter((p): p is { id: string; name: string } => !!p.id)
+    .map((p) => ({ id: p.id, name: p.name || p.id }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export interface FbForm {
