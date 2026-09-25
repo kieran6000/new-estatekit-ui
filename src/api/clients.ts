@@ -3,53 +3,9 @@ import { supabase } from "./_client";
 // Admin "Clients" tab. Operator-only: the table and the function both refuse
 // anyone else (see supabase/migrations/20260925_0003_client_dossiers.sql).
 
-export type StatusTone = "red" | "amber" | "green" | "blue" | "grey";
-
-export interface ClientCall {
-  source: "Call log" | "Call notes doc";
-  date: string | null;
-  title?: string;
-  ledBy?: string;
-  recording?: string | null;
-  duration?: string | null;
-  status?: string;
-  next?: string;
-  summary: string;
-  actions: string[];
-  /** Full Fathom notes. depth -1 is a sub-heading, 1 is a nested bullet. */
-  sections: { title: string; items: { text: string; depth: number }[] }[];
-}
-
-export interface ClientFeedback {
-  date: string;
-  leadQuality: number;
-  leadVolume: number;
-  followUp: number;
-  confidence: number;
-  happiness: number;
-  comment: string;
-  risk?: string;
-  weak?: string;
-}
-
-export interface ClientAd {
-  campaign: string;
-  adSet: string;
-  ad: string;
-  status: string;
-  spend: string;
-  results: number;
-  cpl: string;
-  start: string;
-}
-
+/** The parts of a client's stored record this app shows. The row holds more
+ *  (it was compiled from the CSM sheets); anything not listed here is unused. */
 export interface ClientDossier {
-  v: number;
-  generatedAt: string;
-  status: { label: string; tone: StatusTone };
-  nextAction: string | null;
-  health: string | null;
-  todos: string[];
   contact: {
     phones: string[];
     emails: string[];
@@ -59,37 +15,10 @@ export interface ClientDossier {
   };
   billing: { status?: string; invoiceDay?: string; lastPayment?: string; nextPayment?: string; plan?: string; notes?: string } | null;
   package: string | null;
-  targetCpl: string | null;
-  exclusiveAreas: string[] | null;
-  clientMessage: string | null;
-  hub: {
-    adAccount: string; active: boolean; status: string; activeAds: number; spend: string; leads: number;
-    avgCpl: string; forms: string; next: string; updated: string;
-  } | null;
-  audit: {
-    area: string; status: string; package: string; payment: string; campaignActive: string; cpl: string;
-    funnelLive: string; whatsappOk: string; sentiment: string; leads30d: number; bookedAllTime: number;
-    healthScore: number; notes: string;
-  } | null;
-  adAccountInfo: Record<string, string> | null;
-  ads: ClientAd[];
-  adTotals: { spend: number; results: number; cpl: number | null; active: number; count: number; bestAd: string | null } | null;
+  audit: { payment?: string } | null;
   onboarding: { q: string; a: string }[];
   onboardingExtra: { q: string; a: string }[] | null;
-  calls: ClientCall[];
-  feedback: ClientFeedback[];
-  septTracker: { forms: number; calls: number } | null;
-  docs: { title: string; url: string }[];
-  oldDashboard: {
-    name: string; title: string | null; companyName: string | null; location: string | null; subdomain: string | null;
-    joined: string | null; lastSeen: string | null; firstLead: string | null; lastLead: string | null; leadsTotal: number;
-    byStatus: Record<string, number>; byType: Record<string, number>;
-    funnels: { name: string; type: string; published: boolean; created: string }[];
-    fbForms: { form_id: string; label: string; lead_type: string; enabled: string }[];
-    targetAreas: string[]; hidden: boolean; disabled: boolean; disabledAt: string | null;
-    csmBoard: { stage: string; area: string; liveSince: string; checkinDue: string; reviewDue: string; stats: Record<string, unknown> }[] | null;
-  } | null;
-  sources: string[];
+  oldDashboard: { targetAreas: string[]; joined: string | null } | null;
 }
 
 export interface ClientLive {
@@ -123,31 +52,36 @@ export interface ClientProfile {
 
 export interface ClientCardRow extends ClientProfile {
   live: ClientLive | null;
-  status: ClientDossier["status"] | null;
-  health: string | null;
-  nextAction: string | null;
 }
 
 const PROFILE_COLS =
   "agent_id, display_name, whatsapp_number, email, area, company, avatar_url, sidebar_logo_url, sidebar_color, fb_page_id, fb_ad_account_id, is_operator, onboarded, automations_paused, tier";
 
-/** Everything the grid needs, in three small reads. Only the few dossier
- *  fields shown on a card are fetched here; the detail page loads the rest. */
+/** Everything the grid needs, in two small reads. */
 export async function listClients(): Promise<ClientCardRow[]> {
-  const [profiles, live, dossiers] = await Promise.all([
+  const [profiles, live] = await Promise.all([
     supabase.from("agent_profiles").select(PROFILE_COLS).eq("is_operator", false).order("display_name"),
     supabase.rpc("client_directory"),
-    supabase.from("client_dossiers").select("agent_id, status:data->status, health:data->>health, nextAction:data->>nextAction"),
   ]);
   if (profiles.error) throw new Error(profiles.error.message);
   const liveBy = new Map(((live.data ?? []) as ClientLive[]).map((r) => [r.agent_id, r]));
-  const dossierBy = new Map(
-    ((dossiers.data ?? []) as { agent_id: string; status: ClientDossier["status"] | null; health: string | null; nextAction: string | null }[]).map((r) => [r.agent_id, r]),
-  );
-  return (profiles.data as ClientProfile[]).map((p) => {
-    const d = dossierBy.get(p.agent_id);
-    return { ...p, live: liveBy.get(p.agent_id) ?? null, status: d?.status ?? null, health: d?.health ?? null, nextAction: d?.nextAction ?? null };
-  });
+  return (profiles.data as ClientProfile[]).map((p) => ({ ...p, live: liveBy.get(p.agent_id) ?? null }));
+}
+
+/** Ad spend over the last 30 days, from Meta. null when there's no ad
+ *  account or Meta couldn't be read. */
+export async function getSpend30d(adAccountId: string): Promise<number | null> {
+  const since = new Date(Date.now() - 29 * 864e5).toISOString().slice(0, 10);
+  const { data, error } = await supabase.functions.invoke("fb-ad-insights", { body: { adAccountId, since } });
+  if (error || data?.error || data?.note) return null;
+  return Object.values((data?.daily ?? {}) as Record<string, number>).reduce((a, b) => a + (Number(b) || 0), 0);
+}
+
+/** Cost per lead for the card and header: "R12" or "—" when it can't be
+ *  worked out (no spend, no leads, or Meta unreadable). */
+export function cplLabel(spend: number | null | undefined, leads: number): string {
+  if (!spend || !leads) return "—";
+  return "R" + (spend / leads).toFixed(spend / leads < 100 ? 2 : 0);
 }
 
 export async function getClient(agentId: string): Promise<{ profile: ClientProfile; live: ClientLive | null; dossier: ClientDossier | null; dossierUpdatedAt: string | null }> {

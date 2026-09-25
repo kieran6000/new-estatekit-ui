@@ -335,39 +335,28 @@ heading to sort") with a sticky totals row, a date range, an ad spend/billing ca
 `hooks/useOverview.ts`. General pipelines are excluded.
 
 ### Clients (`/admin/clients`, operator only, `ClientsPage.tsx` + `ClientDetailPage.tsx`)
-The CSM view of every client account (the operator's own is left out).
+A directory of every client account (the operator's own is left out). It is
+deliberately **not** a CSM tool: ad performance, reviews and check-ins live in
+app.estatekit.co, so they don't appear here.
 - **Grid:** a card per client with picture (photo, then Facebook page picture,
-  then logo), name, agency, city, status pill, the next action, and live lead
-  counts (30 days, all time, last lead). Search matches name, agency, area,
-  email, phone, status and health. Filters: All / Needs attention (red or amber)
-  / Running / Paused-off. Sort: needs attention first, name, or most leads.
-- **Detail page:** a header with status, health and quick actions (**Open their
-  dashboard** switches the account switcher to them, WhatsApp, Call, Email, Ads
-  Manager). The tabs:
-  - **Overview:** live lead KPIs, what needs doing (next action, to-dos,
-    actions from the last call, exclusive areas), package and billing, health
-    (Metrics plus the 19 Aug audit), leads by stage, the latest feedback, and
-    the last call.
-  - **Profile & onboarding:** contact (every known number and email, team,
-    socials), the dashboard's own settings, and the onboarding form answers.
-  - **Ads:** the Client Hub row, ad-history totals, every ad on record from the
-    CSM KPI report, and **live ads from Meta** (the same `ActiveAds` panel as
-    Overview, including pause/resume).
-  - **Calls & notes:** every check-in call with its summary, agreed actions and
-    the full Fathom notes, plus a recording link.
-  - **Feedback:** weekly check-in scores (1–5) with their comments.
-  - **Old dashboard:** a read-only snapshot of their account on the old
-    platform (lead totals and outcomes, funnels, Facebook forms, target areas).
-  - **Docs:** linked Google Docs and Sheets, plus which sources fed the page.
-- **Data:** live numbers come from `client_directory()`. Everything else is
-  the `client_dossiers` row, a jsonb document shaped like `ClientDossier` in
-  `src/api/clients.ts`. It was compiled on 25 Sept 2026 from the CSM
-  Dashboard, Metrics, Client Audit Tracker and Check-In Call Log sheets, the
-  "Check in calls" doc, and a read-only export of the old Supabase project.
-  **It's a snapshot: the sheets don't sync into it.** To refresh it, give
-  Claude the sheet links and have it rebuild the rows and upsert them
-  (`insert … on conflict (agent_id) do update`). The source data holds client
-  contact details, so it isn't kept in git.
+  then logo), name, agency and city, plus leads (30 days), **CPL (30 days)**
+  and last lead. CPL is live: 30-day Meta spend (`fb-ad-insights`, one call per
+  card, cached 30 min) divided by 30-day leads. Search matches name, agency,
+  area, email and phone. Sort: most leads, or name.
+- **Detail page:** one page, no tabs. It has a header with quick actions
+  (**Open their dashboard** switches the account switcher to them, WhatsApp,
+  Call, Email), then:
+  - lead KPIs (7 days, 30 days, CPL, all time, last lead, lead sources)
+  - contact details
+  - package and billing
+  - leads by stage
+  - account settings
+  - the onboarding form answers
+- **Data:** live numbers come from `client_directory()`. Contact, billing and
+  onboarding come from the `client_dossiers` row, compiled once on 25 Sept 2026
+  from the CSM and Metrics sheets and the old platform's data. The row also
+  holds calls, feedback and ad history, which the page doesn't show.
+  **It's a snapshot; the sheets don't sync into it.**
 
 ### Automations (`/admin/automations`, operator only)
 Automation cards with enable toggles and a step editor (delay in minutes after
