@@ -211,10 +211,10 @@ conditioning).
 
 ### Navigation (`src/components/AppShell.tsx`)
 - **Desktop:** a left rail with Leads and Forms; an admin section (operator only)
-  with Overview and Automations; account at the bottom. The rail background is
+  with Overview, Clients and Automations; account at the bottom. The rail background is
   the agent's `sidebar_color`, with their `sidebar_logo_url` (white-labelling).
   Text contrast is computed by luminance.
-- **Mobile:** a bottom nav with Leads, Forms, Overview (operator only) and Account.
+- **Mobile:** a bottom nav with Leads, Forms, Overview and Clients (operator only) and Account.
 - **Account switcher** (`AccountSwitcher.tsx`, operator only): act as any agent.
   Stored in memory plus a localStorage key **scoped to the real user id**.
   Everything is cleared on any auth change, along with the React Query cache.
@@ -233,6 +233,8 @@ conditioning).
 | `/account` | AccountPage | signed in |
 | `/upgrade` | UpgradePage | signed in |
 | `/overview` | OverviewPage | **operator** (route guard) |
+| `/admin/clients` | ClientsPage: every client as a card | **operator** (route guard) |
+| `/admin/clients/:agentId` | ClientDetailPage: one client's full record | **operator** (route guard) |
 | `/admin/automations` | AdminAutomationsPage | **operator** (in-page guard) |
 | `/home` | HomePage | dev builds only |
 | `/l/:token` | LeadActionPage: WhatsApp action link | **public**, via token |
@@ -332,6 +334,41 @@ heading to sort") with a sticky totals row, a date range, an ad spend/billing ca
 **pause/resume switch** via `fb-set-ad-status`). Computed client-side in
 `hooks/useOverview.ts`. General pipelines are excluded.
 
+### Clients (`/admin/clients`, operator only, `ClientsPage.tsx` + `ClientDetailPage.tsx`)
+The CSM view of every client account (the operator's own is left out).
+- **Grid:** a card per client with picture (photo, then Facebook page picture,
+  then logo), name, agency, city, status pill, the next action, and live lead
+  counts (30 days, all time, last lead). Search matches name, agency, area,
+  email, phone, status and health. Filters: All / Needs attention (red or amber)
+  / Running / Paused-off. Sort: needs attention first, name, or most leads.
+- **Detail page:** a header with status, health and quick actions (**Open their
+  dashboard** switches the account switcher to them, WhatsApp, Call, Email, Ads
+  Manager). The tabs:
+  - **Overview:** live lead KPIs, what needs doing (next action, to-dos,
+    actions from the last call, exclusive areas), package and billing, health
+    (Metrics plus the 19 Aug audit), leads by stage, the latest feedback, and
+    the last call.
+  - **Profile & onboarding:** contact (every known number and email, team,
+    socials), the dashboard's own settings, and the onboarding form answers.
+  - **Ads:** the Client Hub row, ad-history totals, every ad on record from the
+    CSM KPI report, and **live ads from Meta** (the same `ActiveAds` panel as
+    Overview, including pause/resume).
+  - **Calls & notes:** every check-in call with its summary, agreed actions and
+    the full Fathom notes, plus a recording link.
+  - **Feedback:** weekly check-in scores (1–5) with their comments.
+  - **Old dashboard:** a read-only snapshot of their account on the old
+    platform (lead totals and outcomes, funnels, Facebook forms, target areas).
+  - **Docs:** linked Google Docs and Sheets, plus which sources fed the page.
+- **Data:** live numbers come from `client_directory()`. Everything else is
+  the `client_dossiers` row, a jsonb document shaped like `ClientDossier` in
+  `src/api/clients.ts`. It was compiled on 25 Sept 2026 from the CSM
+  Dashboard, Metrics, Client Audit Tracker and Check-In Call Log sheets, the
+  "Check in calls" doc, and a read-only export of the old Supabase project.
+  **It's a snapshot: the sheets don't sync into it.** To refresh it, give
+  Claude the sheet links and have it rebuild the rows and upsert them
+  (`insert … on conflict (agent_id) do update`). The source data holds client
+  contact details, so it isn't kept in git.
+
 ### Automations (`/admin/automations`, operator only)
 Automation cards with enable toggles and a step editor (delay in minutes after
 the previous step, WhatsApp template). **Scheduled** tab
@@ -418,7 +455,7 @@ lead pages use the agent's `accent_color` for the header and buttons.
 
 ## 8. Database
 
-24 tables in `public`, all with RLS. The full DDL is in
+25 tables in `public`, all with RLS. The full DDL is in
 `supabase/schema/2026-09-25_production_snapshot.sql`. Roughly: 1,211 leads,
 35 agent profiles (21 of them switched-off imports from the old dashboard, see
 §14), 18 lead pages, 75 pipelines.
@@ -443,6 +480,7 @@ lead pages use the agent's `accent_color` for the header and buttons.
 | `fb_api_state` | A single row: `backoff_until`, the app-wide Facebook rate-limit circuit breaker. |
 | `setup_steps` | Per-agent onboarding checklist (seeded by a trigger on `auth.users`). |
 | `support_tickets`, `call_questions` | Support inbox, agents' questions. |
+| `client_dossiers` | **Operator only.** One row per client: `agent_id` (pk), `data jsonb` (the Clients tab's record, see §5), `updated_at`. Agents can't read their own. |
 | `overview_daily` | **Legacy / empty.** The Overview is computed client-side now. |
 | `otp_codes`, `phone_otp_codes` | Legacy WhatsApp-code login. **Disabled** (§13). |
 
@@ -456,6 +494,7 @@ lead pages use the agent's `accent_color` for the header and buttons.
 | `enqueue_automations()` | Trigger on `leads`: queues runs (see §10). |
 | `record_lead_event()` | Trigger on `leads`: writes history. |
 | `dedupe_lead_call()` | Trigger on `lead_events`: collapses repeat call logs. |
+| `client_directory()` | Live per-account lead counts (7d/30d/total/last/by stage), lead pages and pipelines for the Clients tab. SECURITY INVOKER, and it returns nothing unless the caller is an operator. |
 | `lead_page_funnel(page_id, since)` | Funnel counts (SECURITY INVOKER, so it respects RLS). |
 | `find_user_id_by_phone(phone)` | service_role only. |
 | `seed_setup_steps()` | Trigger on `auth.users`. |

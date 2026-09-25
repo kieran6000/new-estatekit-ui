@@ -29,6 +29,8 @@ import AccountCircleOutlinedIcon from "@mui/icons-material/AccountCircleOutlined
 import AccountCircleIcon from "@mui/icons-material/AccountCircle";
 import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
 import DashboardIcon from "@mui/icons-material/Dashboard";
+import GroupsOutlinedIcon from "@mui/icons-material/GroupsOutlined";
+import GroupsIcon from "@mui/icons-material/Groups";
 import { tokens } from "../theme";
 import { useAuth } from "../hooks/useAuth";
 import { useIsOperator } from "../hooks/useAutomations";
@@ -47,6 +49,7 @@ function activeSection(pathname: string): string {
   if (pathname.startsWith("/lead-page")) return "mypage";
   if (pathname.startsWith("/home")) return "home";
   if (pathname.startsWith("/overview")) return "overview";
+  if (pathname.startsWith("/admin/clients")) return "clients";
   if (pathname.startsWith("/admin")) return "automations";
   if (pathname.startsWith("/account")) return "account";
   return "leads";
@@ -87,6 +90,7 @@ export default function AppShell() {
 
   const adminNav = [
     { key: "overview", label: "Overview", icon: <DashboardOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <DashboardIcon sx={{ fontSize: SZ }} />, to: "/overview" },
+    { key: "clients", label: "Clients", icon: <GroupsOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <GroupsIcon sx={{ fontSize: SZ }} />, to: "/admin/clients" },
     { key: "automations", label: "Automations", icon: <SettingsOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <SettingsIcon sx={{ fontSize: SZ }} />, to: "/admin/automations" },
   ];
 
@@ -103,7 +107,12 @@ export default function AppShell() {
   const mobileNav = [
     { key: "leads", label: "Leads", icon: <ContactsOutlinedIcon />, activeIcon: <ContactsIcon />, to: "/leads" },
     { key: "mypage", label: "Forms", icon: <WebOutlinedIcon />, activeIcon: <WebIcon />, to: "/lead-page" },
-    ...(isOperator ? [{ key: "overview", label: "Overview", icon: <DashboardOutlinedIcon />, activeIcon: <DashboardIcon />, to: "/overview" }] : []),
+    ...(isOperator
+      ? [
+          { key: "overview", label: "Overview", icon: <DashboardOutlinedIcon />, activeIcon: <DashboardIcon />, to: "/overview" },
+          { key: "clients", label: "Clients", icon: <GroupsOutlinedIcon />, activeIcon: <GroupsIcon />, to: "/admin/clients" },
+        ]
+      : []),
     { key: "account", label: "Account", icon: <AccountCircleOutlinedIcon />, activeIcon: <AccountCircleIcon />, to: "/account" },
   ];
 

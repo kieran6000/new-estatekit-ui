@@ -14,6 +14,8 @@ import HomePage from "./pages/HomePage";
 import LeadPagePage from "./pages/LeadPagePage";
 import UpgradePage from "./pages/UpgradePage";
 import AdminAutomationsPage from "./pages/AdminAutomationsPage";
+import ClientsPage from "./pages/ClientsPage";
+import ClientDetailPage from "./pages/ClientDetailPage";
 import AccountPage from "./pages/AccountPage";
 import LeadActionPage from "./pages/LeadActionPage";
 import LeadPagePreviewPage from "./pages/LeadPagePreviewPage";
@@ -81,6 +83,8 @@ export default function App() {
               path="/admin/automations"
               element={<AdminAutomationsPage />}
             />
+            <Route path="/admin/clients" element={<OperatorOnly><ClientsPage /></OperatorOnly>} />
+            <Route path="/admin/clients/:agentId" element={<OperatorOnly><ClientDetailPage /></OperatorOnly>} />
             <Route path="/account" element={<AccountPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/leads" replace />} />
