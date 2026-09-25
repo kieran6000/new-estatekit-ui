@@ -23,9 +23,31 @@ export async function saveNoteByToken(token: string, note: string): Promise<void
   if (data?.error) throw new Error(data.error);
 }
 
-export async function getLeadByToken(
-  token: string,
-): Promise<{ lead: LeadRow; agentPhone: string; pipelineKind: PipelineKind } | null> {
+type SharedLead = { lead: LeadRow; agentPhone: string; pipelineKind: PipelineKind };
+
+/**
+ * Everything the /l/<token> page needs, for exactly one lead, in one call.
+ *
+ * Used to be four anonymous table reads, which only worked because three
+ * policies made every lead with a live token readable to anyone, token or
+ * not (see supabase/migrations/20260925_0001). get_shared_lead checks the
+ * token server-side and returns only that lead.
+ */
+export async function getLeadByToken(token: string): Promise<SharedLead | null> {
+  const { data, error } = await supabase.rpc("get_shared_lead", { p_token: token });
+  if (!error) {
+    if (!data) return null;
+    const d = data as { lead: LeadRow; agent_phone?: string; pipeline_kind?: PipelineKind };
+    return { lead: d.lead, agentPhone: d.agent_phone ?? "", pipelineKind: d.pipeline_kind ?? "seller" };
+  }
+  // PGRST202: the function isn't in the database yet. Fall back to the old
+  // reads so the site and the migration can ship in either order. Delete this
+  // fallback once 20260925_0002 has run: the reads it relies on are gone then.
+  if (error.code === "PGRST202") return getLeadByTokenLegacy(token);
+  return null;
+}
+
+async function getLeadByTokenLegacy(token: string): Promise<SharedLead | null> {
   const { data: tokenRow, error } = await supabase
     .from("lead_share_tokens")
     .select("lead_id, agent_id, expires_at")
