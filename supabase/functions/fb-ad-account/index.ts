@@ -19,11 +19,31 @@ function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 }
 
+/**
+ * Only an operator, or the agent who owns this ad account, may read it.
+ * This function runs with JWT verification off (and the public anon key would
+ * pass that check anyway), so without this any caller could read any ad
+ * account our Facebook tokens can see: ads, spend, balance, funding.
+ */
+async function mayReadAccount(req: Request, adAccountId: string): Promise<boolean> {
+  const jwt = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+  if (!jwt) return false;
+  const { data } = await supabase.auth.getUser(jwt);
+  const uid = data?.user?.id;
+  if (!uid) return false;
+  const { data: me } = await supabase
+    .from("agent_profiles").select("is_operator, fb_ad_account_id").eq("agent_id", uid).maybeSingle();
+  if (me?.is_operator === true) return true;
+  const own = String(me?.fb_ad_account_id ?? "").replace(/^act_/, "").trim();
+  return own !== "" && own === String(adAccountId).replace(/^act_/, "").trim();
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   try {
     const { adAccountId } = await req.json();
     if (!adAccountId) return json({ error: "adAccountId required" }, 400);
+    if (!(await mayReadAccount(req, String(adAccountId)))) return json({ error: "Not allowed" }, 403);
     const actId = String(adAccountId).startsWith("act_") ? String(adAccountId) : `act_${adAccountId}`;
 
     const tokens: string[] = [];

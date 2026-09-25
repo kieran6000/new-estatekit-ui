@@ -104,7 +104,9 @@ Deno.serve(async (req: Request) => {
     return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: CORS });
   }
 
-  const token = crypto.randomUUID().replace(/-/g, "").slice(0, 8);
+  // 32 hex chars (122 random bits). Was 8 (32 bits): once tokens stop being
+  // publicly listable, 8 chars is short enough to guess by brute force.
+  const token = crypto.randomUUID().replace(/-/g, "");
   await supabase.from("lead_share_tokens").insert({
     lead_id: lead.id,
     agent_id: page.agent_id,

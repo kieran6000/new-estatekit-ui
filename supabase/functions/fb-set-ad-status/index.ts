@@ -22,11 +22,29 @@ function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 }
 
+const digits = (s: string | null | undefined) => String(s ?? "").replace(/^act_/, "").trim();
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   try {
+    // This function changes live spend on every client's ads and used to accept
+    // any caller: it runs with JWT verification off and never checked who was
+    // asking. Now the caller must be signed in, and is either an operator or
+    // the agent whose ad account the ad belongs to.
+    const jwt = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+    const { data: userData } = jwt ? await supabase.auth.getUser(jwt) : { data: null };
+    const uid = userData?.user?.id;
+    if (!uid) return json({ error: "Not signed in" }, 401);
+    const { data: me } = await supabase
+      .from("agent_profiles").select("is_operator, fb_ad_account_id").eq("agent_id", uid).maybeSingle();
+    const isOperator = me?.is_operator === true;
+    const ownAccount = digits(me?.fb_ad_account_id);
+    if (!isOperator && !ownAccount) return json({ error: "Not allowed" }, 403);
+
     const { adId, status } = await req.json();
-    if (!adId) return json({ error: "adId required" }, 400);
+    // Digits only: adId goes into a Graph path, so anything else could address
+    // a different object or edge.
+    if (!adId || !/^\d+$/.test(String(adId))) return json({ error: "adId required" }, 400);
     if (status !== "ACTIVE" && status !== "PAUSED") return json({ error: "status must be ACTIVE or PAUSED" }, 400);
 
     const tokens: string[] = [];
@@ -38,6 +56,15 @@ Deno.serve(async (req) => {
 
     let lastErr = "";
     for (const token of tokens) {
+      if (!isOperator) {
+        const owner = await fetch(`${GRAPH}/${encodeURIComponent(adId)}?fields=account_id&access_token=${token}`);
+        const ownerData = await owner.json();
+        if (!owner.ok || ownerData.error) {
+          lastErr = ownerData.error?.message || `HTTP ${owner.status}`;
+          continue;
+        }
+        if (digits(ownerData.account_id) !== ownAccount) return json({ error: "Not allowed" }, 403);
+      }
       const res = await fetch(`${GRAPH}/${adId}`, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },

@@ -43,8 +43,12 @@ import OutcomeSheet, { OUTCOME_ICONS, outcomeSnack } from "../components/Outcome
 import estateKitLogo from "../assets/blue logo full.png";
 import type { LeadRow, OutcomeStep, PipelineKind, Stage } from "../types";
 
+// Share tokens are 8 hex chars (links sent before 25 Sept 2026) or 32 (after).
+// Lead ids are UUIDs with dashes, so they never match either. This must be
+// live before the edge functions that mint 32-char tokens are deployed, or
+// new WhatsApp links open as an unknown lead id.
 function isTokenFormat(s: string): boolean {
-  return /^[a-f0-9]{8}$/.test(s);
+  return /^[a-f0-9]{8}$|^[a-f0-9]{32}$/.test(s);
 }
 
 export default function LeadActionPage() {

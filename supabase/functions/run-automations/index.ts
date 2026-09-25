@@ -56,16 +56,37 @@ function inferLinkType(automationName: string): string {
   return "first_touch";
 }
 
-async function sendWhatsApp(phone: string, text: string): Promise<void> {
+// TextMeBot allows one message per 5 seconds on the whole account and answers
+// anything faster with a 403. Sends used to go out back-to-back, so when two
+// leads landed in the same minute the second alert was rejected, and because
+// the result was ignored it was still logged as sent. The agent never got it.
+const MIN_SEND_GAP_MS = 5_500;
+// Keeps one invocation's sends (8 x 5.5s) inside the one-minute cron interval,
+// so two invocations never send at the same time. The rest wait a minute.
+const MAX_SENDS_PER_INVOCATION = 8;
+const RATE_LIMIT_RETRY_MS = 30_000;
+
+type SendResult = "sent" | "rate_limited" | "failed" | "not_configured";
+
+let lastSendAt = 0;
+
+async function sendWhatsApp(phone: string, text: string): Promise<SendResult> {
   const apiKey = Deno.env.get("TEXTMEBOT_API_KEY");
   if (!apiKey) {
     console.error("TEXTMEBOT_API_KEY not configured — skipping send to", phone);
-    return;
+    return "not_configured";
   }
+  const wait = lastSendAt + MIN_SEND_GAP_MS - Date.now();
+  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+  lastSendAt = Date.now();
+
   const digits = phone.replace(/[^0-9]/g, "");
   const url = `${TEXTMEBOT_URL}?recipient=${digits}&apikey=${apiKey}&text=${encodeURIComponent(text)}`;
   const res = await fetch(url);
-  if (!res.ok) console.error("TextMeBot send failed", phone, res.status, await res.text());
+  if (res.ok) return "sent";
+  const body = await res.text();
+  console.error("TextMeBot send failed", phone, res.status, body);
+  return /messages? per \d+ seconds?/i.test(body) ? "rate_limited" : "failed";
 }
 
 async function generateActionLink(
@@ -74,7 +95,9 @@ async function generateActionLink(
   agentId: string,
   linkType: string,
 ): Promise<string> {
-  const token = crypto.randomUUID().replace(/-/g, "").slice(0, 8);
+  // 32 hex chars (122 random bits). Was 8 (32 bits): once tokens stop being
+  // publicly listable, 8 chars is short enough to guess by brute force.
+  const token = crypto.randomUUID().replace(/-/g, "");
   const { error } = await supabase.from("lead_share_tokens").insert({
     lead_id: leadId,
     agent_id: agentId,
@@ -129,7 +152,7 @@ interface RunRow {
   template_override: string | null;
 }
 
-async function processRun(supabase: SupabaseClient, run: RunRow) {
+async function processRun(supabase: SupabaseClient, run: RunRow, budget: { sends: number }) {
   const { data: lead } = await supabase
     .from("leads")
     .select("id, agent_id, name, phone, stage, next_label")
@@ -201,17 +224,40 @@ async function processRun(supabase: SupabaseClient, run: RunRow) {
         .eq("agent_id", lead.agent_id)
         .maybeSingle();
       if (profile?.whatsapp_number) {
+        if (budget.sends >= MAX_SENDS_PER_INVOCATION) {
+          // Still due, just not this minute. The next invocation picks it up.
+          await supabase.from("automation_runs").update({ status: "pending" }).eq("id", run.id);
+          return;
+        }
+        budget.sends++;
         const text = await fillTemplate(supabase, template, lead, linkType);
-        await sendWhatsApp(profile.whatsapp_number, text);
-        await logToDiscord(`\u{2699}\u{FE0F} Automation **${automation?.name}** sent WhatsApp to **${profile.display_name || profile.whatsapp_number}** re: ${lead.name}`);
-        // Sending doesn't change the lead row, so the history trigger can't see it.
-        await supabase.from("lead_events").insert({
-          lead_id: lead.id,
-          agent_id: lead.agent_id,
-          event_type: "whatsapp_sent",
-          to_value: automation?.name ?? "Automation",
-          source: "automation",
-        });
+        const result = await sendWhatsApp(profile.whatsapp_number, text);
+        const who = profile.display_name || profile.whatsapp_number;
+
+        if (result === "rate_limited") {
+          // Transient: retry this same step shortly rather than dropping it.
+          await supabase
+            .from("automation_runs")
+            .update({ status: "pending", run_at: new Date(Date.now() + RATE_LIMIT_RETRY_MS).toISOString() })
+            .eq("id", run.id);
+          return;
+        }
+
+        if (result === "sent") {
+          await logToDiscord(`\u{2699}\u{FE0F} Automation **${automation?.name}** sent WhatsApp to **${who}** re: ${lead.name}`);
+          // Sending doesn't change the lead row, so the history trigger can't see it.
+          await supabase.from("lead_events").insert({
+            lead_id: lead.id,
+            agent_id: lead.agent_id,
+            event_type: "whatsapp_sent",
+            to_value: automation?.name ?? "Automation",
+            source: "automation",
+          });
+        } else {
+          // Not retried (no attempt counter to stop a permanent failure looping),
+          // but no longer reported as delivered either.
+          await logToDiscord(`\u{26A0}\u{FE0F} Automation **${automation?.name}** could NOT send WhatsApp to **${who}** re: ${lead.name} (${result})`);
+        }
       }
     } else if (step.action_type === "set_reminder") {
       const payload = step.payload as { label?: string; offset_minutes?: number; due?: boolean };
@@ -266,6 +312,8 @@ Deno.serve(async (_req: Request) => {
     .select("id, lead_id, automation_id, current_step, template_override")
     .eq("status", "pending")
     .lte("run_at", new Date().toISOString())
+    // Oldest first, so a new-lead alert held back by the send cap goes out next.
+    .order("run_at", { ascending: true })
     .limit(BATCH_SIZE);
 
   if (error) {
@@ -274,6 +322,7 @@ Deno.serve(async (_req: Request) => {
   }
 
   let processed = 0;
+  const budget = { sends: 0 };
   for (const run of due ?? []) {
     const { data: claimed } = await supabase
       .from("automation_runs")
@@ -284,7 +333,7 @@ Deno.serve(async (_req: Request) => {
       .maybeSingle();
     if (!claimed) continue;
 
-    await processRun(supabase, run as RunRow);
+    await processRun(supabase, run as RunRow, budget);
     processed++;
   }
 
