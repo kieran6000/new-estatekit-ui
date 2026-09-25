@@ -1,36 +1,26 @@
 import type { ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { AppBar, Avatar, Box, Button, Card, CardContent, CircularProgress, IconButton, Link, Skeleton, Toolbar, Tooltip, Typography } from "@mui/material";
+import { AppBar, Avatar, Box, Button, CircularProgress, IconButton, Link, Skeleton, Toolbar, Typography } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import WhatsAppIcon from "@mui/icons-material/WhatsApp";
 import PhoneIcon from "@mui/icons-material/Phone";
 import MailOutlineIcon from "@mui/icons-material/MailOutlined";
+import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import LoginIcon from "@mui/icons-material/Login";
-import FacebookIcon from "@mui/icons-material/Facebook";
-import InstagramIcon from "@mui/icons-material/Instagram";
-import LinkedInIcon from "@mui/icons-material/LinkedIn";
-import CheckCircleIcon from "@mui/icons-material/CheckCircle";
-import RadioButtonUncheckedIcon from "@mui/icons-material/RadioButtonUnchecked";
 import { tokens } from "../theme";
 import { clientPicture, cplLabel, getClient, getSpend30d, type ClientDossier, type ClientLive, type ClientProfile } from "../api/clients";
 import { setActiveAgent } from "../api/_client";
 import { useAuth } from "../hooks/useAuth";
-import StageDonut from "../components/StageDonut";
 import { timeAgo } from "../lib/timeAgo";
-import type { Stage } from "../types";
 
 /** Digits in international form, so 083… and +2783… compare equal. */
 const digits = (s: string) => {
   const d = (s || "").replace(/\D/g, "");
   return d.length === 10 && d.startsWith("0") ? "27" + d.slice(1) : d;
 };
-const prettyPhone = (s: string) => {
-  const d = digits(s);
-  return d.length === 11 && d.startsWith("27") ? `+27 ${d.slice(2, 4)} ${d.slice(4, 7)} ${d.slice(7)}` : s;
-};
 
-// Onboarding answers already shown elsewhere on the page.
+// Onboarding answers already shown in Contact or the section header.
 const SHOWN_ELSEWHERE = new Set(["Full name", "Email", "Phone", "Submitted"]);
 
 export default function ClientDetailPage() {
@@ -45,7 +35,9 @@ export default function ClientDetailPage() {
           <IconButton onClick={() => navigate("/admin/clients")} aria-label="Back to clients">
             <ArrowBackIcon />
           </IconButton>
-          <Typography sx={{ fontSize: 18, fontWeight: 500 }}>Clients</Typography>
+          <Typography sx={{ fontSize: 18, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {data?.profile.display_name || "Client"}
+          </Typography>
         </Toolbar>
       </AppBar>
 
@@ -64,32 +56,33 @@ export default function ClientDetailPage() {
       )}
 
       {data && (
-        <Box sx={{ maxWidth: 1080, mx: "auto", p: { xs: 1.5, md: 3 }, display: "flex", flexDirection: "column", gap: 2 }}>
+        <>
           <Header profile={data.profile} dossier={data.dossier} />
-          <Kpis profile={data.profile} live={data.live} />
+          <Box sx={{ p: { xs: 1.5, md: 2.5 }, maxWidth: 1200, mx: "auto", display: "flex", flexDirection: "column", gap: 1.5 }}>
+            <Kpis profile={data.profile} live={data.live} />
 
-          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "minmax(0, 1fr) 320px" }, gap: 2, alignItems: "start" }}>
-            {/* Aside first in the DOM so contact details come first on a phone. */}
-            <Box sx={{ display: "flex", flexDirection: "column", gap: 2, gridColumn: { md: 2 }, gridRow: { md: 1 } }}>
-              <ContactCard profile={data.profile} d={data.dossier} />
-              <BillingCard d={data.dossier} />
-              <SetupCard profile={data.profile} live={data.live} />
-            </Box>
-            <Box sx={{ display: "flex", flexDirection: "column", gap: 2, gridColumn: { md: 1 }, gridRow: { md: 1 }, minWidth: 0 }}>
-              <StageDonut
-                title="Where their leads are"
-                counts={Object.entries(data.live?.by_stage ?? {}).map(([stage, count]) => ({ stage: stage as Stage, count }))}
-              />
-              <BusinessCard d={data.dossier} />
+            {/* Two independent columns, so a short card never leaves a gap
+                beside a long one. */}
+            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "minmax(0, 1fr) 360px" }, gap: 1.5, alignItems: "start" }}>
+              {/* Side column first in the DOM so contact comes first on a phone. */}
+              <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5, gridColumn: { md: 2 }, gridRow: { md: 1 }, minWidth: 0 }}>
+                <ContactSection profile={data.profile} d={data.dossier} />
+                <BillingSection d={data.dossier} />
+                <SetupSection profile={data.profile} live={data.live} />
+              </Box>
+              <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5, gridColumn: { md: 1 }, gridRow: { md: 1 }, minWidth: 0 }}>
+                <Section title="Leads by stage">
+                  <Bars data={data.live?.by_stage ?? {}} />
+                </Section>
+                <OnboardingSection d={data.dossier} />
+              </Box>
             </Box>
           </Box>
-        </Box>
+        </>
       )}
     </Box>
   );
 }
-
-/* ───────────────────────── header + KPIs ───────────────────────── */
 
 function Header({ profile: p, dossier: d }: { profile: ClientProfile; dossier: ClientDossier | null }) {
   const { user } = useAuth();
@@ -106,47 +99,106 @@ function Header({ profile: p, dossier: d }: { profile: ClientProfile; dossier: C
   }
 
   return (
-    <Box sx={{ display: "flex", gap: 2, alignItems: { xs: "flex-start", sm: "center" }, flexDirection: { xs: "column", sm: "row" }, pt: { xs: 1, md: 0 } }}>
-      <Box sx={{ display: "flex", gap: 2, alignItems: "center", flex: 1, minWidth: 0 }}>
-        <Avatar src={clientPicture(p)} alt={name} sx={{ width: 72, height: 72, fontSize: 28, fontWeight: 600, bgcolor: p.sidebar_color || "#111827" }}>
-          {name[0]?.toUpperCase()}
-        </Avatar>
-        <Box sx={{ minWidth: 0 }}>
-          <Typography sx={{ fontSize: 24, fontWeight: 600, lineHeight: 1.2 }}>{name}</Typography>
-          <Typography sx={{ fontSize: 14.5, color: tokens.ink2, mt: 0.5 }}>
-            {[p.company, p.area].filter(Boolean).join(" · ") || "No agency on file"}
-          </Typography>
+    <Box sx={{ bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
+      <Box sx={{ maxWidth: 1200, mx: "auto", p: { xs: 2, md: 3 }, display: "flex", gap: { xs: 2, md: 3 }, alignItems: { xs: "flex-start", md: "center" }, flexDirection: { xs: "column", md: "row" } }}>
+        <Box sx={{ display: "flex", gap: 2, alignItems: "center", flex: 1, minWidth: 0 }}>
+          <Avatar src={clientPicture(p)} alt={name} sx={{ width: 80, height: 80, fontSize: 30, fontWeight: 600, bgcolor: p.sidebar_color || "#111827" }}>
+            {name[0]?.toUpperCase()}
+          </Avatar>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography sx={{ fontSize: 22, fontWeight: 600, lineHeight: 1.2 }}>{name}</Typography>
+            <Typography sx={{ fontSize: 14.5, color: tokens.ink2, mt: 0.25 }}>{p.company || "No agency on file"}</Typography>
+            {p.area && <Typography sx={{ fontSize: 13, color: tokens.ink3, mt: 0.25 }}>{p.area}</Typography>}
+          </Box>
         </Box>
-      </Box>
-      <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", alignItems: "center" }}>
-        {phone && (
-          <Tooltip title="WhatsApp">
-            <IconButton href={`https://wa.me/${digits(phone)}`} target="_blank" rel="noopener" sx={{ border: `1px solid ${tokens.divider}`, bgcolor: "background.paper" }}>
-              <WhatsAppIcon sx={{ fontSize: 20, color: "#1e8e3e" }} />
-            </IconButton>
-          </Tooltip>
-        )}
-        {phone && (
-          <Tooltip title="Call">
-            <IconButton href={`tel:+${digits(phone)}`} sx={{ border: `1px solid ${tokens.divider}`, bgcolor: "background.paper" }}>
-              <PhoneIcon sx={{ fontSize: 20 }} />
-            </IconButton>
-          </Tooltip>
-        )}
-        {email && (
-          <Tooltip title="Email">
-            <IconButton href={`mailto:${email}`} sx={{ border: `1px solid ${tokens.divider}`, bgcolor: "background.paper" }}>
-              <MailOutlineIcon sx={{ fontSize: 20 }} />
-            </IconButton>
-          </Tooltip>
-        )}
-        <Button variant="contained" startIcon={<LoginIcon />} onClick={openDashboard} sx={{ ml: { sm: 0.5 } }}>
-          Open their dashboard
-        </Button>
+        <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+          <Button variant="contained" startIcon={<LoginIcon />} onClick={openDashboard}>Open their dashboard</Button>
+          {phone && (
+            <Button variant="outlined" startIcon={<WhatsAppIcon />} href={`https://wa.me/${digits(phone)}`} target="_blank" rel="noopener">WhatsApp</Button>
+          )}
+          {phone && <Button variant="outlined" startIcon={<PhoneIcon />} href={`tel:+${digits(phone)}`}>Call</Button>}
+          {email && <Button variant="outlined" startIcon={<MailOutlineIcon />} href={`mailto:${email}`}>Email</Button>}
+        </Box>
       </Box>
     </Box>
   );
 }
+
+/* ───────────────────────── building blocks ───────────────────────── */
+
+function Section({ title, children, sub }: { title: string; children: ReactNode; sub?: string }) {
+  return (
+    <Box sx={{ bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "8px", overflow: "hidden", minWidth: 0 }}>
+      <Box sx={{ px: 2, pt: 1.5, pb: 1, display: "flex", alignItems: "baseline", gap: 1 }}>
+        <Typography sx={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: tokens.ink2, flex: 1 }}>{title}</Typography>
+        {sub && <Typography sx={{ fontSize: 11.5, color: tokens.ink3 }}>{sub}</Typography>}
+      </Box>
+      <Box sx={{ px: 2, pb: 2 }}>{children}</Box>
+    </Box>
+  );
+}
+
+function KV({ rows, labelWidth = "38%" }: { rows: [string, ReactNode][]; labelWidth?: string }) {
+  const shown = rows.filter(([, v]) => v !== null && v !== undefined && v !== "" && v !== false);
+  if (!shown.length) return <Empty>Nothing on file.</Empty>;
+  return (
+    <Box component="dl" sx={{ m: 0, display: "grid", gridTemplateColumns: `minmax(110px, ${labelWidth}) 1fr`, columnGap: 1.5, rowGap: 0.875 }}>
+      {shown.map(([k, v]) => (
+        <Box key={k} sx={{ display: "contents" }}>
+          <Box component="dt" sx={{ fontSize: 13, color: tokens.ink2 }}>{k}</Box>
+          <Box component="dd" sx={{ m: 0, fontSize: 13.5, color: tokens.ink, wordBreak: "break-word" }}>{v}</Box>
+        </Box>
+      ))}
+    </Box>
+  );
+}
+
+function Empty({ children }: { children: ReactNode }) {
+  return <Typography sx={{ fontSize: 13.5, color: tokens.ink3 }}>{children}</Typography>;
+}
+
+function Metric({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <Box sx={{ bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "8px", px: 2, py: 1.5 }}>
+      <Typography component="div" sx={{ fontSize: 22, fontWeight: 600, lineHeight: 1.2 }}>{value}</Typography>
+      <Typography sx={{ fontSize: 12, color: tokens.ink2, mt: 0.25 }}>{label}</Typography>
+    </Box>
+  );
+}
+
+function Bars({ data }: { data: Record<string, number> }) {
+  const entries = Object.entries(data).sort((a, b) => b[1] - a[1]);
+  if (!entries.length) return <Empty>No leads yet.</Empty>;
+  const total = entries.reduce((a, [, n]) => a + n, 0);
+  return (
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+      {entries.map(([k, n]) => (
+        <Box key={k}>
+          <Box sx={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+            <span>{k}</span>
+            <Box component="span" sx={{ color: tokens.ink2, fontVariantNumeric: "tabular-nums" }}>
+              {n} · {Math.round((n / total) * 100)}%
+            </Box>
+          </Box>
+          <Box sx={{ height: 6, bgcolor: tokens.surface2, borderRadius: 3, mt: 0.375, overflow: "hidden" }}>
+            <Box sx={{ height: "100%", width: `${Math.max(2, (n / total) * 100)}%`, bgcolor: "rgba(0,0,0,.45)", borderRadius: 3 }} />
+          </Box>
+        </Box>
+      ))}
+    </Box>
+  );
+}
+
+function ExtLink({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <Link href={href} target="_blank" rel="noopener" underline="hover" sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, fontSize: 13.5 }}>
+      {children}
+      <OpenInNewIcon sx={{ fontSize: 14 }} />
+    </Link>
+  );
+}
+
+/* ───────────────────────── sections ───────────────────────── */
 
 function Kpis({ profile: p, live }: { profile: ClientProfile; live: ClientLive | null }) {
   const leads30 = live?.leads_30d ?? 0;
@@ -157,68 +209,19 @@ function Kpis({ profile: p, live }: { profile: ClientProfile; live: ClientLive |
     staleTime: 30 * 60_000,
     retry: false,
   });
-  const items: [string, ReactNode][] = [
-    ["Leads · 7 days", live?.leads_7d ?? 0],
-    ["Leads · 30 days", leads30],
-    ["CPL · 30 days", p.fb_ad_account_id && isLoading ? <Skeleton key="s" width={56} /> : cplLabel(spend, leads30)],
-    ["Leads · all time", live?.leads_total ?? 0],
-    ["Last lead", live?.last_lead_at ? timeAgo(live.last_lead_at) : "never"],
-  ];
   return (
-    <Card variant="outlined" sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, 1fr)", sm: "repeat(5, 1fr)" } }}>
-      {items.map(([label, value], i) => (
-        <Box
-          key={label}
-          sx={{
-            px: 2,
-            py: 1.75,
-            borderLeft: { sm: i ? `1px solid ${tokens.divider2}` : "none" },
-            borderTop: { xs: i > 1 ? `1px solid ${tokens.divider2}` : "none", sm: "none" },
-            gridColumn: { xs: i === 4 ? "span 2" : "auto", sm: "auto" },
-          }}
-        >
-          <Typography component="div" sx={{ fontSize: 22, fontWeight: 600, lineHeight: 1.2, fontVariantNumeric: "tabular-nums" }}>{value}</Typography>
-          <Typography sx={{ fontSize: 12, color: tokens.ink2, mt: 0.25 }}>{label}</Typography>
-        </Box>
-      ))}
-    </Card>
-  );
-}
-
-/* ───────────────────────── building blocks ───────────────────────── */
-
-function Panel({ title, sub, children }: { title: string; sub?: string; children: ReactNode }) {
-  return (
-    <Card variant="outlined">
-      <CardContent sx={{ display: "flex", flexDirection: "column", gap: 1.75, "&:last-child": { pb: 2 } }}>
-        <Box sx={{ display: "flex", alignItems: "baseline", gap: 1 }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: 600, flex: 1, lineHeight: 1.3 }}>{title}</Typography>
-          {sub && <Typography sx={{ fontSize: 12, color: tokens.ink3 }}>{sub}</Typography>}
-        </Box>
-        {children}
-      </CardContent>
-    </Card>
-  );
-}
-
-/** Label above value. Renders nothing for an empty value. */
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  if (children === null || children === undefined || children === "") return null;
-  return (
-    <Box sx={{ minWidth: 0 }}>
-      <Typography sx={{ fontSize: 12, color: tokens.ink3, lineHeight: 1.4 }}>{label}</Typography>
-      <Typography component="div" sx={{ fontSize: 14, color: tokens.ink, lineHeight: 1.45, wordBreak: "break-word" }}>{children}</Typography>
+    <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, 1fr)", sm: "repeat(3, 1fr)", md: "repeat(6, 1fr)" }, gap: 1.5 }}>
+      <Metric label="Leads · 7 days" value={live?.leads_7d ?? 0} />
+      <Metric label="Leads · 30 days" value={leads30} />
+      <Metric label="CPL · 30 days" value={p.fb_ad_account_id && isLoading ? <Skeleton width={60} /> : cplLabel(spend, leads30)} />
+      <Metric label="Leads · all time" value={live?.leads_total ?? 0} />
+      <Metric label="Last lead" value={live?.last_lead_at ? timeAgo(live.last_lead_at) : "never"} />
+      <Metric label="Lead sources" value={live?.lead_pages ?? 0} />
     </Box>
   );
 }
 
-function Empty({ children }: { children: ReactNode }) {
-  return <Typography sx={{ fontSize: 13.5, color: tokens.ink3 }}>{children}</Typography>;
-}
-
-/* ───────────────────────── cards ───────────────────────── */
-
-function ContactCard({ profile: p, d }: { profile: ClientProfile; d: ClientDossier | null }) {
+function ContactSection({ profile: p, d }: { profile: ClientProfile; d: ClientDossier | null }) {
   const ob = (q: string) => d?.onboarding.find((x) => x.q === q)?.a || "";
   const login = digits(p.whatsapp_number || "");
   const phones = [...new Set([...(d?.contact.phones ?? []), ob("Phone")].filter(Boolean).map(digits))].filter((x) => x && x !== login);
@@ -227,115 +230,80 @@ function ContactCard({ profile: p, d }: { profile: ClientProfile; d: ClientDossi
     (e) => e !== loginEmail && /@/.test(e),
   );
   const s = d?.contact.socials;
-  const socials = [
-    s?.facebook && { href: s.facebook, icon: <FacebookIcon sx={{ fontSize: 20, color: "#1877f2" }} />, label: "Facebook" },
-    s?.instagram && { href: s.instagram, icon: <InstagramIcon sx={{ fontSize: 20, color: "#c13584" }} />, label: "Instagram" },
-    s?.linkedin && { href: s.linkedin, icon: <LinkedInIcon sx={{ fontSize: 20, color: "#0a66c2" }} />, label: "LinkedIn" },
-  ].filter(Boolean) as { href: string; icon: ReactNode; label: string }[];
-
   return (
-    <Panel title="Contact">
-      <Field label="WhatsApp">{p.whatsapp_number ? prettyPhone(p.whatsapp_number) : null}</Field>
-      <Field label="Email">{p.email ? <Link href={`mailto:${p.email}`} underline="hover">{p.email}</Link> : null}</Field>
-      <Field label={phones.length > 1 ? "Other numbers" : "Other number"}>{phones.map(prettyPhone).join(", ")}</Field>
-      <Field label={emails.length > 1 ? "Other emails" : "Other email"}>{emails.join(", ")}</Field>
-      <Field label="Contact person">{d?.contact.contactPerson}</Field>
-      <Field label="Team">{d?.contact.team}</Field>
-      {socials.length > 0 && (
-        <Box sx={{ display: "flex", gap: 0.5, ml: -1 }}>
-          {socials.map((x) => (
-            <Tooltip key={x.label} title={x.label}>
-              <IconButton href={x.href} target="_blank" rel="noopener" size="small">{x.icon}</IconButton>
-            </Tooltip>
-          ))}
-        </Box>
-      )}
-    </Panel>
+    <Section title="Contact">
+      <KV
+        rows={[
+          ["WhatsApp (login)", p.whatsapp_number],
+          ["Other numbers", phones.map((x) => "+" + x).join(", ")],
+          ["Email", p.email],
+          ["Other emails", emails.join(", ")],
+          ["Contact person", d?.contact.contactPerson],
+          ["Team", d?.contact.team],
+          ["Facebook", s?.facebook ? <ExtLink key="fb" href={s.facebook}>Page</ExtLink> : null],
+          ["Instagram", s?.instagram ? <ExtLink key="ig" href={s.instagram}>Profile</ExtLink> : null],
+          ["LinkedIn", s?.linkedin ? <ExtLink key="li" href={s.linkedin}>Profile</ExtLink> : null],
+        ]}
+      />
+    </Section>
   );
 }
 
-function BillingCard({ d }: { d: ClientDossier | null }) {
-  const b = d?.billing;
-  const plan = d?.package || b?.plan;
-  const payment = b?.status || d?.audit?.payment;
-  const any = plan || payment || b?.invoiceDay || b?.lastPayment || b?.nextPayment || b?.notes;
+function BillingSection({ d }: { d: ClientDossier | null }) {
   return (
-    <Panel title="Plan & billing">
-      {any ? (
-        <>
-          <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1.75 }}>
-            <Field label="Plan">{plan}</Field>
-            <Field label="Payment">{payment}</Field>
-            <Field label="Invoice day">{b?.invoiceDay}</Field>
-            <Field label="Last payment">{b?.lastPayment}</Field>
-            <Field label="Next payment">{b?.nextPayment}</Field>
-          </Box>
-          <Field label="Note">{b?.notes}</Field>
-        </>
-      ) : (
-        <Empty>No billing details on file.</Empty>
-      )}
-    </Panel>
+    <Section title="Package & billing">
+      <KV
+        rows={[
+          ["Package", d?.package || d?.billing?.plan],
+          ["Payment status", d?.billing?.status || d?.audit?.payment],
+          ["Invoice day", d?.billing?.invoiceDay],
+          ["Last payment", d?.billing?.lastPayment],
+          ["Next payment", d?.billing?.nextPayment],
+          ["Billing note", d?.billing?.notes],
+        ]}
+      />
+    </Section>
   );
 }
 
-function SetupCard({ profile: p, live }: { profile: ClientProfile; live: ClientLive | null }) {
-  const rows: [boolean, string, string][] = [
-    [!!p.fb_ad_account_id, "Ad account", p.fb_ad_account_id ? `act_${p.fb_ad_account_id}` : "Not linked"],
-    [!!p.fb_page_id, "Facebook page", p.fb_page_id ? "Linked" : "Not linked"],
-    [(live?.lead_pages ?? 0) > 0, "Lead sources", `${live?.lead_pages ?? 0} set up`],
-    [!p.automations_paused, "Automations", p.automations_paused ? "Paused" : "On"],
-  ];
+function SetupSection({ profile: p, live }: { profile: ClientProfile; live: ClientLive | null }) {
   return (
-    <Panel title="Setup">
-      <Box sx={{ display: "flex", flexDirection: "column", gap: 1.25 }}>
-        {rows.map(([ok, label, detail]) => (
-          <Box key={label} sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
-            {ok ? (
-              <CheckCircleIcon sx={{ fontSize: 18, color: tokens.green }} />
-            ) : (
-              <RadioButtonUncheckedIcon sx={{ fontSize: 18, color: tokens.ink3 }} />
-            )}
-            <Typography sx={{ fontSize: 14, flex: 1 }}>{label}</Typography>
-            <Typography sx={{ fontSize: 13, color: tokens.ink2, textAlign: "right" }}>{detail}</Typography>
-          </Box>
-        ))}
-      </Box>
-    </Panel>
+    <Section title="Setup">
+      <KV
+        rows={[
+          ["Ad account", p.fb_ad_account_id ? `act_${p.fb_ad_account_id}` : "Not linked"],
+          ["Facebook page", p.fb_page_id ? "Linked" : "Not linked"],
+          ["Lead sources", String(live?.lead_pages ?? 0)],
+          ["Automations", p.automations_paused ? "Paused" : "On"],
+        ]}
+      />
+    </Section>
   );
 }
 
-function BusinessCard({ d }: { d: ClientDossier | null }) {
+function OnboardingSection({ d }: { d: ClientDossier | null }) {
   const rows = (d?.onboarding ?? []).filter((x) => !SHOWN_ELSEWHERE.has(x.q));
   const extra = (d?.onboardingExtra ?? []).filter((x) => !SHOWN_ELSEWHERE.has(x.q));
   const submitted = d?.onboarding.find((x) => x.q === "Submitted")?.a;
-  const targets = d?.oldDashboard?.targetAreas ?? [];
   const extraName = d?.onboardingExtra?.find((x) => x.q === "Full name")?.a;
+  const targets = d?.oldDashboard?.targetAreas ?? [];
+  const kv = (list: { q: string; a: string }[]) => list.map((x) => [x.q, x.a] as [string, ReactNode]);
 
   return (
-    <Panel title="About their business" sub={submitted ? `Onboarding form, ${submitted}` : undefined}>
+    <Section title="Onboarding form" sub={submitted}>
       {rows.length || targets.length ? (
-        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, columnGap: 3, rowGap: 2 }}>
-          {rows.map((x) => (
-            <Field key={x.q} label={x.q}>{x.a}</Field>
-          ))}
-          {targets.length > 0 && <Field label="Target areas">{targets.join(", ")}</Field>}
-        </Box>
+        <KV labelWidth="32%" rows={[...kv(rows), ["Target areas", targets.join(", ")]]} />
       ) : (
         <Empty>They haven't filled in the onboarding form.</Empty>
       )}
       {extra.length > 0 && (
-        <>
-          <Box sx={{ borderTop: `1px solid ${tokens.divider2}`, pt: 2 }}>
-            <Typography sx={{ fontSize: 13, fontWeight: 600 }}>{extraName ? `${extraName}'s answers` : "Second agent's answers"}</Typography>
-          </Box>
-          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, columnGap: 3, rowGap: 2 }}>
-            {extra.map((x) => (
-              <Field key={x.q} label={x.q}>{x.a}</Field>
-            ))}
-          </Box>
-        </>
+        <Box sx={{ mt: 2, pt: 1.5, borderTop: `1px solid ${tokens.divider2}` }}>
+          <Typography sx={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: tokens.ink2, mb: 1 }}>
+            {extraName ? `${extraName}'s answers` : "Second agent's answers"}
+          </Typography>
+          <KV labelWidth="32%" rows={kv(extra)} />
+        </Box>
       )}
-    </Panel>
+    </Section>
   );
 }
