@@ -420,7 +420,8 @@ lead pages use the agent's `accent_color` for the header and buttons.
 
 24 tables in `public`, all with RLS. The full DDL is in
 `supabase/schema/2026-09-25_production_snapshot.sql`. Roughly: 1,211 leads,
-14 agent profiles, 18 lead pages, 33 pipelines.
+35 agent profiles (21 of them switched-off imports from the old dashboard, see
+§14), 18 lead pages, 75 pipelines.
 
 | Table | Purpose / key columns |
 |---|---|
@@ -771,6 +772,23 @@ Discord?
 ### Ad numbers look wrong
 Compare with the Meta MCP. Roughly double the leads at half the CPL means
 overlapping action types are being summed (§11).
+
+### Reactivate a client imported from the old dashboard
+On 25 Sept 2026, the 21 old-dashboard clients who had no account here were
+imported as **accounts only (no lead history)** and **switched off**: a random
+password nobody knows, `automations_paused = true`, `onboarded = false`. They
+can be found with
+`auth.users.raw_user_meta_data->>'imported_from' = 'old dashboard'`, which also
+stores `old_user_id`. To bring one back:
+1. Account → agent passwords → set a password (`admin-set-password`).
+2. Un-pause their automations; check `whatsapp_number` is 27… format.
+3. Connect their lead source (Forms → Add lead source).
+Their logo and photo URLs still point at the **old** project's storage
+(`vatyiwyuuhvhdnhmbyyy…/storage`), so re-upload them before pausing or deleting
+the old project. Harvey Van Wyk was registered with Kieran's own number, so he
+has a placeholder login (`harvel-realty.import@estatekit.app`) and no WhatsApp
+number. Alex Prinsloo's old account is the same team as Storm Hargreaves' account
+here ("Team Alex & Storm").
 
 ### Demo page for a prospect
 Brand an existing page on Kieran's account: accent from their logo, their phone,
