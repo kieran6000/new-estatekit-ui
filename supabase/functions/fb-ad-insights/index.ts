@@ -31,7 +31,10 @@ Deno.serve(async (req) => {
       const { data } = await supabase.rpc("get_secret", { secret_name: name });
       if (data) tokens.push(data);
     }
-    if (tokens.length === 0) return json({ error: "No FB token configured" }, 500);
+    // Same graceful shape as the all-tokens-failed path below. A 500 here makes
+    // the Overview query throw, and React Query then refetches it on every
+    // window focus. The deployed version already did this; the repo hadn't.
+    if (tokens.length === 0) return json({ daily: {}, note: "No FB token configured" });
 
     const today = new Date().toISOString().slice(0, 10);
     // since provided → use an explicit range; otherwise pull the max window.
@@ -61,6 +64,6 @@ Deno.serve(async (req) => {
     console.warn("fb-ad-insights: all tokens failed:", lastErr);
     return json({ daily: {}, note: lastErr });
   } catch (err) {
-    return json({ error: String(err) }, 500);
+    return json({ daily: {}, note: String(err) });
   }
 });
