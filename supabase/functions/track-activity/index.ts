@@ -81,7 +81,9 @@ interface Field { name: string; value: string; inline?: boolean }
  *  needed) — not the internal /leads/{id} dashboard route, which only works
  *  if you're already signed in as that specific agent. */
 async function leadShareLink(leadId: string, agentId: string): Promise<string | null> {
-  const token = crypto.randomUUID().replace(/-/g, "").slice(0, 8);
+  // 32 hex chars (122 random bits). Was 8 (32 bits): once tokens stop being
+  // publicly listable, 8 chars is short enough to guess by brute force.
+  const token = crypto.randomUUID().replace(/-/g, "");
   const { error } = await supabase.from("lead_share_tokens").insert({
     lead_id: leadId,
     agent_id: agentId,

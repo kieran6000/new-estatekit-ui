@@ -95,7 +95,9 @@ async function generateActionLink(
   agentId: string,
   linkType: string,
 ): Promise<string> {
-  const token = crypto.randomUUID().replace(/-/g, "").slice(0, 8);
+  // 32 hex chars (122 random bits). Was 8 (32 bits): once tokens stop being
+  // publicly listable, 8 chars is short enough to guess by brute force.
+  const token = crypto.randomUUID().replace(/-/g, "");
   const { error } = await supabase.from("lead_share_tokens").insert({
     lead_id: leadId,
     agent_id: agentId,
