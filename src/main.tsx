@@ -12,6 +12,7 @@ import { queryClient } from "./lib/queryClient";
 import { AuthProvider } from "./hooks/useAuth";
 import { SnackProvider } from "./hooks/useSnack";
 import { TierProvider } from "./hooks/useTier";
+import PreviewBanner from "./components/PreviewBanner";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
@@ -41,6 +42,7 @@ createRoot(document.getElementById("root")!).render(
             <TierProvider>
               <SnackProvider>
                 <BrowserRouter>
+                  <PreviewBanner />
                   <App />
                 </BrowserRouter>
               </SnackProvider>
