@@ -43,7 +43,7 @@ export default function FormPresetPicker({
             onClick={() => onChange(o.key)}
             onKeyDown={(e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); onChange(o.key); } }}
             sx={{
-              display: "flex", alignItems: "flex-start", gap: 1, p: "8px 12px 10px 4px", cursor: "pointer",
+              display: "flex", alignItems: "flex-start", gap: { xs: 0.5, sm: 1 }, p: { xs: "6px 10px 8px 0", sm: "8px 12px 10px 4px" }, cursor: "pointer",
               borderColor: selected ? "primary.main" : undefined,
               bgcolor: selected ? tokens.primaryBg : undefined,
               "&:hover": { borderColor: "primary.main" },
@@ -60,7 +60,7 @@ export default function FormPresetPicker({
               </Box>
               <Typography sx={{ fontSize: 13, color: "text.secondary", mt: 0.25, lineHeight: 1.45 }}>{o.tagline}</Typography>
               {o.bestFor && (
-                <Typography sx={{ fontSize: 12, color: "text.secondary", mt: 0.5 }}>
+                <Typography sx={{ fontSize: 12, color: "text.secondary", mt: 0.5, display: { xs: "none", sm: "block" } }}>
                   Best for: {o.bestFor}
                 </Typography>
               )}

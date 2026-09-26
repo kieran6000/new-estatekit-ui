@@ -25,6 +25,7 @@ import {
   ToggleButtonGroup,
   Toolbar,
   Typography,
+  useMediaQuery,
 } from "@mui/material";
 import FacebookIcon from "@mui/icons-material/Facebook";
 import LanguageIcon from "@mui/icons-material/Language";
@@ -870,6 +871,9 @@ function AddPageDialog({
   const [name, setName] = useState("");
   const [preset, setPreset] = useState<FormPresetKey | "blank">("balanced");
   const qc = useQueryClient();
+  // Phones get the whole screen: a floating box with margins left the form
+  // types as a cramped scroll.
+  const isPhone = useMediaQuery("(max-width:599px)");
   const [pipelineId, setPipelineId] = useState("");
   const [fbForms, setFbForms] = useState<FbForm[]>([]);
   const [fbFormId, setFbFormId] = useState("");
@@ -962,7 +966,7 @@ function AddPageDialog({
   const canCreate = sourceType === "website" ? !!name.trim() && !!pipelineId : !!fbFormId && !!pipelineId;
 
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="xs">
+    <Dialog open={open} onClose={onClose} fullWidth maxWidth="xs" fullScreen={isPhone}>
       <DialogTitle sx={{ fontSize: 18, fontWeight: 500 }}>Add lead source</DialogTitle>
       <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
         <Box>
@@ -1211,6 +1215,7 @@ function PresetBar({ page, onApplied }: { page: LeadPage; onApplied: () => void 
   const [choice, setChoice] = useState<FormPresetKey | "blank">(page.preset ?? "balanced");
   const [withCopy, setWithCopy] = useState(true);
   const [busy, setBusy] = useState(false);
+  const isPhone = useMediaQuery("(max-width:599px)");
 
   async function apply() {
     if (choice === "blank") return;
@@ -1258,7 +1263,7 @@ function PresetBar({ page, onApplied }: { page: LeadPage; onApplied: () => void 
         </Button>
       </Box>
 
-      <Dialog open={open} onClose={() => !busy && setOpen(false)} fullWidth maxWidth="sm">
+      <Dialog open={open} onClose={() => !busy && setOpen(false)} fullWidth maxWidth="sm" fullScreen={isPhone}>
         <DialogTitle>Choose a form type</DialogTitle>
         <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
           <FormPresetPicker value={choice} onChange={setChoice} />
