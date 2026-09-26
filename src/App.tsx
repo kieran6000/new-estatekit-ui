@@ -22,6 +22,7 @@ import LeadPagePreviewPage from "./pages/LeadPagePreviewPage";
 import ThankYouPage from "./pages/ThankYouPage";
 import PrivacyPolicyPage from "./pages/PrivacyPolicyPage";
 import SignupPage from "./pages/SignupPage";
+import LaunchPage from "./pages/LaunchPage";
 
 function Splash() {
   return (
@@ -75,6 +76,7 @@ export default function App() {
           <Route path="/login" element={<Navigate to="/leads" replace />} />
           <Route path="/welcome" element={<WelcomePage />} />
           <Route element={<OnboardingGate><AppShell /></OnboardingGate>}>
+            <Route path="/launch" element={<LaunchPage />} />
             <Route path="/leads" element={<LeadsPage />} />
             <Route path="/leads/:id" element={<LeadDetailPage />} />
             <Route path="/overview" element={<OperatorOnly><OverviewPage /></OperatorOnly>} />

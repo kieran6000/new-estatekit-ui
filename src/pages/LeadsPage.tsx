@@ -65,7 +65,6 @@ import GSheetIcon from "../components/GSheetIcon";
 import StageMenu from "../components/StageMenu";
 import OutcomeSheet from "../components/OutcomeSheet";
 import FocusCallModal from "../components/FocusCallModal";
-import GettingStarted from "../components/GettingStarted";
 
 export default function LeadsPage() {
   const navigate = useNavigate();
@@ -79,15 +78,12 @@ export default function LeadsPage() {
   const { data: isOperator } = useIsOperator();
   const posthog = usePostHog();
   const { data: myProfile } = useQuery({ queryKey: ["myProfile"], queryFn: getMyProfile, staleTime: 5 * 60_000 });
-  // Tracked here too so the checklist's "Take the tour" ticks as soon as it ends.
-  const [tourSeen, setTourSeen] = useState(() => hasSeenLeadsTour(getActiveAgentIdSync()));
   function runTour(auto: boolean) {
     startLeadsTour({
       agentId: getActiveAgentIdSync(),
       firstName: myProfile?.displayName,
       capture: (event, props) => posthog.capture(event, props),
       auto,
-      onEnd: () => setTourSeen(true),
     });
   }
   // Operators can look at what's been archived without it cluttering the list.
@@ -153,6 +149,17 @@ export default function LeadsPage() {
     };
   }, []);
   const pendingLead = pending ? leads.find((l) => l.id === pending.leadId) : undefined;
+
+  // Opened from Launch ("Start tour"): run it as soon as the list is ready.
+  useEffect(() => {
+    if (leadsLoading || pipelinesLoading) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("tour") !== "1") return;
+    navigate("/leads", { replace: true });
+    const t = setTimeout(() => runTour(false), 500);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leadsLoading, pipelinesLoading]);
 
   // First visit with leads on screen: offer the walkthrough once. Waits for
   // the list to render so the tour has something to point at. Never
@@ -412,10 +419,6 @@ export default function LeadsPage() {
           query={q}
           onOpen={(hit) => navigate(`/leads/${hit.id}`)}
         />
-      )}
-
-      {!showGlobalSearch && (
-        <GettingStarted profile={myProfile} leads={leads} tourSeen={tourSeen} onStartTour={() => runTour(false)} />
       )}
 
 

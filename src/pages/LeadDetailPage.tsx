@@ -26,8 +26,10 @@ import OutcomeSheet from "../components/OutcomeSheet";
 import LeadHistory from "../components/LeadHistory";
 import { logLeadCall } from "../api/leadEvents";
 import type { LeadRow, OutcomeStep, Stage } from "../types";
+import { useFocusFromUrl } from "../lib/spotlight";
 
 export default function LeadDetailPage() {
+  useFocusFromUrl();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const lead = useLead(id);
@@ -143,6 +145,7 @@ export default function LeadDetailPage() {
           </StageMenu>
           <Box
             component="a"
+            data-focus="call"
             href={`tel:${lead.phone.replace(/\s/g, "")}`}
             onClick={() => {
               logLeadCall(lead.id, lead.agent_id);
