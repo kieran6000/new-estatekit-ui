@@ -54,8 +54,10 @@ function heading(emoji: string, title: string): string {
 
 /** Steps are matched by data-tour attributes so markup changes don't silently
  *  break the tour. */
-export function startLeadsTour(opts: { agentId?: string | null; firstName?: string | null; capture?: Capture; auto?: boolean } = {}) {
-  const { agentId, capture = () => {}, auto = false } = opts;
+export function startLeadsTour(
+  opts: { agentId?: string | null; firstName?: string | null; capture?: Capture; auto?: boolean; onEnd?: () => void } = {},
+) {
+  const { agentId, capture = () => {}, auto = false, onEnd } = opts;
   const first = (opts.firstName || "").trim().split(/\s+/)[0];
 
   const all: TourStep[] = [
@@ -154,6 +156,7 @@ export function startLeadsTour(opts: { agentId?: string | null; firstName?: stri
       markSeen(agentId);
       if (finished) capture("tour_completed", { tour: "leads", total, auto });
       else capture("tour_dismissed", { tour: "leads", at_step: steps[reached]?.id, index: reached + 1, total, auto });
+      onEnd?.();
     },
   });
 

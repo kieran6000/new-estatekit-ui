@@ -65,6 +65,7 @@ import GSheetIcon from "../components/GSheetIcon";
 import StageMenu from "../components/StageMenu";
 import OutcomeSheet from "../components/OutcomeSheet";
 import FocusCallModal from "../components/FocusCallModal";
+import GettingStarted from "../components/GettingStarted";
 
 export default function LeadsPage() {
   const navigate = useNavigate();
@@ -78,12 +79,15 @@ export default function LeadsPage() {
   const { data: isOperator } = useIsOperator();
   const posthog = usePostHog();
   const { data: myProfile } = useQuery({ queryKey: ["myProfile"], queryFn: getMyProfile, staleTime: 5 * 60_000 });
+  // Tracked here too so the checklist's "Take the tour" ticks as soon as it ends.
+  const [tourSeen, setTourSeen] = useState(() => hasSeenLeadsTour(getActiveAgentIdSync()));
   function runTour(auto: boolean) {
     startLeadsTour({
       agentId: getActiveAgentIdSync(),
       firstName: myProfile?.displayName,
       capture: (event, props) => posthog.capture(event, props),
       auto,
+      onEnd: () => setTourSeen(true),
     });
   }
   // Operators can look at what's been archived without it cluttering the list.
@@ -408,6 +412,10 @@ export default function LeadsPage() {
           query={q}
           onOpen={(hit) => navigate(`/leads/${hit.id}`)}
         />
+      )}
+
+      {!showGlobalSearch && (
+        <GettingStarted profile={myProfile} leads={leads} tourSeen={tourSeen} onStartTour={() => runTour(false)} />
       )}
 
 

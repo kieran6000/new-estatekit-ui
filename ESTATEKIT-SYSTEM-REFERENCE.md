@@ -258,6 +258,18 @@ The agent's home screen.
 - **Select mode (bulk):** archive/restore, move stage, move to another pipeline.
 - **Archived view:** operator only.
 - **Search:** operators can search across all accounts (`searchLeadsEverywhere`).
+- **Getting started checklist** (`GettingStarted.tsx`) at the top of Leads.
+  - It has 7 items, each ticked automatically from real data: account created
+    (always ticked), tour taken, photo, logo, Facebook page connected, first
+    lead, first call.
+  - Each open item is one tap to where it gets done. "Connect Facebook" opens a
+    pre-filled WhatsApp to the admin, because Facebook settings are
+    operator-only.
+  - It starts expanded while less than 60% is done, and hides itself when
+    complete or when the agent taps "Hide this" (stored per agent in
+    localStorage).
+  - PostHog tracks `checklist_viewed`, `checklist_item_clicked`,
+    `checklist_hidden` and `checklist_completed`.
 - **"How it works" tour** (`lib/tour.ts` + `tour.css`, driver.js, EstateKit-styled):
   - Structure: a welcome card (Show me / Skip), then lists, filters, open a
     lead and call, ending on "Start calling".
