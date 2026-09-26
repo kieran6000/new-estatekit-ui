@@ -65,7 +65,8 @@ const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&l
 
 /** Title with a Material icon beside it. driver.js renders titles as HTML. */
 function heading(iconPath: string, title: string): string {
-  return `<svg class="ek-tour-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${iconPath}"/></svg><span>${title}</span>`;
+  // Own wrapper: driver.js sets display:block on the title element itself.
+  return `<span class="ek-tour-heading"><svg class="ek-tour-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${iconPath}"/></svg><span>${title}</span></span>`;
 }
 
 /** Steps are matched by data-tour attributes so markup changes don't silently
