@@ -15,3 +15,11 @@ export function maskPhone(phone: string): string {
   const last4 = digits.slice(-4);
   return `•••• ${last4}`;
 }
+
+/** Fills the placeholders agents can use in their thank-you message:
+ *  {name} = the lead's first name, {agent} = the agent's first name (or
+ *  "Our team" when the page has none). */
+export function fillMessage(text: string, lead: string, agentName: string | null | undefined): string {
+  const agent = (agentName || "").trim().split(/\s+/)[0] || "Our team";
+  return (text || "").replaceAll("{name}", lead || "there").replaceAll("{agent}", agent);
+}

@@ -314,7 +314,7 @@ One screen manages all of an agent's **lead sources**.
       fields description.
     - **Message for leads** (headline, description), and **End page**.
   - **Form types**: the productised standard for every seller client
-    (`lib/formPresets.ts`, **v1**, based on the Media Buyer SOP; seller pages
+    (`lib/formPresets.ts`, **v2**, based on the Media Buyer SOP; seller pages
     only). See §14 "Seller form standard" for the questions.
     - Chosen when adding a seller lead page (default Balanced, or Custom), or
       via **Change form type** on Questions.
@@ -911,7 +911,7 @@ has a placeholder login (`harvel-realty.import@estatekit.app`) and no WhatsApp
 number. Alex Prinsloo's old account is the same team as Storm Hargreaves' account
 here ("Team Alex & Storm").
 
-### Seller form standard (v1): website forms and Facebook instant forms
+### Seller form standard (v2): website forms and Facebook instant forms
 Use **exactly** this wording on both, so every client's answers report as
 one. The `lead_form_answers` view standardises old spellings, but new forms
 should match anyway.
@@ -930,6 +930,12 @@ should match anyway.
 - **Facebook:** the end page is a separate ending, reached by conditional
   logic.
 - **No speed promise on the forms:** nobody guarantees a call within minutes.
+- **Message for leads:** "Thanks {name}! {agent} is preparing your report
+  now." / "They'll be in touch shortly to confirm a few details about your
+  property. When they message you on WhatsApp, reply so they know they've got
+  the right number." `{agent}` is filled with the agent's first name
+  ("Our team" if none). There's no "my assistant" and no value claims, because
+  both have to be true for every agent.
 
 **Comparing form types** needs outcomes logged. Until agents move leads past
 "New Lead", no form type can be shown to be better. A query to run once they

@@ -12,7 +12,8 @@ import type { FormPresetKey, LeadPage } from "../types";
 // Keep the answer wording identical to the Facebook instant form template in
 // ESTATEKIT-SYSTEM-REFERENCE.md, so every client's answers report as one.
 
-export const FORM_PRESET_VERSION = 1;
+// v2 (27 Sep 2026): neutral thank-you message with {agent}; no "my assistant" or value claims.
+export const FORM_PRESET_VERSION = 2;
 
 interface PresetQuestion {
   label: string;
@@ -122,9 +123,11 @@ const COPY_ROW = {
   show_intro: true,
   name_label: "Where should we send your FREE home evaluation?",
   cta_label: "Claim FREE Home Evaluation",
-  thank_you_headline: "Almost done, {name}!",
+  // Neutral on purpose: no "my assistant", no value claims, no speed promise.
+  // {agent} is filled with the agent's first name when shown.
+  thank_you_headline: "Thanks {name}! {agent} is preparing your report now.",
   thank_you_subtext:
-    "I'm preparing your free home evaluation. My assistant will give you a quick call to confirm a few details. Small things can shift your value by R20,000 to R120,000+.",
+    "They'll be in touch shortly to confirm a few details about your property. When they message you on WhatsApp, reply so they know they've got the right number.",
   dq_headline: "Thanks for your interest!",
   dq_text:
     "It sounds like now isn't the right time to sell, and that's completely fine. Whenever you're ready, we'd love to help you get the best price for your home.",

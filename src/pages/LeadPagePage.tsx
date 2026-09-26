@@ -370,7 +370,7 @@ export default function LeadPagePage() {
               </Box>
             </Section>
 
-            <Section title="Message for leads" info="What people see right after they send the form. Write {name} to use their first name.">
+            <Section title="Message for leads" info="What people see right after they send the form. Write {name} for their first name and {agent} for yours.">
               <TextField
                 label="Headline"
                 value={form.thankYouHeadline}

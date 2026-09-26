@@ -11,6 +11,7 @@ import PlaceIcon from "@mui/icons-material/Place";
 import { LEAD_FORM_TEMPLATE } from "../lib/leadFormTemplate";
 import { readableOn } from "../lib/contrast";
 import { trackPageEvent } from "../lib/pageTracking";
+import { fillMessage } from "../lib/format";
 import type { CustomQuestion, LeadPage, PipelineKind } from "../types";
 
 type Phase = "intro" | "steps" | "done";
@@ -444,8 +445,8 @@ function ThankYouScreen({ page, name }: { page: LeadPage; name: string }) {
           </Box>
         )}
       </Box>
-      <Typography sx={{ fontSize: 20, fontWeight: 700 }}>{page.thankYouHeadline.replace("{name}", name)}</Typography>
-      <Typography sx={{ fontSize: 14, color: "text.secondary", mt: 1 }}>{page.thankYouSubtext}</Typography>
+      <Typography sx={{ fontSize: 20, fontWeight: 700 }}>{fillMessage(page.thankYouHeadline, name, page.agentName)}</Typography>
+      <Typography sx={{ fontSize: 14, color: "text.secondary", mt: 1 }}>{fillMessage(page.thankYouSubtext, name, page.agentName)}</Typography>
     </Box>
   );
 }

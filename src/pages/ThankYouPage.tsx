@@ -12,6 +12,7 @@ import { HeaderBrand } from "../components/LeadCaptureForm";
 import { SoldList } from "../components/SoldListings";
 import PoweredByEstateKit from "../components/PoweredByEstateKit";
 import { initPixel, trackPixel } from "../lib/fbPixel";
+import { fillMessage } from "../lib/format";
 import type { LeadPage } from "../types";
 
 export default function ThankYouPage() {
@@ -141,8 +142,8 @@ function BrandedThankYou({ page, name }: { page: LeadPage; name: string }) {
           </Box>
         )}
       </Box>
-      <Typography sx={{ fontSize: 20, fontWeight: 700 }}>{page.thankYouHeadline.replace("{name}", name)}</Typography>
-      <Typography sx={{ fontSize: 14, color: "text.secondary", mt: 1 }}>{page.thankYouSubtext}</Typography>
+      <Typography sx={{ fontSize: 20, fontWeight: 700 }}>{fillMessage(page.thankYouHeadline, name, page.agentName)}</Typography>
+      <Typography sx={{ fontSize: 14, color: "text.secondary", mt: 1 }}>{fillMessage(page.thankYouSubtext, name, page.agentName)}</Typography>
 
       {(() => {
         const digits = (page.phone || "").replace(/\D/g, "");
