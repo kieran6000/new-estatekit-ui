@@ -56,10 +56,10 @@ export default function SignupRequests() {
                 )}
               </Typography>
               <Typography sx={{ fontSize: 13, color: tokens.ink2, mt: 0.25 }}>
-                {[r.wants.join(", "), r.suburbs, r.budget && `Budget ${r.budget}`].filter(Boolean).join(" · ")}
+                {[r.wants.join(", "), [r.city, r.suburbs].filter(Boolean).join(": "), r.budget && `Budget ${r.budget}`].filter(Boolean).join(" · ")}
               </Typography>
               <Typography sx={{ fontSize: 12, color: tokens.ink3, mt: 0.25 }}>
-                {r.whatsapp} · {timeAgo(r.created_at)}
+                {[r.whatsapp, r.email].filter(Boolean).join(" · ")} · {timeAgo(r.created_at)}
                 {r.ref ? ` · via /p/${r.ref}` : ""}
               </Typography>
             </Box>

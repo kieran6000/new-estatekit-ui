@@ -11,8 +11,10 @@ export interface SignupRequest {
   created_at: string;
   name: string;
   whatsapp: string;
+  email: string;
   agency: string;
   wants: string[];
+  city: string;
   suburbs: string;
   budget: string;
   ref: string | null;
@@ -23,9 +25,11 @@ export interface SignupRequest {
 export async function requestSignup(r: {
   name: string;
   whatsapp: string;
+  email: string;
   agency: string;
   wants: string[];
-  suburbs: string;
+  city: string;
+  suburbs: string[];
   budget: string;
   ref: string | null;
   source: string | null;
@@ -33,9 +37,11 @@ export async function requestSignup(r: {
   const { data, error } = await supabase.rpc("request_signup", {
     p_name: r.name,
     p_whatsapp: r.whatsapp,
+    p_email: r.email,
     p_agency: r.agency,
     p_wants: r.wants,
-    p_suburbs: r.suburbs,
+    p_city: r.city,
+    p_suburbs: r.suburbs.join("; "),
     p_budget: r.budget,
     p_ref: r.ref,
     p_source: r.source,
@@ -47,7 +53,7 @@ export async function requestSignup(r: {
 export async function listSignupRequests(): Promise<SignupRequest[]> {
   const { data, error } = await supabase
     .from("signup_requests")
-    .select("id, created_at, name, whatsapp, agency, wants, suburbs, budget, ref, source, status")
+    .select("id, created_at, name, whatsapp, email, agency, wants, city, suburbs, budget, ref, source, status")
     .in("status", ["new", "contacted"])
     .order("created_at", { ascending: false })
     .limit(50);

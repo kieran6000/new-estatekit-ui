@@ -335,17 +335,33 @@ optional email, WhatsApp number). A disqualifying answer shows a polite
 
 ### Sign-up (`/start`, public, `SignupPage.tsx`)
 A free-account request form in the lead-page style, built for completion
-rate:
-- an intro screen, then 5 short steps: what they want more of (multi), areas,
-  ad budget (one tap, auto-advances), agency, then name + WhatsApp last.
-- Saved through the `request_signup` RPC. The done screen offers **Send on
-  WhatsApp**, a pre-filled message with every answer to the admin number
-  (`src/lib/contact.ts`), the same way "Request a login" works. If the save
-  fails, that button is the fallback.
-- New requests appear at the top of **Clients** (`SignupRequests.tsx`) with a
-  WhatsApp button (a tap marks them contacted), **Signed up** and **Not a fit**.
-- Everything else (Facebook access, photos, recent sales, price range) is
-  collected at onboarding, not here.
+rate. Each step has an icon, and every single-choice step moves on by itself.
+1. **What do you want more of?** Sellers / Buyers / Both / Agents to recruit
+   (one tap).
+2. **City or town:** popular cities to tap, or autocomplete (one tap). Used for
+   broad call-outs in the creative ("Selling in Centurion?").
+3. **Up to 5 suburbs:** tappable "Near <city>" suggestions, plus autocomplete
+   biased to that city. Anything can also be typed and added.
+4. **Monthly ad budget** (one tap).
+5. **Agency.**
+6. **Name, email, WhatsApp.**
+
+City and suburb lookups use **Photon** (photon.komoot.io, free OpenStreetMap
+search), in `src/lib/places.ts`. Every lookup is best-effort: if Photon is
+down, people just type.
+
+- **Saving:** through the `request_signup` RPC. A database trigger then calls
+  the `notify-signup` function, which sends the **admin a WhatsApp**
+  (TextMeBot) and a **Discord card**. The card goes to the vault secret
+  `DISCORD_SIGNUP_WEBHOOK`, falling back to `DISCORD_ACTIVITY_WEBHOOK`. Each
+  request is announced once (`notified_at`).
+- **Done screen:** a "Message us on WhatsApp" button with every answer
+  pre-filled. It's also the fallback if the save fails.
+- **On the Clients page:** new requests appear at the top
+  (`SignupRequests.tsx`), with a WhatsApp button (a tap marks them
+  contacted), **Signed up** and **Not a fit**.
+- **Left for onboarding:** Facebook access, photos, recent sales, price range
+  and no-go suburbs.
 
 ### Overview (`/overview`, operator only, `OverviewPage.tsx`)
 Per-agent performance: Simple or Advanced views, a sortable table ("Tap a
@@ -496,7 +512,7 @@ lead pages use the agent's `accent_color` for the header and buttons.
 | `fb_api_state` | A single row: `backoff_until`, the app-wide Facebook rate-limit circuit breaker. |
 | `setup_steps` | Per-agent onboarding checklist (seeded by a trigger on `auth.users`). |
 | `support_tickets`, `call_questions` | Support inbox, agents' questions. |
-| `signup_requests` | Free-account requests from `/start`: `name, whatsapp (+27…), agency, wants text[], suburbs, budget, ref` (lead page slug), `source` (`lead_page`|`thank_you`), `status` (`new`|`contacted`|`signed_up`|`not_a_fit`). Operators read/update; the public only via `request_signup`. |
+| `signup_requests` | Free-account requests from `/start`: `name, whatsapp (+27…), email, agency, wants text[], city, suburbs, budget, ref, notified_at` (lead page slug), `source` (`lead_page`|`thank_you`), `status` (`new`|`contacted`|`signed_up`|`not_a_fit`). Operators read/update; the public only via `request_signup`. |
 | `client_dossiers` | **Operator only.** One row per client: `agent_id` (pk), `data jsonb` (the Clients tab's record, see §5), `updated_at`. Agents can't read their own. |
 | `overview_daily` | **Legacy / empty.** The Overview is computed client-side now. |
 | `otp_codes`, `phone_otp_codes` | Legacy WhatsApp-code login. **Disabled** (§13). |
@@ -511,7 +527,7 @@ lead pages use the agent's `accent_color` for the header and buttons.
 | `enqueue_automations()` | Trigger on `leads`: queues runs (see §10). |
 | `record_lead_event()` | Trigger on `leads`: writes history. |
 | `dedupe_lead_call()` | Trigger on `lead_events`: collapses repeat call logs. |
-| `request_signup(...)` | SECURITY DEFINER, anon + authenticated. Validates and caps every field, normalises the number to +27…, and returns the existing request for a repeat from the same number within 24h. |
+| `request_signup(...)` | SECURITY DEFINER, anon + authenticated. Validates (incl. email) and caps every field, normalises the number to +27…, and returns the existing request for a repeat from the same number within 24h. |
 | `client_directory()` | Live per-account lead counts (7d/30d/total/last/by stage), lead pages and pipelines for the Clients tab. SECURITY INVOKER, and it returns nothing unless the caller is an operator. |
 | `lead_page_funnel(page_id, since)` | Funnel counts (SECURITY INVOKER, so it respects RLS). |
 | `find_user_id_by_phone(phone)` | service_role only. |
