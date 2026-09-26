@@ -14,8 +14,8 @@ function FrictionBars({ level }: { level: number }) {
   );
 }
 
-/** Pick one of the friction presets (or none). Used when adding a lead page
- *  and when switching an existing page's preset. */
+/** Pick a form type (friction preset), or Custom. Used when adding a lead
+ *  page and when changing an existing page's form type. */
 export default function FormPresetPicker({
   value,
   onChange,
@@ -27,7 +27,7 @@ export default function FormPresetPicker({
 }) {
   const options = [
     ...FORM_PRESETS.map((p, i) => ({ key: p.key as FormPresetKey | "blank", name: p.name, sop: p.sop, tagline: p.tagline, bestFor: p.bestFor, questions: p.questions.length, level: i + 1 })),
-    ...(allowBlank ? [{ key: "blank" as const, name: "Blank form", sop: "", tagline: "Only name and number. Add your own questions.", bestFor: "", questions: 0, level: 0 }] : []),
+    ...(allowBlank ? [{ key: "blank" as const, name: "Custom", sop: "", tagline: "Only the contact fields. Add your own questions.", bestFor: "", questions: 0, level: 0 }] : []),
   ];
   return (
     <Box role="radiogroup" sx={{ display: "flex", flexDirection: "column", gap: 1 }}>

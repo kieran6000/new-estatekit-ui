@@ -270,7 +270,7 @@ export default function LeadPagePage() {
           <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
             <Section title="Page details">
               <TextField label="Agent name" value={form.agentName} onChange={(e) => fieldChange("agentName", e.target.value)} fullWidth />
-              <TextField label="Headline" value={form.headline} onChange={(e) => fieldChange("headline", e.target.value)} fullWidth multiline minRows={2} />
+              <TextField label="Intro headline" value={form.headline} onChange={(e) => fieldChange("headline", e.target.value)} fullWidth multiline minRows={2} />
               <TextField label="Suburb / area" value={form.suburb} onChange={(e) => fieldChange("suburb", e.target.value)} fullWidth />
               <TextField label="Phone" value={form.phone} onChange={(e) => fieldChange("phone", e.target.value)} fullWidth />
               <Box sx={{ display: "flex", gap: 2 }}>
@@ -360,35 +360,37 @@ export default function LeadPagePage() {
 
               <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <Box>
-                  <Typography sx={{ fontSize: 14, fontWeight: 500 }}>Show intro screen</Typography>
-                  <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>Headline + Get Started, before Step 1</Typography>
+                  <Typography sx={{ fontSize: 14, fontWeight: 500 }}>Intro</Typography>
+                  <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>A greeting screen with your intro headline, before the first question</Typography>
                 </Box>
                 <Switch checked={page.showIntro} onChange={(e) => update({ showIntro: e.target.checked })} />
               </Box>
             </Section>
 
-            <Section title="Submit &amp; thank you">
-              <TextField label="Submit button text" value={form.ctaLabel} onChange={(e) => fieldChange("ctaLabel", e.target.value)} fullWidth />
+            <Section title="Message for leads">
+              <Typography sx={{ fontSize: 12, color: "text.secondary", mt: -1 }}>
+                Shown after they submit.
+              </Typography>
               <TextField
-                label="Thank-you headline"
+                label="Headline"
                 value={form.thankYouHeadline}
                 onChange={(e) => fieldChange("thankYouHeadline", e.target.value)}
                 helperText="{name} is replaced with what they typed"
                 fullWidth
               />
-              <TextField label="Thank-you subtext" value={form.thankYouSubtext} onChange={(e) => fieldChange("thankYouSubtext", e.target.value)} fullWidth multiline minRows={2} />
+              <TextField label="Description" value={form.thankYouSubtext} onChange={(e) => fieldChange("thankYouSubtext", e.target.value)} fullWidth multiline minRows={2} />
             </Section>
 
             <Section title="End page">
               <Typography sx={{ fontSize: 12, color: "text.secondary", mt: -1 }}>
-                Shown instead of the thank-you when they pick an answer you've marked "turn them away". No lead is created.
+                Shown instead of the message for leads when they pick an answer set to "Send to end page". No lead is saved.
                 Leave blank for the standard wording. Add a button to send them somewhere useful, like an instant online estimate.
               </Typography>
               <TextField label="Headline" placeholder="Thanks for your interest!" value={form.dqHeadline} onChange={(e) => fieldChange("dqHeadline", e.target.value)} fullWidth />
-              <TextField label="Message" placeholder="Based on your answers, this might not be the right time for a valuation…" value={form.dqText} onChange={(e) => fieldChange("dqText", e.target.value)} fullWidth multiline minRows={2} />
+              <TextField label="Description" placeholder="Based on your answers, this might not be the right time for a valuation…" value={form.dqText} onChange={(e) => fieldChange("dqText", e.target.value)} fullWidth multiline minRows={2} />
               <Box sx={{ display: "flex", gap: 1.5, flexWrap: "wrap" }}>
                 <TextField label="Button text" placeholder="Get instant estimate" value={form.dqCtaLabel} onChange={(e) => fieldChange("dqCtaLabel", e.target.value)} sx={{ flex: "1 1 160px" }} />
-                <TextField label="Button link" placeholder="https://…" value={form.dqCtaUrl} onChange={(e) => fieldChange("dqCtaUrl", e.target.value.trim())} sx={{ flex: "2 1 220px" }} />
+                <TextField label="Website link" placeholder="https://…" value={form.dqCtaUrl} onChange={(e) => fieldChange("dqCtaUrl", e.target.value.trim())} sx={{ flex: "2 1 220px" }} />
               </Box>
             </Section>
 
@@ -428,20 +430,21 @@ export default function LeadPagePage() {
               </Section>
             )}
 
-            <Section title="Form questions">
+            <Section title="Questions">
               {pipeline.kind === "seller" && (
                 <PresetBar page={page} onApplied={() => setFormResetKey((k) => k + 1)} />
               )}
               <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
-                Name and phone are always collected last. Email is optional (toggle below). Every other
-                question — including the address and timeline ones every page starts with — can be edited, reordered or removed.
+                Contact fields (full name, phone number and, if on, email) always come last. Every other question
+                can be edited, reordered or removed.
               </Typography>
-              <TextField label="Name field question" value={form.nameLabel} onChange={(e) => fieldChange("nameLabel", e.target.value)} fullWidth />
-              <TextField label="Phone field question" value={form.phoneLabel} onChange={(e) => fieldChange("phoneLabel", e.target.value)} fullWidth />
+              <TextField label="Contact fields description" helperText="Shown above the contact fields, e.g. “Where should we send your FREE home evaluation?”" value={form.nameLabel} onChange={(e) => fieldChange("nameLabel", e.target.value)} fullWidth />
+              <TextField label="Phone number label" value={form.phoneLabel} onChange={(e) => fieldChange("phoneLabel", e.target.value)} fullWidth />
+              <TextField label="Submit button text" value={form.ctaLabel} onChange={(e) => fieldChange("ctaLabel", e.target.value)} fullWidth />
               <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <Box>
-                  <Typography sx={{ fontSize: 14, fontWeight: 500 }}>Ask for email address</Typography>
-                  <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>Turn off to collect only name + phone</Typography>
+                  <Typography sx={{ fontSize: 14, fontWeight: 500 }}>Email</Typography>
+                  <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>Turn off to collect only full name and phone number</Typography>
                 </Box>
                 <Switch checked={page.collectEmail} onChange={(e) => update({ collectEmail: e.target.checked })} />
               </Box>
@@ -528,7 +531,7 @@ export default function LeadPagePage() {
             onChange={(e) => setRenameDraft(e.target.value)}
             fullWidth
             autoFocus
-            label="Page name"
+            label="Form name"
             sx={{ mt: 1 }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && renameDraft.trim() && renameDialogId) {
@@ -596,7 +599,7 @@ function FbFormSource({
   return (
     <Box sx={{ display: "flex", flexDirection: { xs: "column", md: "row" }, gap: 3, p: 2, maxWidth: 1000, mx: "auto", alignItems: "flex-start" }}>
       <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3, width: "100%" }}>
-        <Section title="Form questions">
+        <Section title="Questions">
           {isLoading ? (
             <Skeleton variant="rounded" height={160} sx={{ borderRadius: "8px" }} />
           ) : error || data?.noAccess || rateLimited ? (
@@ -983,10 +986,10 @@ function AddPageDialog({
 
         {sourceType === "website" ? (
           <>
-            <TextField label="Page name" value={name} onChange={(e) => setName(e.target.value)} fullWidth autoFocus />
+            <TextField label="Form name" value={name} onChange={(e) => setName(e.target.value)} fullWidth autoFocus />
             {pipelines.find((pl) => pl.id === pipelineId)?.kind === "seller" && (
               <Box>
-                <Typography sx={{ fontSize: 13, color: "text.secondary", mb: 1 }}>Form</Typography>
+                <Typography sx={{ fontSize: 13, color: "text.secondary", mb: 1 }}>Form type</Typography>
                 <FormPresetPicker value={preset} onChange={setPreset} allowBlank />
               </Box>
             )}
@@ -1199,7 +1202,7 @@ function RecentSalesEditor() {
   );
 }
 
-/** Which friction preset this page is built on, and a way to switch. */
+/** Which form type (friction preset) this page is built on, and a way to change it. */
 function PresetBar({ page, onApplied }: { page: LeadPage; onApplied: () => void }) {
   const qc = useQueryClient();
   const showSnack = useSnack();
@@ -1222,10 +1225,10 @@ function PresetBar({ page, onApplied }: { page: LeadPage; onApplied: () => void 
       posthog.capture("form_preset_applied", { preset: choice, from: page.preset ?? "custom", with_copy: withCopy });
       onApplied();
       setOpen(false);
-      showSnack(`${presetByKey(choice)?.name} preset applied`);
+      showSnack(`Form type changed to ${presetByKey(choice)?.name}`);
     } catch (e) {
       console.error(e);
-      showSnack("Couldn't apply the preset. Try again.");
+      showSnack("Couldn't change the form type. Try again.");
     } finally {
       setBusy(false);
     }
@@ -1236,12 +1239,12 @@ function PresetBar({ page, onApplied }: { page: LeadPage; onApplied: () => void 
       <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, p: "10px 12px", bgcolor: tokens.primaryBg, borderRadius: "4px" }}>
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Typography sx={{ fontSize: 13.5, fontWeight: 500 }}>
-            {current ? `Preset: ${current.name}` : "No preset"}
+            {current ? `Form type: ${current.name}` : "Form type: Custom"}
           </Typography>
           <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
             {current
-              ? "Edit the questions freely; the page stays tagged with this preset for comparing results."
-              : "Start from a proven form: more questions, fewer but better leads."}
+              ? "Edit the questions freely; the page stays tagged with this form type for comparing results."
+              : "Start from a proven form type: more questions, fewer but better leads."}
           </Typography>
         </Box>
         <Button
@@ -1250,17 +1253,17 @@ function PresetBar({ page, onApplied }: { page: LeadPage; onApplied: () => void 
           onClick={() => { setChoice(page.preset ?? "balanced"); setWithCopy(true); setOpen(true); }}
           sx={{ flexShrink: 0, bgcolor: "background.paper" }}
         >
-          {current ? "Switch preset" : "Use a preset"}
+          {current ? "Change form type" : "Choose form type"}
         </Button>
       </Box>
 
       <Dialog open={open} onClose={() => !busy && setOpen(false)} fullWidth maxWidth="sm">
-        <DialogTitle>Choose a form preset</DialogTitle>
+        <DialogTitle>Choose a form type</DialogTitle>
         <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
           <FormPresetPicker value={choice} onChange={setChoice} />
           <FormControlLabel
             control={<Checkbox checked={withCopy} onChange={(e) => setWithCopy(e.target.checked)} />}
-            label={<Typography sx={{ fontSize: 14 }}>Also use the preset's wording (headline, button, thank-you and end page)</Typography>}
+            label={<Typography sx={{ fontSize: 14 }}>Also use its suggested wording (intro, contact fields, message for leads and end page)</Typography>}
           />
           <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
             This replaces the page's current questions. Leads you already have aren't touched.
@@ -1268,7 +1271,7 @@ function PresetBar({ page, onApplied }: { page: LeadPage; onApplied: () => void 
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpen(false)} disabled={busy}>Cancel</Button>
-          <Button onClick={apply} disabled={busy || choice === "blank"} variant="contained">{busy ? "Applying…" : "Apply preset"}</Button>
+          <Button onClick={apply} disabled={busy || choice === "blank"} variant="contained">{busy ? "Applying…" : "Apply"}</Button>
         </DialogActions>
       </Dialog>
     </>
@@ -1288,10 +1291,10 @@ function Section({ title, action, children }: { title: string; action?: React.Re
 }
 
 const QUESTION_TYPES: { value: QuestionType; label: string }[] = [
-  { value: "short_text", label: "Short text" },
-  { value: "address", label: "Address" },
+  { value: "short_text", label: "Short answer" },
+  { value: "address", label: "Street address" },
   { value: "multiple_choice", label: "Multiple choice" },
-  { value: "yes_no", label: "Yes / No" },
+  { value: "yes_no", label: "Yes / no" },
 ];
 
 function CustomQuestionEditor({
@@ -1632,7 +1635,7 @@ function EditQuestionRow({ pageId, question, onDone }: { pageId: string; questio
                 <FormControlLabel
                   value="stop"
                   control={<Radio size="small" />}
-                  label={<Typography sx={{ fontSize: 13.5 }}>Don&apos;t save the lead &mdash; show a polite &quot;not a fit&quot; page</Typography>}
+                  label={<Typography sx={{ fontSize: 13.5 }}>Send to end page &mdash; the lead isn&apos;t saved</Typography>}
                   sx={{ m: 0, mt: 0.25 }}
                 />
                 <FormControlLabel

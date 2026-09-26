@@ -1,10 +1,12 @@
 import { supabase } from "../api/_client";
 import type { FormPresetKey, LeadPage } from "../types";
 
-// Seller form presets by friction level, from the Media Buyer SOP (Super Low /
-// Low / Mid Evaluation). More questions = fewer but more serious leads. Named
-// by outcome so agents don't need the jargon. Only for seller pages: the SOP
-// is all about home evaluations.
+// Seller "form types" by friction level, from the Media Buyer SOP (Super Low /
+// Low / Mid Evaluation), named like Meta's Instant Form types (More volume /
+// Higher intent) with Balanced in between. More questions = fewer but more
+// serious leads. Only for seller pages: the SOP is about home evaluations.
+// (Meta's Higher intent adds a review step; ours adds qualifying questions.
+// Same goal, different mechanism.)
 
 interface PresetQuestion {
   label: string;
@@ -37,9 +39,9 @@ const ADDRESS: PresetQuestion = {
 export const FORM_PRESETS: FormPreset[] = [
   {
     key: "most_leads",
-    name: "Most leads",
+    name: "More volume",
     sop: "Super Low Eval",
-    tagline: "Address, then name and number. Cheapest leads, most tyre-kickers.",
+    tagline: "Street address, then contact fields. Cheapest leads, most tyre-kickers.",
     bestFor: "New campaigns, small areas, or when volume has dried up",
     collectEmail: false,
     questions: [ADDRESS],
@@ -63,7 +65,7 @@ export const FORM_PRESETS: FormPreset[] = [
   },
   {
     key: "best_quality",
-    name: "Best quality",
+    name: "Higher intent",
     sop: "Mid Eval",
     tagline: "Adds timeline and reason. People not selling or just curious go to the end page instead.",
     bestFor: "Agents drowning in valuation-seekers who don't list",

@@ -306,24 +306,35 @@ One screen manages all of an agent's **lead sources**.
   - **Page details:** agent name, headline, suburb, phone, logo, profile photo,
     accent colour, intro screen on/off, collect email, name/phone field wording,
     CTA text, thank-you headline and subtext. Autosaves.
-  - **Form presets** (seller pages; `lib/formPresets.ts`, from the Media
-    Buyer SOP). Three friction levels:
-    - **Most leads** (Super Low): address only, no email.
-    - **Balanced** (Low): adds "how soon will you sell?". "6–12 months" and
-      "Not sure yet" are kept as leads but not reported to Facebook.
-    - **Best quality** (Mid): adds "main reason for selling?". "Not planning
-      to sell" and "Just curious" are turned away.
+  - **Wording follows Meta's Instant Form builder**, so media buyers and
+    agents use one vocabulary:
+    - **Form name**, **Form type**, **Intro** (intro headline), and
+      **Questions**: short answer, street address, multiple choice, yes/no.
+    - **Contact fields**: full name, email, phone number, plus the contact
+      fields description.
+    - **Message for leads** (headline, description), and **End page**.
+  - **Form types** (seller pages; `lib/formPresets.ts`, from the Media Buyer
+    SOP), with keys unchanged in the database:
+    - **More volume** (`most_leads`, Super Low): street address only, no
+      email.
+    - **Balanced** (`balanced`, Low): adds "how soon will you sell?". "6–12
+      months" and "Not sure yet" are saved as leads but not reported to
+      Facebook.
+    - **Higher intent** (`best_quality`, Mid): adds "main reason for
+      selling?". "Not planning to sell" and "Just curious" go to the End page.
+    - Meta's Higher intent adds a review step; ours adds qualifying questions.
 
-    Picked when adding a seller lead page (default Balanced, or Blank), or via
-    **Switch preset** on the questions editor. Applying one adds the new
-    questions before removing the old, so a failure can't empty a live page.
-    It can also set the SOP wording (headline, button, "Almost done" thank-you
-    and end page). `lead_pages.preset` tags the page ("based on",
-    kept after edits). PostHog `form_preset_applied`, plus `form_preset` on
-    `lead_page_form_submitted` and `lead_page_added`, for comparing presets.
-  - **End page**: shown instead of the thank-you when an answer turns them away. Its headline,
-    message and an optional button (e.g. "Get instant estimate" →
-    instantcma.co.za). Stored in `lead_pages.dq_*`; blank uses the built-in
+    Chosen when adding a seller lead page (default Balanced, or Custom), or via
+    **Change form type** on Questions. Applying one adds the new questions
+    before removing the old, so a failure can't empty a live page. It can also
+    set the SOP wording (intro, contact fields description, message for leads,
+    end page). `lead_pages.preset` tags the page, kept after edits. PostHog
+    events: `form_preset_applied`, plus `form_preset` on
+    `lead_page_form_submitted` and `lead_page_added`.
+  - **End page**: shown instead of the message for leads when an answer is set
+    to "Send to end page" (no lead saved). Headline, description and an
+    optional button with a website link (e.g. "Get instant estimate" →
+    instantcma.co.za), stored in `lead_pages.dq_*`. Blank uses the built-in
     wording.
   - **Form questions** (`CustomQuestionEditor`): types `short_text`, `address`,
     `multiple_choice`, `yes_no`; required; reorder; helper text. **Bad answers:**
