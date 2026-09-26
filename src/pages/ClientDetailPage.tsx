@@ -47,7 +47,8 @@ const digits = (s: string) => {
   const d = (s || "").replace(/\D/g, "");
   return d.length === 10 && d.startsWith("0") ? "27" + d.slice(1) : d;
 };
-const splitList = (s: string) => s.split(/[,;\n]/).map((x) => x.trim()).filter(Boolean);
+// Lists are typed with ";" between items, the same as form answer options.
+const splitList = (s: string) => s.split(/[;\n]/).map((x) => x.trim()).filter(Boolean);
 const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
 
 // Onboarding answers already shown in Contact or the section header.
@@ -446,8 +447,8 @@ function ContactSection({ data }: { data: Data }) {
       fields={[
         { key: "whatsapp", label: "WhatsApp number", value: p.whatsapp_number || "", helper: "Where their lead alerts go. Their login number doesn't change." },
         { key: "email", label: "Email", value: p.email || "" },
-        { key: "phones", label: "Other numbers", value: phones.map((x) => "+" + x).join(", "), helper: "Separate with commas" },
-        { key: "emails", label: "Other emails", value: emails.join(", "), helper: "Separate with commas" },
+        { key: "phones", label: "Other numbers", value: phones.map((x) => "+" + x).join("; "), helper: "Separate with ;" },
+        { key: "emails", label: "Other emails", value: emails.join("; "), helper: "Separate with ;" },
         { key: "contactPerson", label: "Contact person", value: d?.contact.contactPerson || "" },
         { key: "team", label: "Team", value: d?.contact.team || "" },
         { key: "facebook", label: "Facebook link", value: s?.facebook || "", placeholder: "https://facebook.com/…" },
@@ -596,7 +597,7 @@ function OnboardingSection({ data, which }: { data: Data; which: "onboarding" | 
   // Existing answers plus any standard question they skipped.
   const questions = [...rows.map((x) => x.q), ...(which === "onboarding" ? STANDARD_QUESTIONS.filter((q) => !rows.some((x) => x.q === q)) : [])];
   const fields: FieldDef[] = questions.map((q, i) => ({ key: `q${i}`, label: q, value: rows.find((x) => x.q === q)?.a || "", multiline: true }));
-  if (which === "onboarding") fields.push({ key: "targets", label: "Target areas", value: targets.join(", "), helper: "Separate with commas" });
+  if (which === "onboarding") fields.push({ key: "targets", label: "Target areas", value: targets.join("; "), helper: "Separate with ;" });
 
   const kv = rows.map((x) => [x.q, x.a] as [string, ReactNode]);
   if (targets.length) kv.push(["Target areas", targets.join(", ")]);

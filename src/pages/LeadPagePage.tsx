@@ -596,7 +596,7 @@ function FbFormSource({
                       {CONTACT.has(q.type)
                         ? "Contact detail"
                         : q.options?.length
-                          ? `Choice — ${q.options.map((o) => o.value).join(", ")}`
+                          ? `Choice — ${q.options.map((o) => o.value).join("; ")}`
                           : "Short answer"}
                     </Typography>
                   </Box>
@@ -1193,7 +1193,7 @@ function CustomQuestionEditor({
 
   async function add() {
     if (!label.trim()) return;
-    const options = type === "multiple_choice" ? optionsText.split(",").map((o) => o.trim()).filter(Boolean) : undefined;
+    const options = type === "multiple_choice" ? splitOptions(optionsText) : undefined;
     await addQuestion.mutateAsync({ label: label.trim(), type, required, options });
     posthog.capture("custom_question_added", { type });
     setLabel("");
@@ -1216,7 +1216,7 @@ function CustomQuestionEditor({
               </Typography>
               <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
                 {QUESTION_TYPES.find((t) => t.value === q.type)?.label}
-                {q.options?.length ? ` — ${q.options.join(", ")}` : ""}
+                {q.options?.length ? ` — ${q.options.join("; ")}` : ""}
               </Typography>
             </Box>
             <IconButton size="small" onClick={() => setEditingId(q.id)}>
@@ -1249,8 +1249,9 @@ function CustomQuestionEditor({
           </TextField>
           {type === "multiple_choice" && (
             <TextField
-              label="Options (comma-separated)"
+              label="Options (separate with ;)"
               size="small"
+              helperText={optionsHint(optionsText)}
               value={optionsText}
               onChange={(e) => setOptionsText(e.target.value)}
               fullWidth
@@ -1402,12 +1403,23 @@ function CapiSettings({ pixelId }: { pixelId: string }) {
 /** What to do with the answers marked bad. Asked once per question. */
 type BadAnswerTreatment = "stop" | "dont_count";
 
+/** Multiple-choice options are typed as one line separated by ";" — not
+ *  commas, because answers like "R1,5m – R2m" contain commas. */
+function splitOptions(text: string): string[] {
+  return text.split(";").map((o) => o.trim()).filter(Boolean);
+}
+
+/** Nudge when it looks like commas were meant as separators. */
+function optionsHint(text: string): string {
+  return text.includes(",") && !text.includes(";") ? "Commas stay inside an option. Put ; between options." : "e.g. Yes, soon; In 3–6 months; Just curious";
+}
+
 function EditQuestionRow({ pageId, question, onDone }: { pageId: string; question: CustomQuestion; onDone: () => void }) {
   const updateQuestion = useUpdateCustomQuestion(pageId);
   const [label, setLabel] = useState(question.label);
   const [helperText, setHelperText] = useState(question.helperText ?? "");
   const [required, setRequired] = useState(question.required);
-  const [optionsText, setOptionsText] = useState((question.options ?? []).join(", "));
+  const [optionsText, setOptionsText] = useState((question.options ?? []).join("; "));
   // One list of bad answers plus one decision, rather than a setting on every
   // answer. Both database columns still exist — which one the list is saved to
   // is just the treatment — so the form engine and the migration are unchanged.
@@ -1422,7 +1434,7 @@ function EditQuestionRow({ pageId, question, onDone }: { pageId: string; questio
   const currentOptions =
     question.type === "yes_no"
       ? ["Yes", "No"]
-      : optionsText.split(",").map((o) => o.trim()).filter(Boolean);
+      : splitOptions(optionsText);
 
   function toggleBad(opt: string) {
     setBad((b) => (b.includes(opt) ? b.filter((x) => x !== opt) : [...b, opt]));
@@ -1432,7 +1444,7 @@ function EditQuestionRow({ pageId, question, onDone }: { pageId: string; questio
     if (!label.trim()) return;
     const badInOptions = bad.filter((o) => currentOptions.includes(o));
     const options = question.type === "multiple_choice"
-      ? optionsText.split(",").map((o) => o.trim()).filter(Boolean)
+      ? splitOptions(optionsText)
       : question.options;
     await updateQuestion.mutateAsync({
       id: question.id,
@@ -1462,7 +1474,7 @@ function EditQuestionRow({ pageId, question, onDone }: { pageId: string; questio
         <TextField label="Example / helper text" size="small" value={helperText} onChange={(e) => setHelperText(e.target.value)} fullWidth />
       )}
       {question.type === "multiple_choice" && (
-        <TextField label="Options (comma-separated)" size="small" value={optionsText} onChange={(e) => setOptionsText(e.target.value)} fullWidth />
+        <TextField label="Options (separate with ;)" size="small" helperText={optionsHint(optionsText)} value={optionsText} onChange={(e) => setOptionsText(e.target.value)} fullWidth />
       )}
 
       {isChoice && currentOptions.length > 0 && (
