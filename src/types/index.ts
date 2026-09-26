@@ -200,7 +200,19 @@ export interface LeadPage {
   sourceType: "website" | "fb_form";
   fbFormId: string | null;
   fbFormName: string | null;
+  /** Which friction preset the form was built from (see lib/formPresets.ts).
+   *  Null = built by hand. Kept after edits, as "based on". */
+  preset: FormPresetKey | null;
+  /** The "not a fit" screen shown when an answer turns someone away. Blank
+   *  headline/text fall back to the built-in wording; no button without both
+   *  a label and a link. */
+  dqHeadline: string;
+  dqText: string;
+  dqCtaLabel: string;
+  dqCtaUrl: string;
 }
+
+export type FormPresetKey = "most_leads" | "balanced" | "best_quality";
 
 /** "address" behaves like short_text but keeps the location-pin icon and an
  * example caption (CustomQuestion.helperText) — the only visual difference

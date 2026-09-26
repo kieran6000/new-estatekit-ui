@@ -26,6 +26,11 @@ interface LeadPageRow {
   source_type: string;
   fb_form_id: string | null;
   fb_form_name: string | null;
+  preset: string | null;
+  dq_headline: string | null;
+  dq_text: string | null;
+  dq_cta_label: string | null;
+  dq_cta_url: string | null;
 }
 
 function rowToPage(r: LeadPageRow): LeadPage {
@@ -54,6 +59,11 @@ function rowToPage(r: LeadPageRow): LeadPage {
     sourceType: (r.source_type as "website" | "fb_form") || "website",
     fbFormId: r.fb_form_id,
     fbFormName: r.fb_form_name,
+    preset: (r.preset as LeadPage["preset"]) ?? null,
+    dqHeadline: r.dq_headline ?? "",
+    dqText: r.dq_text ?? "",
+    dqCtaLabel: r.dq_cta_label ?? "",
+    dqCtaUrl: r.dq_cta_url ?? "",
   };
 }
 
@@ -85,6 +95,11 @@ function patchToRow(
   if (p.sourceType !== undefined) m.source_type = p.sourceType;
   if (p.fbFormId !== undefined) m.fb_form_id = p.fbFormId;
   if (p.fbFormName !== undefined) m.fb_form_name = p.fbFormName;
+  if (p.preset !== undefined) m.preset = p.preset;
+  if (p.dqHeadline !== undefined) m.dq_headline = p.dqHeadline;
+  if (p.dqText !== undefined) m.dq_text = p.dqText;
+  if (p.dqCtaLabel !== undefined) m.dq_cta_label = p.dqCtaLabel;
+  if (p.dqCtaUrl !== undefined) m.dq_cta_url = p.dqCtaUrl;
   return m;
 }
 

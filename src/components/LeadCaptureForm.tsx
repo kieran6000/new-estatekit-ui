@@ -453,11 +453,24 @@ function DisqualifiedScreen({ page }: { page: LeadPage }) {
       <Box sx={{ width: 72, height: 72, borderRadius: "50%", bgcolor: `${page.accentColor}14`, display: "flex", alignItems: "center", justifyContent: "center", mx: "auto", mb: 2.5 }}>
         <Typography sx={{ fontSize: 34 }}>🙏</Typography>
       </Box>
-      <Typography sx={{ fontSize: 20, fontWeight: 700 }}>Thanks for your interest!</Typography>
+      <Typography sx={{ fontSize: 20, fontWeight: 700 }}>{page.dqHeadline || "Thanks for your interest!"}</Typography>
       <Typography sx={{ fontSize: 14, color: "text.secondary", mt: 1, lineHeight: 1.6 }}>
-        Based on your answers, this might not be the right time for a valuation. If anything changes,
-        we'd love to help down the line.
+        {page.dqText ||
+          "Based on your answers, this might not be the right time for a valuation. If anything changes, we'd love to help down the line."}
       </Typography>
+      {page.dqCtaLabel && /^https?:\/\//i.test(page.dqCtaUrl) && (
+        <Button
+          variant="contained"
+          size="large"
+          fullWidth
+          href={page.dqCtaUrl}
+          target="_blank"
+          rel="noopener"
+          sx={{ mt: 3, bgcolor: page.accentColor, color: readableOn(page.accentColor), "&:hover": { bgcolor: page.accentColor, filter: "brightness(0.9)" } }}
+        >
+          {page.dqCtaLabel}
+        </Button>
+      )}
     </Box>
   );
 }

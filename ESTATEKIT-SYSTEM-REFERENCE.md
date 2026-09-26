@@ -326,6 +326,25 @@ One screen manages all of an agent's **lead sources**.
   - **Page details:** agent name, headline, suburb, phone, logo, profile photo,
     accent colour, intro screen on/off, collect email, name/phone field wording,
     CTA text, thank-you headline and subtext. Autosaves.
+  - **Form presets** (seller pages; `lib/formPresets.ts`, from the Media
+    Buyer SOP). Three friction levels:
+    - **Most leads** (Super Low): address only, no email.
+    - **Balanced** (Low): adds "how soon will you sell?". "6–12 months" and
+      "Not sure yet" are kept as leads but not reported to Facebook.
+    - **Best quality** (Mid): adds "main reason for selling?". "Not planning
+      to sell" and "Just curious" are turned away.
+
+    Picked when adding a seller lead page (default Balanced, or Blank), or via
+    **Switch preset** on the questions editor. Applying one adds the new
+    questions before removing the old, so a failure can't empty a live page.
+    It can also set the SOP wording (headline, button, "Almost done" thank-you
+    and turned-away screen). `lead_pages.preset` tags the page ("based on",
+    kept after edits). PostHog `form_preset_applied`, plus `form_preset` on
+    `lead_page_form_submitted` and `lead_page_added`, for comparing presets.
+  - **If an answer turns them away**: the "not a fit" screen's headline,
+    message and an optional button (e.g. "Get instant estimate" →
+    instantcma.co.za). Stored in `lead_pages.dq_*`; blank uses the built-in
+    wording.
   - **Form questions** (`CustomQuestionEditor`): types `short_text`, `address`,
     `multiple_choice`, `yes_no`; required; reorder; helper text. **Bad answers:**
     tick the answers that are bad, then one choice: *turn them away*

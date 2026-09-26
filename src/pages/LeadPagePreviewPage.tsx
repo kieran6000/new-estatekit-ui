@@ -124,7 +124,7 @@ export default function LeadPagePreviewPage() {
                   // Meta is never told it converted — otherwise the algorithm
                   // goes looking for more of exactly the lead they don't want.
                   if (quality === "good") trackPixel("Lead", eventId);
-                  posthog.capture("lead_page_form_submitted", { pipeline: pipeline.kind, quality });
+                  posthog.capture("lead_page_form_submitted", { pipeline: pipeline.kind, quality, form_preset: page.preset ?? "custom" });
                   navigate(`/thank-you?p=${page.slug}&n=${encodeURIComponent(name.split(" ")[0] || "there")}`);
                 }}
               />

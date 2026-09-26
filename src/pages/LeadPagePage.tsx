@@ -67,6 +67,9 @@ import LeadPageFunnelStats from "../components/LeadPageFunnelStats";
 import { getCapiConfig, saveCapiConfig, listCapiEvents } from "../api/capi";
 import { timeAgo } from "../lib/timeAgo";
 import { useFocusFromUrl } from "../lib/spotlight";
+import FormPresetPicker from "../components/FormPresetPicker";
+import { applyFormPreset, presetByKey } from "../lib/formPresets";
+import type { FormPresetKey } from "../types";
 
 export default function LeadPagePage() {
   useFocusFromUrl();
@@ -103,7 +106,10 @@ export default function LeadPagePage() {
     agentName: "", headline: "", suburb: "", phone: "",
     nameLabel: "", phoneLabel: "", ctaLabel: "",
     thankYouHeadline: "", thankYouSubtext: "", fbPixelId: "",
+    dqHeadline: "", dqText: "", dqCtaLabel: "", dqCtaUrl: "",
   });
+  // Bumped after a preset rewrites the page's wording, so the fields reload.
+  const [formResetKey, setFormResetKey] = useState(0);
 
   useEffect(() => {
     if (page) {
@@ -111,9 +117,12 @@ export default function LeadPagePage() {
         agentName: page.agentName, headline: page.headline, suburb: page.suburb, phone: page.phone,
         nameLabel: page.nameLabel, phoneLabel: page.phoneLabel, ctaLabel: page.ctaLabel,
         thankYouHeadline: page.thankYouHeadline, thankYouSubtext: page.thankYouSubtext, fbPixelId: page.fbPixelId,
+        dqHeadline: page.dqHeadline, dqText: page.dqText, dqCtaLabel: page.dqCtaLabel, dqCtaUrl: page.dqCtaUrl,
       });
     }
-  }, [page?.id]);
+    // formResetKey: reload after a preset rewrote the wording.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page?.id, formResetKey]);
 
   const debouncedUpdate = useCallback(
     (patch: Partial<Omit<LeadPage, "id" | "pipelineId">>) => {
@@ -372,6 +381,19 @@ export default function LeadPagePage() {
               <TextField label="Thank-you subtext" value={form.thankYouSubtext} onChange={(e) => fieldChange("thankYouSubtext", e.target.value)} fullWidth multiline minRows={2} />
             </Section>
 
+            <Section title="If an answer turns them away">
+              <Typography sx={{ fontSize: 12, color: "text.secondary", mt: -1 }}>
+                Shown instead of the thank-you when they pick an answer you've marked "turn them away". No lead is created.
+                Leave blank for the standard wording. Add a button to send them somewhere useful, like an instant online estimate.
+              </Typography>
+              <TextField label="Headline" placeholder="Thanks for your interest!" value={form.dqHeadline} onChange={(e) => fieldChange("dqHeadline", e.target.value)} fullWidth />
+              <TextField label="Message" placeholder="Based on your answers, this might not be the right time for a valuation…" value={form.dqText} onChange={(e) => fieldChange("dqText", e.target.value)} fullWidth multiline minRows={2} />
+              <Box sx={{ display: "flex", gap: 1.5, flexWrap: "wrap" }}>
+                <TextField label="Button text" placeholder="Get instant estimate" value={form.dqCtaLabel} onChange={(e) => fieldChange("dqCtaLabel", e.target.value)} sx={{ flex: "1 1 160px" }} />
+                <TextField label="Button link" placeholder="https://…" value={form.dqCtaUrl} onChange={(e) => fieldChange("dqCtaUrl", e.target.value.trim())} sx={{ flex: "2 1 220px" }} />
+              </Box>
+            </Section>
+
             {isOperator && (
               <Section title="Tracking">
                 <TextField
@@ -409,6 +431,9 @@ export default function LeadPagePage() {
             )}
 
             <Section title="Form questions">
+              {pipeline.kind === "seller" && (
+                <PresetBar page={page} onApplied={() => setFormResetKey((k) => k + 1)} />
+              )}
               <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
                 Name and phone are always collected last. Email is optional (toggle below). Every other
                 question — including the address and timeline ones every page starts with — can be edited, reordered or removed.
@@ -845,6 +870,8 @@ function AddPageDialog({
 }) {
   const [sourceType, setSourceType] = useState<"website" | "fb_form">("website");
   const [name, setName] = useState("");
+  const [preset, setPreset] = useState<FormPresetKey | "blank">("balanced");
+  const qc = useQueryClient();
   const [pipelineId, setPipelineId] = useState("");
   const [fbForms, setFbForms] = useState<FbForm[]>([]);
   const [fbFormId, setFbFormId] = useState("");
@@ -863,6 +890,7 @@ function AddPageDialog({
   useEffect(() => {
     if (open) {
       setName("");
+      setPreset("balanced");
       setSourceType("website");
       setPipelineId(pipelines[0]?.id ?? "");
       setFbForms([]);
@@ -917,7 +945,18 @@ function AddPageDialog({
       // "fall back to the profile" behaviour rather than pinning a duplicate.
       fbPageId: selectedPageId,
     });
-    posthog.capture("lead_page_added", { preset: pipeline.kind, sourceType });
+    // Seller lead pages start from a friction preset. If that fails, the page
+    // still exists and works (blank), so it's logged rather than thrown.
+    const formPreset = sourceType === "website" && pipeline.kind === "seller" && preset !== "blank" ? preset : null;
+    if (formPreset) {
+      try {
+        await applyFormPreset(p, formPreset, true);
+        await qc.invalidateQueries({ queryKey: ["leadPages"] });
+      } catch (e) {
+        console.error("preset on create failed", e);
+      }
+    }
+    posthog.capture("lead_page_added", { preset: pipeline.kind, sourceType, form_preset: formPreset });
     onClose();
     onCreated(p.id);
   }
@@ -945,7 +984,15 @@ function AddPageDialog({
         </Box>
 
         {sourceType === "website" ? (
-          <TextField label="Page name" value={name} onChange={(e) => setName(e.target.value)} fullWidth autoFocus />
+          <>
+            <TextField label="Page name" value={name} onChange={(e) => setName(e.target.value)} fullWidth autoFocus />
+            {pipelines.find((pl) => pl.id === pipelineId)?.kind === "seller" && (
+              <Box>
+                <Typography sx={{ fontSize: 13, color: "text.secondary", mb: 1 }}>Form</Typography>
+                <FormPresetPicker value={preset} onChange={setPreset} allowBlank />
+              </Box>
+            )}
+          </>
         ) : (
           <Box>
             {/* Which page these forms come from. Hidden behind a link, because
@@ -1151,6 +1198,82 @@ function RecentSalesEditor() {
         </Button>
       </Box>
     </Box>
+  );
+}
+
+/** Which friction preset this page is built on, and a way to switch. */
+function PresetBar({ page, onApplied }: { page: LeadPage; onApplied: () => void }) {
+  const qc = useQueryClient();
+  const showSnack = useSnack();
+  const posthog = usePostHog();
+  const current = presetByKey(page.preset);
+  const [open, setOpen] = useState(false);
+  const [choice, setChoice] = useState<FormPresetKey | "blank">(page.preset ?? "balanced");
+  const [withCopy, setWithCopy] = useState(true);
+  const [busy, setBusy] = useState(false);
+
+  async function apply() {
+    if (choice === "blank") return;
+    setBusy(true);
+    try {
+      await applyFormPreset(page, choice, withCopy);
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["customQuestions", page.id] }),
+        qc.invalidateQueries({ queryKey: ["leadPages"] }),
+      ]);
+      posthog.capture("form_preset_applied", { preset: choice, from: page.preset ?? "custom", with_copy: withCopy });
+      onApplied();
+      setOpen(false);
+      showSnack(`${presetByKey(choice)?.name} preset applied`);
+    } catch (e) {
+      console.error(e);
+      showSnack("Couldn't apply the preset. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, p: "10px 12px", bgcolor: tokens.primaryBg, borderRadius: "4px" }}>
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography sx={{ fontSize: 13.5, fontWeight: 500 }}>
+            {current ? `Preset: ${current.name}` : "No preset"}
+          </Typography>
+          <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
+            {current
+              ? "Edit the questions freely; the page stays tagged with this preset for comparing results."
+              : "Start from a proven form: more questions, fewer but better leads."}
+          </Typography>
+        </Box>
+        <Button
+          size="small"
+          variant="outlined"
+          onClick={() => { setChoice(page.preset ?? "balanced"); setWithCopy(true); setOpen(true); }}
+          sx={{ flexShrink: 0, bgcolor: "background.paper" }}
+        >
+          {current ? "Switch preset" : "Use a preset"}
+        </Button>
+      </Box>
+
+      <Dialog open={open} onClose={() => !busy && setOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>Choose a form preset</DialogTitle>
+        <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <FormPresetPicker value={choice} onChange={setChoice} />
+          <FormControlLabel
+            control={<Checkbox checked={withCopy} onChange={(e) => setWithCopy(e.target.checked)} />}
+            label={<Typography sx={{ fontSize: 14 }}>Also use the preset's wording (headline, button, thank-you and turned-away screens)</Typography>}
+          />
+          <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
+            This replaces the page's current questions. Leads you already have aren't touched.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpen(false)} disabled={busy}>Cancel</Button>
+          <Button onClick={apply} disabled={busy || choice === "blank"} variant="contained">{busy ? "Applying…" : "Apply preset"}</Button>
+        </DialogActions>
+      </Dialog>
+    </>
   );
 }
 
