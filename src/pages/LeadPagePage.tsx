@@ -69,6 +69,7 @@ import { getCapiConfig, saveCapiConfig, listCapiEvents } from "../api/capi";
 import { timeAgo } from "../lib/timeAgo";
 import FormPresetPicker from "../components/FormPresetPicker";
 import InfoTip from "../components/InfoTip";
+import ConfirmationEmailCard from "../components/ConfirmationEmailCard";
 import OptionsEditor from "../components/OptionsEditor";
 import { cleanOptions } from "../lib/options";
 import { applyFormPreset, FORM_PRESET_VERSION, presetByKey } from "../lib/formPresets";
@@ -78,6 +79,10 @@ export default function LeadPagePage() {
   const navigate = useNavigate();
   const { tier } = useTier();
   const { data: isOperator } = useIsOperator();
+  // Agents use their page; setting it up (sources, questions, form type,
+  // wording, link) is done by EstateKit. Locked sections stay visible,
+  // read-only, so agents can still see what their form does.
+  const canSetUp = isOperator === true;
   const { data: pages = [], isLoading: pagesLoading } = useLeadPages();
   const { data: pipelines = [], isLoading: pipelinesLoading } = usePipelines();
   const { data: profile } = useQuery({ queryKey: ["myProfile"], queryFn: getMyProfile, staleTime: 5 * 60_000 });
@@ -151,12 +156,20 @@ export default function LeadPagePage() {
       </AppBar>
       <Box sx={{ maxWidth: 460, mx: "auto", mt: 6, px: 2, textAlign: "center" }}>
         <Typography sx={{ fontSize: 16, fontWeight: 600, mb: 1 }}>No lead sources yet</Typography>
-        <Typography sx={{ fontSize: 14, color: "text.secondary", mb: 3 }}>
-          Create a lead page or connect a Facebook instant form to start capturing leads.
-        </Typography>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={() => setAddPageOpen(true)}>
-          Add lead source
-        </Button>
+        {canSetUp ? (
+          <>
+            <Typography sx={{ fontSize: 14, color: "text.secondary", mb: 3 }}>
+              Create a lead page or connect a Facebook instant form to start capturing leads.
+            </Typography>
+            <Button variant="contained" startIcon={<AddIcon />} onClick={() => setAddPageOpen(true)}>
+              Add lead source
+            </Button>
+          </>
+        ) : (
+          <Typography sx={{ fontSize: 14, color: "text.secondary" }}>
+            EstateKit is setting up your lead page. It will appear here when it's ready.
+          </Typography>
+        )}
       </Box>
       <AddPageDialog
         open={addPageOpen}
@@ -219,6 +232,7 @@ export default function LeadPagePage() {
             >
               {p.sourceType === "fb_form" ? <FacebookIcon sx={{ fontSize: 16, color: "#1877f2" }} /> : <LanguageIcon sx={{ fontSize: 16, color: "text.secondary" }} />}
               <Box sx={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</Box>
+              {canSetUp && (<>
               <IconButton
                 size="small"
                 onClick={(e) => {
@@ -242,22 +256,25 @@ export default function LeadPagePage() {
               >
                 <DeleteOutlineIcon sx={{ fontSize: 15 }} />
               </IconButton>
+              </>)}
             </MenuItem>
           ))}
-          <MenuItem
-            onClick={() => {
-              setPageMenuAnchor(null);
-              setAddPageOpen(true);
-            }}
-            sx={{ color: tokens.primary, borderTop: `1px solid ${tokens.divider2}`, mt: 0.5 }}
-          >
-            + Add page
-          </MenuItem>
+          {canSetUp && (
+            <MenuItem
+              onClick={() => {
+                setPageMenuAnchor(null);
+                setAddPageOpen(true);
+              }}
+              sx={{ color: tokens.primary, borderTop: `1px solid ${tokens.divider2}`, mt: 0.5 }}
+            >
+              + Add page
+            </MenuItem>
+          )}
         </Menu>
         <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
           {linkedPipeline
             ? <>Sends leads to <b style={{ color: tokens.ink }}>{pipeline.name}</b> pipeline</>
-            : <>This page isn't linked to one of your pipelines yet — pick one below</>}
+            : <>This page isn't linked to one of your lists yet</>}
         </Typography>
       </Box>
 
@@ -269,13 +286,19 @@ export default function LeadPagePage() {
           pageName={[profile?.displayName, profile?.company].filter(Boolean).join(" - ") || page.fbFormName || page.name}
           avatarUrl={profile?.sidebarLogoUrl || null}
         />
-      ) : (
+      ) : null}
+      {page.sourceType === "fb_form" && (
+        <Box sx={{ maxWidth: 1000, mx: "auto", px: 2, pb: 3 }}>
+          <ConfirmationEmailCard profile={profile} canSetUp={canSetUp} />
+        </Box>
+      )}
+      {page.sourceType === "fb_form" ? null : (
         <Box sx={{ display: "flex", flexDirection: { xs: "column", md: "row" }, gap: 3, p: 2, maxWidth: 1100, mx: "auto" }}>
           <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
             <Section title="Page details">
               <TextField label="Agent name" value={form.agentName} onChange={(e) => fieldChange("agentName", e.target.value)} fullWidth />
-              <TextField label="Intro headline" value={form.headline} onChange={(e) => fieldChange("headline", e.target.value)} fullWidth multiline minRows={2} />
-              <TextField label="Suburb / area" value={form.suburb} onChange={(e) => fieldChange("suburb", e.target.value)} fullWidth />
+              <TextField label="Intro headline" value={form.headline} onChange={(e) => fieldChange("headline", e.target.value)} fullWidth multiline minRows={2} disabled={!canSetUp} helperText={canSetUp ? undefined : "Set up by EstateKit"} />
+              <TextField label="Suburb / area" value={form.suburb} onChange={(e) => fieldChange("suburb", e.target.value)} fullWidth disabled={!canSetUp} />
               <TextField label="Phone" value={form.phone} onChange={(e) => fieldChange("phone", e.target.value)} fullWidth />
               <Box sx={{ display: "flex", gap: 2 }}>
                 <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0.75 }}>
@@ -367,31 +390,35 @@ export default function LeadPagePage() {
                   <Typography sx={{ fontSize: 14, fontWeight: 500 }}>Intro</Typography>
                   <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>A greeting screen with your intro headline, before the first question</Typography>
                 </Box>
-                <Switch checked={page.showIntro} onChange={(e) => update({ showIntro: e.target.checked })} />
+                <Switch checked={page.showIntro} disabled={!canSetUp} onChange={(e) => update({ showIntro: e.target.checked })} />
               </Box>
             </Section>
 
-            <Section title="Message for leads" info="What people see right after they send the form. Write {name} for their first name and {agent} for yours.">
+            <Section title="Message for leads" locked={!canSetUp} info="What people see right after they send the form. Write {name} for their first name and {agent} for yours.">
               <TextField
                 label="Headline"
                 value={form.thankYouHeadline}
                 onChange={(e) => fieldChange("thankYouHeadline", e.target.value)}
                 fullWidth
+                disabled={!canSetUp}
               />
-              <TextField label="Description" value={form.thankYouSubtext} onChange={(e) => fieldChange("thankYouSubtext", e.target.value)} fullWidth multiline minRows={2} />
+              <TextField label="Description" value={form.thankYouSubtext} onChange={(e) => fieldChange("thankYouSubtext", e.target.value)} fullWidth multiline minRows={2} disabled={!canSetUp} />
             </Section>
 
             <Section
               title="End page"
+              locked={!canSetUp}
               info="Shown instead of the message for leads when someone picks an answer you've set to “Send to end page”. They aren't saved as a lead. Leave it blank for our standard wording, or add a button to send them somewhere useful."
             >
-              <TextField label="Headline" placeholder="Thanks for your interest!" value={form.dqHeadline} onChange={(e) => fieldChange("dqHeadline", e.target.value)} fullWidth />
-              <TextField label="Description" placeholder="Based on your answers, this might not be the right time for a valuation…" value={form.dqText} onChange={(e) => fieldChange("dqText", e.target.value)} fullWidth multiline minRows={2} />
+              <TextField label="Headline" placeholder="Thanks for your interest!" value={form.dqHeadline} onChange={(e) => fieldChange("dqHeadline", e.target.value)} fullWidth disabled={!canSetUp} />
+              <TextField label="Description" placeholder="Based on your answers, this might not be the right time for a valuation…" value={form.dqText} onChange={(e) => fieldChange("dqText", e.target.value)} fullWidth multiline minRows={2} disabled={!canSetUp} />
               <Box sx={{ display: "flex", gap: 1.5, flexWrap: "wrap" }}>
-                <TextField label="Button text" placeholder="e.g. Follow us on Facebook" value={form.dqCtaLabel} onChange={(e) => fieldChange("dqCtaLabel", e.target.value)} sx={{ flex: "1 1 160px" }} />
-                <TextField label="Website link" placeholder="https://…" value={form.dqCtaUrl} onChange={(e) => fieldChange("dqCtaUrl", e.target.value.trim())} sx={{ flex: "2 1 220px" }} />
+                <TextField label="Button text" placeholder="e.g. Follow us on Facebook" value={form.dqCtaLabel} onChange={(e) => fieldChange("dqCtaLabel", e.target.value)} sx={{ flex: "1 1 160px" }} disabled={!canSetUp} />
+                <TextField label="Website link" placeholder="https://…" value={form.dqCtaUrl} onChange={(e) => fieldChange("dqCtaUrl", e.target.value.trim())} sx={{ flex: "2 1 220px" }} disabled={!canSetUp} />
               </Box>
             </Section>
+
+            <ConfirmationEmailCard profile={profile} canSetUp={canSetUp} />
 
             {isOperator && (
               <Section title="Tracking">
@@ -431,23 +458,24 @@ export default function LeadPagePage() {
 
             <Section
               title="Questions"
+              locked={!canSetUp}
               info="Each question gets its own screen. Name, phone number and (if on) email are always asked last."
             >
               {pipeline.kind === "seller" && (
-                <PresetBar page={page} onApplied={() => setFormResetKey((k) => k + 1)} />
+                <PresetBar page={page} canChange={canSetUp} onApplied={() => setFormResetKey((k) => k + 1)} />
               )}
-              <TextField label="Contact fields description" placeholder="Where should we send your FREE home evaluation?" value={form.nameLabel} onChange={(e) => fieldChange("nameLabel", e.target.value)} fullWidth />
-              <TextField label="Phone number label" value={form.phoneLabel} onChange={(e) => fieldChange("phoneLabel", e.target.value)} fullWidth />
-              <TextField label="Submit button text" value={form.ctaLabel} onChange={(e) => fieldChange("ctaLabel", e.target.value)} fullWidth />
+              <TextField label="Contact fields description" placeholder="Where should we send your FREE home evaluation?" value={form.nameLabel} onChange={(e) => fieldChange("nameLabel", e.target.value)} fullWidth disabled={!canSetUp} />
+              <TextField label="Phone number label" value={form.phoneLabel} onChange={(e) => fieldChange("phoneLabel", e.target.value)} fullWidth disabled={!canSetUp} />
+              <TextField label="Submit button text" value={form.ctaLabel} onChange={(e) => fieldChange("ctaLabel", e.target.value)} fullWidth disabled={!canSetUp} />
               <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <Box>
                   <Typography sx={{ fontSize: 14, fontWeight: 500 }}>Email</Typography>
                   <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>Turn off to collect only full name and phone number</Typography>
                 </Box>
-                <Switch checked={page.collectEmail} onChange={(e) => update({ collectEmail: e.target.checked })} />
+                <Switch checked={page.collectEmail} disabled={!canSetUp} onChange={(e) => update({ collectEmail: e.target.checked })} />
               </Box>
 
-              <CustomQuestionEditor pageId={page.id} tier={tier} onUpgrade={() => {
+              <CustomQuestionEditor pageId={page.id} tier={tier} readOnly={!canSetUp} onUpgrade={() => {
                 posthog.capture("upgrade_clicked", { source: "lead_page_custom_questions" });
                 navigate("/upgrade");
               }} />
@@ -480,7 +508,7 @@ export default function LeadPagePage() {
 
             {isOperator && <LeadPageFunnelStats pageId={page.id} />}
 
-            <ShareSection page={page} onUpdateSlug={(slug) => updatePage.mutate({ id: page.id, patch: { slug } })} />
+            <ShareSection page={page} onUpdateSlug={canSetUp ? (slug) => updatePage.mutate({ id: page.id, patch: { slug } }) : undefined} />
           </Box>
         </Box>
       )}
@@ -689,7 +717,7 @@ function UpgradeNudge({ onUpgrade }: { onUpgrade: () => void }) {
   );
 }
 
-function ShareSection({ page, onUpdateSlug }: { page: LeadPage; onUpdateSlug: (slug: string) => void }) {
+function ShareSection({ page, onUpdateSlug }: { page: LeadPage; onUpdateSlug?: (slug: string) => void }) {
   const showSnack = useSnack();
   const [editingSlug, setEditingSlug] = useState(false);
   const [slugDraft, setSlugDraft] = useState(page.slug);
@@ -718,7 +746,7 @@ function ShareSection({ page, onUpdateSlug }: { page: LeadPage; onUpdateSlug: (s
   function saveSlug() {
     const clean = slugDraft.toLowerCase().trim().replace(/[^a-z0-9-]+/g, "-").replace(/(^-|-$)/g, "");
     if (clean && clean !== page.slug) {
-      onUpdateSlug(clean);
+      onUpdateSlug?.(clean);
       showSnack("URL updated");
     }
     setEditingSlug(false);
@@ -746,8 +774,8 @@ function ShareSection({ page, onUpdateSlug }: { page: LeadPage; onUpdateSlug: (s
             value={shareUrl}
             size="small"
             slotProps={{ input: { readOnly: true, sx: { fontSize: 13 } } }}
-            onClick={() => { setSlugDraft(page.slug); setEditingSlug(true); }}
-            title="Click to edit the link"
+            onClick={() => { if (!onUpdateSlug) return; setSlugDraft(page.slug); setEditingSlug(true); }}
+            title={onUpdateSlug ? "Click to edit the link" : undefined}
             sx={{ flex: "1 1 180px", minWidth: 0, cursor: "pointer" }}
           />
         )}
@@ -1204,7 +1232,7 @@ function RecentSalesEditor() {
 }
 
 /** Which form type (friction preset) this page is built on, and a way to change it. */
-function PresetBar({ page, onApplied }: { page: LeadPage; onApplied: () => void }) {
+function PresetBar({ page, canChange, onApplied }: { page: LeadPage; canChange: boolean; onApplied: () => void }) {
   const qc = useQueryClient();
   const showSnack = useSnack();
   const posthog = usePostHog();
@@ -1245,7 +1273,7 @@ function PresetBar({ page, onApplied }: { page: LeadPage; onApplied: () => void 
           <Typography sx={{ fontSize: 14, fontWeight: 500 }}>
             {current ? `Form type: ${current.name}` : "Form type: Custom"}
           </Typography>
-          {outdated && (
+          {outdated && canChange && (
             <Typography component="span" sx={{ fontSize: 12, color: "warning.dark", ml: 0.5 }}>· newer version available</Typography>
           )}
           <InfoTip>
@@ -1253,14 +1281,16 @@ function PresetBar({ page, onApplied }: { page: LeadPage; onApplied: () => void 
             questions afterwards.
           </InfoTip>
         </Box>
-        <Button
-          size="small"
-          variant="outlined"
-          onClick={() => { setChoice(page.preset ?? "balanced"); setWithCopy(true); setOpen(true); }}
-          sx={{ flexShrink: 0, bgcolor: "background.paper" }}
-        >
-          {outdated ? "Update" : current ? "Change form type" : "Choose form type"}
-        </Button>
+        {canChange && (
+          <Button
+            size="small"
+            variant="outlined"
+            onClick={() => { setChoice(page.preset ?? "balanced"); setWithCopy(true); setOpen(true); }}
+            sx={{ flexShrink: 0, bgcolor: "background.paper" }}
+          >
+            {outdated ? "Update" : current ? "Change form type" : "Choose form type"}
+          </Button>
+        )}
       </Box>
 
       <Dialog open={open} onClose={() => !busy && setOpen(false)} fullWidth maxWidth="sm" fullScreen={isPhone}>
@@ -1284,7 +1314,7 @@ function PresetBar({ page, onApplied }: { page: LeadPage; onApplied: () => void 
   );
 }
 
-function Section({ title, action, info, children }: { title: string; action?: React.ReactNode; info?: React.ReactNode; children: React.ReactNode }) {
+function Section({ title, action, info, locked, children }: { title: string; action?: React.ReactNode; info?: React.ReactNode; locked?: boolean; children: React.ReactNode }) {
   return (
     <Box sx={{ border: `1px solid ${tokens.divider}`, borderRadius: "8px", bgcolor: "background.paper", p: 2, display: "flex", flexDirection: "column", gap: 2 }}>
       <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", minHeight: 30 }}>
@@ -1292,6 +1322,12 @@ function Section({ title, action, info, children }: { title: string; action?: Re
           <Typography sx={{ fontSize: 12, fontWeight: 500, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.06em" }}>{title}</Typography>
           {info && <InfoTip>{info}</InfoTip>}
         </Box>
+        {locked && (
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, color: "text.secondary" }}>
+            <LockIcon sx={{ fontSize: 14 }} />
+            <Typography sx={{ fontSize: 12 }}>Set up by EstateKit</Typography>
+          </Box>
+        )}
         {action}
       </Box>
       {children}
@@ -1309,10 +1345,13 @@ const QUESTION_TYPES: { value: QuestionType; label: string }[] = [
 function CustomQuestionEditor({
   pageId,
   tier,
+  readOnly = false,
   onUpgrade,
 }: {
   pageId: string;
   tier: "free" | "paid";
+  /** Agents see the questions but can't change them. */
+  readOnly?: boolean;
   onUpgrade: () => void;
 }) {
   const { data: questions = [] } = useCustomQuestions(pageId);
@@ -1355,6 +1394,7 @@ function CustomQuestionEditor({
                 {q.options?.length ? ` — ${q.options.join(" · ")}` : ""}
               </Typography>
             </Box>
+            {!readOnly && (<>
             <IconButton size="small" onClick={() => setEditingId(q.id)}>
               <EditOutlinedIcon fontSize="small" />
             </IconButton>
@@ -1367,11 +1407,12 @@ function CustomQuestionEditor({
             <IconButton size="small" onClick={() => removeQuestion.mutate(q.id)}>
               <DeleteOutlineIcon fontSize="small" />
             </IconButton>
+            </>)}
           </Box>
         ),
       )}
 
-      {tier === "free" ? (
+      {readOnly ? null : tier === "free" ? (
         <UpgradeNudge onUpgrade={onUpgrade} />
       ) : (
         <Box sx={{ display: "flex", flexDirection: "column", gap: 1, p: "12px", border: `1px dashed ${tokens.divider}`, borderRadius: "6px" }}>

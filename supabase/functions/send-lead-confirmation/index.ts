@@ -35,6 +35,29 @@ const prettyPhone = (s: string) => {
   return d.length === 11 && d.startsWith("27") ? `0${d.slice(2, 4)} ${d.slice(4, 7)} ${d.slice(7)}` : s;
 };
 
+// The standard main text for seller leads, the same for every agent. An
+// operator can give one agent their own (agent_profiles.lead_email_body).
+// KEEP IN STEP with src/lib/leadEmail.ts (the Forms page preview).
+const STANDARD_SELLER_BODY = [
+  "Thanks for requesting a free home evaluation for {address}.",
+  "I'm having a look at what's sold near you recently.",
+  "I'll be in touch shortly to go through what your home could be worth, and whether I have buyers looking in the area.",
+].join("\n\n");
+
+function fillLeadEmail(text: string, v: { name: string; address: string; agent: string }): string[] {
+  return (text || STANDARD_SELLER_BODY)
+    .split(/\n\s*\n/)
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .slice(0, 6)
+    .map((p) =>
+      p
+        .replaceAll("{name}", v.name || "there")
+        .replaceAll("{address}", v.address || "your home")
+        .replaceAll("{agent}", v.agent || "I"),
+    );
+}
+
 type Kind = "seller" | "buyer" | "general";
 // The seller copy gives the lead a reason to pick up the agent's call (their
 // home's value, and whether there are buyers nearby) instead of "confirming
@@ -108,7 +131,7 @@ Deno.serve(async (req) => {
   }
 
   const [{ data: agent }, { data: pipeline }, { data: page }] = await Promise.all([
-    supabase.from("agent_profiles").select("display_name, company, email, whatsapp_number, avatar_url, sidebar_logo_url, lead_confirmation_email").eq("agent_id", lead.agent_id).maybeSingle(),
+    supabase.from("agent_profiles").select("display_name, company, email, whatsapp_number, lead_confirmation_email, lead_email_body").eq("agent_id", lead.agent_id).maybeSingle(),
     supabase.from("pipelines").select("kind").eq("id", lead.pipeline_id).maybeSingle(),
     lead.source_page_id
       ? supabase.from("lead_pages").select("agent_name, suburb, accent_color, phone").eq("id", lead.source_page_id).maybeSingle()
@@ -141,6 +164,11 @@ Deno.serve(async (req) => {
   const waText = `Hi ${agentFirst}, it's ${first(lead.name) || lead.name}. ${w.wa(address)}`;
   const waUrl = waNumber ? `https://wa.me/${waNumber}?text=${encodeURIComponent(waText)}` : "";
 
+  const paragraphs: string[] =
+    kind === "seller"
+      ? fillLeadEmail(agent.lead_email_body || "", { name: leadFirst, address, agent: agentFirst }).map(esc)
+      : w.body(address, area);
+
   // Personal subject, no brand suffix: the From line already says who it is.
   const subject = kind === "seller" && address ? `Your home evaluation for ${address}` : w.subject(area);
 
@@ -151,7 +179,7 @@ Deno.serve(async (req) => {
   const html = `<!doctype html><html><body style="margin:0;padding:16px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.55;color:#222222">
 <div style="max-width:560px">
 <p ${p}>Hi ${esc(leadFirst)},</p>
-${w.body(address, area).map((t) => `<p ${p}>${t}</p>`).join("\n")}
+${paragraphs.map((t) => `<p ${p}>${t}</p>`).join("\n")}
 ${waUrl ? `<p ${p}>If it's easier, you can <a href="${esc(waUrl)}" style="color:#1a73e8">message me on WhatsApp here</a>.</p>` : ""}
 <p style="margin:18px 0 0">${esc(agentFirst)}</p>
 <p style="margin:6px 0 0;font-size:13px;color:#555555;line-height:1.5">
@@ -166,7 +194,7 @@ You're getting this because you asked ${esc(agentName)} for a ${w.request}. It's
   const text = [
     `Hi ${leadFirst},`,
     "",
-    ...w.body(address, area).flatMap((t) => [t.replace(/<[^>]+>/g, ""), ""]),
+    ...paragraphs.flatMap((t) => [t.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'"), ""]),
     "",
     waUrl ? `If it's easier, you can message me on WhatsApp here: ${waUrl}` : "",
     "",

@@ -98,6 +98,8 @@ export interface AgentProfile {
   onboarded: boolean;
   /** Email each new lead a confirmation in this agent's name. Off by default. */
   leadConfirmationEmail: boolean;
+  /** This agent's own wording for the email's main text; null = the standard. */
+  leadEmailBody: string | null;
 }
 
 interface ProfileRow {
@@ -119,6 +121,7 @@ interface ProfileRow {
   avatar_url: string | null;
   onboarded: boolean;
   lead_confirmation_email: boolean | null;
+  lead_email_body: string | null;
 }
 
 function rowToProfile(r: ProfileRow): AgentProfile {
@@ -141,6 +144,7 @@ function rowToProfile(r: ProfileRow): AgentProfile {
     avatarUrl: r.avatar_url ?? null,
     onboarded: r.onboarded,
     leadConfirmationEmail: r.lead_confirmation_email === true,
+    leadEmailBody: r.lead_email_body ?? null,
   };
 }
 
@@ -199,6 +203,7 @@ export async function upsertProfile(
   if (patch.fbAdAccountId !== undefined) row.fb_ad_account_id = patch.fbAdAccountId;
   if (patch.onboarded !== undefined) row.onboarded = patch.onboarded;
   if (patch.leadConfirmationEmail !== undefined) row.lead_confirmation_email = patch.leadConfirmationEmail;
+  if (patch.leadEmailBody !== undefined) row.lead_email_body = patch.leadEmailBody;
 
   const { error } = await supabase
     .from("agent_profiles")

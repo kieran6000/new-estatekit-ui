@@ -10,11 +10,14 @@ import {
   Divider,
   IconButton,
   Skeleton,
-  Switch,
   TextField,
   Toolbar,
   Typography,
   useMediaQuery,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
 } from "@mui/material";
 import LogoutIcon from "@mui/icons-material/Logout";
 import AgentPasswords from "../components/AgentPasswords";
@@ -51,6 +54,10 @@ export default function AccountPage() {
   const [logoUploading, setLogoUploading] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [stopping, setStopping] = useState(false);
+  // The WhatsApp number is where every lead alert goes, so a change is
+  // confirmed before it saves (a typo here means missed leads).
+  const [waDraft, setWaDraft] = useState<string | null>(null);
+  const [waConfirm, setWaConfirm] = useState<string | null>(null);
   async function emergencyStop() {
     setStopping(true);
     try {
@@ -290,7 +297,40 @@ export default function AccountPage() {
                 </Typography>
                 <TextField label="Full name" value={form.displayName} onChange={(e) => update("displayName", e.target.value)} fullWidth />
                 <TextField label="Email" type="email" value={form.email} onChange={(e) => update("email", e.target.value)} fullWidth />
-                <TextField label="WhatsApp number" value={form.whatsappNumber} onChange={(e) => update("whatsappNumber", e.target.value)} fullWidth />
+                <TextField
+                  label="WhatsApp number"
+                  helperText="Where your new-lead alerts are sent"
+                  value={waDraft ?? form.whatsappNumber}
+                  onChange={(e) => setWaDraft(e.target.value)}
+                  onBlur={() => {
+                    if (waDraft === null) return;
+                    const next = waDraft.trim();
+                    if (!next || next === form.whatsappNumber) { setWaDraft(null); return; }
+                    setWaConfirm(next);
+                  }}
+                  fullWidth
+                />
+                <Dialog open={!!waConfirm} onClose={() => { setWaConfirm(null); setWaDraft(null); }}>
+                  <DialogTitle>Change your WhatsApp number?</DialogTitle>
+                  <DialogContent>
+                    <Typography sx={{ fontSize: 15 }}>
+                      New lead alerts will go to <b>{waConfirm}</b>. Is that the right number?
+                    </Typography>
+                  </DialogContent>
+                  <DialogActions>
+                    <Button onClick={() => { setWaConfirm(null); setWaDraft(null); }}>No, keep the old one</Button>
+                    <Button
+                      variant="contained"
+                      onClick={() => {
+                        update("whatsappNumber", waConfirm ?? "");
+                        setWaConfirm(null);
+                        setWaDraft(null);
+                      }}
+                    >
+                      Yes, change it
+                    </Button>
+                  </DialogActions>
+                </Dialog>
                 <TextField label="Area / region" value={form.area} onChange={(e) => update("area", e.target.value)} fullWidth />
                 <TextField label="Company / agency" value={form.company} onChange={(e) => update("company", e.target.value)} fullWidth />
               </CardContent>
@@ -544,38 +584,6 @@ export default function AccountPage() {
                     Agent logins
                   </Typography>
                   <AgentPasswords onSnack={showSnack} />
-                </CardContent>
-              </Card>
-            )}
-
-            {isOperator && profile && (
-              <Card variant="outlined" sx={{ mb: 3 }}>
-                <CardContent sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 2 }}>
-                  <Box>
-                    <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>Confirmation email to new leads</Typography>
-                    <Typography sx={{ fontSize: 13, color: "text.secondary" }}>
-                      Emails each new lead in {profile.displayName?.split(" ")[0] || "this agent"}&apos;s name, with a button to message them on WhatsApp.
-                      {!profile.email && " Add an email above first, so replies reach them."}
-                    </Typography>
-                  </Box>
-                  <Switch
-                    checked={profile.leadConfirmationEmail}
-                    onChange={async (e) => {
-                      const on = e.target.checked;
-                      applyOptimistic({ leadConfirmationEmail: on });
-                      try {
-                        await upsertProfile({ leadConfirmationEmail: on }, profile.agentId);
-                        showSnack(on ? "Confirmation emails on" : "Confirmation emails off");
-                      } catch (err) {
-                        console.error(err);
-                        applyOptimistic({ leadConfirmationEmail: !on });
-                        showSnack("Couldn't save. Try again.");
-                      } finally {
-                        queryClient.invalidateQueries({ queryKey: ["myProfile"] });
-                        queryClient.invalidateQueries({ queryKey: ["clients"] });
-                      }
-                    }}
-                  />
                 </CardContent>
               </Card>
             )}

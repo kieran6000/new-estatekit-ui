@@ -246,6 +246,33 @@ conditioning).
 `OnboardingGate` sends not-yet-onboarded users to `/welcome`. It checks the
 **logged-in** user, not the account being viewed.
 
+### Who can do what (agents use, operators set up)
+Setup actions are **operator-only in the app** (a screen-level lock to stop
+mistakes, not database security):
+- **Forms: operator-only**
+  - adding, renaming or deleting a lead source
+  - editing the page link
+  - form type and questions (edit, reorder, delete, add), including the
+    bad-answer rules
+  - the contact field labels, submit button and email switch
+  - the intro headline and intro switch, and the suburb
+  - Message for leads and End page
+  - tracking and page stats
+- **Leads: operator-only.** Adding or renaming lists.
+- **Locked sections still show, read-only**, marked "Set up by EstateKit", so
+  agents can see what their form does.
+
+**Agents can:**
+- work their leads: calls, outcomes, notes, commission
+- edit their name, phone, logo, photo and colour (page and Account)
+- manage recent sales
+- copy and share their page link
+- see their form and the confirmation email, and switch the email off
+
+**Changing the WhatsApp number on Account asks for confirmation** ("New lead
+alerts will go to … Is that the right number?"), because that's where every
+lead alert goes.
+
 ### Leads (`/leads`, `src/pages/LeadsPage.tsx`)
 The agent's home screen.
 - **Pipeline switcher:** tabs/menu per pipeline. Add pipeline (Seller-style /
@@ -912,10 +939,22 @@ number. Alex Prinsloo's old account is the same team as Storm Hargreaves' accoun
 here ("Team Alex & Storm").
 
 ### Confirmation email to new leads
-**Off for every client by default.** Switch it on per client under Clients →
-the client → Account → "Confirmation email". It's also on **Account
-(Settings)** for operators, applying to the account on screen: your own, or a
-client you've switched into.
+**Off for every client by default.**
+- **Where:** the **Confirmation email** card on the Forms page (website and
+  Facebook sources), for the account on screen. The same switch is also on
+  Clients → the client → Account.
+- **Who controls it:** operators switch it on. Agents can switch it off
+  (it's in their name), but not on.
+- **Wording:** there's one standard for every agent (`STANDARD_SELLER_BODY`
+  in the function, kept in step with `src/lib/leadEmail.ts`).
+  - An operator can give one agent their own wording in that card.
+  - It's stored in `agent_profiles.lead_email_body`, and null means the
+    standard.
+  - It applies from the next lead, and the card shows "Custom wording ·
+    Reset to standard".
+  - Placeholders: {name}, {address}, {agent}. Agents see a read-only preview.
+- **Who it applies to:** only seller leads get the editable text; buyer and
+  general leads always get their standard wording.
 
 - **Trigger:** when a lead with an email is saved (website form or Facebook
   instant form) for a switched-on agent, the `leads_queue_confirmation`
