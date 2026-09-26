@@ -14,6 +14,15 @@ export async function listLeads(): Promise<LeadRow[]> {
   return data as LeadRow[];
 }
 
+/** One lead by id, whichever account it belongs to (RLS decides: an agent
+ *  gets only their own, an operator any). Used when a link points at a lead
+ *  that isn't in the account currently on screen. */
+export async function getLeadById(id: string): Promise<LeadRow | null> {
+  const { data, error } = await supabase.from("leads").select("*").eq("id", id).maybeSingle();
+  if (error) throw new Error(error.message);
+  return (data as LeadRow) ?? null;
+}
+
 /** Archived leads are kept but stay out of the working list. */
 export async function listArchivedLeads(): Promise<LeadRow[]> {
   const agentId = await getActiveAgentId();

@@ -12,6 +12,7 @@ import PhoneIphoneIcon from "@mui/icons-material/PhoneIphone";
 import TabletAndroidIcon from "@mui/icons-material/TabletAndroid";
 import TabletMacIcon from "@mui/icons-material/TabletMac";
 import WhatsAppIcon from "@mui/icons-material/WhatsApp";
+import MailOutlineIcon from "@mui/icons-material/MailOutlined";
 import { tokens } from "../theme";
 import { listAgentProfiles } from "../api/_client";
 import { listLeadEvents, type LeadEvent } from "../api/leadEvents";
@@ -60,6 +61,10 @@ function describe(e: LeadEvent): string {
       return "Tapped Call";
     case "whatsapp_sent":
       return "WhatsApp reminder sent";
+    case "email_sent":
+      return "Confirmation email sent";
+    case "email_failed":
+      return "Confirmation email didn't send";
     default:
       return e.event_type;
   }
@@ -127,8 +132,10 @@ export default function LeadHistory({ leadId }: { leadId: string }) {
         const device = deviceOf(e.device);
         // Backfilled rows carry a stand-in timestamp, so don't show a time for them.
         const when = e.source === "backfill" ? "" : timeAgo(e.created_at);
-        const via = e.event_type === "whatsapp_sent" ? e.to_value ?? "" : SOURCE_LABEL[e.source] ?? "";
-        const SourceIcon = e.event_type === "whatsapp_sent" ? WhatsAppIcon : SOURCE_ICON[e.source] ?? HistoryIcon;
+        const isEmail = e.event_type === "email_sent" || e.event_type === "email_failed";
+        // For sends, the detail line says what was sent / to whom, not "Automation".
+        const via = e.event_type === "whatsapp_sent" || isEmail ? e.to_value ?? "" : SOURCE_LABEL[e.source] ?? "";
+        const SourceIcon = e.event_type === "whatsapp_sent" ? WhatsAppIcon : isEmail ? MailOutlineIcon : SOURCE_ICON[e.source] ?? HistoryIcon;
 
         return (
           <Box
@@ -151,7 +158,7 @@ export default function LeadHistory({ leadId }: { leadId: string }) {
             )}
 
             <Box sx={{ minWidth: 0, flex: 1 }}>
-              <Typography sx={{ fontSize: 14 }}>{describe(e)}</Typography>
+              <Typography sx={{ fontSize: 14, color: e.event_type === "email_failed" ? "error.main" : undefined }}>{describe(e)}</Typography>
               {e.event_type === "note_changed" && e.to_value && (
                 <Typography
                   sx={{

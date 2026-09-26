@@ -2,7 +2,9 @@ import { supabase, getCurrentUserId } from "./_client";
 
 export type LeadEventType =
   | "created" | "stage_changed" | "note_changed" | "archived" | "restored"
-  | "pipeline_moved" | "call" | "whatsapp_sent";
+  | "pipeline_moved" | "call" | "whatsapp_sent"
+  | "email_sent"
+  | "email_failed";
 
 export type LeadEventSource =
   | "dashboard" | "action_link" | "automation" | "facebook" | "website" | "system" | "backfill";

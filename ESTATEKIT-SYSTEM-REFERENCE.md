@@ -932,13 +932,18 @@ client you've switched into.
   - "Thanks for requesting a free home evaluation for <address>."
   - "I'm having a look at what's sold near you recently."
   - "I'll be in touch shortly to go through what your home could be worth,
-    and whether I have buyers looking in <suburb>."
+    and whether I have buyers looking in the area."
+  - **This wording is fixed**, the same for every agent (60+), in
+    `send-lead-confirmation`. Change it there, for everyone at once.
   - A "message me on WhatsApp here" link: a pre-filled message from the lead
     to the agent's **WhatsApp cellphone number** (never an office landline).
     The lead starts the conversation, so no WhatsApp Business API is needed.
   - A personal sign-off: first name, full name · agency, phone and email.
   - An address typed all in lowercase is tidied to Title Case.
   - Buyer and general leads get their own wording.
+- **History:** each send writes "Confirmation email sent" (to whom) or
+  "Confirmation email didn't send" (why, shown in red) to the lead's history
+  (`lead_events` types `email_sent` / `email_failed`).
 - **Setup:** needs the `RESEND_API_KEY` secret. Without it the function
   sends nothing.
 

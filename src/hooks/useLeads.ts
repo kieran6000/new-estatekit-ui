@@ -23,9 +23,27 @@ export function useLead(id: string | undefined) {
 /** Like useLead, but also reports whether the list is still loading — needed
  * wherever "lead not found" and "hasn't loaded yet" must render differently
  * (e.g. a public page reached cold, with nothing pre-cached). */
+const LEAD_BY_ID_KEY = "leadById";
+
+/** A lead from the account on screen, or, when it isn't there (a link to
+ *  another client's lead, e.g. from the automations screen, or an archived
+ *  one), loaded on its own by id. */
 export function useLeadWithStatus(id: string | undefined) {
   const { data: leads, isLoading } = useLeads();
-  return { lead: leads?.find((l) => l.id === id), isLoading };
+  const inList = leads?.find((l) => l.id === id);
+  const needFetch = !!id && !isLoading && !inList;
+  const { data: single, isLoading: singleLoading } = useQuery({
+    queryKey: [LEAD_BY_ID_KEY, id],
+    queryFn: () => leadsApi.getLeadById(id!),
+    enabled: needFetch,
+  });
+  return { lead: inList ?? single ?? undefined, isLoading: isLoading || (needFetch && singleLoading) };
+}
+
+/** Apply a change to a lead in both caches (the list and a lead loaded on its own). */
+function patchCaches(qc: ReturnType<typeof useQueryClient>, id: string, patch: Partial<LeadRow>) {
+  qc.setQueryData<LeadRow[]>(LEADS_KEY, (old) => old?.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+  qc.setQueryData<LeadRow | null>([LEAD_BY_ID_KEY, id], (old) => (old ? { ...old, ...patch } : old));
 }
 
 interface StageChangeArgs {
@@ -57,17 +75,17 @@ export function useUpdateLeadStage() {
     onMutate: async (args) => {
       await qc.cancelQueries({ queryKey: LEADS_KEY });
       const prev = qc.getQueryData<LeadRow[]>(LEADS_KEY);
-      const patch = resolvePatch(args);
-      qc.setQueryData<LeadRow[]>(LEADS_KEY, (old) =>
-        old?.map((l) => (l.id === args.id ? { ...l, stage: args.stage, ...patch } : l)),
-      );
-      return { prev };
+      const prevSingle = qc.getQueryData<LeadRow | null>([LEAD_BY_ID_KEY, args.id]);
+      patchCaches(qc, args.id, { stage: args.stage, ...resolvePatch(args) });
+      return { prev, prevSingle };
     },
-    onError: (_err, _vars, ctx) => {
+    onError: (_err, vars, ctx) => {
       if (ctx?.prev) qc.setQueryData(LEADS_KEY, ctx.prev);
+      if (ctx?.prevSingle !== undefined) qc.setQueryData([LEAD_BY_ID_KEY, vars.id], ctx.prevSingle);
     },
-    onSettled: () => {
+    onSettled: (_d, _e, vars) => {
       qc.invalidateQueries({ queryKey: LEADS_KEY });
+      qc.invalidateQueries({ queryKey: [LEAD_BY_ID_KEY, vars.id] });
       qc.invalidateQueries({ queryKey: ["leadEvents"] });
     },
   });
@@ -82,11 +100,13 @@ export function useUpdateLeadNote() {
     onMutate: async ({ id, note }) => {
       await qc.cancelQueries({ queryKey: LEADS_KEY });
       const prev = qc.getQueryData<LeadRow[]>(LEADS_KEY);
-      qc.setQueryData<LeadRow[]>(LEADS_KEY, (old) => old?.map((l) => (l.id === id ? { ...l, note } : l)));
-      return { prev };
+      const prevSingle = qc.getQueryData<LeadRow | null>([LEAD_BY_ID_KEY, id]);
+      patchCaches(qc, id, { note });
+      return { prev, prevSingle };
     },
-    onError: (_err, _vars, ctx) => {
+    onError: (_err, vars, ctx) => {
       if (ctx?.prev) qc.setQueryData(LEADS_KEY, ctx.prev);
+      if (ctx?.prevSingle !== undefined) qc.setQueryData([LEAD_BY_ID_KEY, vars.id], ctx.prevSingle);
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ["leadEvents"] });

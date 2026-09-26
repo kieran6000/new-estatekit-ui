@@ -17,12 +17,9 @@ export interface PreviewLead {
 
 const LINK_TOKEN = "{{action_link}}";
 
-/** Deterministic 4-char mock slug so the same lead always previews the same short link. */
-function shortSlugFor(id: string): string {
-  let h = 0;
-  for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  return h.toString(36).padStart(4, "0").slice(0, 4);
-}
+// The sent message carries a one-off token link (leads.estatekit.co/l/<token>),
+// minted at send time. The preview shows a link that really works now: the
+// lead's own page, which opens for anyone signed in with access to the lead.
 
 function fillTemplate(text: string, lead: PreviewLead, extra?: Record<string, string>): string {
   const fields: Record<string, string> = {
@@ -66,7 +63,7 @@ export default function WhatsAppPreview({
   if (!lead || !text) return null;
 
   const parts = fillTemplate(text, lead, sampleFields).split(LINK_TOKEN);
-  const link = `ek.co/L/${shortSlugFor(lead.id)}`;
+  const link = `leads.estatekit.co/l/${lead.id}`;
 
   function startEditing() {
     if (!editable) return;

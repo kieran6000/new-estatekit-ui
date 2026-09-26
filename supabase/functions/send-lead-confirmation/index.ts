@@ -43,10 +43,10 @@ const WORDING: Record<Kind, { request: string; subject: (area: string) => string
   seller: {
     request: "home evaluation",
     subject: (area) => `Your ${area ? area + " " : ""}home evaluation request`,
-    body: (addr, area) => [
+    body: (addr) => [
       `Thanks for requesting a free home evaluation${addr ? ` for ${esc(addr)}` : ""}.`,
       "I'm having a look at what's sold near you recently.",
-      `I'll be in touch shortly to go through what your home could be worth, and whether I have buyers looking in ${area ? esc(area) : "your area"}.`,
+      "I'll be in touch shortly to go through what your home could be worth, and whether I have buyers looking in the area.",
     ],
     wa: (addr) => `I just requested a home evaluation${addr ? ` for ${addr}` : ""}.`,
   },
@@ -63,6 +63,18 @@ const WORDING: Record<Kind, { request: string; subject: (area: string) => string
     wa: () => "I just sent you my details.",
   },
 };
+
+/** Adds a line to the lead's history (Leads → lead → History). */
+async function logHistory(leadId: string, agentId: string, ok: boolean, detail: string) {
+  const { error } = await supabase.from("lead_events").insert({
+    lead_id: leadId,
+    agent_id: agentId,
+    event_type: ok ? "email_sent" : "email_failed",
+    to_value: detail,
+    source: "automation",
+  });
+  if (error) console.error("history log failed", error);
+}
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
@@ -89,7 +101,11 @@ Deno.serve(async (req) => {
     return json({ error: "claim failed" }, 500);
   }
   const lead = claimed?.[0];
-  if (!lead || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(lead.email || "")) return json({ ok: true, skipped: "already sent, too old or no email" });
+  if (!lead) return json({ ok: true, skipped: "already sent or too old" });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(lead.email || "")) {
+    await logHistory(id, lead.agent_id, false, `Email address looks wrong: ${String(lead.email).slice(0, 80)}`);
+    return json({ ok: true, skipped: "invalid email" });
+  }
 
   const [{ data: agent }, { data: pipeline }, { data: page }] = await Promise.all([
     supabase.from("agent_profiles").select("display_name, company, email, whatsapp_number, avatar_url, sidebar_logo_url, lead_confirmation_email").eq("agent_id", lead.agent_id).maybeSingle(),
@@ -178,8 +194,10 @@ You're getting this because you asked ${esc(agentName)} for a ${w.request}. It's
     console.error("resend failed", res.status, body);
     // Un-mark it, so it is never recorded as sent when it wasn't.
     await supabase.from("leads").update({ confirmation_sent_at: null }).eq("id", id);
+    await logHistory(id, lead.agent_id, false, `Not delivered to ${lead.email} (email service error ${res.status})`);
     return json({ ok: false, status: res.status }, 502);
   }
+  await logHistory(id, lead.agent_id, true, `To ${lead.email}`);
   console.log("lead confirmation sent", id);
   return json({ ok: true });
 });
