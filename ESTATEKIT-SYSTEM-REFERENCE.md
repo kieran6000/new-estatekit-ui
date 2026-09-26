@@ -344,15 +344,20 @@ app.estatekit.co, so they don't appear here.
   remembered. On a phone, agency and area fold under the name. CPL is live:
   30-day Meta spend (`fb-ad-insights`, one call per ad account, cached 30 min)
   divided by 30-day leads. Search matches name, agency, area, email and phone.
-- **Detail page:** one page, no tabs. It has a header with quick actions
-  (**Open their dashboard** switches the account switcher to them, WhatsApp,
-  Call, Email), then:
-  - lead KPIs (7 days, 30 days, CPL, all time, last lead, lead sources)
-  - contact details
-  - package and billing
-  - leads by stage
-  - account settings
-  - the onboarding form answers
+- **Detail page:** one page, no tabs. The header has the photo and quick
+  actions (**Open their dashboard** switches the account switcher to them,
+  WhatsApp, Call, Email). Below that: lead KPIs (7 days, 30 days, CPL, all
+  time, last lead, lead sources), then two independent columns:
+  - **Left:** Leads by stage, then the onboarding answers.
+  - **Right:** Contact, Package & billing, and Account.
+- **Editing (operators):** each section has **Edit**, which turns it into a
+  form with Save and Cancel. Click the photo to replace it. Account has an
+  automations on/off switch that saves straight away.
+  - Name, agency, area, WhatsApp, email, ad account, page ID and the photo are
+    written to `agent_profiles`, so they show everywhere, including the
+    client's own dashboard.
+  - Everything else is merged into the `client_dossiers` row.
+  - Changing WhatsApp changes where alerts go, **not** their login number.
 - **Data:** live numbers come from `client_directory()`. Contact, billing and
   onboarding come from the `client_dossiers` row, compiled once on 25 Sept 2026
   from the CSM and Metrics sheets and the old platform's data. The row also

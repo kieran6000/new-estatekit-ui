@@ -100,6 +100,37 @@ export async function getClient(agentId: string): Promise<{ profile: ClientProfi
   };
 }
 
+export type ClientProfilePatch = Partial<
+  Pick<ClientProfile, "display_name" | "whatsapp_number" | "email" | "area" | "company" | "avatar_url" | "fb_page_id" | "fb_ad_account_id" | "automations_paused">
+>;
+
+/** Operator edit of a client's account row. Throws if nothing was saved
+ *  (RLS silently matches zero rows for a non-operator). */
+export async function updateClientProfile(agentId: string, patch: ClientProfilePatch): Promise<void> {
+  const { data, error } = await supabase.from("agent_profiles").update(patch).eq("agent_id", agentId).select("agent_id");
+  if (error) throw new Error(error.message);
+  if (!data?.length) throw new Error("not_saved");
+}
+
+/** Saves a client's stored record. `changes` is merged over what's already
+ *  there, so fields this app doesn't show are kept. */
+export async function saveClientDossier(agentId: string, current: ClientDossier | null, changes: Partial<ClientDossier>): Promise<void> {
+  const data = { ...(current ?? {}), ...changes };
+  const { error } = await supabase
+    .from("client_dossiers")
+    .upsert({ agent_id: agentId, data, updated_at: new Date().toISOString() }, { onConflict: "agent_id" });
+  if (error) throw new Error(error.message);
+}
+
+/** Uploads a client photo to the same bucket the Account page uses. */
+export async function uploadClientPhoto(uploaderId: string, file: File): Promise<string> {
+  const ext = file.name.split(".").pop() || "png";
+  const path = `${uploaderId}/avatar-${Date.now()}.${ext}`;
+  const { error } = await supabase.storage.from("logos").upload(path, file, { upsert: true });
+  if (error) throw new Error(error.message);
+  return supabase.storage.from("logos").getPublicUrl(path).data.publicUrl;
+}
+
 /** The picture for a client: their photo, then their Facebook page picture,
  *  then their brand logo. */
 export function clientPicture(p: Pick<ClientProfile, "avatar_url" | "fb_page_id" | "sidebar_logo_url">): string | undefined {
