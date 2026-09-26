@@ -293,12 +293,48 @@ export default function LeadPagePage() {
         </Box>
       )}
       {page.sourceType === "fb_form" ? null : (
+        // Phones: preview and link first, then what the agent uses most.
+        // Desktop: the same order on the left, preview + link sticky on the right.
         <Box sx={{ display: "flex", flexDirection: { xs: "column", md: "row" }, gap: 3, p: 2, maxWidth: 1100, mx: "auto" }}>
           <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
-            <Section title="Page details">
+            <Section
+              title="Questions"
+              locked={!canSetUp}
+              info="Each question gets its own screen. Name, phone number and (if on) email are always asked last."
+            >
+              {pipeline.kind === "seller" && (
+                <PresetBar page={page} canChange={canSetUp} onApplied={() => setFormResetKey((k) => k + 1)} />
+              )}
+              {canSetUp && (
+                <>
+                <TextField label="Contact fields description" placeholder="Where should we send your FREE home evaluation?" value={form.nameLabel} onChange={(e) => fieldChange("nameLabel", e.target.value)} fullWidth />
+                <TextField label="Phone number label" value={form.phoneLabel} onChange={(e) => fieldChange("phoneLabel", e.target.value)} fullWidth />
+                <TextField label="Submit button text" value={form.ctaLabel} onChange={(e) => fieldChange("ctaLabel", e.target.value)} fullWidth />
+                <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <Box>
+                    <Typography sx={{ fontSize: 14, fontWeight: 500 }}>Email</Typography>
+                    <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>Turn off to collect only full name and phone number</Typography>
+                  </Box>
+                  <Switch checked={page.collectEmail} onChange={(e) => update({ collectEmail: e.target.checked })} />
+                </Box>
+
+                </>
+              )}
+
+              <CustomQuestionEditor pageId={page.id} tier={tier} readOnly={!canSetUp} onUpgrade={() => {
+                posthog.capture("upgrade_clicked", { source: "lead_page_custom_questions" });
+                navigate("/upgrade");
+              }} />
+            </Section>
+
+            <Section title={canSetUp ? "Page details" : "Your details"}>
               <TextField label="Agent name" value={form.agentName} onChange={(e) => fieldChange("agentName", e.target.value)} fullWidth />
-              <TextField label="Intro headline" value={form.headline} onChange={(e) => fieldChange("headline", e.target.value)} fullWidth multiline minRows={2} disabled={!canSetUp} helperText={canSetUp ? undefined : "Set up by EstateKit"} />
-              <TextField label="Suburb / area" value={form.suburb} onChange={(e) => fieldChange("suburb", e.target.value)} fullWidth disabled={!canSetUp} />
+              {canSetUp && (
+                <>
+                  <TextField label="Intro headline" value={form.headline} onChange={(e) => fieldChange("headline", e.target.value)} fullWidth multiline minRows={2} />
+                  <TextField label="Suburb / area" value={form.suburb} onChange={(e) => fieldChange("suburb", e.target.value)} fullWidth />
+                </>
+              )}
               <TextField label="Phone" value={form.phone} onChange={(e) => fieldChange("phone", e.target.value)} fullWidth />
               <Box sx={{ display: "flex", gap: 2 }}>
                 <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0.75 }}>
@@ -385,38 +421,51 @@ export default function LeadPagePage() {
                 </Box>
               </Box>
 
+              {canSetUp && (
               <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <Box>
                   <Typography sx={{ fontSize: 14, fontWeight: 500 }}>Intro</Typography>
                   <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>A greeting screen with your intro headline, before the first question</Typography>
                 </Box>
-                <Switch checked={page.showIntro} disabled={!canSetUp} onChange={(e) => update({ showIntro: e.target.checked })} />
+                <Switch checked={page.showIntro} onChange={(e) => update({ showIntro: e.target.checked })} />
               </Box>
+              )}
             </Section>
 
-            <Section title="Message for leads" locked={!canSetUp} info="What people see right after they send the form. Write {name} for their first name and {agent} for yours.">
-              <TextField
-                label="Headline"
-                value={form.thankYouHeadline}
-                onChange={(e) => fieldChange("thankYouHeadline", e.target.value)}
-                fullWidth
-                disabled={!canSetUp}
-              />
-              <TextField label="Description" value={form.thankYouSubtext} onChange={(e) => fieldChange("thankYouSubtext", e.target.value)} fullWidth multiline minRows={2} disabled={!canSetUp} />
+            <Section title="Recent sales" info="Homes you've sold or listed, shown under your form and after people send it. It helps sellers trust you.">
+              <RecentSalesEditor />
             </Section>
 
-            <Section
-              title="End page"
-              locked={!canSetUp}
-              info="Shown instead of the message for leads when someone picks an answer you've set to “Send to end page”. They aren't saved as a lead. Leave it blank for our standard wording, or add a button to send them somewhere useful."
-            >
-              <TextField label="Headline" placeholder="Thanks for your interest!" value={form.dqHeadline} onChange={(e) => fieldChange("dqHeadline", e.target.value)} fullWidth disabled={!canSetUp} />
-              <TextField label="Description" placeholder="Based on your answers, this might not be the right time for a valuation…" value={form.dqText} onChange={(e) => fieldChange("dqText", e.target.value)} fullWidth multiline minRows={2} disabled={!canSetUp} />
-              <Box sx={{ display: "flex", gap: 1.5, flexWrap: "wrap" }}>
-                <TextField label="Button text" placeholder="e.g. Follow us on Facebook" value={form.dqCtaLabel} onChange={(e) => fieldChange("dqCtaLabel", e.target.value)} sx={{ flex: "1 1 160px" }} disabled={!canSetUp} />
-                <TextField label="Website link" placeholder="https://…" value={form.dqCtaUrl} onChange={(e) => fieldChange("dqCtaUrl", e.target.value.trim())} sx={{ flex: "2 1 220px" }} disabled={!canSetUp} />
-              </Box>
-            </Section>
+            {canSetUp && (
+              <>
+              <Section title="Message for leads" info="What people see right after they send the form. Write {name} for their first name and {agent} for yours.">
+                <TextField
+                  label="Headline"
+                  value={form.thankYouHeadline}
+                  onChange={(e) => fieldChange("thankYouHeadline", e.target.value)}
+                  fullWidth
+                 
+                />
+                <TextField label="Description" value={form.thankYouSubtext} onChange={(e) => fieldChange("thankYouSubtext", e.target.value)} fullWidth multiline minRows={2} />
+              </Section>
+              </>
+            )}
+
+            {canSetUp && (
+              <>
+              <Section
+                title="End page"
+                info="Shown instead of the message for leads when someone picks an answer you've set to “Send to end page”. They aren't saved as a lead. Leave it blank for our standard wording, or add a button to send them somewhere useful."
+              >
+                <TextField label="Headline" placeholder="Thanks for your interest!" value={form.dqHeadline} onChange={(e) => fieldChange("dqHeadline", e.target.value)} fullWidth />
+                <TextField label="Description" placeholder="Based on your answers, this might not be the right time for a valuation…" value={form.dqText} onChange={(e) => fieldChange("dqText", e.target.value)} fullWidth multiline minRows={2} />
+                <Box sx={{ display: "flex", gap: 1.5, flexWrap: "wrap" }}>
+                  <TextField label="Button text" placeholder="e.g. Follow us on Facebook" value={form.dqCtaLabel} onChange={(e) => fieldChange("dqCtaLabel", e.target.value)} sx={{ flex: "1 1 160px" }} />
+                  <TextField label="Website link" placeholder="https://…" value={form.dqCtaUrl} onChange={(e) => fieldChange("dqCtaUrl", e.target.value.trim())} sx={{ flex: "2 1 220px" }} />
+                </Box>
+              </Section>
+              </>
+            )}
 
             <ConfirmationEmailCard profile={profile} canSetUp={canSetUp} />
 
@@ -455,40 +504,9 @@ export default function LeadPagePage() {
                 {showAdvanced && <CapiSettings pixelId={form.fbPixelId} />}
               </Section>
             )}
-
-            <Section
-              title="Questions"
-              locked={!canSetUp}
-              info="Each question gets its own screen. Name, phone number and (if on) email are always asked last."
-            >
-              {pipeline.kind === "seller" && (
-                <PresetBar page={page} canChange={canSetUp} onApplied={() => setFormResetKey((k) => k + 1)} />
-              )}
-              <TextField label="Contact fields description" placeholder="Where should we send your FREE home evaluation?" value={form.nameLabel} onChange={(e) => fieldChange("nameLabel", e.target.value)} fullWidth disabled={!canSetUp} />
-              <TextField label="Phone number label" value={form.phoneLabel} onChange={(e) => fieldChange("phoneLabel", e.target.value)} fullWidth disabled={!canSetUp} />
-              <TextField label="Submit button text" value={form.ctaLabel} onChange={(e) => fieldChange("ctaLabel", e.target.value)} fullWidth disabled={!canSetUp} />
-              <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <Box>
-                  <Typography sx={{ fontSize: 14, fontWeight: 500 }}>Email</Typography>
-                  <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>Turn off to collect only full name and phone number</Typography>
-                </Box>
-                <Switch checked={page.collectEmail} disabled={!canSetUp} onChange={(e) => update({ collectEmail: e.target.checked })} />
-              </Box>
-
-              <CustomQuestionEditor pageId={page.id} tier={tier} readOnly={!canSetUp} onUpgrade={() => {
-                posthog.capture("upgrade_clicked", { source: "lead_page_custom_questions" });
-                navigate("/upgrade");
-              }} />
-            </Section>
-
-            {isOperator && (
-              <Section title="Recent sales" info="Homes you've sold or listed, shown under your form and after people send it. It helps sellers trust you.">
-                <RecentSalesEditor />
-              </Section>
-            )}
           </Box>
 
-          <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2, alignSelf: "flex-start", position: { md: "sticky" }, top: { md: 72 } }}>
+          <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2, alignSelf: { md: "flex-start" }, position: { md: "sticky" }, top: { md: 72 }, order: { xs: -1, md: 0 } }}>
             <Section
               title="Live preview"
               action={
@@ -506,9 +524,9 @@ export default function LeadPagePage() {
               <PreviewAndSubmit page={{ ...page, ...form }} pipelineKind={pipeline.kind} />
             </Section>
 
-            {isOperator && <LeadPageFunnelStats pageId={page.id} />}
-
             <ShareSection page={page} onUpdateSlug={canSetUp ? (slug) => updatePage.mutate({ id: page.id, patch: { slug } }) : undefined} />
+
+            {isOperator && <LeadPageFunnelStats pageId={page.id} />}
           </Box>
         </Box>
       )}

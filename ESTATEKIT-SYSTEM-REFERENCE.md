@@ -259,8 +259,22 @@ mistakes, not database security):
   - Message for leads and End page
   - tracking and page stats
 - **Leads: operator-only.** Adding or renaming lists.
-- **Locked sections still show, read-only**, marked "Set up by EstateKit", so
-  agents can see what their form does.
+- **What agents see on Forms.** They only see what they use. On a phone the
+  order is:
+  1. the live preview
+  2. their page link (copy / share)
+  3. Questions: the form type and questions, read-only, marked "Set up by
+     EstateKit"
+  4. Your details: name, phone, logo, photo, colour
+  5. Recent sales
+  6. Confirmation email: a preview, and they can switch it off
+
+  On desktop the preview and link stay in the right-hand column, which stays
+  in view as you scroll.
+- **Hidden from agents:** Message for leads, End page, tracking, page stats,
+  the intro headline, suburb and intro switch, and the contact-field labels.
+- **Recent sales:** agents can manage their own (the three "Agents … own
+  sold_listings" policies from migration 20260927_0005).
 
 **Agents can:**
 - work their leads: calls, outcomes, notes, commission
