@@ -921,15 +921,24 @@ client you've switched into.
   instant form) for a switched-on agent, the `leads_queue_confirmation`
   trigger asks the `send-lead-confirmation` function to send it.
   `leads.confirmation_sent_at` makes sure each lead gets it once.
-- **Sending:** through **Resend**, from the verified domain `mail.estatekit.co`:
-  - **From:** "*Agent* via EstateKit" `<hello@mail.estatekit.co>`
-  - **Reply-To:** the agent's email, so replies reach the agent
+- **Sending:** through **Resend**, from `mail.estatekit.co`:
+  - **From:** the agent's name at `<hello@mail.estatekit.co>`
+  - **Reply-To:** the agent's email
   - Click and open tracking are off.
-- **Content:** the agent's photo, name and agency, "I've received your
-  details…", and the address if they gave one. The main button is **Message
-  *Agent* on WhatsApp**: a pre-filled message from the lead to the agent's
-  own number. The lead starts the conversation, which needs no WhatsApp
-  Business API. Seller, buyer and general leads get different wording.
+- **Style:** deliberately plain, reading like an email the agent typed. Short
+  lines, no card, banner or big buttons. Designed emails read as automated
+  and tend to land in Gmail's Promotions tab.
+- **Content (seller):**
+  - "Thanks for requesting a free home evaluation for <address>."
+  - "I'm having a look at what's sold near you recently."
+  - "I'll be in touch shortly to go through what your home could be worth,
+    and whether I have buyers looking in <suburb>."
+  - A "message me on WhatsApp here" link: a pre-filled message from the lead
+    to the agent's **WhatsApp cellphone number** (never an office landline).
+    The lead starts the conversation, so no WhatsApp Business API is needed.
+  - A personal sign-off: first name, full name · agency, phone and email.
+  - An address typed all in lowercase is tidied to Title Case.
+  - Buyer and general leads get their own wording.
 - **Setup:** needs the `RESEND_API_KEY` secret. Without it the function
   sends nothing.
 

@@ -34,30 +34,32 @@ const prettyPhone = (s: string) => {
   const d = digits(s);
   return d.length === 11 && d.startsWith("27") ? `0${d.slice(2, 4)} ${d.slice(4, 7)} ${d.slice(7)}` : s;
 };
-const httpsOnly = (u: string | null | undefined) => (u && /^https:\/\//i.test(u) ? u : "");
 
 type Kind = "seller" | "buyer" | "general";
 // The seller copy gives the lead a reason to pick up the agent's call (their
 // home's value, and whether there are buyers nearby) instead of "confirming
 // details". "Whether", because it has to be true for every agent.
-const WORDING: Record<Kind, { request: string; subject: (area: string) => string; body: (addr: string, area: string) => string; wa: (addr: string) => string }> = {
+const WORDING: Record<Kind, { request: string; subject: (area: string) => string; body: (addr: string, area: string) => string[]; wa: (addr: string) => string }> = {
   seller: {
     request: "home evaluation",
     subject: (area) => `Your ${area ? area + " " : ""}home evaluation request`,
-    body: (addr, area) =>
-      `Thanks for requesting a free home evaluation${addr ? ` for <strong>${esc(addr)}</strong>` : ""}. I'm looking at what's sold near you recently, and I'll be in touch shortly to go through what your home could be worth, and whether I have buyers looking in ${area ? esc(area) : "your area"}.`,
+    body: (addr, area) => [
+      `Thanks for requesting a free home evaluation${addr ? ` for ${esc(addr)}` : ""}.`,
+      "I'm having a look at what's sold near you recently.",
+      `I'll be in touch shortly to go through what your home could be worth, and whether I have buyers looking in ${area ? esc(area) : "your area"}.`,
+    ],
     wa: (addr) => `I just requested a home evaluation${addr ? ` for ${addr}` : ""}.`,
   },
   buyer: {
     request: "property search",
     subject: (area) => `Your ${area ? area + " " : ""}property search`,
-    body: () => "Thanks for getting in touch about finding your next home. I've received your details and I'll be in touch shortly.",
+    body: () => ["Thanks for getting in touch about finding your next home.", "I've received your details and I'll be in touch shortly."],
     wa: () => "I just sent you my details about finding a home.",
   },
   general: {
     request: "enquiry",
     subject: () => "We've received your details",
-    body: () => "Thanks for getting in touch. I've received your details and I'll be in touch shortly.",
+    body: () => ["Thanks for getting in touch.", "I've received your details and I'll be in touch shortly."],
     wa: () => "I just sent you my details.",
   },
 };
@@ -100,69 +102,70 @@ Deno.serve(async (req) => {
 
   const kind: Kind = pipeline?.kind === "buyer" ? "buyer" : pipeline?.kind === "general" ? "general" : "seller";
   const w = WORDING[kind];
-  const agentName = (page?.agent_name || agent.display_name || "").trim() || "Your agent";
+  // A person, not a brand: the page's "agent name" is sometimes the agency
+  // (e.g. "Hannaford Homes"), so the profile's name comes first.
+  const agentName = (agent.display_name || page?.agent_name || "").trim() || "Your agent";
   const agentFirst = first(agentName) || agentName;
+  const brand = (agent.company || (page?.agent_name && page.agent_name !== agentName ? page.agent_name : "") || "").trim();
   const leadFirst = first(lead.name) || "there";
   const area = (page?.suburb || "").split(/[,/•|;]/)[0].trim();
   const answers = Array.isArray(lead.form_answers) ? (lead.form_answers as { q?: string; a?: string }[]) : [];
-  const address = (answers.find((x) => /address/i.test(x.q || ""))?.a || "").trim().slice(0, 160);
-  const agentPhone = digits(page?.phone || agent.whatsapp_number);
-  const accent = /^#[0-9a-f]{6}$/i.test(page?.accent_color || "") ? page!.accent_color! : "#1976d2";
-  const photo = httpsOnly(agent.avatar_url) || httpsOnly(agent.sidebar_logo_url);
+  const rawAddress = (answers.find((x) => /address/i.test(x.q || ""))?.a || "").trim().slice(0, 160);
+  // Typed in all lowercase ("12 long kloof midrand") reads as careless when
+  // quoted back; tidy it to "12 Long Kloof Midrand". Anything with capitals is
+  // left as they wrote it.
+  const address = rawAddress === rawAddress.toLowerCase() ? rawAddress.replace(/\b([a-z])/g, (m) => m.toUpperCase()) : rawAddress;
+  // WhatsApp only works to a cellphone, so use the agent's WhatsApp number
+  // (a page's number can be an office landline). Calls can use either.
+  const isMobile = (d: string) => /^27[6-8]\d{8}$/.test(d);
+  const waNumber = [digits(agent.whatsapp_number), digits(page?.phone)].find(isMobile) || "";
+  const callNumber = digits(page?.phone || agent.whatsapp_number);
   const replyTo = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(agent.email || "") ? agent.email : undefined;
 
   const waText = `Hi ${agentFirst}, it's ${first(lead.name) || lead.name}. ${w.wa(address)}`;
-  const waUrl = agentPhone ? `https://wa.me/${agentPhone}?text=${encodeURIComponent(waText)}` : "";
+  const waUrl = waNumber ? `https://wa.me/${waNumber}?text=${encodeURIComponent(waText)}` : "";
 
-  const subject = `${w.subject(area)} · ${agentName}`;
-  const html = `<!doctype html><html><body style="margin:0;padding:0;background:#f1f3f4;font-family:Roboto,Arial,Helvetica,sans-serif;color:#202124">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f1f3f4;padding:24px 12px"><tr><td align="center">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border-radius:8px;overflow:hidden;border:1px solid #e0e0e0">
-<tr><td style="height:4px;background:${accent}"></td></tr>
-<tr><td style="padding:28px 28px 8px">
-  <table role="presentation" cellpadding="0" cellspacing="0"><tr>
-    ${photo ? `<td style="padding-right:14px"><img src="${esc(photo)}" width="56" height="56" alt="" style="display:block;border-radius:50%;object-fit:cover"></td>` : ""}
-    <td><div style="font-size:17px;font-weight:600">${esc(agentName)}</div>${agent.company ? `<div style="font-size:14px;color:#5f6368">${esc(agent.company)}</div>` : ""}</td>
-  </tr></table>
-</td></tr>
-<tr><td style="padding:16px 28px 0;font-size:16px;line-height:1.55">
-  <p style="margin:0 0 12px">Hi ${esc(leadFirst)},</p>
-  <p style="margin:0 0 20px">${w.body(address, area)}</p>
-  ${waUrl ? `<p style="margin:0 0 8px;color:#5f6368;font-size:14px">Want to get started sooner? Send me a message:</p>
-  <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 20px"><tr><td style="background:#25D366;border-radius:6px">
-    <a href="${esc(waUrl)}" style="display:inline-block;padding:14px 22px;color:#ffffff;font-size:16px;font-weight:600;text-decoration:none">Message ${esc(agentFirst)} on WhatsApp</a>
-  </td></tr></table>` : ""}
-  <p style="margin:0 0 24px;font-size:14px;color:#5f6368">
-    ${agentPhone ? `Call: <a href="tel:+${agentPhone}" style="color:${accent}">${esc(prettyPhone(agentPhone))}</a>` : ""}
-    ${agentPhone && replyTo ? " &nbsp;·&nbsp; " : ""}
-    ${replyTo ? `Email: <a href="mailto:${esc(replyTo)}" style="color:${accent}">${esc(replyTo)}</a>` : ""}
-  </p>
-</td></tr>
-<tr><td style="padding:16px 28px 24px;border-top:1px solid #eeeeee;font-size:12px;line-height:1.5;color:#80868b">
-  You're receiving this because you asked for a ${w.request} from ${esc(agentName)}. This is a one-off confirmation, not a newsletter.
-  <a href="${PRIVACY_URL}" style="color:#80868b">Privacy Policy</a>
-</td></tr>
-</table></td></tr></table></body></html>`;
+  // Personal subject, no brand suffix: the From line already says who it is.
+  const subject = kind === "seller" && address ? `Your home evaluation for ${address}` : w.subject(area);
+
+  // Deliberately plain: it should read like an email the agent typed, not a
+  // newsletter. No card, banner, logo or big buttons (those also tend to land
+  // in Gmail's Promotions tab).
+  const p = 'style="margin:0 0 14px"';
+  const html = `<!doctype html><html><body style="margin:0;padding:16px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.55;color:#222222">
+<div style="max-width:560px">
+<p ${p}>Hi ${esc(leadFirst)},</p>
+${w.body(address, area).map((t) => `<p ${p}>${t}</p>`).join("\n")}
+${waUrl ? `<p ${p}>If it's easier, you can <a href="${esc(waUrl)}" style="color:#1a73e8">message me on WhatsApp here</a>.</p>` : ""}
+<p style="margin:18px 0 0">${esc(agentFirst)}</p>
+<p style="margin:6px 0 0;font-size:13px;color:#555555;line-height:1.5">
+${esc(agentName)}${brand ? ` · ${esc(brand)}` : ""}<br>
+${callNumber ? `<a href="tel:+${callNumber}" style="color:#555555">${esc(prettyPhone(callNumber))}</a>` : ""}${callNumber && replyTo ? " · " : ""}${replyTo ? `<a href="mailto:${esc(replyTo)}" style="color:#555555">${esc(replyTo)}</a>` : ""}
+</p>
+<p style="margin:28px 0 0;font-size:11px;color:#999999;line-height:1.5">
+You're getting this because you asked ${esc(agentName)} for a ${w.request}. It's a one-off confirmation, not a newsletter. <a href="${PRIVACY_URL}" style="color:#999999">Privacy Policy</a>
+</p>
+</div></body></html>`;
 
   const text = [
     `Hi ${leadFirst},`,
     "",
-    w.body(address, area).replace(/<[^>]+>/g, ""),
+    ...w.body(address, area).flatMap((t) => [t.replace(/<[^>]+>/g, ""), ""]),
     "",
-    waUrl ? `Want to get started sooner? Message ${agentFirst} on WhatsApp: ${waUrl}` : "",
-    agentPhone ? `Call: ${prettyPhone(agentPhone)}` : "",
-    replyTo ? `Email: ${replyTo}` : "",
+    waUrl ? `If it's easier, you can message me on WhatsApp here: ${waUrl}` : "",
     "",
-    `${agentName}${agent.company ? `, ${agent.company}` : ""}`,
+    agentFirst,
+    `${agentName}${brand ? ` · ${brand}` : ""}`,
+    [callNumber ? prettyPhone(callNumber) : "", replyTo || ""].filter(Boolean).join(" · "),
     "",
-    `You're receiving this because you asked for a ${w.request} from ${agentName}. This is a one-off confirmation, not a newsletter. Privacy Policy: ${PRIVACY_URL}`,
+    `You're getting this because you asked ${agentName} for a ${w.request}. It's a one-off confirmation, not a newsletter. Privacy Policy: ${PRIVACY_URL}`,
   ].filter((l, i, a) => l !== "" || a[i - 1] !== "").join("\n");
 
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      from: `${agentName.replace(/["<>]/g, "")} via EstateKit <${FROM_ADDRESS}>`,
+      from: `${agentName.replace(/["<>]/g, "")} <${FROM_ADDRESS}>`,
       to: [lead.email],
       ...(replyTo ? { reply_to: replyTo } : {}),
       subject,
