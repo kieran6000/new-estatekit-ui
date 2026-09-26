@@ -37,11 +37,15 @@ const prettyPhone = (s: string) => {
 const httpsOnly = (u: string | null | undefined) => (u && /^https:\/\//i.test(u) ? u : "");
 
 type Kind = "seller" | "buyer" | "general";
-const WORDING: Record<Kind, { request: string; subject: (area: string) => string; body: (addr: string) => string; wa: (addr: string) => string }> = {
+// The seller copy gives the lead a reason to pick up the agent's call (their
+// home's value, and whether there are buyers nearby) instead of "confirming
+// details". "Whether", because it has to be true for every agent.
+const WORDING: Record<Kind, { request: string; subject: (area: string) => string; body: (addr: string, area: string) => string; wa: (addr: string) => string }> = {
   seller: {
     request: "home evaluation",
     subject: (area) => `Your ${area ? area + " " : ""}home evaluation request`,
-    body: (addr) => `Thanks for requesting a free home evaluation${addr ? ` for <strong>${esc(addr)}</strong>` : ""}. I've received your details and I'll be in touch shortly to confirm a few things about your property.`,
+    body: (addr, area) =>
+      `Thanks for requesting a free home evaluation${addr ? ` for <strong>${esc(addr)}</strong>` : ""}. I'm looking at what's sold near you recently, and I'll be in touch shortly to go through what your home could be worth, and whether I have buyers looking in ${area ? esc(area) : "your area"}.`,
     wa: (addr) => `I just requested a home evaluation${addr ? ` for ${addr}` : ""}.`,
   },
   buyer: {
@@ -123,7 +127,7 @@ Deno.serve(async (req) => {
 </td></tr>
 <tr><td style="padding:16px 28px 0;font-size:16px;line-height:1.55">
   <p style="margin:0 0 12px">Hi ${esc(leadFirst)},</p>
-  <p style="margin:0 0 20px">${w.body(address)}</p>
+  <p style="margin:0 0 20px">${w.body(address, area)}</p>
   ${waUrl ? `<p style="margin:0 0 8px;color:#5f6368;font-size:14px">Want to get started sooner? Send me a message:</p>
   <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 20px"><tr><td style="background:#25D366;border-radius:6px">
     <a href="${esc(waUrl)}" style="display:inline-block;padding:14px 22px;color:#ffffff;font-size:16px;font-weight:600;text-decoration:none">Message ${esc(agentFirst)} on WhatsApp</a>
@@ -143,7 +147,7 @@ Deno.serve(async (req) => {
   const text = [
     `Hi ${leadFirst},`,
     "",
-    w.body(address).replace(/<[^>]+>/g, ""),
+    w.body(address, area).replace(/<[^>]+>/g, ""),
     "",
     waUrl ? `Want to get started sooner? Message ${agentFirst} on WhatsApp: ${waUrl}` : "",
     agentPhone ? `Call: ${prettyPhone(agentPhone)}` : "",
