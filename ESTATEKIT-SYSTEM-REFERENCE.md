@@ -258,7 +258,17 @@ The agent's home screen.
 - **Select mode (bulk):** archive/restore, move stage, move to another pipeline.
 - **Archived view:** operator only.
 - **Search:** operators can search across all accounts (`searchLeadsEverywhere`).
-- "How it works" tour (driver.js) and a reload button. Realtime refresh via
+- **"How it works" tour** (`lib/tour.ts` + `tour.css`, driver.js, EstateKit-styled):
+  - Structure: a welcome card (Show me / Skip), then lists, filters, open a
+    lead and call, ending on "Start calling".
+  - It auto-offers once per agent per device (key `estatekit_tour_leads_v2_<id>`),
+    never auto-starts for operators, and replays from the **?** button.
+  - Steps for elements that aren't on screen are dropped, and a tap on the dark
+    backdrop doesn't close it.
+  - PostHog tracks `tour_started`, `tour_step_viewed`, `tour_completed` and
+    `tour_dismissed` (with the step they left on), with `auto` telling
+    first-run from replay.
+- A reload button. Realtime refresh via
   `useRealtime`.
 - Free tier: phone numbers masked (`useCanSeeFullPhone()`; operators and paid
   tiers see full numbers).

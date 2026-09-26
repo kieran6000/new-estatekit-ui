@@ -60,6 +60,7 @@ import { startLeadsTour, hasSeenLeadsTour } from "../lib/tour";
 import { listArchivedLeads } from "../api/leads";
 import { syncFbLeads } from "../api/leadPages";
 import { getActiveAgentIdSync } from "../api/_client";
+import { getMyProfile } from "../api/agentProfile";
 import GSheetIcon from "../components/GSheetIcon";
 import StageMenu from "../components/StageMenu";
 import OutcomeSheet from "../components/OutcomeSheet";
@@ -75,6 +76,16 @@ export default function LeadsPage() {
   const showSnack = useSnack();
   const qc = useQueryClient();
   const { data: isOperator } = useIsOperator();
+  const posthog = usePostHog();
+  const { data: myProfile } = useQuery({ queryKey: ["myProfile"], queryFn: getMyProfile, staleTime: 5 * 60_000 });
+  function runTour(auto: boolean) {
+    startLeadsTour({
+      agentId: getActiveAgentIdSync(),
+      firstName: myProfile?.displayName,
+      capture: (event, props) => posthog.capture(event, props),
+      auto,
+    });
+  }
   // Operators can look at what's been archived without it cluttering the list.
   const [showArchived, setShowArchived] = useState(false);
   const { data: archivedLeads = [] } = useQuery({
@@ -139,14 +150,17 @@ export default function LeadsPage() {
   }, []);
   const pendingLead = pending ? leads.find((l) => l.id === pending.leadId) : undefined;
 
-  // First visit with leads on screen: run the walkthrough once. Waits for the
-  // list to render so the tour has something to point at.
+  // First visit with leads on screen: offer the walkthrough once. Waits for
+  // the list to render so the tour has something to point at. Never
+  // auto-starts for operators (they switch between accounts all day); they
+  // can still run it from the ? button.
   useEffect(() => {
     const agentId = getActiveAgentIdSync();
-    if (leadsLoading || pipelinesLoading || hasSeenLeadsTour(agentId)) return;
-    const t = setTimeout(() => startLeadsTour(agentId), 700);
+    if (leadsLoading || pipelinesLoading || isOperator !== false || hasSeenLeadsTour(agentId)) return;
+    const t = setTimeout(() => runTour(true), 900);
     return () => clearTimeout(t);
-  }, [leadsLoading, pipelinesLoading]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leadsLoading, pipelinesLoading, isOperator]);
   function dismissPending() {
     clearPendingCall();
     setPending(null);
@@ -327,7 +341,7 @@ export default function LeadsPage() {
       <AppBar position="sticky">
         <Toolbar sx={{ height: 56, minHeight: "56px !important", px: "8px 8px 8px 16px" }}>
           <Typography sx={{ fontSize: 18, fontWeight: 500, flex: 1 }}>Leads</Typography>
-          <IconButton onClick={() => startLeadsTour(getActiveAgentIdSync())} title="How it works" aria-label="How it works">
+          <IconButton onClick={() => runTour(false)} title="How it works" aria-label="How it works">
             <HelpOutlineIcon />
           </IconButton>
           <IconButton onClick={() => setSearchOpen((v) => !v)}>

@@ -1,0 +1,136 @@
+/* EstateKit look for the driver.js walkthrough. Scoped to .ek-tour so it
+   never touches anything else. */
+
+.driver-popover.ek-tour {
+  font-family: Roboto, -apple-system, "Segoe UI", Arial, sans-serif;
+  background: #fff;
+  color: rgba(0, 0, 0, 0.87);
+  border-radius: 14px;
+  padding: 20px 20px 16px;
+  min-width: 280px;
+  max-width: min(360px, calc(100vw - 32px));
+  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.22), 0 2px 6px rgba(15, 23, 42, 0.08);
+  animation: ek-tour-in 0.22s ease-out;
+}
+
+@keyframes ek-tour-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+.driver-popover.ek-tour .driver-popover-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.3;
+  margin: 0 28px 10px 0;
+}
+
+.driver-popover.ek-tour .driver-popover-description {
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: rgba(0, 0, 0, 0.66);
+}
+
+.driver-popover.ek-tour .ek-tour-emoji {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: #e8f0fe;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 21px;
+}
+
+.driver-popover.ek-tour .ek-tour-hint {
+  display: block;
+  margin-top: 10px;
+  font-size: 12.5px;
+  color: rgba(0, 0, 0, 0.5);
+}
+
+.driver-popover.ek-tour .driver-popover-close-btn {
+  top: 10px;
+  right: 10px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 20px;
+}
+.driver-popover.ek-tour .driver-popover-close-btn:hover {
+  background: #f1f3f4;
+  color: rgba(0, 0, 0, 0.8);
+}
+
+.driver-popover.ek-tour .driver-popover-footer {
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.driver-popover.ek-tour .driver-popover-progress-text {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.45);
+  letter-spacing: 0.02em;
+}
+
+.driver-popover.ek-tour .driver-popover-navigation-btns {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.driver-popover.ek-tour .driver-popover-footer button {
+  font-family: inherit;
+  text-shadow: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 9px 16px;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background-color 0.15s, filter 0.15s;
+}
+
+.driver-popover.ek-tour .driver-popover-next-btn {
+  background: #1976d2;
+  color: #fff;
+  border: 1px solid #1976d2;
+}
+.driver-popover.ek-tour .driver-popover-next-btn:hover,
+.driver-popover.ek-tour .driver-popover-next-btn:focus {
+  background: #1565c0;
+  color: #fff;
+}
+
+.driver-popover.ek-tour .driver-popover-prev-btn,
+.driver-popover.ek-tour .ek-tour-skip {
+  background: transparent;
+  color: rgba(0, 0, 0, 0.6);
+  border: 1px solid transparent;
+}
+.driver-popover.ek-tour .driver-popover-prev-btn:hover,
+.driver-popover.ek-tour .ek-tour-skip:hover {
+  background: #f1f3f4;
+  color: rgba(0, 0, 0, 0.87);
+}
+
+/* Arrow colour matches the white card. */
+.driver-popover.ek-tour .driver-popover-arrow-side-top.driver-popover-arrow { border-top-color: #fff; }
+.driver-popover.ek-tour .driver-popover-arrow-side-bottom.driver-popover-arrow { border-bottom-color: #fff; }
+.driver-popover.ek-tour .driver-popover-arrow-side-left.driver-popover-arrow { border-left-color: #fff; }
+.driver-popover.ek-tour .driver-popover-arrow-side-right.driver-popover-arrow { border-right-color: #fff; }
+
+/* A soft blue ring around whatever is highlighted, so the eye goes there. */
+.driver-active-element {
+  outline: 3px solid rgba(25, 118, 210, 0.55) !important;
+  outline-offset: 3px;
+  border-radius: 8px;
+}
