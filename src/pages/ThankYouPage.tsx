@@ -10,6 +10,7 @@ import { getLeadPageBySlug } from "../api/leadPages";
 import { listSoldListingsForAgent } from "../api/soldListings";
 import { HeaderBrand } from "../components/LeadCaptureForm";
 import { SoldList } from "../components/SoldListings";
+import PoweredByEstateKit from "../components/PoweredByEstateKit";
 import { initPixel, trackPixel } from "../lib/fbPixel";
 import type { LeadPage } from "../types";
 
@@ -59,6 +60,7 @@ export default function ThankYouPage() {
             </Box>
           </Box>
           <SoldListingsSection agentId={page.agentId} />
+          <PoweredByEstateKit refSlug={page.slug} placement="thank_you" />
         </Box>
       </Box>
     </Box>

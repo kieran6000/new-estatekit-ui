@@ -322,6 +322,10 @@ export default function LeadCaptureForm({
                 </Button>
               )}
 
+              {/* The consent line belongs next to the button that shares their
+                  details — only on the contact step, never on the questions. */}
+              {step.kind === "contact" && <ContactConsent agentName={page.agentName} />}
+
               {!isFirst && (
                 <Button
                   type="button"
@@ -339,6 +343,19 @@ export default function LeadCaptureForm({
         </Box>
       </Box>
     </Box>
+  );
+}
+
+function ContactConsent({ agentName }: { agentName: string }) {
+  return (
+    <Typography sx={{ fontSize: 11, color: "text.disabled", lineHeight: 1.5, mt: 1.5, textAlign: "center" }}>
+      By submitting this form, you agree to be contacted by {agentName || "our team"} via phone, email, and SMS regarding your
+      property enquiry. Message and data rates may apply. You can unsubscribe at any time. Not intended to solicit buyers or
+      sellers currently under contract with an agent.{" "}
+      <Box component="a" href="/privacy" target="_blank" rel="noopener" sx={{ color: "text.secondary", textDecoration: "underline" }}>
+        Privacy Policy
+      </Box>
+    </Typography>
   );
 }
 

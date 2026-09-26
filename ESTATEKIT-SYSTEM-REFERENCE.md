@@ -241,6 +241,7 @@ conditioning).
 | `/p/:slug` | LeadPagePreviewPage: the live landing page | **public** |
 | `/thank-you` | ThankYouPage | public |
 | `/privacy` | PrivacyPolicyPage | public |
+| `/start` | SignupPage: request a free account (from "Powered by EstateKit") | public |
 
 `OnboardingGate` sends not-yet-onboarded users to `/welcome`. It checks the
 **logged-in** user, not the account being viewed.
@@ -325,6 +326,26 @@ optional email, WhatsApp number). A disqualifying answer shows a polite
   the background.
 - The thank-you screen shows the profile photo, the headline, and the recent
   sales list.
+- The consent line ("By submitting this form…") shows **only on the contact
+  step**, under the submit button. It's `ContactConsent` in `LeadCaptureForm`.
+- **"Powered by EstateKit"** (`PoweredByEstateKit.tsx`) sits at the bottom of the
+  lead page (faint, logo only) and the thank-you page (adds "Estate agent? Get
+  leads like this in your area, free →"). It opens `/start?from=…&ref=<slug>`
+  in a **new tab**, so a homeowner never loses a half-filled form.
+
+### Sign-up (`/start`, public, `SignupPage.tsx`)
+A free-account request form in the lead-page style, built for completion
+rate:
+- an intro screen, then 5 short steps: what they want more of (multi), areas,
+  ad budget (one tap, auto-advances), agency, then name + WhatsApp last.
+- Saved through the `request_signup` RPC. The done screen offers **Send on
+  WhatsApp**, a pre-filled message with every answer to the admin number
+  (`src/lib/contact.ts`), the same way "Request a login" works. If the save
+  fails, that button is the fallback.
+- New requests appear at the top of **Clients** (`SignupRequests.tsx`) with a
+  WhatsApp button (a tap marks them contacted), **Signed up** and **Not a fit**.
+- Everything else (Facebook access, photos, recent sales, price range) is
+  collected at onboarding, not here.
 
 ### Overview (`/overview`, operator only, `OverviewPage.tsx`)
 Per-agent performance: Simple or Advanced views, a sortable table ("Tap a
@@ -450,7 +471,7 @@ lead pages use the agent's `accent_color` for the header and buttons.
 
 ## 8. Database
 
-25 tables in `public`, all with RLS. The full DDL is in
+26 tables in `public`, all with RLS. The full DDL is in
 `supabase/schema/2026-09-25_production_snapshot.sql`. Roughly: 1,211 leads,
 35 agent profiles (21 of them switched-off imports from the old dashboard, see
 §14), 18 lead pages, 75 pipelines.
@@ -475,6 +496,7 @@ lead pages use the agent's `accent_color` for the header and buttons.
 | `fb_api_state` | A single row: `backoff_until`, the app-wide Facebook rate-limit circuit breaker. |
 | `setup_steps` | Per-agent onboarding checklist (seeded by a trigger on `auth.users`). |
 | `support_tickets`, `call_questions` | Support inbox, agents' questions. |
+| `signup_requests` | Free-account requests from `/start`: `name, whatsapp (+27…), agency, wants text[], suburbs, budget, ref` (lead page slug), `source` (`lead_page`|`thank_you`), `status` (`new`|`contacted`|`signed_up`|`not_a_fit`). Operators read/update; the public only via `request_signup`. |
 | `client_dossiers` | **Operator only.** One row per client: `agent_id` (pk), `data jsonb` (the Clients tab's record, see §5), `updated_at`. Agents can't read their own. |
 | `overview_daily` | **Legacy / empty.** The Overview is computed client-side now. |
 | `otp_codes`, `phone_otp_codes` | Legacy WhatsApp-code login. **Disabled** (§13). |
@@ -489,6 +511,7 @@ lead pages use the agent's `accent_color` for the header and buttons.
 | `enqueue_automations()` | Trigger on `leads`: queues runs (see §10). |
 | `record_lead_event()` | Trigger on `leads`: writes history. |
 | `dedupe_lead_call()` | Trigger on `lead_events`: collapses repeat call logs. |
+| `request_signup(...)` | SECURITY DEFINER, anon + authenticated. Validates and caps every field, normalises the number to +27…, and returns the existing request for a repeat from the same number within 24h. |
 | `client_directory()` | Live per-account lead counts (7d/30d/total/last/by stage), lead pages and pipelines for the Clients tab. SECURITY INVOKER, and it returns nothing unless the caller is an operator. |
 | `lead_page_funnel(page_id, since)` | Funnel counts (SECURITY INVOKER, so it respects RLS). |
 | `find_user_id_by_phone(phone)` | service_role only. |
@@ -667,6 +690,12 @@ page events, ad pause/resume, disqualifications with the reason) to
 ### PostHog
 All text and inputs are masked. `person_profiles: identified_only`. Needs the
 Vault secrets `POSTHOG_PROJECT_ID` and `POSTHOG_HOST` for replay links.
+
+Sign-up funnel events: `powered_by_clicked` (placement, ref) →
+`signup_viewed` → `signup_started` → `signup_step_completed` (step, index) →
+`signup_submitted` (wants, budget) → `signup_whatsapp_clicked`, plus
+`signup_save_failed`. `signup_from` / `signup_ref` are registered as super
+properties, so every event and replay carries the source page.
 
 ---
 

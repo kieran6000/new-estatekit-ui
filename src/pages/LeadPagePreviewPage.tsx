@@ -13,6 +13,7 @@ import { trackPageEvent } from "../lib/pageTracking";
 import { captureAttribution, readAttribution } from "../lib/adAttribution";
 import { listSoldListingsForAgent } from "../api/soldListings";
 import { SoldStrip } from "../components/SoldListings";
+import PoweredByEstateKit from "../components/PoweredByEstateKit";
 
 export default function LeadPagePreviewPage() {
   const { slug } = useParams<{ slug: string }>();
@@ -134,23 +135,7 @@ export default function LeadPagePreviewPage() {
                 </Box>
               )}
 
-              <Typography sx={{ fontSize: 11, color: "text.disabled", lineHeight: 1.5, mt: 2, textAlign: "center", px: 1 }}>
-                By submitting this form, you agree to be contacted by{" "}
-                {page.agentName || "our team"} via phone, email, and SMS
-                regarding your property enquiry. Message and data rates may
-                apply. You can unsubscribe at any time. Not intended to
-                solicit buyers or sellers currently under contract with an
-                agent.{" "}
-                <Box
-                  component="a"
-                  href="/privacy"
-                  target="_blank"
-                  rel="noopener"
-                  sx={{ color: "text.secondary", textDecoration: "underline" }}
-                >
-                  Privacy Policy
-                </Box>
-              </Typography>
+              <PoweredByEstateKit refSlug={page.slug} placement="lead_page" />
             </>
           )}
         </Box>

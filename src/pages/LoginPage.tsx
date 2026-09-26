@@ -4,9 +4,8 @@ import WhatsAppIcon from "@mui/icons-material/WhatsApp";
 import { tokens } from "../theme";
 import { useAuth } from "../hooks/useAuth";
 import estateKitLogo from "../assets/blue logo full.png";
+import { ADMIN_WHATSAPP } from "../lib/contact";
 
-// Where "Request a login" sends the agent. Kieran's admin WhatsApp.
-const ADMIN_WHATSAPP = "264858149056";
 const REQUEST_MESSAGE = "Hi, I'd like my EstateKit login details please.";
 
 function normalizePhone(raw: string): string {

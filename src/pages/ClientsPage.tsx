@@ -25,6 +25,7 @@ import CloseIcon from "@mui/icons-material/Close";
 import { tokens } from "../theme";
 import { clientPicture, cplLabel, getSpend30d, listClients, type ClientCardRow } from "../api/clients";
 import { timeAgo } from "../lib/timeAgo";
+import SignupRequests from "../components/SignupRequests";
 
 type ColKey = "name" | "agency" | "area" | "leads" | "cpl" | "last";
 type Dir = "asc" | "desc";
@@ -176,6 +177,7 @@ export default function ClientsPage() {
       </Box>
 
       <Box sx={{ p: { xs: 0, md: 2 }, maxWidth: 1400, mx: "auto" }}>
+        <SignupRequests />
         {isError && (
           <Typography sx={{ color: tokens.ink2, p: 2 }}>
             Couldn't load your clients. Check your connection and refresh the page.
