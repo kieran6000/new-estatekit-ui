@@ -66,13 +66,11 @@ import LeadCaptureForm from "../components/LeadCaptureForm";
 import LeadPageFunnelStats from "../components/LeadPageFunnelStats";
 import { getCapiConfig, saveCapiConfig, listCapiEvents } from "../api/capi";
 import { timeAgo } from "../lib/timeAgo";
-import { useFocusFromUrl } from "../lib/spotlight";
 import FormPresetPicker from "../components/FormPresetPicker";
 import { applyFormPreset, presetByKey } from "../lib/formPresets";
 import type { FormPresetKey } from "../types";
 
 export default function LeadPagePage() {
-  useFocusFromUrl();
   const navigate = useNavigate();
   const { tier } = useTier();
   const { data: isOperator } = useIsOperator();
@@ -730,7 +728,7 @@ function ShareSection({ page, onUpdateSlug }: { page: LeadPage; onUpdateSlug: (s
       <Typography sx={{ fontSize: 13.5, color: "text.secondary", mt: -1 }}>
         Share this link anywhere — every submission lands straight in your Leads tab.
       </Typography>
-      <Box data-focus="share" sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
         {editingSlug ? (
           <TextField
             value={slugDraft}

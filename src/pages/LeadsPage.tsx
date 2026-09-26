@@ -150,17 +150,6 @@ export default function LeadsPage() {
   }, []);
   const pendingLead = pending ? leads.find((l) => l.id === pending.leadId) : undefined;
 
-  // Opened from Launch ("Start tour"): run it as soon as the list is ready.
-  useEffect(() => {
-    if (leadsLoading || pipelinesLoading) return;
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("tour") !== "1") return;
-    navigate("/leads", { replace: true });
-    const t = setTimeout(() => runTour(false), 500);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [leadsLoading, pipelinesLoading]);
-
   // First visit with leads on screen: offer the walkthrough once. Waits for
   // the list to render so the tour has something to point at. Never
   // auto-starts for operators (they switch between accounts all day); they

@@ -31,10 +31,8 @@ import { useSnack } from "../hooks/useSnack";
 import AccountSwitcher from "../components/AccountSwitcher";
 import { supabase, getActiveAgentIdSync } from "../api/_client";
 import { tokens } from "../theme";
-import { useFocusFromUrl } from "../lib/spotlight";
 
 export default function AccountPage() {
-  useFocusFromUrl();
   const { user, signOut } = useAuth();
   const queryClient = useQueryClient();
   const showSnack = useSnack();
@@ -352,7 +350,7 @@ export default function AccountPage() {
                   </Box>
                 </Box>
 
-                <Box data-focus="logo">
+                <Box>
                   <Typography sx={{ fontSize: 13, color: "text.secondary", mb: 1 }}>Logo</Typography>
                   <Typography sx={{ fontSize: 11.5, color: "text.disabled", mb: 1, mt: -0.5 }}>
                     The agency or brand mark shown at the top of the sidebar.
@@ -402,7 +400,7 @@ export default function AccountPage() {
                 {/* Separate from the logo so a real agency mark can live above
                     while the account still has a face. Round, because that is
                     what it is — a photo of a person, not a brand. */}
-                <Box data-focus="photo">
+                <Box>
                   <Typography sx={{ fontSize: 13, color: "text.secondary", mb: 1 }}>Profile photo</Typography>
                   <Typography sx={{ fontSize: 11.5, color: "text.disabled", mb: 1, mt: -0.5 }}>
                     The agent&apos;s face. Shown next to their name in the account switcher.

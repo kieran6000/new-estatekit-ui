@@ -28,15 +28,10 @@ export function hasSeenLeadsTour(agentId?: string | null): boolean {
   }
 }
 
-/** Fired on window when the tour is finished or closed, so anything showing
- *  "take the tour" (the Launch checklist) can update straight away. */
-export const TOUR_SEEN_EVENT = "estatekit:tour-seen";
-
 function markSeen(agentId?: string | null) {
   try {
     localStorage.setItem(seenKey(agentId), "1");
   } catch { /* ignore */ }
-  window.dispatchEvent(new Event(TOUR_SEEN_EVENT));
 }
 
 type Capture = (event: string, props?: Record<string, unknown>) => void;

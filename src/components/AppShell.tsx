@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   Avatar,
@@ -31,8 +31,6 @@ import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
 import DashboardIcon from "@mui/icons-material/Dashboard";
 import GroupsOutlinedIcon from "@mui/icons-material/GroupsOutlined";
 import GroupsIcon from "@mui/icons-material/Groups";
-import RocketLaunchOutlinedIcon from "@mui/icons-material/RocketLaunchOutlined";
-import RocketLaunchIcon from "@mui/icons-material/RocketLaunch";
 import { tokens } from "../theme";
 import { useAuth } from "../hooks/useAuth";
 import { useIsOperator } from "../hooks/useAutomations";
@@ -42,14 +40,12 @@ import { getMyProfile } from "../api/agentProfile";
 import { getActiveAgentIdSync, setActiveAgent } from "../api/_client";
 import { isLightColor } from "../lib/contrast";
 import AccountSwitcher from "./AccountSwitcher";
-import { useLaunchChecklist } from "../hooks/useLaunchChecklist";
 import DevTierToggle from "./DevTierToggle";
 import estateKitLogoWhite from "../assets/whitelogofull.png";
 
 const RAIL_WIDTH = 240;
 
 function activeSection(pathname: string): string {
-  if (pathname.startsWith("/launch")) return "launch";
   if (pathname.startsWith("/lead-page")) return "mypage";
   if (pathname.startsWith("/home")) return "home";
   if (pathname.startsWith("/overview")) return "overview";
@@ -74,20 +70,6 @@ export default function AppShell() {
   const { data: profile } = useQuery({ queryKey: ["myProfile"], queryFn: getMyProfile, enabled: !!user, staleTime: 5 * 60_000 });
   const initial = useMemo(() => (user?.phone || "?")[0].toUpperCase(), [user]);
 
-  // Launch tab: shown until every setup step is done, then it disappears.
-  // Not for an operator on their own account (they have nothing to launch).
-  const launch = useLaunchChecklist();
-  const showLaunch = launch.ready && !launch.complete && !(isOperator && !isManagingOther);
-  // Brand-new agents (no leads yet) land on Launch the first time they open
-  // the app in a session; after that Leads is theirs as normal.
-  useEffect(() => {
-    if (!showLaunch || isOperator !== false || pathname !== "/leads" || launch.items.find((i) => i.key === "first_lead")?.done) return;
-    try {
-      if (sessionStorage.getItem("estatekit_launch_landed") === "1") return;
-      sessionStorage.setItem("estatekit_launch_landed", "1");
-    } catch { return; }
-    navigate("/launch", { replace: true });
-  }, [showLaunch, isOperator, pathname, launch.items, navigate]);
 
   const sidebarBg = profile?.sidebarColor || "#111827";
   const light = isLightColor(sidebarBg);
@@ -102,7 +84,6 @@ export default function AppShell() {
 
   const SZ = 20;
   const agentNav = [
-    ...(showLaunch ? [{ key: "launch", label: `Launch · ${launch.done}/${launch.total}`, icon: <RocketLaunchOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <RocketLaunchIcon sx={{ fontSize: SZ }} />, to: "/launch" }] : []),
     ...(import.meta.env.DEV ? [{ key: "home", label: "Dashboard", icon: <HomeOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <HomeIcon sx={{ fontSize: SZ }} />, to: "/home" }] : []),
     { key: "leads", label: "Leads", icon: <ContactsOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <ContactsIcon sx={{ fontSize: SZ }} />, to: "/leads" },
     { key: "mypage", label: "Forms", icon: <WebOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <WebIcon sx={{ fontSize: SZ }} />, to: "/lead-page" },
@@ -125,7 +106,6 @@ export default function AppShell() {
   });
 
   const mobileNav = [
-    ...(showLaunch && !isOperator ? [{ key: "launch", label: "Launch", icon: <RocketLaunchOutlinedIcon />, activeIcon: <RocketLaunchIcon />, to: "/launch" }] : []),
     { key: "leads", label: "Leads", icon: <ContactsOutlinedIcon />, activeIcon: <ContactsIcon />, to: "/leads" },
     { key: "mypage", label: "Forms", icon: <WebOutlinedIcon />, activeIcon: <WebIcon />, to: "/lead-page" },
     ...(isOperator

@@ -227,7 +227,6 @@ conditioning).
 |---|---|---|
 | `/login` (and `*` when signed out) | LoginPage: phone + password | public |
 | `/welcome` | WelcomePage: first-run confirm details + set password | signed in, not onboarded |
-| `/launch` | LaunchPage: setup checklist (tab shown until everything's done) | signed in |
 | `/leads` | LeadsPage | signed in |
 | `/leads/:id` | LeadDetailPage | signed in |
 | `/lead-page` | LeadPagePage ("Forms") | signed in |
@@ -246,25 +245,6 @@ conditioning).
 
 `OnboardingGate` sends not-yet-onboarded users to `/welcome`. It checks the
 **logged-in** user, not the account being viewed.
-
-### Launch (`/launch`, `LaunchPage.tsx` + `hooks/useLaunchChecklist.ts`)
-A setup checklist for new agents, built from stock MUI parts (Card, List,
-LinearProgress).
-- **7 steps, all ticked from real data:** account (always ticked), tour taken,
-  photo, logo, Facebook page connected, first lead, first call.
-- **Each button goes to the exact field that finishes it** via
-  `?focus=` (`lib/spotlight.ts`), which scrolls to it, dims the rest and
-  shows a hint in the tour's style:
-  - photo / logo: the uploads on Account
-  - share: the lead page link on Forms
-  - call: the Call button on the newest uncalled lead
-  - tour: `/leads?tour=1`
-  - Facebook: a pre-filled WhatsApp to the admin
-- **In the menu:** the tab reads "Launch · 3/7" and **disappears once
-  everything is done**. It's hidden for an operator on their own account.
-- **Landing:** brand-new agents (no leads yet) land on it the first time they
-  open the app each session.
-- **PostHog:** `launch_viewed`, `launch_item_clicked`, `launch_completed`.
 
 ### Leads (`/leads`, `src/pages/LeadsPage.tsx`)
 The agent's home screen.
