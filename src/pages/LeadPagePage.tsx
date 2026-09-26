@@ -67,6 +67,9 @@ import LeadPageFunnelStats from "../components/LeadPageFunnelStats";
 import { getCapiConfig, saveCapiConfig, listCapiEvents } from "../api/capi";
 import { timeAgo } from "../lib/timeAgo";
 import FormPresetPicker from "../components/FormPresetPicker";
+import InfoTip from "../components/InfoTip";
+import OptionsEditor from "../components/OptionsEditor";
+import { cleanOptions } from "../lib/options";
 import { applyFormPreset, presetByKey } from "../lib/formPresets";
 import type { FormPresetKey } from "../types";
 
@@ -367,25 +370,20 @@ export default function LeadPagePage() {
               </Box>
             </Section>
 
-            <Section title="Message for leads">
-              <Typography sx={{ fontSize: 12, color: "text.secondary", mt: -1 }}>
-                Shown after they submit.
-              </Typography>
+            <Section title="Message for leads" info="What people see right after they send the form. Write {name} to use their first name.">
               <TextField
                 label="Headline"
                 value={form.thankYouHeadline}
                 onChange={(e) => fieldChange("thankYouHeadline", e.target.value)}
-                helperText="{name} is replaced with what they typed"
                 fullWidth
               />
               <TextField label="Description" value={form.thankYouSubtext} onChange={(e) => fieldChange("thankYouSubtext", e.target.value)} fullWidth multiline minRows={2} />
             </Section>
 
-            <Section title="End page">
-              <Typography sx={{ fontSize: 12, color: "text.secondary", mt: -1 }}>
-                Shown instead of the message for leads when they pick an answer set to "Send to end page". No lead is saved.
-                Leave blank for the standard wording. Add a button to send them somewhere useful, like an instant online estimate.
-              </Typography>
+            <Section
+              title="End page"
+              info="Shown instead of the message for leads when someone picks an answer you've set to “Send to end page”. They aren't saved as a lead. Leave it blank for our standard wording, or add a button to send them somewhere useful."
+            >
               <TextField label="Headline" placeholder="Thanks for your interest!" value={form.dqHeadline} onChange={(e) => fieldChange("dqHeadline", e.target.value)} fullWidth />
               <TextField label="Description" placeholder="Based on your answers, this might not be the right time for a valuation…" value={form.dqText} onChange={(e) => fieldChange("dqText", e.target.value)} fullWidth multiline minRows={2} />
               <Box sx={{ display: "flex", gap: 1.5, flexWrap: "wrap" }}>
@@ -430,15 +428,14 @@ export default function LeadPagePage() {
               </Section>
             )}
 
-            <Section title="Questions">
+            <Section
+              title="Questions"
+              info="Each question gets its own screen. Name, phone number and (if on) email are always asked last."
+            >
               {pipeline.kind === "seller" && (
                 <PresetBar page={page} onApplied={() => setFormResetKey((k) => k + 1)} />
               )}
-              <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
-                Contact fields (full name, phone number and, if on, email) always come last. Every other question
-                can be edited, reordered or removed.
-              </Typography>
-              <TextField label="Contact fields description" helperText="Shown above the contact fields, e.g. “Where should we send your FREE home evaluation?”" value={form.nameLabel} onChange={(e) => fieldChange("nameLabel", e.target.value)} fullWidth />
+              <TextField label="Contact fields description" placeholder="Where should we send your FREE home evaluation?" value={form.nameLabel} onChange={(e) => fieldChange("nameLabel", e.target.value)} fullWidth />
               <TextField label="Phone number label" value={form.phoneLabel} onChange={(e) => fieldChange("phoneLabel", e.target.value)} fullWidth />
               <TextField label="Submit button text" value={form.ctaLabel} onChange={(e) => fieldChange("ctaLabel", e.target.value)} fullWidth />
               <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -456,7 +453,7 @@ export default function LeadPagePage() {
             </Section>
 
             {isOperator && (
-              <Section title="Recent sales (social proof)">
+              <Section title="Recent sales" info="Homes you've sold or listed, shown under your form and after people send it. It helps sellers trust you.">
                 <RecentSalesEditor />
               </Section>
             )}
@@ -873,6 +870,7 @@ function AddPageDialog({
   const [name, setName] = useState("");
   const [preset, setPreset] = useState<FormPresetKey | "blank">("balanced");
   const qc = useQueryClient();
+  const { data: isOperatorUser } = useIsOperator();
   const [pipelineId, setPipelineId] = useState("");
   const [fbForms, setFbForms] = useState<FbForm[]>([]);
   const [fbFormId, setFbFormId] = useState("");
@@ -990,7 +988,7 @@ function AddPageDialog({
             {pipelines.find((pl) => pl.id === pipelineId)?.kind === "seller" && (
               <Box>
                 <Typography sx={{ fontSize: 13, color: "text.secondary", mb: 1 }}>Form type</Typography>
-                <FormPresetPicker value={preset} onChange={setPreset} allowBlank />
+                <FormPresetPicker value={preset} onChange={setPreset} allowBlank showInternal={isOperatorUser === true} />
               </Box>
             )}
           </>
@@ -1059,7 +1057,7 @@ function AddPageDialog({
         )}
 
         <Box>
-          <Typography sx={{ fontSize: 13, color: "text.secondary", mb: 0.5 }}>Which pipeline should this feed?</Typography>
+          <Typography sx={{ fontSize: 13, color: "text.secondary", mb: 0.5 }}>Which list should new leads go into?</Typography>
           <RadioGroup value={pipelineId} onChange={(e) => setPipelineId(e.target.value)}>
             {pipelines.map((p) => (
               <FormControlLabel key={p.id} value={p.id} control={<Radio />} label={`${p.name} (${PIPELINE_KIND_LABEL[p.kind]})`} />
@@ -1142,8 +1140,8 @@ function RecentSalesEditor() {
 
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
-      <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
-        Sold and currently-listed homes shown under the form and on the thank-you page as social proof. Choose sold or listed, add the address and price, then pick a photo.
+      <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
+        Add the address and price, then pick a photo.
       </Typography>
 
       {listings.map((l) => (
@@ -1212,6 +1210,7 @@ function PresetBar({ page, onApplied }: { page: LeadPage; onApplied: () => void 
   const [choice, setChoice] = useState<FormPresetKey | "blank">(page.preset ?? "balanced");
   const [withCopy, setWithCopy] = useState(true);
   const [busy, setBusy] = useState(false);
+  const { data: isOperator } = useIsOperator();
 
   async function apply() {
     if (choice === "blank") return;
@@ -1237,15 +1236,14 @@ function PresetBar({ page, onApplied }: { page: LeadPage; onApplied: () => void 
   return (
     <>
       <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, p: "10px 12px", bgcolor: tokens.primaryBg, borderRadius: "4px" }}>
-        <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Typography sx={{ fontSize: 13.5, fontWeight: 500 }}>
+        <Box sx={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 0.25 }}>
+          <Typography sx={{ fontSize: 14, fontWeight: 500 }}>
             {current ? `Form type: ${current.name}` : "Form type: Custom"}
           </Typography>
-          <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
-            {current
-              ? "Edit the questions freely; the page stays tagged with this form type for comparing results."
-              : "Start from a proven form type: more questions, fewer but better leads."}
-          </Typography>
+          <InfoTip>
+            Ready-made sets of questions. More questions means fewer leads, but more serious ones. You can still edit the
+            questions afterwards.
+          </InfoTip>
         </Box>
         <Button
           size="small"
@@ -1260,13 +1258,13 @@ function PresetBar({ page, onApplied }: { page: LeadPage; onApplied: () => void 
       <Dialog open={open} onClose={() => !busy && setOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>Choose a form type</DialogTitle>
         <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-          <FormPresetPicker value={choice} onChange={setChoice} />
+          <FormPresetPicker value={choice} onChange={setChoice} showInternal={isOperator === true} />
           <FormControlLabel
             control={<Checkbox checked={withCopy} onChange={(e) => setWithCopy(e.target.checked)} />}
-            label={<Typography sx={{ fontSize: 14 }}>Also use its suggested wording (intro, contact fields, message for leads and end page)</Typography>}
+            label={<Typography sx={{ fontSize: 14 }}>Also update the headline and messages to match</Typography>}
           />
           <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
-            This replaces the page's current questions. Leads you already have aren't touched.
+            This replaces the questions on this form. Leads you already have won't change.
           </Typography>
         </DialogContent>
         <DialogActions>
@@ -1278,11 +1276,14 @@ function PresetBar({ page, onApplied }: { page: LeadPage; onApplied: () => void 
   );
 }
 
-function Section({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
+function Section({ title, action, info, children }: { title: string; action?: React.ReactNode; info?: React.ReactNode; children: React.ReactNode }) {
   return (
     <Box sx={{ border: `1px solid ${tokens.divider}`, borderRadius: "8px", bgcolor: "background.paper", p: 2, display: "flex", flexDirection: "column", gap: 2 }}>
-      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <Typography sx={{ fontSize: 12, fontWeight: 500, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.06em" }}>{title}</Typography>
+      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", minHeight: 30 }}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 0.25 }}>
+          <Typography sx={{ fontSize: 12, fontWeight: 500, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.06em" }}>{title}</Typography>
+          {info && <InfoTip>{info}</InfoTip>}
+        </Box>
         {action}
       </Box>
       {children}
@@ -1314,16 +1315,16 @@ function CustomQuestionEditor({
   const [label, setLabel] = useState("");
   const [type, setType] = useState<QuestionType>("short_text");
   const [required, setRequired] = useState(false);
-  const [optionsText, setOptionsText] = useState("");
+  const [options, setOptions] = useState<string[]>(["", ""]);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const canAdd = !!label.trim() && (type !== "multiple_choice" || cleanOptions(options).length >= 2);
 
   async function add() {
-    if (!label.trim()) return;
-    const options = type === "multiple_choice" ? splitOptions(optionsText) : undefined;
-    await addQuestion.mutateAsync({ label: label.trim(), type, required, options });
+    if (!canAdd) return;
+    await addQuestion.mutateAsync({ label: label.trim(), type, required, options: type === "multiple_choice" ? cleanOptions(options) : undefined });
     posthog.capture("custom_question_added", { type });
     setLabel("");
-    setOptionsText("");
+    setOptions(["", ""]);
     setRequired(false);
   }
 
@@ -1342,7 +1343,7 @@ function CustomQuestionEditor({
               </Typography>
               <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
                 {QUESTION_TYPES.find((t) => t.value === q.type)?.label}
-                {q.options?.length ? ` — ${q.options.join("; ")}` : ""}
+                {q.options?.length ? ` — ${q.options.join(" · ")}` : ""}
               </Typography>
             </Box>
             <IconButton size="small" onClick={() => setEditingId(q.id)}>
@@ -1373,23 +1374,14 @@ function CustomQuestionEditor({
               </MenuItem>
             ))}
           </TextField>
-          {type === "multiple_choice" && (
-            <TextField
-              label="Options (separate with ;)"
-              size="small"
-              helperText={optionsHint(optionsText)}
-              value={optionsText}
-              onChange={(e) => setOptionsText(e.target.value)}
-              fullWidth
-            />
-          )}
+          {type === "multiple_choice" && <OptionsEditor value={options} onChange={setOptions} />}
           {type === "short_text" && (
             <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <Typography sx={{ fontSize: 13 }}>Required</Typography>
               <Switch size="small" checked={required} onChange={(e) => setRequired(e.target.checked)} />
             </Box>
           )}
-          <Button startIcon={<AddIcon fontSize="small" />} onClick={add} variant="contained" size="small" sx={{ alignSelf: "flex-start" }}>
+          <Button startIcon={<AddIcon />} onClick={add} disabled={!canAdd} variant="contained" sx={{ alignSelf: "flex-start" }}>
             Add question
           </Button>
         </Box>
@@ -1529,23 +1521,12 @@ function CapiSettings({ pixelId }: { pixelId: string }) {
 /** What to do with the answers marked bad. Asked once per question. */
 type BadAnswerTreatment = "stop" | "dont_count";
 
-/** Multiple-choice options are typed as one line separated by ";" — not
- *  commas, because answers like "R1,5m – R2m" contain commas. */
-function splitOptions(text: string): string[] {
-  return text.split(";").map((o) => o.trim()).filter(Boolean);
-}
-
-/** Nudge when it looks like commas were meant as separators. */
-function optionsHint(text: string): string {
-  return text.includes(",") && !text.includes(";") ? "Commas stay inside an option. Put ; between options." : "e.g. Yes, soon; In 3–6 months; Just curious";
-}
-
 function EditQuestionRow({ pageId, question, onDone }: { pageId: string; question: CustomQuestion; onDone: () => void }) {
   const updateQuestion = useUpdateCustomQuestion(pageId);
   const [label, setLabel] = useState(question.label);
   const [helperText, setHelperText] = useState(question.helperText ?? "");
   const [required, setRequired] = useState(question.required);
-  const [optionsText, setOptionsText] = useState((question.options ?? []).join("; "));
+  const [options, setOptions] = useState<string[]>(question.options?.length ? question.options : ["", ""]);
   // One list of bad answers plus one decision, rather than a setting on every
   // answer. Both database columns still exist — which one the list is saved to
   // is just the treatment — so the form engine and the migration are unchanged.
@@ -1560,7 +1541,7 @@ function EditQuestionRow({ pageId, question, onDone }: { pageId: string; questio
   const currentOptions =
     question.type === "yes_no"
       ? ["Yes", "No"]
-      : splitOptions(optionsText);
+      : cleanOptions(options);
 
   function toggleBad(opt: string) {
     setBad((b) => (b.includes(opt) ? b.filter((x) => x !== opt) : [...b, opt]));
@@ -1569,16 +1550,14 @@ function EditQuestionRow({ pageId, question, onDone }: { pageId: string; questio
   async function save() {
     if (!label.trim()) return;
     const badInOptions = bad.filter((o) => currentOptions.includes(o));
-    const options = question.type === "multiple_choice"
-      ? splitOptions(optionsText)
-      : question.options;
+    const savedOptions = question.type === "multiple_choice" ? cleanOptions(options) : question.options;
     await updateQuestion.mutateAsync({
       id: question.id,
       patch: {
         label: label.trim(),
         required,
         ...(question.type === "address" ? { helperText: helperText.trim() } : {}),
-        ...(question.type === "multiple_choice" ? { options } : {}),
+        ...(question.type === "multiple_choice" ? { options: savedOptions } : {}),
         // The ticked answers go into whichever column matches the treatment,
         // and the other is cleared. Options that no longer exist are dropped,
         // so renaming one can't leave a rule pointing at nothing.
@@ -1597,20 +1576,18 @@ function EditQuestionRow({ pageId, question, onDone }: { pageId: string; questio
     <Box sx={{ display: "flex", flexDirection: "column", gap: 1, p: "12px", border: `1px solid ${tokens.primary}`, borderRadius: "6px" }}>
       <TextField label="Question" size="small" value={label} onChange={(e) => setLabel(e.target.value)} fullWidth autoFocus />
       {question.type === "address" && (
-        <TextField label="Example / helper text" size="small" value={helperText} onChange={(e) => setHelperText(e.target.value)} fullWidth />
+        <TextField label="Hint (optional)" placeholder="e.g. 14 Loop Street, Centurion" size="small" value={helperText} onChange={(e) => setHelperText(e.target.value)} fullWidth />
       )}
-      {question.type === "multiple_choice" && (
-        <TextField label="Options (separate with ;)" size="small" helperText={optionsHint(optionsText)} value={optionsText} onChange={(e) => setOptionsText(e.target.value)} fullWidth />
-      )}
+      {question.type === "multiple_choice" && <OptionsEditor value={options} onChange={setOptions} />}
 
       {isChoice && currentOptions.length > 0 && (
         <Box sx={{ bgcolor: tokens.surface2, border: `1px solid ${tokens.divider2}`, borderRadius: "6px", p: "10px 12px" }}>
-          <Typography sx={{ fontSize: 12.5, fontWeight: 600, color: "text.secondary", mb: 0.25 }}>
-            Which answers are bad leads?
-          </Typography>
-          <Typography sx={{ fontSize: 11.5, color: "text.secondary", mb: 0.5 }}>
-            Tick any answer that means you don&apos;t want the lead. Most forms need none.
-          </Typography>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.25, mb: 0.25 }}>
+            <Typography sx={{ fontSize: 13, fontWeight: 600, color: "text.secondary" }}>
+              Any answers you don&apos;t want?
+            </Typography>
+            <InfoTip>Tick answers that mean it isn&apos;t a good lead for you, like &quot;Just curious&quot;. Most questions need none.</InfoTip>
+          </Box>
 
           {currentOptions.map((opt) => (
             <FormControlLabel
@@ -1641,7 +1618,12 @@ function EditQuestionRow({ pageId, question, onDone }: { pageId: string; questio
                 <FormControlLabel
                   value="dont_count"
                   control={<Radio size="small" />}
-                  label={<Typography sx={{ fontSize: 13.5 }}>Save the lead, but don&apos;t count it on Facebook</Typography>}
+                  label={
+                    <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 0.25 }}>
+                      <Typography component="span" sx={{ fontSize: 13.5 }}>Keep the lead, but don&apos;t count it as a good one</Typography>
+                      <InfoTip>Your ads learn from the leads you count. Not counting weak ones keeps Facebook looking for serious sellers.</InfoTip>
+                    </Box>
+                  }
                   sx={{ m: 0, mt: 0.25 }}
                 />
               </RadioGroup>

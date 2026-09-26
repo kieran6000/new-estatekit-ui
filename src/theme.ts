@@ -52,12 +52,27 @@ export const theme = createTheme({
     button: { textTransform: "uppercase", fontWeight: 500, letterSpacing: "0.06em", fontSize: "0.8125rem" },
   },
   components: {
+    // Comfortable tap targets everywhere: MUI's defaults (30px small, 36px
+    // medium) felt thin, especially on phones.
     MuiButton: {
       styleOverrides: {
-        root: { borderRadius: 4, boxShadow: "none" },
+        root: { borderRadius: 4, boxShadow: "none", minHeight: 40, padding: "8px 16px" },
+        text: { padding: "8px 12px" },
+        sizeSmall: { minHeight: 36, padding: "6px 14px", "&.MuiButton-text": { padding: "6px 10px" } },
+        sizeLarge: { minHeight: 48, padding: "10px 22px" },
         contained: { boxShadow: "none", "&:hover": { boxShadow: "none" } },
       },
       defaultProps: { disableElevation: true },
+    },
+    MuiIconButton: {
+      styleOverrides: {
+        sizeSmall: { padding: 8 },
+      },
+    },
+    MuiToggleButton: {
+      styleOverrides: {
+        sizeSmall: { minHeight: 36, padding: "6px 12px" },
+      },
     },
     MuiPaper: {
       styleOverrides: { root: { backgroundImage: "none" } },
