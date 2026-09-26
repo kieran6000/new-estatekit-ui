@@ -313,24 +313,25 @@ One screen manages all of an agent's **lead sources**.
     - **Contact fields**: full name, email, phone number, plus the contact
       fields description.
     - **Message for leads** (headline, description), and **End page**.
-  - **Form types** (seller pages; `lib/formPresets.ts`, from the Media Buyer
-    SOP), with keys unchanged in the database:
-    - **More volume** (`most_leads`, Super Low): street address only, no
-      email.
-    - **Balanced** (`balanced`, Low): adds "how soon will you sell?". "6–12
-      months" and "Not sure yet" are saved as leads but not reported to
-      Facebook.
-    - **Higher intent** (`best_quality`, Mid): adds "main reason for
-      selling?". "Not planning to sell" and "Just curious" go to the End page.
-    - Meta's Higher intent adds a review step; ours adds qualifying questions.
-
-    Chosen when adding a seller lead page (default Balanced, or Custom), or via
-    **Change form type** on Questions. Applying one adds the new questions
-    before removing the old, so a failure can't empty a live page. It can also
-    set the SOP wording (intro, contact fields description, message for leads,
-    end page). `lead_pages.preset` tags the page, kept after edits. PostHog
-    events: `form_preset_applied`, plus `form_preset` on
-    `lead_page_form_submitted` and `lead_page_added`.
+  - **Form types**: the productised standard for every seller client
+    (`lib/formPresets.ts`, **v1**, based on the Media Buyer SOP; seller pages
+    only). See §14 "Seller form standard" for the questions.
+    - Chosen when adding a seller lead page (default Balanced, or Custom), or
+      via **Change form type** on Questions.
+    - Applying one adds the new questions before removing the old, so a
+      failure can't empty a live page.
+    - It sets the standard wording, with an intro headline naming the page's
+      suburb (or the agent's first area): "What's your Centurion home worth
+      today? Get a free evaluation". Under the housing ad rules, the words are
+      the targeting.
+    - Pages are tagged with `lead_pages.preset` and `preset_version`. To
+      change a form type, **bump `FORM_PRESET_VERSION`**. Pages on an older
+      version show "newer version available · Update"; they are never changed
+      silently.
+    - PostHog: `form_preset_applied`, plus `form_preset` on
+      `lead_page_form_submitted` and `lead_page_added`.
+  - Address questions can require a street number
+    (`custom_questions.validation = 'street_number'`; used by Higher intent).
   - **End page**: shown instead of the message for leads when an answer is set
     to "Send to end page" (no lead saved). Headline, description and an
     optional button with a website link (e.g. "Get instant estimate" →
@@ -568,6 +569,7 @@ lead pages use the agent's `accent_color` for the header and buttons.
 | `record_lead_event()` | Trigger on `leads`: writes history. |
 | `dedupe_lead_call()` | Trigger on `lead_events`: collapses repeat call logs. |
 | `request_signup(...)` | SECURITY DEFINER, anon + authenticated. Validates (incl. email) and caps every field, normalises the number to +27…, and returns the existing request for a repeat from the same number within 24h. |
+| `normalize_form_answer(a)`, `classify_form_question(q)` | Pure helpers for reporting: one spelling per answer ("6-12_months" → "6 – 12 months", "immediately" → "As soon as possible"), and which standard question a question is. Used by the `lead_form_answers` view (security_invoker). Saved leads are never rewritten. |
 | `client_directory()` | Live per-account lead counts (7d/30d/total/last/by stage), lead pages and pipelines for the Clients tab. SECURITY INVOKER, and it returns nothing unless the caller is an operator. |
 | `lead_page_funnel(page_id, since)` | Funnel counts (SECURITY INVOKER, so it respects RLS). |
 | `find_user_id_by_phone(phone)` | service_role only. |
@@ -908,6 +910,38 @@ the old project. Harvey Van Wyk was registered with Kieran's own number, so he
 has a placeholder login (`harvel-realty.import@estatekit.app`) and no WhatsApp
 number. Alex Prinsloo's old account is the same team as Storm Hargreaves' account
 here ("Team Alex & Storm").
+
+### Seller form standard (v1): website forms and Facebook instant forms
+Use **exactly** this wording on both, so every client's answers report as
+one. The `lead_form_answers` view standardises old spellings, but new forms
+should match anyway.
+
+| Question | Answers | More volume | Balanced | Higher intent |
+|---|---|---|---|---|
+| What's your property address? | (short answer) | ✓ | ✓ | ✓ with a street number |
+| If your FREE home evaluation is good, how soon will you sell? | As soon as possible · 1 – 3 months · 3 – 6 months · 6 – 12 months · Not sure yet (+ Not planning to sell on Higher intent) | — | ✓ | ✓ |
+| What's the main reason you're thinking about selling? | Relocating · Emigrating · Downsizing · Upgrading · Retirement · Inherited property · Financial reasons · I just want to know what it's worth for now | — | — | ✓ |
+| Is your home currently listed with an estate agent? | No · Yes | — | ✓ | ✓ |
+| Email | | off | on | on |
+
+- **End page** (no lead saved): "Not planning to sell", "I just want to know
+  what it's worth for now", and "Yes" to already listed.
+- **Kept, but not counted as a good lead:** "6 – 12 months" and "Not sure yet".
+- **Facebook:** the end page is a separate ending, reached by conditional
+  logic.
+- **No speed promise on the forms:** nobody guarantees a call within minutes.
+
+**Comparing form types** needs outcomes logged. Until agents move leads past
+"New Lead", no form type can be shown to be better. A query to run once they
+are logged:
+```sql
+select preset, preset_version, count(distinct lead_id) leads,
+  count(distinct lead_id) filter (where stage in ('Booked','Mandate Signed')) booked
+from lead_form_answers where preset is not null group by 1, 2;
+```
+The `lead_form_answers` view (security_invoker, so it respects RLS) has one
+row per answer with `question_key` (address / timeline / reason / listed /
+other) and a standardised `answer`.
 
 ### Demo page for a prospect
 Brand an existing page on Kieran's account: accent from their logo, their phone,

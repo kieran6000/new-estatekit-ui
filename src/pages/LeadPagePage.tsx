@@ -70,7 +70,7 @@ import FormPresetPicker from "../components/FormPresetPicker";
 import InfoTip from "../components/InfoTip";
 import OptionsEditor from "../components/OptionsEditor";
 import { cleanOptions } from "../lib/options";
-import { applyFormPreset, presetByKey } from "../lib/formPresets";
+import { applyFormPreset, FORM_PRESET_VERSION, presetByKey } from "../lib/formPresets";
 import type { FormPresetKey } from "../types";
 
 export default function LeadPagePage() {
@@ -1205,6 +1205,8 @@ function PresetBar({ page, onApplied }: { page: LeadPage; onApplied: () => void 
   const showSnack = useSnack();
   const posthog = usePostHog();
   const current = presetByKey(page.preset);
+  // Built on an older version of this form type. Never updated silently.
+  const outdated = !!current && (page.presetVersion ?? 0) < FORM_PRESET_VERSION;
   const [open, setOpen] = useState(false);
   const [choice, setChoice] = useState<FormPresetKey | "blank">(page.preset ?? "balanced");
   const [withCopy, setWithCopy] = useState(true);
@@ -1238,6 +1240,9 @@ function PresetBar({ page, onApplied }: { page: LeadPage; onApplied: () => void 
           <Typography sx={{ fontSize: 14, fontWeight: 500 }}>
             {current ? `Form type: ${current.name}` : "Form type: Custom"}
           </Typography>
+          {outdated && (
+            <Typography component="span" sx={{ fontSize: 12, color: "warning.dark", ml: 0.5 }}>· newer version available</Typography>
+          )}
           <InfoTip>
             Ready-made sets of questions. More questions means fewer leads, but more serious ones. You can still edit the
             questions afterwards.
@@ -1249,7 +1254,7 @@ function PresetBar({ page, onApplied }: { page: LeadPage; onApplied: () => void 
           onClick={() => { setChoice(page.preset ?? "balanced"); setWithCopy(true); setOpen(true); }}
           sx={{ flexShrink: 0, bgcolor: "background.paper" }}
         >
-          {current ? "Change form type" : "Choose form type"}
+          {outdated ? "Update" : current ? "Change form type" : "Choose form type"}
         </Button>
       </Box>
 
@@ -1341,6 +1346,7 @@ function CustomQuestionEditor({
               </Typography>
               <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
                 {QUESTION_TYPES.find((t) => t.value === q.type)?.label}
+                {q.validation === "street_number" ? " — must include a street number" : ""}
                 {q.options?.length ? ` — ${q.options.join(" · ")}` : ""}
               </Typography>
             </Box>

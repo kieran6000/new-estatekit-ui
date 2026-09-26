@@ -203,6 +203,8 @@ export interface LeadPage {
   /** Which friction preset the form was built from (see lib/formPresets.ts).
    *  Null = built by hand. Kept after edits, as "based on". */
   preset: FormPresetKey | null;
+  /** Which version of that form type (see FORM_PRESET_VERSION). */
+  presetVersion: number | null;
   /** The "not a fit" screen shown when an answer turns someone away. Blank
    *  headline/text fall back to the built-in wording; no button without both
    *  a label and a link. */
@@ -234,6 +236,9 @@ export interface CustomQuestion {
   lowQualityAnswers?: string[];
   /** Small example/caption text shown under the question — mainly for "address". */
   helperText?: string;
+  /** Extra check on the answer. "street_number": an address must contain a
+   *  number (browsers type a suburb, sellers type their address). */
+  validation?: "street_number";
   /** Blocks "Next Step" until answered. Choice-type questions already can't
    * be skipped, since tapping an option is the only way to advance. */
   required: boolean;

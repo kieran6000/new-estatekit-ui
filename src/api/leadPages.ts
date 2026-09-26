@@ -27,6 +27,7 @@ interface LeadPageRow {
   fb_form_id: string | null;
   fb_form_name: string | null;
   preset: string | null;
+  preset_version: number | null;
   dq_headline: string | null;
   dq_text: string | null;
   dq_cta_label: string | null;
@@ -60,6 +61,7 @@ function rowToPage(r: LeadPageRow): LeadPage {
     fbFormId: r.fb_form_id,
     fbFormName: r.fb_form_name,
     preset: (r.preset as LeadPage["preset"]) ?? null,
+    presetVersion: r.preset_version ?? null,
     dqHeadline: r.dq_headline ?? "",
     dqText: r.dq_text ?? "",
     dqCtaLabel: r.dq_cta_label ?? "",
@@ -96,6 +98,7 @@ function patchToRow(
   if (p.fbFormId !== undefined) m.fb_form_id = p.fbFormId;
   if (p.fbFormName !== undefined) m.fb_form_name = p.fbFormName;
   if (p.preset !== undefined) m.preset = p.preset;
+  if (p.presetVersion !== undefined) m.preset_version = p.presetVersion;
   if (p.dqHeadline !== undefined) m.dq_headline = p.dqHeadline;
   if (p.dqText !== undefined) m.dq_text = p.dqText;
   if (p.dqCtaLabel !== undefined) m.dq_cta_label = p.dqCtaLabel;

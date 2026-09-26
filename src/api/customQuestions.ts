@@ -10,6 +10,7 @@ interface CqRow {
   disqualify_answers: string[] | null;
   low_quality_answers: string[] | null;
   helper_text: string | null;
+  validation: string | null;
   required: boolean;
   is_default: boolean;
   sort_order: number;
@@ -25,6 +26,7 @@ function rowToQuestion(r: CqRow): CustomQuestion {
     disqualifyAnswers: r.disqualify_answers ?? undefined,
     lowQualityAnswers: r.low_quality_answers ?? undefined,
     helperText: r.helper_text ?? undefined,
+    validation: r.validation === "street_number" ? "street_number" : undefined,
     required: r.required,
     isDefault: r.is_default,
     order: r.sort_order,
