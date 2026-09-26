@@ -531,6 +531,13 @@ function AccountSection({ data }: { data: Data }) {
   const { profile: p } = data;
   const save = useClientSaver(p.agent_id);
   const [togglingAuto, setTogglingAuto] = useState(false);
+  const [togglingEmail, setTogglingEmail] = useState(false);
+
+  async function toggleEmail(on: boolean) {
+    setTogglingEmail(true);
+    await save(() => updateClientProfile(p.agent_id, { lead_confirmation_email: on }), on ? "Confirmation emails on" : "Confirmation emails off");
+    setTogglingEmail(false);
+  }
 
   async function toggleAutomations(on: boolean) {
     setTogglingAuto(true);
@@ -558,6 +565,15 @@ function AccountSection({ data }: { data: Data }) {
             <Box>
               <Typography sx={{ fontSize: 13.5 }}>Automations {p.automations_paused ? "paused" : "on"}</Typography>
               <Typography sx={{ fontSize: 12, color: tokens.ink3 }}>Follow-up WhatsApps to this client's leads</Typography>
+            </Box>
+          </Box>
+          <Box sx={{ display: "flex", alignItems: "center", mt: 0.5, ml: -1 }}>
+            <Switch checked={!!p.lead_confirmation_email} disabled={togglingEmail} onChange={(e) => toggleEmail(e.target.checked)} />
+            <Box>
+              <Typography sx={{ fontSize: 13.5 }}>Confirmation email {p.lead_confirmation_email ? "on" : "off"}</Typography>
+              <Typography sx={{ fontSize: 12, color: tokens.ink3 }}>
+                Emails each new lead in {p.display_name?.split(" ")[0] || "the agent"}'s name{p.email ? "" : ". Add their email first so replies reach them"}
+              </Typography>
             </Box>
           </Box>
         </>

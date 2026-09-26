@@ -47,6 +47,8 @@ export interface ClientProfile {
   is_operator: boolean;
   onboarded: boolean;
   automations_paused: boolean;
+  /** Email each new lead a confirmation in the agent's name. Off by default. */
+  lead_confirmation_email: boolean;
   tier: string;
 }
 
@@ -55,7 +57,7 @@ export interface ClientCardRow extends ClientProfile {
 }
 
 const PROFILE_COLS =
-  "agent_id, display_name, whatsapp_number, email, area, company, avatar_url, sidebar_logo_url, sidebar_color, fb_page_id, fb_ad_account_id, is_operator, onboarded, automations_paused, tier";
+  "agent_id, display_name, whatsapp_number, email, area, company, avatar_url, sidebar_logo_url, sidebar_color, fb_page_id, fb_ad_account_id, is_operator, onboarded, automations_paused, lead_confirmation_email, tier";
 
 /** Everything the grid needs, in two small reads. */
 export async function listClients(): Promise<ClientCardRow[]> {
@@ -101,7 +103,7 @@ export async function getClient(agentId: string): Promise<{ profile: ClientProfi
 }
 
 export type ClientProfilePatch = Partial<
-  Pick<ClientProfile, "display_name" | "whatsapp_number" | "email" | "area" | "company" | "avatar_url" | "fb_page_id" | "fb_ad_account_id" | "automations_paused">
+  Pick<ClientProfile, "display_name" | "whatsapp_number" | "email" | "area" | "company" | "avatar_url" | "fb_page_id" | "fb_ad_account_id" | "automations_paused" | "lead_confirmation_email">
 >;
 
 /** Operator edit of a client's account row. Throws if nothing was saved

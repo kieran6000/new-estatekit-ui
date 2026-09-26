@@ -911,6 +911,26 @@ has a placeholder login (`harvel-realty.import@estatekit.app`) and no WhatsApp
 number. Alex Prinsloo's old account is the same team as Storm Hargreaves' account
 here ("Team Alex & Storm").
 
+### Confirmation email to new leads
+**Off for every client by default.** Switch it on per client under Clients →
+the client → Account → "Confirmation email".
+
+- **Trigger:** when a lead with an email is saved (website form or Facebook
+  instant form) for a switched-on agent, the `leads_queue_confirmation`
+  trigger asks the `send-lead-confirmation` function to send it.
+  `leads.confirmation_sent_at` makes sure each lead gets it once.
+- **Sending:** through **Resend**, from the verified domain `mail.estatekit.co`:
+  - **From:** "*Agent* via EstateKit" `<hello@mail.estatekit.co>`
+  - **Reply-To:** the agent's email, so replies reach the agent
+  - Click and open tracking are off.
+- **Content:** the agent's photo, name and agency, "I've received your
+  details…", and the address if they gave one. The main button is **Message
+  *Agent* on WhatsApp**: a pre-filled message from the lead to the agent's
+  own number. The lead starts the conversation, which needs no WhatsApp
+  Business API. Seller, buyer and general leads get different wording.
+- **Setup:** needs the `RESEND_API_KEY` secret. Without it the function
+  sends nothing.
+
 ### Seller form standard (v2): website forms and Facebook instant forms
 Use **exactly** this wording on both, so every client's answers report as
 one. The `lead_form_answers` view standardises old spellings, but new forms
