@@ -183,13 +183,29 @@ function LeadActionUI({
         // The server works out the follow-up (next_label / reminder_at) from the
         // stage, so pull the row back to show the agent what's actually been set.
         qc.invalidateQueries({ queryKey: ["leadByToken", token] });
-        if (offerUndo) showSnack(outcomeSnack(stage), () => logTokenOutcome(prevStage, false));
+        if (offerUndo) showSnack(outcomeSnack(stage), () => undoTokenOutcome(prevStage));
         else showSnack(outcomeSnack(stage));
       })
       .catch(() => {
         setTokenStage(prevStage);    // roll back the optimistic change
         setLogged((l) => (l && l.stage === stage ? { ...l, status: "failed" } : l));
         showSnack("Couldn't save — try again", () => logTokenOutcome(stage, offerUndo, label, at), "Retry");
+      });
+  }
+
+  /** Undo on the WhatsApp-link page: put the stage back and clear the
+   *  confirmation, so the screen looks exactly as it did before the mistake. */
+  function undoTokenOutcome(prevStage: Stage) {
+    if (!token) return;
+    setTokenStage(prevStage);
+    setLogged(null);
+    logOutcomeByToken(token, prevStage)
+      .then(() => {
+        qc.invalidateQueries({ queryKey: ["leadByToken", token] });
+        showSnack("Undone");
+      })
+      .catch(() => {
+        showSnack("Couldn't undo — try again", () => undoTokenOutcome(prevStage), "Retry");
       });
   }
 
@@ -227,7 +243,14 @@ function LeadActionUI({
       },
     );
     clearPendingCall();
-    showSnack(outcomeSnack(opt.stage), () => updateStage.mutate({ id: lead.id, stage: prev.stage as Stage, override: prev }));
+    showSnack(outcomeSnack(opt.stage), () => {
+      // Undo: revert the lead and clear the confirmation so the mistake is gone.
+      setLogged(null);
+      updateStage.mutate(
+        { id: lead.id, stage: prev.stage as Stage, override: prev },
+        { onSuccess: () => showSnack("Undone"), onError: () => showSnack("Couldn't undo — try again") },
+      );
+    });
   }
 
   useEffect(() => {
