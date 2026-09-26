@@ -96,6 +96,8 @@ export interface AgentProfile {
    *  can live there without losing the person's photo. */
   avatarUrl: string | null;
   onboarded: boolean;
+  /** Email each new lead a confirmation in this agent's name. Off by default. */
+  leadConfirmationEmail: boolean;
 }
 
 interface ProfileRow {
@@ -116,6 +118,7 @@ interface ProfileRow {
   sidebar_logo_url: string | null;
   avatar_url: string | null;
   onboarded: boolean;
+  lead_confirmation_email: boolean | null;
 }
 
 function rowToProfile(r: ProfileRow): AgentProfile {
@@ -137,6 +140,7 @@ function rowToProfile(r: ProfileRow): AgentProfile {
     sidebarLogoUrl: r.sidebar_logo_url,
     avatarUrl: r.avatar_url ?? null,
     onboarded: r.onboarded,
+    leadConfirmationEmail: r.lead_confirmation_email === true,
   };
 }
 
@@ -194,6 +198,7 @@ export async function upsertProfile(
   if (patch.fbPageId !== undefined) row.fb_page_id = patch.fbPageId;
   if (patch.fbAdAccountId !== undefined) row.fb_ad_account_id = patch.fbAdAccountId;
   if (patch.onboarded !== undefined) row.onboarded = patch.onboarded;
+  if (patch.leadConfirmationEmail !== undefined) row.lead_confirmation_email = patch.leadConfirmationEmail;
 
   const { error } = await supabase
     .from("agent_profiles")

@@ -10,6 +10,7 @@ import {
   Divider,
   IconButton,
   Skeleton,
+  Switch,
   TextField,
   Toolbar,
   Typography,
@@ -543,6 +544,38 @@ export default function AccountPage() {
                     Agent logins
                   </Typography>
                   <AgentPasswords onSnack={showSnack} />
+                </CardContent>
+              </Card>
+            )}
+
+            {isOperator && profile && (
+              <Card variant="outlined" sx={{ mb: 3 }}>
+                <CardContent sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 2 }}>
+                  <Box>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>Confirmation email to new leads</Typography>
+                    <Typography sx={{ fontSize: 13, color: "text.secondary" }}>
+                      Emails each new lead in {profile.displayName?.split(" ")[0] || "this agent"}&apos;s name, with a button to message them on WhatsApp.
+                      {!profile.email && " Add an email above first, so replies reach them."}
+                    </Typography>
+                  </Box>
+                  <Switch
+                    checked={profile.leadConfirmationEmail}
+                    onChange={async (e) => {
+                      const on = e.target.checked;
+                      applyOptimistic({ leadConfirmationEmail: on });
+                      try {
+                        await upsertProfile({ leadConfirmationEmail: on }, profile.agentId);
+                        showSnack(on ? "Confirmation emails on" : "Confirmation emails off");
+                      } catch (err) {
+                        console.error(err);
+                        applyOptimistic({ leadConfirmationEmail: !on });
+                        showSnack("Couldn't save. Try again.");
+                      } finally {
+                        queryClient.invalidateQueries({ queryKey: ["myProfile"] });
+                        queryClient.invalidateQueries({ queryKey: ["clients"] });
+                      }
+                    }}
+                  />
                 </CardContent>
               </Card>
             )}

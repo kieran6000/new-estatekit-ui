@@ -913,7 +913,9 @@ here ("Team Alex & Storm").
 
 ### Confirmation email to new leads
 **Off for every client by default.** Switch it on per client under Clients →
-the client → Account → "Confirmation email".
+the client → Account → "Confirmation email". It's also on **Account
+(Settings)** for operators, applying to the account on screen: your own, or a
+client you've switched into.
 
 - **Trigger:** when a lead with an email is saved (website form or Facebook
   instant form) for a switched-on agent, the `leads_queue_confirmation`
