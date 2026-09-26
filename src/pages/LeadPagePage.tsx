@@ -387,7 +387,7 @@ export default function LeadPagePage() {
               <TextField label="Headline" placeholder="Thanks for your interest!" value={form.dqHeadline} onChange={(e) => fieldChange("dqHeadline", e.target.value)} fullWidth />
               <TextField label="Description" placeholder="Based on your answers, this might not be the right time for a valuation…" value={form.dqText} onChange={(e) => fieldChange("dqText", e.target.value)} fullWidth multiline minRows={2} />
               <Box sx={{ display: "flex", gap: 1.5, flexWrap: "wrap" }}>
-                <TextField label="Button text" placeholder="Get instant estimate" value={form.dqCtaLabel} onChange={(e) => fieldChange("dqCtaLabel", e.target.value)} sx={{ flex: "1 1 160px" }} />
+                <TextField label="Button text" placeholder="e.g. Follow us on Facebook" value={form.dqCtaLabel} onChange={(e) => fieldChange("dqCtaLabel", e.target.value)} sx={{ flex: "1 1 160px" }} />
                 <TextField label="Website link" placeholder="https://…" value={form.dqCtaUrl} onChange={(e) => fieldChange("dqCtaUrl", e.target.value.trim())} sx={{ flex: "2 1 220px" }} />
               </Box>
             </Section>
@@ -870,7 +870,6 @@ function AddPageDialog({
   const [name, setName] = useState("");
   const [preset, setPreset] = useState<FormPresetKey | "blank">("balanced");
   const qc = useQueryClient();
-  const { data: isOperatorUser } = useIsOperator();
   const [pipelineId, setPipelineId] = useState("");
   const [fbForms, setFbForms] = useState<FbForm[]>([]);
   const [fbFormId, setFbFormId] = useState("");
@@ -988,7 +987,7 @@ function AddPageDialog({
             {pipelines.find((pl) => pl.id === pipelineId)?.kind === "seller" && (
               <Box>
                 <Typography sx={{ fontSize: 13, color: "text.secondary", mb: 1 }}>Form type</Typography>
-                <FormPresetPicker value={preset} onChange={setPreset} allowBlank showInternal={isOperatorUser === true} />
+                <FormPresetPicker value={preset} onChange={setPreset} allowBlank />
               </Box>
             )}
           </>
@@ -1210,7 +1209,6 @@ function PresetBar({ page, onApplied }: { page: LeadPage; onApplied: () => void 
   const [choice, setChoice] = useState<FormPresetKey | "blank">(page.preset ?? "balanced");
   const [withCopy, setWithCopy] = useState(true);
   const [busy, setBusy] = useState(false);
-  const { data: isOperator } = useIsOperator();
 
   async function apply() {
     if (choice === "blank") return;
@@ -1258,7 +1256,7 @@ function PresetBar({ page, onApplied }: { page: LeadPage; onApplied: () => void 
       <Dialog open={open} onClose={() => !busy && setOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>Choose a form type</DialogTitle>
         <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-          <FormPresetPicker value={choice} onChange={setChoice} showInternal={isOperator === true} />
+          <FormPresetPicker value={choice} onChange={setChoice} />
           <FormControlLabel
             control={<Checkbox checked={withCopy} onChange={(e) => setWithCopy(e.target.checked)} />}
             label={<Typography sx={{ fontSize: 14 }}>Also update the headline and messages to match</Typography>}

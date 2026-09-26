@@ -20,17 +20,14 @@ export default function FormPresetPicker({
   value,
   onChange,
   allowBlank = false,
-  showInternal = false,
 }: {
   value: FormPresetKey | "blank";
   onChange: (v: FormPresetKey | "blank") => void;
   allowBlank?: boolean;
-  /** Operators also see the Media Buyer SOP name. Clients never need it. */
-  showInternal?: boolean;
 }) {
   const options = [
-    ...FORM_PRESETS.map((p, i) => ({ key: p.key as FormPresetKey | "blank", name: p.name, sop: p.sop, tagline: p.tagline, bestFor: p.bestFor, questions: p.questions.length, level: i + 1 })),
-    ...(allowBlank ? [{ key: "blank" as const, name: "Custom", sop: "", tagline: "Only the contact fields. Add your own questions.", bestFor: "", questions: 0, level: 0 }] : []),
+    ...FORM_PRESETS.map((p, i) => ({ key: p.key as FormPresetKey | "blank", name: p.name, tagline: p.tagline, bestFor: p.bestFor, questions: p.questions.length, level: i + 1 })),
+    ...(allowBlank ? [{ key: "blank" as const, name: "Custom", tagline: "Only the contact fields. Add your own questions.", bestFor: "", questions: 0, level: 0 }] : []),
   ];
   return (
     <Box role="radiogroup" sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
@@ -65,7 +62,6 @@ export default function FormPresetPicker({
               {o.bestFor && (
                 <Typography sx={{ fontSize: 12, color: "text.secondary", mt: 0.5 }}>
                   Best for: {o.bestFor}
-                  {showInternal && o.sop && <Box component="span" sx={{ color: "text.disabled" }}> · SOP: {o.sop}</Box>}
                 </Typography>
               )}
             </Box>

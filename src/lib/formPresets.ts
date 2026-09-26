@@ -22,8 +22,6 @@ interface PresetQuestion {
 export interface FormPreset {
   key: FormPresetKey;
   name: string;
-  /** SOP name, for the media buyer. */
-  sop: string;
   tagline: string;
   bestFor: string;
   collectEmail: boolean;
@@ -40,7 +38,7 @@ export const FORM_PRESETS: FormPreset[] = [
   {
     key: "most_leads",
     name: "More volume",
-    sop: "Super Low Eval",
+    // Media Buyer SOP: Super Low Eval
     tagline: "Just their address and contact details. The most leads, but more people who are only curious.",
     bestFor: "getting started, or when leads have slowed down",
     collectEmail: false,
@@ -49,7 +47,7 @@ export const FORM_PRESETS: FormPreset[] = [
   {
     key: "balanced",
     name: "Balanced",
-    sop: "Low Eval",
+    // Media Buyer SOP: Low Eval
     tagline: "Also asks when they plan to sell. A good mix of volume and quality.",
     bestFor: "most agents",
     collectEmail: true,
@@ -66,7 +64,7 @@ export const FORM_PRESETS: FormPreset[] = [
   {
     key: "best_quality",
     name: "Higher intent",
-    sop: "Mid Eval",
+    // Media Buyer SOP: Mid Eval
     tagline: "Also asks why they're selling. Fewer leads, but more serious sellers.",
     bestFor: "when you get lots of leads who never list",
     collectEmail: true,
@@ -100,10 +98,11 @@ export const PRESET_COPY: Partial<LeadPage> = {
   thankYouHeadline: "Almost done, {name}!",
   thankYouSubtext:
     "I'm preparing your free home evaluation. My assistant will give you a quick call to confirm a few details. Small things can shift your value by R20,000 to R120,000+.",
-  dqHeadline: "Get an instant estimate online",
-  dqText: "Not ready for a full evaluation yet? No problem. Get a quick online estimate of your home's value right now. When you want the accurate number, we're here.",
-  dqCtaLabel: "Get instant estimate",
-  dqCtaUrl: "https://instantcma.co.za/",
+  dqHeadline: "Thanks for your interest!",
+  dqText: "It sounds like now isn't the right time to sell, and that's completely fine. Whenever you're ready, we'd love to help you get the best price for your home.",
+  // No button: we don't send people to anyone else's site.
+  dqCtaLabel: "",
+  dqCtaUrl: "",
 };
 
 const COPY_ROW = {
