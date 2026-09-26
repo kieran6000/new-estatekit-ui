@@ -86,7 +86,7 @@ export async function listAgentProfiles(): Promise<
 > {
   const { data, error } = await supabase
     .from("agent_profiles")
-    .select("agent_id, display_name, whatsapp_number, area, company, sidebar_logo_url, fb_ad_account_id, fb_page_id")
+    .select("agent_id, display_name, whatsapp_number, area, company, sidebar_logo_url, avatar_url, fb_ad_account_id, fb_page_id")
     .order("display_name", { ascending: true });
   if (error) throw new Error(error.message);
   return data ?? [];

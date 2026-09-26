@@ -244,7 +244,7 @@ export default function AppShell() {
                 }}
               >
                 <ListItemIcon sx={{ minWidth: 36, color: "inherit" }}>
-                  <Avatar sx={{ width: 28, height: 28, bgcolor: avatarBg, fontSize: 13, fontWeight: 600, color: textColor }}>{initial}</Avatar>
+                  <Avatar src={profile?.avatarUrl || undefined} sx={{ width: 28, height: 28, bgcolor: avatarBg, fontSize: 13, fontWeight: 600, color: textColor }}>{initial}</Avatar>
                 </ListItemIcon>
                 <ListItemText
                   primary="Settings"

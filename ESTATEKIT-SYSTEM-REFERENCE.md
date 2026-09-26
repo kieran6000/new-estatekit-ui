@@ -338,11 +338,12 @@ heading to sort") with a sticky totals row, a date range, an ad spend/billing ca
 A directory of every client account (the operator's own is left out). It is
 deliberately **not** a CSM tool: ad performance, reviews and check-ins live in
 app.estatekit.co, so they don't appear here.
-- **Grid:** a card per client with picture (photo, then Facebook page picture,
-  then logo), name, agency and city, plus leads (30 days), **CPL (30 days)**
-  and last lead. CPL is live: 30-day Meta spend (`fb-ad-insights`, one call per
-  card, cached 30 min) divided by 30-day leads. Search matches name, agency,
-  area, email and phone. Sort: most leads, or name.
+- **Table:** a row per client with picture and name, agency, area, leads
+  (30 days), **CPL (30 days)** and last lead. Every column sorts (tap the
+  heading again to flip it), and blanks always sink to the bottom. The sort is
+  remembered. On a phone, agency and area fold under the name. CPL is live:
+  30-day Meta spend (`fb-ad-insights`, one call per ad account, cached 30 min)
+  divided by 30-day leads. Search matches name, agency, area, email and phone.
 - **Detail page:** one page, no tabs. It has a header with quick actions
   (**Open their dashboard** switches the account switcher to them, WhatsApp,
   Call, Email), then:

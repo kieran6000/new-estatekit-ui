@@ -147,7 +147,7 @@ export default function AccountSwitcher({ variant = "dark" }: { variant?: "dark"
                 sx={{ py: 1, pl: 2, pr: 1 }}
               >
                 <ListItemAvatar sx={{ minWidth: 44 }}>
-                  <Avatar src={p.avatar_url ?? pageAvatar(p.fb_page_id) ?? p.sidebar_logo_url ?? undefined} sx={{ width: 34, height: 34, bgcolor: isActive ? "#6366f1" : "#e0e0e0", color: isActive ? "#fff" : "#666", fontSize: 14, fontWeight: 700 }}>
+                  <Avatar src={p.avatar_url || pageAvatar(p.fb_page_id) || p.sidebar_logo_url || undefined} sx={{ width: 34, height: 34, bgcolor: isActive ? "#6366f1" : "#e0e0e0", color: isActive ? "#fff" : "#666", fontSize: 14, fontWeight: 700 }}>
                     {pName[0].toUpperCase()}
                   </Avatar>
                 </ListItemAvatar>
