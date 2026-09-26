@@ -379,7 +379,7 @@ export default function LeadPagePage() {
               <TextField label="Thank-you subtext" value={form.thankYouSubtext} onChange={(e) => fieldChange("thankYouSubtext", e.target.value)} fullWidth multiline minRows={2} />
             </Section>
 
-            <Section title="If an answer turns them away">
+            <Section title="End page">
               <Typography sx={{ fontSize: 12, color: "text.secondary", mt: -1 }}>
                 Shown instead of the thank-you when they pick an answer you've marked "turn them away". No lead is created.
                 Leave blank for the standard wording. Add a button to send them somewhere useful, like an instant online estimate.
@@ -1260,7 +1260,7 @@ function PresetBar({ page, onApplied }: { page: LeadPage; onApplied: () => void 
           <FormPresetPicker value={choice} onChange={setChoice} />
           <FormControlLabel
             control={<Checkbox checked={withCopy} onChange={(e) => setWithCopy(e.target.checked)} />}
-            label={<Typography sx={{ fontSize: 14 }}>Also use the preset's wording (headline, button, thank-you and turned-away screens)</Typography>}
+            label={<Typography sx={{ fontSize: 14 }}>Also use the preset's wording (headline, button, thank-you and end page)</Typography>}
           />
           <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
             This replaces the page's current questions. Leads you already have aren't touched.

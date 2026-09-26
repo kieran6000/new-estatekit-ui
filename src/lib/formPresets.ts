@@ -65,7 +65,7 @@ export const FORM_PRESETS: FormPreset[] = [
     key: "best_quality",
     name: "Best quality",
     sop: "Mid Eval",
-    tagline: "Adds timeline and reason. People not selling or just curious are turned away.",
+    tagline: "Adds timeline and reason. People not selling or just curious go to the end page instead.",
     bestFor: "Agents drowning in valuation-seekers who don't list",
     collectEmail: true,
     questions: [

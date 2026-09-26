@@ -318,10 +318,10 @@ One screen manages all of an agent's **lead sources**.
     **Switch preset** on the questions editor. Applying one adds the new
     questions before removing the old, so a failure can't empty a live page.
     It can also set the SOP wording (headline, button, "Almost done" thank-you
-    and turned-away screen). `lead_pages.preset` tags the page ("based on",
+    and end page). `lead_pages.preset` tags the page ("based on",
     kept after edits). PostHog `form_preset_applied`, plus `form_preset` on
     `lead_page_form_submitted` and `lead_page_added`, for comparing presets.
-  - **If an answer turns them away**: the "not a fit" screen's headline,
+  - **End page**: shown instead of the thank-you when an answer turns them away. Its headline,
     message and an optional button (e.g. "Get instant estimate" →
     instantcma.co.za). Stored in `lead_pages.dq_*`; blank uses the built-in
     wording.
