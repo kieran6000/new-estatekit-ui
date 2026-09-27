@@ -40,9 +40,8 @@ const prettyPhone = (s: string) => {
 // operator can give one agent their own (agent_profiles.lead_email_body).
 // KEEP IN STEP with src/lib/leadEmail.ts (the Forms page preview).
 const STANDARD_SELLER_BODY = [
-  "Thanks for requesting a free home evaluation for {address}.",
-  "I'm having a look at what's sold near you recently.",
-  "I'll be in touch shortly to go through what your home could be worth, and whether I have buyers looking in the area.",
+  "Thanks for requesting a free home evaluation for {address}. I'm working on it now.",
+  "When your evaluation is ready, I'll be in touch to go through what your home could be worth, and whether I have buyers looking in the area.",
 ].join("\n\n");
 
 function fillLeadEmail(text: string, v: { name: string; address: string; agent: string }): string[] {
@@ -185,6 +184,15 @@ Deno.serve(async (req) => {
       ? fillLeadEmail(agent.lead_email_body || "", { name: leadFirst, address, agent: agentFirst }).map(esc)
       : w.body(address, area);
 
+  // Seller leads: the selling plan goes straight after the first paragraph.
+  if (planUrl && paragraphs.length) {
+    paragraphs.splice(
+      1,
+      0,
+      `While you wait, I've put together a short selling plan for you, based on what you told me: <a href="${esc(planUrl)}" style="color:#1a73e8">open your selling plan</a>. It covers what to do first, the papers you'll need and what to watch for with your timing.`,
+    );
+  }
+
   // Personal subject, no brand suffix: the From line already says who it is.
   const subject = kind === "seller" && address ? `Your home evaluation for ${address}` : w.subject(area);
 
@@ -196,7 +204,6 @@ Deno.serve(async (req) => {
 <div style="max-width:560px">
 <p ${p}>Hi ${esc(leadFirst)},</p>
 ${paragraphs.map((t) => `<p ${p}>${t}</p>`).join("\n")}
-${planUrl ? `<p ${p}>I've put together a short selling plan for you, based on what you told me: <a href="${esc(planUrl)}" style="color:#1a73e8">open your selling plan</a>.</p>` : ""}
 ${salesUrl ? `<p ${p}>In the meantime, <a href="${esc(salesUrl)}" style="color:#1a73e8">here are some homes I've sold recently</a>.</p>` : ""}
 ${waUrl ? `<p ${p}>If it's easier, you can <a href="${esc(waUrl)}" style="color:#1a73e8">message me on WhatsApp here</a>.</p>` : ""}
 <p style="margin:18px 0 0">${esc(agentFirst)}</p>
@@ -214,7 +221,6 @@ You're getting this because you asked ${esc(agentName)} for a ${w.request}. It's
     "",
     ...paragraphs.flatMap((t) => [t.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'"), ""]),
     "",
-    planUrl ? `I've put together a short selling plan for you, based on what you told me: ${planUrl}` : "",
     salesUrl ? `In the meantime, here are some homes I've sold recently: ${salesUrl}` : "",
     waUrl ? `If it's easier, you can message me on WhatsApp here: ${waUrl}` : "",
     "",

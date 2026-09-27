@@ -1,4 +1,5 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import QRCode from "qrcode";
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "../api/_client";
@@ -305,6 +306,7 @@ export default function PlanPage() {
           )}
           {phone && <p className="plan-tel">Or phone {agentFirst}: <b>{prettyPhone(plan.agent_phone)}</b></p>}
           {plan.agent_email && <p className="plan-tel">Email: <a href={`mailto:${plan.agent_email}`}>{plan.agent_email}</a></p>}
+          {waUrl && <PlanQr url={`https://leads.estatekit.co${waUrl}`} />}
         </section>
 
         <footer className="plan-sign">
@@ -315,6 +317,23 @@ export default function PlanPage() {
 
         <p className="plan-foot">General guidance only. Your attorney and bank will confirm the details for your sale.</p>
       </article>
+    </div>
+  );
+}
+
+/** "Scan to WhatsApp me": for the saved PDF and computer screens only.
+ *  Hidden on phones, where the button is the way in. */
+function PlanQr({ url }: { url: string }) {
+  const [src, setSrc] = useState("");
+  useEffect(() => {
+    QRCode.toDataURL(url, { margin: 1, width: 240, errorCorrectionLevel: "M" }).then(setSrc).catch(() => setSrc(""));
+  }, [url]);
+  if (!src) return null;
+  return (
+    <div className="plan-qr">
+      <img src={src} alt="" />
+      <span>Scan with your phone
+        <br />to WhatsApp me</span>
     </div>
   );
 }

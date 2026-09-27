@@ -982,10 +982,14 @@ here ("Team Alex & Storm").
   lines, no card, banner or big buttons. Designed emails read as automated
   and tend to land in Gmail's Promotions tab.
 - **Content (seller):**
-  - "Thanks for requesting a free home evaluation for <address>."
-  - "I'm having a look at what's sold near you recently."
-  - "I'll be in touch shortly to go through what your home could be worth,
-    and whether I have buyers looking in the area."
+  - "Thanks for requesting a free home evaluation for <address>. I'm working
+    on it now."
+  - Then the selling plan line (seller leads): "While you wait, I've put
+    together a short selling plan for you, based on what you told me: open your
+    selling plan. It covers what to do first, the papers you'll need and what
+    to watch for with your timing."
+  - "When your evaluation is ready, I'll be in touch to go through what your
+    home could be worth, and whether I have buyers looking in the area."
   - **This wording is fixed**, the same for every agent (60+), in
     `send-lead-confirmation`. Change it there, for everyone at once.
   - A "message me on WhatsApp here" link: a pre-filled message from the lead
@@ -1018,7 +1022,11 @@ here ("Team Alex & Storm").
     inherited, financial, or neutral). The timeline picks the urgent tip (the
     90-day bond notice, etc.). Then the papers checklist and the agent's
     **real** recent sales.
-  - **Next step and PDF:** a WhatsApp button (through /w/), and Save as PDF.
+  - **Next step and PDF:** "What you get when you sell with me" (only claims
+    that are true for every agent), then "Book your free consultation" with a
+    square WhatsApp button (`/w/<lead>/plan`, its own pre-filled message).
+    Save as PDF. A QR code shows on computer screens and in the PDF only, not
+    on phones.
   - **The page reads** `get_selling_plan(token)` (security definer), which
     logs `plan_opened` the first time. That shows in the lead's history and
     as "Opened plan" in the stats.

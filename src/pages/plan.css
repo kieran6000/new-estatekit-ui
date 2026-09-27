@@ -67,3 +67,16 @@
 
 .plan-why { margin: 0; padding-left: 1.2em; display: grid; gap: 8px; }
 .plan-why li::marker { color: #137a3a; }
+
+.plan-next { position: relative; }
+.plan-qr { display: none; }
+@media (min-width: 700px) {
+  .plan-qr { display: flex; flex-direction: column; align-items: center; gap: 4px; position: absolute; top: 14px; right: 14px; font-size: .72em; color: #444; text-align: center; }
+  .plan-qr img { width: 104px; height: 104px; border: 1px solid #bfbfbf; }
+  .plan-next { padding-right: 140px; }
+}
+@media print {
+  .plan-qr { display: flex; flex-direction: column; align-items: center; gap: 4px; position: absolute; top: 14px; right: 14px; font-size: .72em; color: #444; text-align: center; }
+  .plan-qr img { width: 104px; height: 104px; }
+  .plan-next { padding-right: 140px; }
+}

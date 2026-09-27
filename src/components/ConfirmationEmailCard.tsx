@@ -5,7 +5,7 @@ import LockIcon from "@mui/icons-material/Lock";
 import { tokens } from "../theme";
 import { upsertProfile, type AgentProfile } from "../api/agentProfile";
 import { useSnack } from "../hooks/useSnack";
-import { fillLeadEmail, LEAD_EMAIL_PLACEHOLDERS, STANDARD_LEAD_EMAIL_BODY } from "../lib/leadEmail";
+import { fillLeadEmail, LEAD_EMAIL_PLACEHOLDERS, PLAN_LINE_TEXT, STANDARD_LEAD_EMAIL_BODY } from "../lib/leadEmail";
 import InfoTip from "./InfoTip";
 import { getEmailStats } from "../api/leadEvents";
 
@@ -43,7 +43,9 @@ export default function ConfirmationEmailCard({
   const fullName = (profile.displayName || "").trim() || "Your agent";
   const first = fullName.split(/\s+/)[0];
   const text = canSetUp ? draft : profile.leadEmailBody ?? STANDARD_LEAD_EMAIL_BODY;
-  const paragraphs = fillLeadEmail(text, { name: SAMPLE.name, address: SAMPLE.address, agent: first });
+  const filled = fillLeadEmail(text, { name: SAMPLE.name, address: SAMPLE.address, agent: first });
+  // Seller leads also get their selling-plan link after the first paragraph.
+  const paragraphs = filled.length ? [filled[0], PLAN_LINE_TEXT, ...filled.slice(1)] : filled;
   const changed = (draft.trim() || STANDARD_LEAD_EMAIL_BODY) !== (profile.leadEmailBody ?? STANDARD_LEAD_EMAIL_BODY);
 
   async function save(patch: Partial<AgentProfile>, done: string) {

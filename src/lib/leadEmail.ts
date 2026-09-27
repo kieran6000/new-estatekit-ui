@@ -4,12 +4,16 @@
 //
 // KEEP IN STEP with STANDARD_SELLER_BODY and fillLeadEmail in
 // supabase/functions/send-lead-confirmation/index.ts, which is what sends it.
-// Paragraphs are separated by a blank line.
+// Paragraphs are separated by a blank line. For seller leads the selling-plan
+// line is added after the first paragraph (see PLAN_LINE_TEXT).
+
+/** Shown after the first paragraph for seller leads, linking their plan. */
+export const PLAN_LINE_TEXT =
+  "While you wait, I've put together a short selling plan for you, based on what you told me: open your selling plan. It covers what to do first, the papers you'll need and what to watch for with your timing.";
 
 export const STANDARD_LEAD_EMAIL_BODY = [
-  "Thanks for requesting a free home evaluation for {address}.",
-  "I'm having a look at what's sold near you recently.",
-  "I'll be in touch shortly to go through what your home could be worth, and whether I have buyers looking in the area.",
+  "Thanks for requesting a free home evaluation for {address}. I'm working on it now.",
+  "When your evaluation is ready, I'll be in touch to go through what your home could be worth, and whether I have buyers looking in the area.",
 ].join("\n\n");
 
 export const LEAD_EMAIL_PLACEHOLDERS = "{name} = their first name, {address} = their property, {agent} = your first name";
