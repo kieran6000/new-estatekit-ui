@@ -10,7 +10,8 @@ export type LeadEventType =
   | "email_bounced"
   | "email_complained"
   | "email_opened"
-  | "email_clicked";
+  | "email_clicked"
+  | "plan_opened";
 
 export type LeadEventSource =
   | "dashboard" | "action_link" | "automation" | "facebook" | "website" | "system" | "backfill";
@@ -73,6 +74,7 @@ export interface EmailStats {
   bounced: number;
   failed: number;
   spam: number;
+  planOpened: number;
 }
 
 /** Confirmation email results for one agent: the number of LEADS with each
@@ -84,7 +86,7 @@ export async function getEmailStats(agentId: string, days = 30): Promise<EmailSt
     .from("lead_events")
     .select("lead_id, event_type")
     .eq("agent_id", agentId)
-    .like("event_type", "email_%")
+    .or("event_type.like.email_%,event_type.eq.plan_opened")
     .gte("created_at", since)
     .limit(5000);
   if (error) throw new Error(error.message);
@@ -97,5 +99,6 @@ export async function getEmailStats(agentId: string, days = 30): Promise<EmailSt
     bounced: leads("email_bounced"),
     failed: leads("email_failed"),
     spam: leads("email_complained"),
+    planOpened: leads("plan_opened"),
   };
 }

@@ -1010,6 +1010,19 @@ here ("Team Alex & Storm").
     over-counts (Apple Mail).
   - **Stats:** the email card on Forms shows the last 30 days as the number
     of leads (`getEmailStats`), for operators only.
+- **Selling plan (lead magnet):** seller emails link to a personal plan at
+  `/plan/<token>`. The token is random, stored in `leads.plan_token` and
+  minted at send time.
+  - **Content:** built from their answers. The reason for selling picks the 3
+    steps (downsizing / retirement, relocating / emigrating, upgrading,
+    inherited, financial, or neutral). The timeline picks the urgent tip (the
+    90-day bond notice, etc.). Then the papers checklist and the agent's
+    **real** recent sales.
+  - **Next step and PDF:** a WhatsApp button (through /w/), and Save as PDF.
+  - **The page reads** `get_selling_plan(token)` (security definer), which
+    logs `plan_opened` the first time. That shows in the lead's history and
+    as "Opened plan" in the stats.
+  - **No generated signatures and no invented testimonials.**
 - **Recent sales:** seller emails add "In the meantime, here are some homes
   I've sold recently" when the agent has any. It links to the public
   `/sold/<agentId>` page, which has a button back to their form.

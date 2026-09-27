@@ -77,6 +77,8 @@ function describe(e: LeadEvent): string {
       return "Opened the confirmation email";
     case "email_clicked":
       return "Tapped WhatsApp in the email";
+    case "plan_opened":
+      return "Opened their selling plan";
     default:
       return e.event_type;
   }
@@ -144,7 +146,7 @@ export default function LeadHistory({ leadId }: { leadId: string }) {
         const device = deviceOf(e.device);
         // Backfilled rows carry a stand-in timestamp, so don't show a time for them.
         const when = e.source === "backfill" ? "" : timeAgo(e.created_at);
-        const isEmail = e.event_type.startsWith("email_");
+        const isEmail = e.event_type.startsWith("email_") || e.event_type === "plan_opened";
         // For sends, the detail line says what was sent / to whom, not "Automation".
         const via = e.event_type === "whatsapp_sent" || isEmail ? e.to_value ?? "" : SOURCE_LABEL[e.source] ?? "";
         const SourceIcon = e.event_type === "whatsapp_sent" ? WhatsAppIcon : isEmail ? MailOutlineIcon : SOURCE_ICON[e.source] ?? HistoryIcon;

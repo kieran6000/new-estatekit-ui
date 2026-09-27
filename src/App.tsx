@@ -23,6 +23,7 @@ import ThankYouPage from "./pages/ThankYouPage";
 import PrivacyPolicyPage from "./pages/PrivacyPolicyPage";
 import SignupPage from "./pages/SignupPage";
 import SoldPage from "./pages/SoldPage";
+import PlanPage from "./pages/PlanPage";
 
 function Splash() {
   return (
@@ -69,6 +70,7 @@ export default function App() {
       <Route path="/privacy" element={<PrivacyPolicyPage />} />
       <Route path="/start" element={<SignupPage />} />
       <Route path="/sold/:agentId" element={<SoldPage />} />
+      <Route path="/plan/:token" element={<PlanPage />} />
 
       {!user ? (
         <Route path="*" element={<LoginPage />} />

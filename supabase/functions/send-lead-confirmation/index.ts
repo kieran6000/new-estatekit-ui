@@ -168,8 +168,17 @@ Deno.serve(async (req) => {
   const waText = `Hi ${agentFirst}, it's ${first(lead.name) || lead.name}. ${w.wa(address)}`;
   void waText; // built again by email-click, which is what the link opens
   const waUrl = waNumber ? `${APP}/w/${id}` : "";
-  // Social proof while they wait: the agent's recent sales, if they've added any.
-  const salesUrl = kind === "seller" && (salesCount ?? 0) > 0 ? `${APP}/sold/${lead.agent_id}` : "";
+  // Seller leads get a personal selling plan (/plan/<token>), built from their
+  // answers; the agent's recent sales are shown inside it. The token is random
+  // because the plan shows their name and address.
+  let planUrl = "";
+  if (kind === "seller") {
+    const token = crypto.randomUUID().replace(/-/g, "");
+    const { error: tokErr } = await supabase.from("leads").update({ plan_token: token }).eq("id", id);
+    if (!tokErr) planUrl = `${APP}/plan/${token}`;
+  }
+  // Other leads (no plan) still get the recent-sales page when there is one.
+  const salesUrl = !planUrl && kind === "seller" && (salesCount ?? 0) > 0 ? `${APP}/sold/${lead.agent_id}` : "";
 
   const paragraphs: string[] =
     kind === "seller"
@@ -187,6 +196,7 @@ Deno.serve(async (req) => {
 <div style="max-width:560px">
 <p ${p}>Hi ${esc(leadFirst)},</p>
 ${paragraphs.map((t) => `<p ${p}>${t}</p>`).join("\n")}
+${planUrl ? `<p ${p}>I've put together a short selling plan for you, based on what you told me: <a href="${esc(planUrl)}" style="color:#1a73e8">open your selling plan</a>.</p>` : ""}
 ${salesUrl ? `<p ${p}>In the meantime, <a href="${esc(salesUrl)}" style="color:#1a73e8">here are some homes I've sold recently</a>.</p>` : ""}
 ${waUrl ? `<p ${p}>If it's easier, you can <a href="${esc(waUrl)}" style="color:#1a73e8">message me on WhatsApp here</a>.</p>` : ""}
 <p style="margin:18px 0 0">${esc(agentFirst)}</p>
@@ -204,6 +214,7 @@ You're getting this because you asked ${esc(agentName)} for a ${w.request}. It's
     "",
     ...paragraphs.flatMap((t) => [t.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'"), ""]),
     "",
+    planUrl ? `I've put together a short selling plan for you, based on what you told me: ${planUrl}` : "",
     salesUrl ? `In the meantime, here are some homes I've sold recently: ${salesUrl}` : "",
     waUrl ? `If it's easier, you can message me on WhatsApp here: ${waUrl}` : "",
     "",

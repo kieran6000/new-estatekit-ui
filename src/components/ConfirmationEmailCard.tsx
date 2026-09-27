@@ -115,6 +115,7 @@ export default function ConfirmationEmailCard({
               ["Sent", stats.sent],
               ["Delivered", stats.delivered],
               ["Opened", stats.opened],
+              ["Opened plan", stats.planOpened],
               ["Tapped WhatsApp", stats.clicked],
               ["Bounced", stats.bounced + stats.failed],
               ["Marked spam", stats.spam],
