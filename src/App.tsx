@@ -70,6 +70,7 @@ export default function App() {
       <Route path="/privacy" element={<PrivacyPolicyPage />} />
       <Route path="/start" element={<SignupPage />} />
       <Route path="/sold/:agentId" element={<SoldPage />} />
+      <Route path="/plan/sample/:agentId" element={<PlanPage />} />
       <Route path="/plan/:token" element={<PlanPage />} />
 
       {!user ? (

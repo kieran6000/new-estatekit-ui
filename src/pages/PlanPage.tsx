@@ -11,6 +11,10 @@ import "./plan.css";
 // The same wording for every agent; only the agent's details and the lead's
 // answers change. Real proof only: the agent's own recent sales, no invented
 // testimonials, and no generated signature.
+//
+// /plan/sample/<agent id>: the same page with the agent's real details and a
+// made-up seller, opened from the Forms page so agents see what sellers get.
+// Only for the agent themselves or an operator; nothing is logged.
 
 interface Plan {
   lead_id: string;
@@ -161,11 +165,24 @@ async function getPlan(token: string): Promise<Plan | null> {
   return (data as Plan) ?? null;
 }
 
+async function getSamplePlan(agentId: string): Promise<Plan | null> {
+  const { data, error } = await supabase.rpc("get_sample_selling_plan", { p_agent: agentId });
+  if (error) throw new Error(error.message);
+  return (data as Plan) ?? null;
+}
+
 export default function PlanPage() {
-  const { token = "" } = useParams();
-  const valid = /^[a-f0-9]{32}$/.test(token);
+  const { token = "", agentId = "" } = useParams();
+  const sample = !!agentId;
+  const valid = sample ? /^[0-9a-f-]{36}$/i.test(agentId) : /^[a-f0-9]{32}$/.test(token);
   // Read once: every load would otherwise count as another open.
-  const { data: plan, isLoading, isError } = useQuery({ queryKey: ["plan", token], queryFn: () => getPlan(token), enabled: valid, staleTime: Infinity, retry: 1 });
+  const { data: plan, isLoading, isError } = useQuery({
+    queryKey: sample ? ["samplePlan", agentId] : ["plan", token],
+    queryFn: () => (sample ? getSamplePlan(agentId) : getPlan(token)),
+    enabled: valid,
+    staleTime: Infinity,
+    retry: 1,
+  });
 
   const reason = reasonKey(plan?.reason || "");
   const r = REASONS[reason.key];
@@ -179,7 +196,7 @@ export default function PlanPage() {
       <div className="plan-viewer">
         <div className="plan-page plan-missing">
           <h1>This plan isn't available</h1>
-          <p>The link may be incomplete. Check the email you received, or contact your agent.</p>
+          <p>{sample ? "Log in to EstateKit first, then open the sample again from your Forms page." : "The link may be incomplete. Check the email you received, or contact your agent."}</p>
         </div>
       </div>
     );
@@ -189,7 +206,7 @@ export default function PlanPage() {
   const agentFirst = plan.agent_name.split(/\s+/)[0] || "your agent";
   const initials = plan.agent_name.split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase();
   const phone = digits(plan.agent_phone);
-  const waUrl = phone ? `/w/${plan.lead_id}/plan` : "";
+  const waUrl = phone ? (sample ? `https://wa.me/${phone}` : `/w/${plan.lead_id}/plan`) : "";
   const address = tidy(plan.address);
   // Stable for this lead, so it reads the same every time they open it.
   const ref = `EK-${(plan.date.match(/\d{4}$/) || [""])[0]}-${plan.lead_id.replace(/-/g, "").slice(0, 5).toUpperCase()}`;
@@ -197,7 +214,7 @@ export default function PlanPage() {
   return (
     <div className="plan-viewer" style={{ ["--accent" as string]: plan.accent }}>
       <div className="plan-bar">
-        <span className="plan-file">{r.title}</span>
+        <span className="plan-file">{sample ? "Sample: what your sellers get (made-up seller, your details)" : r.title}</span>
         <button type="button" onClick={() => window.print()}>Save as PDF</button>
       </div>
 
@@ -306,7 +323,7 @@ export default function PlanPage() {
           )}
           {phone && <p className="plan-tel">Or phone {agentFirst}: <b>{prettyPhone(plan.agent_phone)}</b></p>}
           {plan.agent_email && <p className="plan-tel">Email: <a href={`mailto:${plan.agent_email}`}>{plan.agent_email}</a></p>}
-          {waUrl && <PlanQr url={`https://leads.estatekit.co${waUrl}`} />}
+          {waUrl && <PlanQr url={waUrl.startsWith("http") ? waUrl : `https://leads.estatekit.co${waUrl}`} />}
         </section>
 
         <footer className="plan-sign">

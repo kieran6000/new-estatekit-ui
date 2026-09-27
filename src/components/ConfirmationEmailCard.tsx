@@ -2,10 +2,11 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Box, Button, Link, Switch, TextField, Typography } from "@mui/material";
 import LockIcon from "@mui/icons-material/Lock";
+import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import { tokens } from "../theme";
 import { upsertProfile, type AgentProfile } from "../api/agentProfile";
 import { useSnack } from "../hooks/useSnack";
-import { fillLeadEmail, LEAD_EMAIL_PLACEHOLDERS, PLAN_LINE_TEXT, STANDARD_LEAD_EMAIL_BODY } from "../lib/leadEmail";
+import { fillLeadEmail, LEAD_EMAIL_PLACEHOLDERS, PLAN_BLOCK, STANDARD_LEAD_EMAIL_BODY } from "../lib/leadEmail";
 import InfoTip from "./InfoTip";
 import { trackActivity } from "../lib/activity";
 import { getEmailStats } from "../api/leadEvents";
@@ -44,9 +45,10 @@ export default function ConfirmationEmailCard({
   const fullName = (profile.displayName || "").trim() || "Your agent";
   const first = fullName.split(/\s+/)[0];
   const text = canSetUp ? draft : profile.leadEmailBody ?? STANDARD_LEAD_EMAIL_BODY;
-  const filled = fillLeadEmail(text, { name: SAMPLE.name, address: SAMPLE.address, agent: first });
-  // Seller leads also get their selling-plan link after the first paragraph.
-  const paragraphs = filled.length ? [filled[0], PLAN_LINE_TEXT, ...filled.slice(1)] : filled;
+  const paragraphs = fillLeadEmail(text, { name: SAMPLE.name, address: SAMPLE.address, agent: first });
+  // The plan with this agent's details and a made-up seller (opens in a new tab).
+  const sampleUrl = `/plan/sample/${profile.agentId}`;
+  const pct = (n: number) => (stats && stats.sent > 0 ? `${Math.round((n / stats.sent) * 100)}%` : "");
   const changed = (draft.trim() || STANDARD_LEAD_EMAIL_BODY) !== (profile.leadEmailBody ?? STANDARD_LEAD_EMAIL_BODY);
 
   async function save(patch: Partial<AgentProfile>, done: string) {
@@ -115,8 +117,8 @@ export default function ConfirmationEmailCard({
           <Box sx={{ display: "flex", alignItems: "center", gap: 0.25 }}>
             <Typography sx={{ fontSize: 13, fontWeight: 500 }}>Last 30 days</Typography>
             <InfoTip>
-              Number of leads. Delivered, bounced and spam come from the email service. Opened is only a rough guide: some email apps (like Apple Mail)
-              report every email as opened. WhatsApp taps are counted exactly.
+              Number of leads, and the share of emails sent. Delivered, bounced and spam come from the email service. Opened is only a rough guide:
+              some email apps (like Apple Mail) report every email as opened, and some hide it. Opened plan and WhatsApp taps are counted exactly.
             </InfoTip>
           </Box>
           <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(92px, 1fr))", gap: 1, mt: 0.75 }}>
@@ -130,7 +132,12 @@ export default function ConfirmationEmailCard({
               ["Marked spam", stats.spam],
             ].map(([label, n]) => (
               <Box key={label as string} sx={{ border: `1px solid ${tokens.divider2}`, borderRadius: "6px", px: 1.25, py: 0.75 }}>
-                <Typography sx={{ fontSize: 18, fontWeight: 600, lineHeight: 1.2 }}>{n as number}</Typography>
+                <Typography sx={{ fontSize: 18, fontWeight: 600, lineHeight: 1.2 }}>
+                  {n as number}
+                  {label !== "Sent" && pct(n as number) && (
+                    <Typography component="span" sx={{ fontSize: 12, fontWeight: 500, color: "text.secondary", ml: 0.75 }}>{pct(n as number)}</Typography>
+                  )}
+                </Typography>
                 <Typography sx={{ fontSize: 11.5, color: "text.secondary" }}>{label as string}</Typography>
               </Box>
             ))}
@@ -165,7 +172,18 @@ export default function ConfirmationEmailCard({
 
       {/* What the lead receives, filled in with a sample lead. */}
       <Box>
-        <Typography sx={{ fontSize: 12, color: "text.secondary", mb: 0.75 }}>Preview (sample lead)</Typography>
+        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1, flexWrap: "wrap", mb: 0.75 }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.25 }}>
+            <Typography sx={{ fontSize: 12, color: "text.secondary" }}>Preview (sample lead)</Typography>
+            <InfoTip>
+              Seller leads also get a selling plan with your name, photo, phone number and recent sales. The button shows it with a made-up seller.
+              The "Homes I've sold recently" line only shows if you have sales under Recent sales.
+            </InfoTip>
+          </Box>
+          <Button variant="outlined" href={sampleUrl} target="_blank" rel="noopener" endIcon={<OpenInNewIcon />}>
+            See the plan your sellers get
+          </Button>
+        </Box>
         <Box sx={{ border: `1px solid ${tokens.divider2}`, borderRadius: "6px", bgcolor: tokens.bg, p: 1.5 }}>
           <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
             From: <b>{fullName}</b> · Subject: Your home evaluation for {SAMPLE.address}
@@ -173,7 +191,21 @@ export default function ConfirmationEmailCard({
           <Box sx={{ mt: 1.5, bgcolor: "background.paper", borderRadius: "4px", p: 1.5, fontSize: 14, lineHeight: 1.55, color: "#222" }}>
             <Typography sx={{ fontSize: 14, mb: 1.25 }}>Hi {SAMPLE.name},</Typography>
             {paragraphs.map((t, i) => (
-              <Typography key={i} sx={{ fontSize: 14, mb: 1.25 }}>{t}</Typography>
+              <Box key={i}>
+                <Typography sx={{ fontSize: 14, mb: 1.25 }}>{t}</Typography>
+                {i === 0 && (
+                  <Box sx={{ borderLeft: "4px solid #137a3a", bgcolor: "#f1f8f3", px: 2, py: 1.5, mb: 1.5 }}>
+                    <Typography sx={{ fontSize: 15, fontWeight: 700, color: "#111", lineHeight: 1.35, mb: 0.5 }}>{PLAN_BLOCK.title(SAMPLE.address)}</Typography>
+                    <Typography sx={{ fontSize: 14, mb: 0.75 }}>{PLAN_BLOCK.intro}</Typography>
+                    {[...PLAN_BLOCK.points, PLAN_BLOCK.salesPoint].map((pt) => (
+                      <Typography key={pt} sx={{ fontSize: 14, mb: 0.25 }}>✓&nbsp; {pt}</Typography>
+                    ))}
+                    <Link href={sampleUrl} target="_blank" rel="noopener" underline="always" sx={{ display: "inline-block", mt: 1, fontSize: 15, fontWeight: 700, color: "#137a3a" }}>
+                      {PLAN_BLOCK.link} →
+                    </Link>
+                  </Box>
+                )}
+              </Box>
             ))}
             <Typography sx={{ fontSize: 14, mb: 1.5 }}>
               If it&apos;s easier, you can <Link component="span" underline="always" sx={{ cursor: "default" }}>message me on WhatsApp here</Link>.

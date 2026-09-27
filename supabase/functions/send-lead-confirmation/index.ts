@@ -10,6 +10,7 @@
 //
 // From:     "<Agent> via EstateKit" <hello@mail.estatekit.co>  (verified in Resend)
 // Reply-To: the agent's own email, so replies reach the agent.
+// Opens are counted by a 1px image (leads.estatekit.co/o/<lead id> → email-open).
 // The main button opens WhatsApp to the agent with a pre-filled message: the
 // lead starts the conversation, which needs no WhatsApp Business API.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
@@ -56,6 +57,37 @@ function fillLeadEmail(text: string, v: { name: string; address: string; agent: 
         .replaceAll("{address}", v.address || "your home")
         .replaceAll("{agent}", v.agent || "I"),
     );
+}
+
+// The selling-plan box (seller leads), after the first paragraph. Its own box
+// so it isn't lost in the text. Every point is true of every plan; the sales
+// point only when the agent has sales on record.
+// KEEP IN STEP with PLAN_BLOCK in src/lib/leadEmail.ts (the Forms page preview).
+const PLAN_BLOCK = {
+  title: (address: string) => `How to sell ${address || "your home"} without losing money or time`,
+  intro: "While you wait, I've made you a short plan, based on what you told me. It takes 2 minutes to read.",
+  points: [
+    "What to do first, in the right order for your situation",
+    "The papers you'll need, so nothing holds up your sale at the end",
+    "The one thing to do now, for your timing",
+  ],
+  salesPoint: "Homes I've sold recently",
+  link: "Open my selling plan",
+};
+
+function planBlockHtml(url: string, address: string, withSales: boolean): string {
+  const points = [...PLAN_BLOCK.points, ...(withSales ? [PLAN_BLOCK.salesPoint] : [])];
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:100%;margin:4px 0 18px;border-collapse:collapse"><tr><td style="border-left:4px solid #137a3a;background:#f1f8f3;padding:14px 16px">
+<p style="margin:0 0 6px;font-size:16px;font-weight:bold;color:#111111;line-height:1.35">${esc(PLAN_BLOCK.title(address))}</p>
+<p style="margin:0 0 8px">${esc(PLAN_BLOCK.intro)}</p>
+${points.map((t) => `<p style="margin:0 0 4px">&#10003;&nbsp; ${esc(t)}</p>`).join("\n")}
+<p style="margin:12px 0 0"><a href="${esc(url)}" style="color:#137a3a;font-weight:bold;font-size:16px">${esc(PLAN_BLOCK.link)} &rarr;</a></p>
+</td></tr></table>`;
+}
+
+function planBlockText(url: string, address: string, withSales: boolean): string[] {
+  const points = [...PLAN_BLOCK.points, ...(withSales ? [PLAN_BLOCK.salesPoint] : [])];
+  return [PLAN_BLOCK.title(address).toUpperCase(), PLAN_BLOCK.intro, ...points.map((t) => `- ${t}`), `${PLAN_BLOCK.link}: ${url}`];
 }
 
 type Kind = "seller" | "buyer" | "general";
@@ -184,26 +216,26 @@ Deno.serve(async (req) => {
       ? fillLeadEmail(agent.lead_email_body || "", { name: leadFirst, address, agent: agentFirst }).map(esc)
       : w.body(address, area);
 
-  // Seller leads: the selling plan goes straight after the first paragraph.
+  // Seller leads: the selling-plan box goes straight after the first paragraph.
+  const withSales = (salesCount ?? 0) > 0;
+  const htmlBlocks = paragraphs.map((t) => `<p style="margin:0 0 14px">${t}</p>`);
+  const textBlocks = paragraphs.map((t) => t.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'"));
   if (planUrl && paragraphs.length) {
-    paragraphs.splice(
-      1,
-      0,
-      `While you wait, I've put together a short selling plan for you, based on what you told me: <a href="${esc(planUrl)}" style="color:#1a73e8">open your selling plan</a>. It covers what to do first, the papers you'll need and what to watch for with your timing.`,
-    );
+    htmlBlocks.splice(1, 0, planBlockHtml(planUrl, address, withSales));
+    textBlocks.splice(1, 0, planBlockText(planUrl, address, withSales).join("\n"));
   }
 
   // Personal subject, no brand suffix: the From line already says who it is.
   const subject = kind === "seller" && address ? `Your home evaluation for ${address}` : w.subject(area);
 
   // Deliberately plain: it should read like an email the agent typed, not a
-  // newsletter. No card, banner, logo or big buttons (those also tend to land
-  // in Gmail's Promotions tab).
+  // newsletter. No banner, logo or big buttons (those also tend to land in
+  // Gmail's Promotions tab). The one exception is the plain selling-plan box.
   const p = 'style="margin:0 0 14px"';
   const html = `<!doctype html><html><body style="margin:0;padding:16px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.55;color:#222222">
 <div style="max-width:560px">
 <p ${p}>Hi ${esc(leadFirst)},</p>
-${paragraphs.map((t) => `<p ${p}>${t}</p>`).join("\n")}
+${htmlBlocks.join("\n")}
 ${salesUrl ? `<p ${p}>In the meantime, <a href="${esc(salesUrl)}" style="color:#1a73e8">here are some homes I've sold recently</a>.</p>` : ""}
 ${waUrl ? `<p ${p}>If it's easier, you can <a href="${esc(waUrl)}" style="color:#1a73e8">message me on WhatsApp here</a>.</p>` : ""}
 <p style="margin:18px 0 0">${esc(agentFirst)}</p>
@@ -214,12 +246,13 @@ ${callNumber ? `<a href="tel:+${callNumber}" style="color:#555555">${esc(prettyP
 <p style="margin:28px 0 0;font-size:11px;color:#999999;line-height:1.5">
 You're getting this because you asked ${esc(agentName)} for a ${w.request}. It's a one-off confirmation, not a newsletter. <a href="${PRIVACY_URL}" style="color:#999999">Privacy Policy</a>
 </p>
+<img src="${APP}/o/${id}" width="1" height="1" alt="" style="display:block;width:1px;height:1px;border:0">
 </div></body></html>`;
 
   const text = [
     `Hi ${leadFirst},`,
     "",
-    ...paragraphs.flatMap((t) => [t.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'"), ""]),
+    ...textBlocks.flatMap((t) => [t, ""]),
     "",
     salesUrl ? `In the meantime, here are some homes I've sold recently: ${salesUrl}` : "",
     waUrl ? `If it's easier, you can message me on WhatsApp here: ${waUrl}` : "",

@@ -5,11 +5,25 @@
 // KEEP IN STEP with STANDARD_SELLER_BODY and fillLeadEmail in
 // supabase/functions/send-lead-confirmation/index.ts, which is what sends it.
 // Paragraphs are separated by a blank line. For seller leads the selling-plan
-// line is added after the first paragraph (see PLAN_LINE_TEXT).
+// box is added after the first paragraph (see PLAN_BLOCK).
 
-/** Shown after the first paragraph for seller leads, linking their plan. */
-export const PLAN_LINE_TEXT =
-  "While you wait, I've put together a short selling plan for you, based on what you told me: open your selling plan. It covers what to do first, the papers you'll need and what to watch for with your timing.";
+/** The selling-plan box, shown after the first paragraph for seller leads.
+ *  Its own box (not a line in a paragraph) so it isn't lost in the text.
+ *  Every point must be true of every plan: the steps follow their reason for
+ *  selling, the tip follows their timing, and the papers list is always there.
+ *  The recent-sales point only shows when the agent has sales on record.
+ *  KEEP IN STEP with planBlock() in send-lead-confirmation. */
+export const PLAN_BLOCK = {
+  title: (address: string) => `How to sell ${address || "your home"} without losing money or time`,
+  intro: "While you wait, I've made you a short plan, based on what you told me. It takes 2 minutes to read.",
+  points: [
+    "What to do first, in the right order for your situation",
+    "The papers you'll need, so nothing holds up your sale at the end",
+    "The one thing to do now, for your timing",
+  ],
+  salesPoint: "Homes I've sold recently",
+  link: "Open my selling plan",
+};
 
 export const STANDARD_LEAD_EMAIL_BODY = [
   "Thanks for requesting a free home evaluation for {address}. I'm working on it now.",

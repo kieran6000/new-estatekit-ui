@@ -1,7 +1,8 @@
 {
   "rewrites": [
     { "source": "/w/:id/:from", "destination": "https://yfcnsvrhojpysrzqrkdi.supabase.co/functions/v1/email-click?l=:id&from=:from" },
-    { "source": "/w/:id", "destination": "https://yfcnsvrhojpysrzqrkdi.supabase.co/functions/v1/email-click?l=:id" },
+    { "source": "/o/:id", "destination": "https://yfcnsvrhojpysrzqrkdi.supabase.co/functions/v1/email-open?l=:id" },
+    { "source": "/w/:id","destination": "https://yfcnsvrhojpysrzqrkdi.supabase.co/functions/v1/email-click?l=:id" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

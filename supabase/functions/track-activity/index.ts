@@ -20,7 +20,7 @@ type EventKey =
   | "call_started" | "note_added" | "lead_page_created" | "lead_page_deleted" | "sold_listing_added"
   | "page_view" | "form_started" | "form_contact_step" | "ad_paused" | "ad_resumed"
   // Confirmation email + selling plan (sent by the database as they happen)
-  | "email_sent" | "email_failed" | "email_bounced" | "email_complained" | "email_whatsapp_tap" | "plan_opened"
+  | "email_sent" | "email_failed" | "email_bounced" | "email_complained" | "email_opened" | "email_whatsapp_tap" | "plan_opened"
   // Setup changes made in the app
   | "form_type_changed" | "email_switched" | "email_wording_changed" | "client_details_edited"
   | "whatsapp_number_changed" | "page_link_changed";
@@ -45,6 +45,7 @@ const EVENTS: Record<EventKey, { emoji: string; label: string; color: number; ca
   email_failed:       { emoji: "⚠️", label: "Confirmation email didn't send", color: 0xd93025, cat: "Email" },
   email_bounced:      { emoji: "↩️", label: "Confirmation email bounced", color: 0xd93025, cat: "Email" },
   email_complained:   { emoji: "🚩", label: "Confirmation email marked as spam", color: 0xd93025, cat: "Email" },
+  email_opened:       { emoji: "👀", label: "Lead opened the email", color: 0x1a73e8, cat: "Email" },
   email_whatsapp_tap: { emoji: "💬", label: "Lead tapped WhatsApp", color: 0x25d366, cat: "Email" },
   plan_opened:        { emoji: "📄", label: "Lead opened their selling plan", color: 0x137a3a, cat: "Email" },
   form_type_changed:  { emoji: "🧩", label: "Form type changed",     color: 0x8b5cf6, cat: "Setup" },

@@ -789,7 +789,8 @@ page events, ad pause/resume, disqualifications with the reason) to
 - **Email / plan** (cat "Email"): sent by the database trigger
   `lead_event_to_discord` (migration 20260927_0008) on `lead_events` inserts:
   email sent, didn't send, bounced, marked as spam, first plan open, first
-  WhatsApp tap. Delivered/opened/delayed are not posted (too noisy).
+  WhatsApp tap, first email open (migration 20260927_0009). Delivered and
+  delayed are not posted (too noisy).
 - **Setup** (cat "Setup"): sent from the app, with a "Details" line and
   "Changed by" (filled in automatically): form type changed, page link changed,
   confirmation email switched on/off, email wording changed, client details
@@ -1019,13 +1020,28 @@ here ("Team Alex & Storm").
     (Vercel rewrite) goes to `email-click`, which logs `email_clicked` and
     redirects to the same wa.me link. The destination is always built
     server-side, never taken from the URL.
-  - Resend's click tracking stays off. Its open tracking is optional and
-    over-counts (Apple Mail).
+  - Opens are counted by our own 1px image: `leads.estatekit.co/o/<lead>`
+    (Vercel rewrite) goes to `email-open`, which logs the first
+    `email_opened` and always returns a GIF. Loads in the first 10 seconds
+    after sending are skipped (mail scanners). Still a rough guide: Apple
+    Mail preloads images, some apps block them.
+  - Resend's click and open tracking stay off.
   - **Stats:** the email card on Forms shows the last 30 days as the number
-    of leads (`getEmailStats`), for operators only.
+    of leads, with each as a % of emails sent (`getEmailStats`), for
+    operators only.
 - **Selling plan (lead magnet):** seller emails link to a personal plan at
   `/plan/<token>`. The token is random, stored in `leads.plan_token` and
   minted at send time.
+  - **In the email:** its own green box after the first paragraph (not a
+    line in the text): "How to sell <address> without losing money or time",
+    3 ticked points (4 with "Homes I've sold recently" when the agent has
+    sales) and "Open my selling plan →". Text lives in `PLAN_BLOCK`, in both
+    `src/lib/leadEmail.ts` and `send-lead-confirmation`. Every point must be
+    true of every plan.
+  - **Sample:** `/plan/sample/<agentId>` shows the plan with the agent's
+    real details and a made-up seller (`get_sample_selling_plan`, only for
+    that agent or an operator, logs nothing). Linked from the email card as
+    "See the plan your sellers get".
   - **Content:** built from their answers. The reason for selling picks the 3
     steps (downsizing / retirement, relocating / emigrating, upgrading,
     inherited, financial, or neutral). The timeline picks the urgent tip (the
