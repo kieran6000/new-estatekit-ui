@@ -32,6 +32,7 @@ import { getMyProfile, upsertProfile, type AgentProfile } from "../api/agentProf
 import { panicStopAutomations } from "../api/automations";
 import { useIsOperator } from "../hooks/useAutomations";
 import { useSnack } from "../hooks/useSnack";
+import { trackActivity } from "../lib/activity";
 import AccountSwitcher from "../components/AccountSwitcher";
 import { supabase, getActiveAgentIdSync } from "../api/_client";
 import { tokens } from "../theme";
@@ -322,6 +323,7 @@ export default function AccountPage() {
                     <Button
                       variant="contained"
                       onClick={() => {
+                        trackActivity("whatsapp_number_changed", { agentId: profile?.agentId, detail: `${form.whatsappNumber || "(none)"} → ${waConfirm}` });
                         update("whatsappNumber", waConfirm ?? "");
                         setWaConfirm(null);
                         setWaDraft(null);

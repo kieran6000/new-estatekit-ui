@@ -765,6 +765,7 @@ function ShareSection({ page, onUpdateSlug }: { page: LeadPage; onUpdateSlug?: (
     const clean = slugDraft.toLowerCase().trim().replace(/[^a-z0-9-]+/g, "-").replace(/(^-|-$)/g, "");
     if (clean && clean !== page.slug) {
       onUpdateSlug?.(clean);
+      trackActivity("page_link_changed", { agentId: page.agentId, page: { name: page.name, slug: clean }, detail: `/p/${page.slug} → /p/${clean}. Update any ads pointing at the old link.` });
       showSnack("URL updated");
     }
     setEditingSlug(false);
@@ -1273,6 +1274,7 @@ function PresetBar({ page, canChange, onApplied }: { page: LeadPage; canChange: 
         qc.invalidateQueries({ queryKey: ["leadPages"] }),
       ]);
       posthog.capture("form_preset_applied", { preset: choice, from: page.preset ?? "custom", with_copy: withCopy });
+      trackActivity("form_type_changed", { agentId: page.agentId, page: { name: page.name, slug: page.slug }, detail: `${presetByKey(page.preset)?.name ?? "Custom"} → ${presetByKey(choice)?.name}${withCopy ? " (with standard wording)" : ""}` });
       onApplied();
       setOpen(false);
       showSnack(`Form type changed to ${presetByKey(choice)?.name}`);

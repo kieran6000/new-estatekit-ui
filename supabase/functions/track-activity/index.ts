@@ -18,7 +18,12 @@ const EK_LOGO = "https://leads.estatekit.co/favicon.svg";
 type EventKey =
   | "login" | "new_lead" | "form_submitted" | "lead_disqualified" | "stage_change"
   | "call_started" | "note_added" | "lead_page_created" | "lead_page_deleted" | "sold_listing_added"
-  | "page_view" | "form_started" | "form_contact_step" | "ad_paused" | "ad_resumed";
+  | "page_view" | "form_started" | "form_contact_step" | "ad_paused" | "ad_resumed"
+  // Confirmation email + selling plan (sent by the database as they happen)
+  | "email_sent" | "email_failed" | "email_bounced" | "email_complained" | "email_whatsapp_tap" | "plan_opened"
+  // Setup changes made in the app
+  | "form_type_changed" | "email_switched" | "email_wording_changed" | "client_details_edited"
+  | "whatsapp_number_changed" | "page_link_changed";
 
 const EVENTS: Record<EventKey, { emoji: string; label: string; color: number; cat: string }> = {
   login:              { emoji: "🔓", label: "Signed in",            color: 0x6366f1, cat: "Agent" },
@@ -36,6 +41,18 @@ const EVENTS: Record<EventKey, { emoji: string; label: string; color: number; ca
   form_contact_step:  { emoji: "✍️", label: "Reached contact details", color: 0xf59e0b, cat: "Funnel" },
   ad_paused:          { emoji: "⏸️", label: "Ad paused",             color: 0xd93025, cat: "Ads" },
   ad_resumed:         { emoji: "▶️", label: "Ad resumed",            color: 0x1e8e3e, cat: "Ads" },
+  email_sent:         { emoji: "📧", label: "Confirmation email sent", color: 0x1a73e8, cat: "Email" },
+  email_failed:       { emoji: "⚠️", label: "Confirmation email didn't send", color: 0xd93025, cat: "Email" },
+  email_bounced:      { emoji: "↩️", label: "Confirmation email bounced", color: 0xd93025, cat: "Email" },
+  email_complained:   { emoji: "🚩", label: "Confirmation email marked as spam", color: 0xd93025, cat: "Email" },
+  email_whatsapp_tap: { emoji: "💬", label: "Lead tapped WhatsApp", color: 0x25d366, cat: "Email" },
+  plan_opened:        { emoji: "📄", label: "Lead opened their selling plan", color: 0x137a3a, cat: "Email" },
+  form_type_changed:  { emoji: "🧩", label: "Form type changed",     color: 0x8b5cf6, cat: "Setup" },
+  email_switched:     { emoji: "🔔", label: "Confirmation email switched", color: 0x8b5cf6, cat: "Setup" },
+  email_wording_changed: { emoji: "✏️", label: "Email wording changed", color: 0x8b5cf6, cat: "Setup" },
+  client_details_edited: { emoji: "🗂️", label: "Client details edited", color: 0x8b5cf6, cat: "Setup" },
+  whatsapp_number_changed: { emoji: "📱", label: "WhatsApp number changed", color: 0xf59e0b, cat: "Setup" },
+  page_link_changed:  { emoji: "🔗", label: "Page link changed",     color: 0xf59e0b, cat: "Setup" },
 };
 
 function json(body: unknown, status = 200) {
@@ -156,6 +173,9 @@ Deno.serve(async (req) => {
       if (b.actorName) fields.push({ name: "Changed by", value: String(b.actorName), inline: true });
       if (ad.link) fields.push({ name: "Ads Manager", value: `[Open this ad](${ad.link})`, inline: false });
     }
+
+    if (b.detail) fields.push({ name: "Details", value: String(b.detail).slice(0, 1000), inline: false });
+    if (b.actorName && b.event && (EVENTS[b.event as EventKey]?.cat === "Setup")) fields.push({ name: "Changed by", value: String(b.actorName), inline: true });
 
     if (b.device) fields.push({ name: "Device", value: deviceLabel(b.device), inline: true });
 

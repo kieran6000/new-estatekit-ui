@@ -40,6 +40,7 @@ import {
 import { setActiveAgent } from "../api/_client";
 import { useAuth } from "../hooks/useAuth";
 import { useSnack } from "../hooks/useSnack";
+import { trackActivity } from "../lib/activity";
 import { timeAgo } from "../lib/timeAgo";
 
 /** Digits in international form, so 083… and +2783… compare equal. */
@@ -136,6 +137,7 @@ function useClientSaver(agentId: string) {
   return async (work: () => Promise<void>, done = "Saved") => {
     try {
       await work();
+      trackActivity(done.startsWith("Confirmation email") ? "email_switched" : "client_details_edited", { agentId, detail: done });
       await Promise.all([
         qc.invalidateQueries({ queryKey: ["client", agentId] }),
         qc.invalidateQueries({ queryKey: ["clients"] }),

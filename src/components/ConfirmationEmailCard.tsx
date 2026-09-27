@@ -7,6 +7,7 @@ import { upsertProfile, type AgentProfile } from "../api/agentProfile";
 import { useSnack } from "../hooks/useSnack";
 import { fillLeadEmail, LEAD_EMAIL_PLACEHOLDERS, PLAN_LINE_TEXT, STANDARD_LEAD_EMAIL_BODY } from "../lib/leadEmail";
 import InfoTip from "./InfoTip";
+import { trackActivity } from "../lib/activity";
 import { getEmailStats } from "../api/leadEvents";
 
 const SAMPLE = { name: "Thandi", address: "14 Loop Street, Centurion" };
@@ -52,6 +53,12 @@ export default function ConfirmationEmailCard({
     setSaving(true);
     try {
       await upsertProfile(patch, profile!.agentId);
+      if (patch.leadConfirmationEmail !== undefined) {
+        trackActivity("email_switched", { agentId: profile!.agentId, detail: patch.leadConfirmationEmail ? "Switched ON" : "Switched OFF" });
+      }
+      if (patch.leadEmailBody !== undefined) {
+        trackActivity("email_wording_changed", { agentId: profile!.agentId, detail: patch.leadEmailBody ? String(patch.leadEmailBody).slice(0, 600) : "Back to the standard wording" });
+      }
       await Promise.all([qc.invalidateQueries({ queryKey: ["myProfile"] }), qc.invalidateQueries({ queryKey: ["clients"] })]);
       showSnack(done);
     } catch (e) {

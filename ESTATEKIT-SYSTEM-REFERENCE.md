@@ -786,6 +786,15 @@ page events, ad pause/resume, disqualifications with the reason) to
 `DISCORD_ACTIVITY_WEBHOOK`. The embeds include PostHog replay links and a `/l/`
 "Open lead" link.
 
+- **Email / plan** (cat "Email"): sent by the database trigger
+  `lead_event_to_discord` (migration 20260927_0008) on `lead_events` inserts:
+  email sent, didn't send, bounced, marked as spam, first plan open, first
+  WhatsApp tap. Delivered/opened/delayed are not posted (too noisy).
+- **Setup** (cat "Setup"): sent from the app, with a "Details" line and
+  "Changed by" (filled in automatically): form type changed, page link changed,
+  confirmation email switched on/off, email wording changed, client details
+  edited, WhatsApp number changed.
+
 ### PostHog
 All text and inputs are masked. `person_profiles: identified_only`. Needs the
 Vault secrets `POSTHOG_PROJECT_ID` and `POSTHOG_HOST` for replay links.
