@@ -19,7 +19,10 @@
 .plan-ref { text-align: right; font-size: .8em; color: #444; white-space: nowrap; }
 .plan-ref b { color: #111; }
 
-.plan-status { border: 1px solid #111; background: #f0f0f0; padding: 8px 10px; margin-top: 14px; font-size: .93em; }
+.plan-status { display: flex; gap: 12px; align-items: center; background: #137a3a; color: #fff; padding: 14px 16px; margin-top: 16px; border: 2px solid #0b5528; }
+.plan-status svg { width: 34px; height: 34px; flex: none; }
+.plan-status p { margin: 0; font-size: .92em; }
+.plan-status .plan-status-title { font-size: 1.12em; font-weight: 700; margin-bottom: 2px; }
 .plan-page h1 { font-size: 1.45em; margin: 16px 0 2px; letter-spacing: .02em; text-transform: uppercase; }
 .plan-sub { margin: 0 0 12px; color: #444; font-size: .92em; }
 .plan-facts { width: 100%; border-collapse: collapse; font-size: .92em; margin-bottom: 18px; }
@@ -44,7 +47,8 @@
 .plan-next { border: 2px solid #111; margin-top: 22px; padding: 14px; }
 .plan-next h3 { margin: 0 0 4px; font-size: 1.05em; text-transform: uppercase; letter-spacing: .03em; }
 .plan-next p { margin: 0 0 10px; }
-.plan-wa { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; background: #137a3a; color: #fff; text-decoration: none; font-weight: 700; padding: 12px 20px; font-size: 1em; border-radius: 4px; }
+.plan-wa { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 50px; background: #25d366; color: #fff; text-decoration: none; font-weight: 700; padding: 12px 20px; font-size: 1em; border-radius: 0; border: 1px solid #1da851; }
+.plan-wa svg { width: 22px; height: 22px; flex: none; }
 .plan-tel { margin: 10px 0 0 !important; font-size: .92em; }
 .plan-tel a { color: #111; }
 
@@ -58,5 +62,5 @@
   .plan-viewer { background: #fff; padding: 0; }
   .plan-bar { display: none; }
   .plan-page { box-shadow: none; margin: 0 auto; max-width: none; }
-  .plan-wa { border: 1px solid #0b5528; }
+  .plan-wa, .plan-status { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }

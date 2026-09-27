@@ -40,7 +40,7 @@ const REASONS: Record<ReasonKey, { title: string; intro: string; steps: [string,
       ["Sell first, then buy", "When your house is sold, you know exactly how much money you have for the next place."],
       ["Plan one move, not two", "We pick the moving date so you move out and move in on the same day."],
     ],
-    next: "Find out what your home is worth today. Then you know what you can spend on the next one.",
+    next: "When we speak, I'll show you your real number and what that means for your next home. Tell me when suits you for a quick call or visit.",
   },
   relocating: {
     title: "Your Moving Plan",
@@ -50,7 +50,7 @@ const REASONS: Record<ReasonKey, { title: string; intro: string; steps: [string,
       ["I show the house for you", "I handle the keys, the viewings and the buyers."],
       ["Sign from where you live", "You can sign the papers at an attorney close to your new home."],
     ],
-    next: "Tell me your moving date. I will plan the sale around it.",
+    next: "Send me your moving date and when suits you for a quick call. I'll plan the sale around your move.",
   },
   upgrading: {
     title: "Your Upgrade Plan",
@@ -60,7 +60,7 @@ const REASONS: Record<ReasonKey, { title: string; intro: string; steps: [string,
       ["Get an offer on your house first", "Then your offer on the new house is much stronger."],
       ["Match the dates", "So you do not pay two bonds at the same time."],
     ],
-    next: "Find out what your home is worth today, so you know your budget.",
+    next: "When we speak, I'll show you your budget for the next home and how to make your offer stronger. Tell me when suits you.",
   },
   inherited: {
     title: "Your Estate Sale Plan",
@@ -70,7 +70,7 @@ const REASONS: Record<ReasonKey, { title: string; intro: string; steps: [string,
       ["Everyone who inherits must agree", "All the family members who inherit should agree on the sale and the price."],
       ["You can start now", "We can put the house on the market while the papers are being done."],
     ],
-    next: "Tell me where the estate is right now. I will tell you what we can do today.",
+    next: "Tell me where the estate is right now and when suits you to talk. I'll tell you what we can do today.",
   },
   financial: {
     title: "Your Selling Plan",
@@ -80,7 +80,7 @@ const REASONS: Record<ReasonKey, { title: string; intro: string; steps: [string,
       ["Find out your real number", "Know how much money you will have after the bond is paid off."],
       ["Sell on your terms", "A sale you choose gets a better price than a rushed one."],
     ],
-    next: "This stays private. WhatsApp me for a free price and a simple plan.",
+    next: "This stays private. Tell me when suits you for a quick call, and we'll look at your options together.",
   },
   unknown: {
     title: "Your Selling Plan",
@@ -90,7 +90,7 @@ const REASONS: Record<ReasonKey, { title: string; intro: string; steps: [string,
       ["Start with the right price", "Houses that start too high take longer and sell for less."],
       ["Start the papers early", "Some papers take weeks. Starting early stops delays."],
     ],
-    next: "Find out what your home is worth today. It is free.",
+    next: "When we speak, I'll go through your price and a simple plan to sell. Tell me when suits you for a quick call or visit.",
   },
 };
 
@@ -188,8 +188,10 @@ export default function PlanPage() {
   const agentFirst = plan.agent_name.split(/\s+/)[0] || "your agent";
   const initials = plan.agent_name.split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase();
   const phone = digits(plan.agent_phone);
-  const waUrl = phone ? `/w/${plan.lead_id}` : "";
+  const waUrl = phone ? `/w/${plan.lead_id}/plan` : "";
   const address = tidy(plan.address);
+  // Stable for this lead, so it reads the same every time they open it.
+  const ref = `EK-${(plan.date.match(/\d{4}$/) || [""])[0]}-${plan.lead_id.replace(/-/g, "").slice(0, 5).toUpperCase()}`;
 
   return (
     <div className="plan-viewer" style={{ ["--accent" as string]: plan.accent }}>
@@ -204,14 +206,25 @@ export default function PlanPage() {
             {plan.photo ? <img className="plan-photo" src={plan.photo} alt="" /> : <div className="plan-photo">{initials}</div>}
             <div>
               <p className="plan-agent-name">{plan.agent_name}</p>
+              <p className="plan-agent-co">Registered Property Practitioner (PPRA)</p>
               {plan.company && <p className="plan-agent-co">{plan.company}</p>}
             </div>
           </div>
-          <div className="plan-ref">Date: <b>{plan.date}</b></div>
+          <div className="plan-ref">
+            Ref: <b>{ref}</b>
+            <br />
+            Date: <b>{plan.date}</b>
+            <br />
+            Status: <b>In progress</b>
+          </div>
         </header>
 
-        <div className="plan-status">
-          <b>Your home evaluation is being prepared.</b> While you wait, here is your plan.
+        <div className="plan-status" role="status">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#fff" /><path d="M6.5 12.5l3.5 3.5 7.5-8" fill="none" stroke="#137a3a" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          <div>
+            <p className="plan-status-title">Your home evaluation is being prepared</p>
+            <p>{agentFirst} is working on it now. While you wait, here is your plan.</p>
+          </div>
         </div>
 
         <h1>{r.title}</h1>
@@ -274,7 +287,10 @@ export default function PlanPage() {
           <h3>Your next step</h3>
           <p>{r.next}</p>
           {waUrl && (
-            <a className="plan-wa" href={waUrl} target="_blank" rel="noopener">WhatsApp {agentFirst}</a>
+            <a className="plan-wa" href={waUrl} target="_blank" rel="noopener">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#fff" d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18.2c-1.5 0-3-.4-4.2-1.1l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8s-.4-.1-.6.1-.7.8-.8 1-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.2-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.8 11.9 11.9 0 0 0 4.6 4c1.7.7 2.4.8 3.2.7.5-.1 1.5-.6 1.8-1.2s.2-1.1.1-1.2l-.4-.3z"/></svg>
+              WhatsApp {agentFirst} to choose a time
+            </a>
           )}
           {phone && <p className="plan-tel">Or phone: <b>{prettyPhone(plan.agent_phone)}</b></p>}
           {plan.agent_email && <p className="plan-tel">Email: <a href={`mailto:${plan.agent_email}`}>{plan.agent_email}</a></p>}

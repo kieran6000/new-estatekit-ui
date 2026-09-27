@@ -23,7 +23,11 @@ const isMobile = (d: string) => (d.startsWith("27") ? /^27[6-8]\d{8}$/.test(d) :
 const redirect = (to: string) => new Response(null, { status: 302, headers: { Location: to, "Cache-Control": "no-store" } });
 
 Deno.serve(async (req) => {
-  const id = new URL(req.url).searchParams.get("l") || "";
+  const params = new URL(req.url).searchParams;
+  const id = params.get("l") || "";
+  // Where the tap came from: the email (default) or the selling plan. Only a
+  // known value changes the wording; nothing from the URL goes into the link.
+  const fromPlan = params.get("from") === "plan";
   if (!/^[0-9a-f-]{36}$/i.test(id)) return redirect(FALLBACK);
 
   const { data: lead } = await supabase.from("leads").select("id, name, agent_id, pipeline_id, source_page_id, form_answers").eq("id", id).maybeSingle();
@@ -48,14 +52,16 @@ Deno.serve(async (req) => {
       : pipeline?.kind === "general"
         ? "I just sent you my details."
         : `I just requested a home evaluation${address ? ` for ${address}` : ""}.`;
-  const text = `Hi ${agentFirst}, it's ${first(lead.name) || lead.name}. ${what}`;
+  const text = fromPlan
+    ? `Hi ${agentFirst}, it's ${first(lead.name) || lead.name}. I read my selling plan${address ? ` for ${address}` : ""}. When can we talk?`
+    : `Hi ${agentFirst}, it's ${first(lead.name) || lead.name}. ${what}`;
 
   // Record it, but never let that hold up the person on their way to WhatsApp.
   const { error } = await supabase.from("lead_events").insert({
     lead_id: lead.id,
     agent_id: lead.agent_id,
     event_type: "email_clicked",
-    to_value: "Tapped \"message me on WhatsApp\"",
+    to_value: fromPlan ? "Tapped WhatsApp on their selling plan" : "Tapped \"message me on WhatsApp\" in the email",
     source: "automation",
   });
   if (error) console.error("click log failed", error);
