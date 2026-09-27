@@ -997,6 +997,22 @@ here ("Team Alex & Storm").
 - **History:** each send writes "Confirmation email sent" (to whom) or
   "Confirmation email didn't send" (why, shown in red) to the lead's history
   (`lead_events` types `email_sent` / `email_failed`).
+- **Tracking:**
+  - Resend's id is stored in `leads.confirmation_email_id`.
+  - Resend's webhook (all events) calls `resend-webhook`, which checks the
+    Svix signature with the `RESEND_WEBHOOK_SECRET` secret. It writes
+    delivered / delayed / bounced / spam / first open to lead history.
+  - Clicks are counted by our own link: `leads.estatekit.co/w/<lead>`
+    (Vercel rewrite) goes to `email-click`, which logs `email_clicked` and
+    redirects to the same wa.me link. The destination is always built
+    server-side, never taken from the URL.
+  - Resend's click tracking stays off. Its open tracking is optional and
+    over-counts (Apple Mail).
+  - **Stats:** the email card on Forms shows the last 30 days as the number
+    of leads (`getEmailStats`), for operators only.
+- **Recent sales:** seller emails add "In the meantime, here are some homes
+  I've sold recently" when the agent has any. It links to the public
+  `/sold/<agentId>` page, which has a button back to their form.
 - **Setup:** needs the `RESEND_API_KEY` secret. Without it the function
   sends nothing.
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Box, Button, Link, Switch, TextField, Typography } from "@mui/material";
 import LockIcon from "@mui/icons-material/Lock";
 import { tokens } from "../theme";
@@ -7,6 +7,7 @@ import { upsertProfile, type AgentProfile } from "../api/agentProfile";
 import { useSnack } from "../hooks/useSnack";
 import { fillLeadEmail, LEAD_EMAIL_PLACEHOLDERS, STANDARD_LEAD_EMAIL_BODY } from "../lib/leadEmail";
 import InfoTip from "./InfoTip";
+import { getEmailStats } from "../api/leadEvents";
 
 const SAMPLE = { name: "Thandi", address: "14 Loop Street, Centurion" };
 
@@ -25,6 +26,12 @@ export default function ConfirmationEmailCard({
   const showSnack = useSnack();
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
+  const { data: stats } = useQuery({
+    queryKey: ["emailStats", profile?.agentId],
+    queryFn: () => getEmailStats(profile!.agentId),
+    enabled: canSetUp && !!profile?.agentId,
+    staleTime: 60_000,
+  });
 
   useEffect(() => {
     setDraft(profile?.leadEmailBody ?? STANDARD_LEAD_EMAIL_BODY);
@@ -93,6 +100,33 @@ export default function ConfirmationEmailCard({
           onChange={(e) => save({ leadConfirmationEmail: e.target.checked }, e.target.checked ? "Confirmation email on" : "Confirmation email off")}
         />
       </Box>
+
+      {canSetUp && stats && (
+        <Box>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.25 }}>
+            <Typography sx={{ fontSize: 13, fontWeight: 500 }}>Last 30 days</Typography>
+            <InfoTip>
+              Number of leads. Delivered, bounced and spam come from the email service. Opened is only a rough guide: some email apps (like Apple Mail)
+              report every email as opened. WhatsApp taps are counted exactly.
+            </InfoTip>
+          </Box>
+          <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(92px, 1fr))", gap: 1, mt: 0.75 }}>
+            {[
+              ["Sent", stats.sent],
+              ["Delivered", stats.delivered],
+              ["Opened", stats.opened],
+              ["Tapped WhatsApp", stats.clicked],
+              ["Bounced", stats.bounced + stats.failed],
+              ["Marked spam", stats.spam],
+            ].map(([label, n]) => (
+              <Box key={label as string} sx={{ border: `1px solid ${tokens.divider2}`, borderRadius: "6px", px: 1.25, py: 0.75 }}>
+                <Typography sx={{ fontSize: 18, fontWeight: 600, lineHeight: 1.2 }}>{n as number}</Typography>
+                <Typography sx={{ fontSize: 11.5, color: "text.secondary" }}>{label as string}</Typography>
+              </Box>
+            ))}
+          </Box>
+        </Box>
+      )}
 
       {canSetUp && (
         <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>

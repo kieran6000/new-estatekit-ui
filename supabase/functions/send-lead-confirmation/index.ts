@@ -18,6 +18,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 const FROM_ADDRESS = "hello@mail.estatekit.co";
 const PRIVACY_URL = "https://leads.estatekit.co/privacy";
+const APP = "https://leads.estatekit.co";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -138,6 +139,7 @@ Deno.serve(async (req) => {
       : Promise.resolve({ data: null }),
   ]);
   if (!agent?.lead_confirmation_email) return json({ ok: true, skipped: "switched off for this agent" });
+  const { count: salesCount } = await supabase.from("sold_listings").select("id", { count: "exact", head: true }).eq("agent_id", lead.agent_id);
 
   const kind: Kind = pipeline?.kind === "buyer" ? "buyer" : pipeline?.kind === "general" ? "general" : "seller";
   const w = WORDING[kind];
@@ -162,7 +164,10 @@ Deno.serve(async (req) => {
   const replyTo = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(agent.email || "") ? agent.email : undefined;
 
   const waText = `Hi ${agentFirst}, it's ${first(lead.name) || lead.name}. ${w.wa(address)}`;
-  const waUrl = waNumber ? `https://wa.me/${waNumber}?text=${encodeURIComponent(waText)}` : "";
+  void waText; // built again by email-click, which is what the link opens
+  const waUrl = waNumber ? `${APP}/w/${id}` : "";
+  // Social proof while they wait: the agent's recent sales, if they've added any.
+  const salesUrl = kind === "seller" && (salesCount ?? 0) > 0 ? `${APP}/sold/${lead.agent_id}` : "";
 
   const paragraphs: string[] =
     kind === "seller"
@@ -180,6 +185,7 @@ Deno.serve(async (req) => {
 <div style="max-width:560px">
 <p ${p}>Hi ${esc(leadFirst)},</p>
 ${paragraphs.map((t) => `<p ${p}>${t}</p>`).join("\n")}
+${salesUrl ? `<p ${p}>In the meantime, <a href="${esc(salesUrl)}" style="color:#1a73e8">here are some homes I've sold recently</a>.</p>` : ""}
 ${waUrl ? `<p ${p}>If it's easier, you can <a href="${esc(waUrl)}" style="color:#1a73e8">message me on WhatsApp here</a>.</p>` : ""}
 <p style="margin:18px 0 0">${esc(agentFirst)}</p>
 <p style="margin:6px 0 0;font-size:13px;color:#555555;line-height:1.5">
@@ -196,6 +202,7 @@ You're getting this because you asked ${esc(agentName)} for a ${w.request}. It's
     "",
     ...paragraphs.flatMap((t) => [t.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'"), ""]),
     "",
+    salesUrl ? `In the meantime, here are some homes I've sold recently: ${salesUrl}` : "",
     waUrl ? `If it's easier, you can message me on WhatsApp here: ${waUrl}` : "",
     "",
     agentFirst,
@@ -225,6 +232,10 @@ You're getting this because you asked ${esc(agentName)} for a ${w.request}. It's
     await logHistory(id, lead.agent_id, false, `Not delivered to ${lead.email} (email service error ${res.status})`);
     return json({ ok: false, status: res.status }, 502);
   }
+  try {
+    const resendId = (JSON.parse(body) as { id?: string }).id;
+    if (resendId) await supabase.from("leads").update({ confirmation_email_id: resendId }).eq("id", id);
+  } catch { /* the email still went; only its later reports won't match */ }
   await logHistory(id, lead.agent_id, true, `To ${lead.email}`);
   console.log("lead confirmation sent", id);
   return json({ ok: true });

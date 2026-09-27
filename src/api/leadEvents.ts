@@ -4,7 +4,13 @@ export type LeadEventType =
   | "created" | "stage_changed" | "note_changed" | "archived" | "restored"
   | "pipeline_moved" | "call" | "whatsapp_sent"
   | "email_sent"
-  | "email_failed";
+  | "email_failed"
+  | "email_delivered"
+  | "email_delayed"
+  | "email_bounced"
+  | "email_complained"
+  | "email_opened"
+  | "email_clicked";
 
 export type LeadEventSource =
   | "dashboard" | "action_link" | "automation" | "facebook" | "website" | "system" | "backfill";
@@ -57,4 +63,39 @@ export function logLeadCall(leadId: string, agentId: string): void {
 /** Record a Call tap from a signed-out WhatsApp action link. */
 export function logCallByToken(token: string): void {
   supabase.functions.invoke("lead-call", { body: { token } }).catch(() => {});
+}
+
+export interface EmailStats {
+  sent: number;
+  delivered: number;
+  opened: number;
+  clicked: number;
+  bounced: number;
+  failed: number;
+  spam: number;
+}
+
+/** Confirmation email results for one agent: the number of LEADS with each
+ *  outcome in the last `days` days (not raw event counts). Operators only
+ *  (lead history is operator-readable). */
+export async function getEmailStats(agentId: string, days = 30): Promise<EmailStats> {
+  const since = new Date(Date.now() - days * 864e5).toISOString();
+  const { data, error } = await supabase
+    .from("lead_events")
+    .select("lead_id, event_type")
+    .eq("agent_id", agentId)
+    .like("event_type", "email_%")
+    .gte("created_at", since)
+    .limit(5000);
+  if (error) throw new Error(error.message);
+  const leads = (t: string) => new Set((data ?? []).filter((r) => r.event_type === t).map((r) => r.lead_id)).size;
+  return {
+    sent: leads("email_sent"),
+    delivered: leads("email_delivered"),
+    opened: leads("email_opened"),
+    clicked: leads("email_clicked"),
+    bounced: leads("email_bounced"),
+    failed: leads("email_failed"),
+    spam: leads("email_complained"),
+  };
 }

@@ -65,6 +65,18 @@ function describe(e: LeadEvent): string {
       return "Confirmation email sent";
     case "email_failed":
       return "Confirmation email didn't send";
+    case "email_delivered":
+      return "Confirmation email delivered";
+    case "email_delayed":
+      return "Confirmation email delayed";
+    case "email_bounced":
+      return "Confirmation email bounced";
+    case "email_complained":
+      return "Confirmation email marked as spam";
+    case "email_opened":
+      return "Opened the confirmation email";
+    case "email_clicked":
+      return "Tapped WhatsApp in the email";
     default:
       return e.event_type;
   }
@@ -132,7 +144,7 @@ export default function LeadHistory({ leadId }: { leadId: string }) {
         const device = deviceOf(e.device);
         // Backfilled rows carry a stand-in timestamp, so don't show a time for them.
         const when = e.source === "backfill" ? "" : timeAgo(e.created_at);
-        const isEmail = e.event_type === "email_sent" || e.event_type === "email_failed";
+        const isEmail = e.event_type.startsWith("email_");
         // For sends, the detail line says what was sent / to whom, not "Automation".
         const via = e.event_type === "whatsapp_sent" || isEmail ? e.to_value ?? "" : SOURCE_LABEL[e.source] ?? "";
         const SourceIcon = e.event_type === "whatsapp_sent" ? WhatsAppIcon : isEmail ? MailOutlineIcon : SOURCE_ICON[e.source] ?? HistoryIcon;
@@ -158,7 +170,7 @@ export default function LeadHistory({ leadId }: { leadId: string }) {
             )}
 
             <Box sx={{ minWidth: 0, flex: 1 }}>
-              <Typography sx={{ fontSize: 14, color: e.event_type === "email_failed" ? "error.main" : undefined }}>{describe(e)}</Typography>
+              <Typography sx={{ fontSize: 14, color: ["email_failed", "email_bounced", "email_complained"].includes(e.event_type) ? "error.main" : undefined }}>{describe(e)}</Typography>
               {e.event_type === "note_changed" && e.to_value && (
                 <Typography
                   sx={{

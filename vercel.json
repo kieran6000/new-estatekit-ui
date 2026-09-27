@@ -1,3 +1,6 @@
 {
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "rewrites": [
+    { "source": "/w/:id", "destination": "https://yfcnsvrhojpysrzqrkdi.supabase.co/functions/v1/email-click?l=:id" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }
