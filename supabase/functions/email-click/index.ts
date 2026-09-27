@@ -17,7 +17,9 @@ const digits = (s: string | null | undefined) => {
   const d = (s || "").replace(/\D/g, "");
   return d.length === 10 && d.startsWith("0") ? "27" + d.slice(1) : d;
 };
-const isMobile = (d: string) => /^27[6-8]\d{8}$/.test(d);
+// WhatsApp needs a cellphone. South African numbers must be mobiles (06/07/08,
+// not an 010/011 office line); other countries (e.g. Namibia +264) are accepted.
+const isMobile = (d: string) => (d.startsWith("27") ? /^27[6-8]\d{8}$/.test(d) : /^[1-9]\d{8,14}$/.test(d));
 const redirect = (to: string) => new Response(null, { status: 302, headers: { Location: to, "Cache-Control": "no-store" } });
 
 Deno.serve(async (req) => {

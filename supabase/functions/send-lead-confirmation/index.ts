@@ -158,7 +158,9 @@ Deno.serve(async (req) => {
   const address = rawAddress === rawAddress.toLowerCase() ? rawAddress.replace(/\b([a-z])/g, (m) => m.toUpperCase()) : rawAddress;
   // WhatsApp only works to a cellphone, so use the agent's WhatsApp number
   // (a page's number can be an office landline). Calls can use either.
-  const isMobile = (d: string) => /^27[6-8]\d{8}$/.test(d);
+  // WhatsApp needs a cellphone. South African numbers must be mobiles (06/07/08,
+  // not an 010/011 office line); other countries (e.g. Namibia +264) are accepted.
+  const isMobile = (d: string) => (d.startsWith("27") ? /^27[6-8]\d{8}$/.test(d) : /^[1-9]\d{8,14}$/.test(d));
   const waNumber = [digits(agent.whatsapp_number), digits(page?.phone)].find(isMobile) || "";
   const callNumber = digits(page?.phone || agent.whatsapp_number);
   const replyTo = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(agent.email || "") ? agent.email : undefined;
