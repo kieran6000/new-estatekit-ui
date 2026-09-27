@@ -283,16 +283,27 @@ export default function PlanPage() {
           </>
         )}
 
+        <h2><span>{plan.sales.length > 0 ? "4." : "3."}</span> What you get when you sell with me</h2>
+        {/* Only promises that hold for every agent on the platform. Staging,
+            professional photos etc. would need a per-agent opt-in first. */}
+        <ul className="plan-why">
+          <li><b>You pay nothing until your house is sold.</b> My commission is only paid on transfer.</li>
+          <li><b>The right price from real sales</b>, not guesswork, so your house doesn't sit on the market.</li>
+          <li><b>Marketed online and to buyers I'm already talking to</b> in your area.</li>
+          <li><b>I handle the viewings, the offers and the attorneys</b>, so you don't have to.</li>
+          <li><b>Regular updates</b> on who viewed your home and what they said.</li>
+        </ul>
+
         <section className="plan-next">
-          <h3>Your next step</h3>
+          <h3>Book your free consultation</h3>
           <p>{r.next}</p>
           {waUrl && (
             <a className="plan-wa" href={waUrl} target="_blank" rel="noopener">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#fff" d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18.2c-1.5 0-3-.4-4.2-1.1l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8s-.4-.1-.6.1-.7.8-.8 1-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.2-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.8 11.9 11.9 0 0 0 4.6 4c1.7.7 2.4.8 3.2.7.5-.1 1.5-.6 1.8-1.2s.2-1.1.1-1.2l-.4-.3z"/></svg>
-              WhatsApp {agentFirst} to choose a time
+              Book my free consultation
             </a>
           )}
-          {phone && <p className="plan-tel">Or phone: <b>{prettyPhone(plan.agent_phone)}</b></p>}
+          {phone && <p className="plan-tel">Or phone {agentFirst}: <b>{prettyPhone(plan.agent_phone)}</b></p>}
           {plan.agent_email && <p className="plan-tel">Email: <a href={`mailto:${plan.agent_email}`}>{plan.agent_email}</a></p>}
         </section>
 

@@ -64,3 +64,6 @@
   .plan-page { box-shadow: none; margin: 0 auto; max-width: none; }
   .plan-wa, .plan-status { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+.plan-why { margin: 0; padding-left: 1.2em; display: grid; gap: 8px; }
+.plan-why li::marker { color: #137a3a; }
