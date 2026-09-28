@@ -54,6 +54,8 @@ export interface ClientProfile {
 
 export interface ClientCardRow extends ClientProfile {
   live: ClientLive | null;
+  /** Recent sales on record (for the Get set up progress). */
+  sales_count: number;
 }
 
 const PROFILE_COLS =
@@ -61,13 +63,16 @@ const PROFILE_COLS =
 
 /** Everything the grid needs, in two small reads. */
 export async function listClients(): Promise<ClientCardRow[]> {
-  const [profiles, live] = await Promise.all([
+  const [profiles, live, sold] = await Promise.all([
     supabase.from("agent_profiles").select(PROFILE_COLS).eq("is_operator", false).order("display_name"),
     supabase.rpc("client_directory"),
+    supabase.from("sold_listings").select("agent_id"),
   ]);
   if (profiles.error) throw new Error(profiles.error.message);
   const liveBy = new Map(((live.data ?? []) as ClientLive[]).map((r) => [r.agent_id, r]));
-  return (profiles.data as ClientProfile[]).map((p) => ({ ...p, live: liveBy.get(p.agent_id) ?? null }));
+  const salesBy = new Map<string, number>();
+  for (const r of (sold.data ?? []) as { agent_id: string }[]) salesBy.set(r.agent_id, (salesBy.get(r.agent_id) ?? 0) + 1);
+  return (profiles.data as ClientProfile[]).map((p) => ({ ...p, live: liveBy.get(p.agent_id) ?? null, sales_count: salesBy.get(p.agent_id) ?? 0 }));
 }
 
 /** Ad spend over the last 30 days, from Meta. null when there's no ad

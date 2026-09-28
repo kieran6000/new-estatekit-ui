@@ -24,10 +24,12 @@ import SearchIcon from "@mui/icons-material/Search";
 import CloseIcon from "@mui/icons-material/Close";
 import { tokens } from "../theme";
 import { clientPicture, cplLabel, getSpend30d, listClients, type ClientCardRow } from "../api/clients";
+import { setupProgress, SETUP_TOTAL } from "../lib/setup";
+
 import { timeAgo } from "../lib/timeAgo";
 import SignupRequests from "../components/SignupRequests";
 
-type ColKey = "name" | "agency" | "area" | "leads" | "cpl" | "last";
+type ColKey = "name" | "agency" | "area" | "leads" | "cpl" | "last" | "setup";
 type Dir = "asc" | "desc";
 
 interface Row {
@@ -40,6 +42,8 @@ interface Row {
   cpl: number | null | undefined;
   spend: number | null | undefined;
   last: number | null;
+  /** Get set up: how many of the six are done. */
+  setup: number;
 }
 
 const COLS: { k: ColKey; label: string; num?: boolean; wideOnly?: boolean; firstDir: Dir }[] = [
@@ -49,6 +53,7 @@ const COLS: { k: ColKey; label: string; num?: boolean; wideOnly?: boolean; first
   { k: "leads", label: "Leads 30d", num: true, firstDir: "desc" },
   { k: "cpl", label: "CPL 30d", num: true, firstDir: "asc" },
   { k: "last", label: "Last lead", num: true, firstDir: "desc" },
+  { k: "setup", label: "Set up", num: true, firstDir: "asc" },
 ];
 
 function cityOf(area: string): string {
@@ -120,6 +125,14 @@ export default function ClientsPage() {
         cpl,
         spend,
         last: c.live?.last_lead_at ? new Date(c.live.last_lead_at).getTime() : null,
+        setup: setupProgress({
+          displayName: c.display_name,
+          company: c.company,
+          whatsappNumber: c.whatsapp_number,
+          email: c.email,
+          avatarUrl: c.avatar_url,
+          salesCount: c.sales_count,
+        }).done,
       };
     });
     // spendKey stands in for the query results, which are a new array each render.
@@ -239,6 +252,9 @@ export default function ClientsPage() {
                   </TableCell>
                   <TableCell align="right" sx={{ whiteSpace: "nowrap", color: r.last ? tokens.ink : tokens.ink3 }}>
                     {r.c.live?.last_lead_at ? timeAgo(r.c.live.last_lead_at) : "never"}
+                  </TableCell>
+                  <TableCell align="right" sx={{ whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums", color: r.setup === SETUP_TOTAL ? "success.main" : tokens.ink }}>
+                    {r.setup === SETUP_TOTAL ? "Done" : `${r.setup}/${SETUP_TOTAL}`}
                   </TableCell>
                 </TableRow>
               ))}

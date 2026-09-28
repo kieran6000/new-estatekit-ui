@@ -31,12 +31,16 @@ import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
 import DashboardIcon from "@mui/icons-material/Dashboard";
 import GroupsOutlinedIcon from "@mui/icons-material/GroupsOutlined";
 import GroupsIcon from "@mui/icons-material/Groups";
+import ChecklistIcon from "@mui/icons-material/Checklist";
+import ChecklistOutlinedIcon from "@mui/icons-material/ChecklistRtl";
 import { tokens } from "../theme";
 import { useAuth } from "../hooks/useAuth";
 import { useIsOperator } from "../hooks/useAutomations";
 import { usePageviewTracking } from "../hooks/usePageviewTracking";
 import { useRealtimeSubscriptions } from "../hooks/useRealtime";
 import { getMyProfile } from "../api/agentProfile";
+import { listMySoldListings } from "../api/soldListings";
+import { setupProgress } from "../lib/setup";
 import { getActiveAgentIdSync, setActiveAgent } from "../api/_client";
 import { isLightColor } from "../lib/contrast";
 import AccountSwitcher from "./AccountSwitcher";
@@ -52,6 +56,7 @@ function activeSection(pathname: string): string {
   if (pathname.startsWith("/admin/clients")) return "clients";
   if (pathname.startsWith("/admin")) return "automations";
   if (pathname.startsWith("/account")) return "account";
+  if (pathname.startsWith("/setup")) return "setup";
   return "leads";
 }
 
@@ -68,6 +73,10 @@ export default function AppShell() {
   usePageviewTracking();
   useRealtimeSubscriptions();
   const { data: profile } = useQuery({ queryKey: ["myProfile"], queryFn: getMyProfile, enabled: !!user, staleTime: 5 * 60_000 });
+  const { data: sales } = useQuery({ queryKey: ["mySold"], queryFn: listMySoldListings, enabled: !!user, staleTime: 5 * 60_000 });
+  // "Get set up" sits in the menu until the account is complete (or while on it).
+  const setup = profile && sales ? setupProgress({ ...profile, salesCount: sales.length }) : null;
+  const showSetup = (!!setup && !setup.complete) || pathname.startsWith("/setup");
   const initial = useMemo(() => (user?.phone || "?")[0].toUpperCase(), [user]);
 
 
@@ -84,6 +93,9 @@ export default function AppShell() {
 
   const SZ = 20;
   const agentNav = [
+    ...(showSetup
+      ? [{ key: "setup", label: setup ? `Get set up · ${setup.done}/${setup.total}` : "Get set up", icon: <ChecklistOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <ChecklistIcon sx={{ fontSize: SZ }} />, to: "/setup" }]
+      : []),
     ...(import.meta.env.DEV ? [{ key: "home", label: "Dashboard", icon: <HomeOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <HomeIcon sx={{ fontSize: SZ }} />, to: "/home" }] : []),
     { key: "leads", label: "Leads", icon: <ContactsOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <ContactsIcon sx={{ fontSize: SZ }} />, to: "/leads" },
     { key: "mypage", label: "Forms", icon: <WebOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <WebIcon sx={{ fontSize: SZ }} />, to: "/lead-page" },
@@ -106,6 +118,7 @@ export default function AppShell() {
   });
 
   const mobileNav = [
+    ...(showSetup && !isOperator ? [{ key: "setup", label: "Set up", icon: <ChecklistOutlinedIcon />, activeIcon: <ChecklistIcon />, to: "/setup" }] : []),
     { key: "leads", label: "Leads", icon: <ContactsOutlinedIcon />, activeIcon: <ContactsIcon />, to: "/leads" },
     { key: "mypage", label: "Forms", icon: <WebOutlinedIcon />, activeIcon: <WebIcon />, to: "/lead-page" },
     ...(isOperator

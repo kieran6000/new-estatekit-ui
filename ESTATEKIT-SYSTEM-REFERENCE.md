@@ -231,6 +231,7 @@ conditioning).
 | `/leads/:id` | LeadDetailPage | signed in |
 | `/lead-page` | LeadPagePage ("Forms") | signed in |
 | `/account` | AccountPage | signed in |
+| `/setup` | SetupPage: "Get set up" checklist with progress bar, autosaves | signed in |
 | `/upgrade` | UpgradePage | signed in |
 | `/overview` | OverviewPage | **operator** (route guard) |
 | `/admin/clients` | ClientsPage: every client as a card | **operator** (route guard) |
@@ -245,6 +246,15 @@ conditioning).
 
 `OnboardingGate` sends not-yet-onboarded users to `/welcome`. It checks the
 **logged-in** user, not the account being viewed.
+
+**Get set up (`/setup`)**: the six things sellers see, in this order: photo,
+3 recent sales, full name, WhatsApp cellphone, reply email, agency
+(`src/lib/setup.ts` decides "done"). No submit button: text saves after a
+pause or on leaving the box; a WhatsApp change is confirmed in a dialog. It
+is in the menu (with "4/6") until all six are done, then reachable from
+Account ("Your set-up checklist"). The Clients list has a "Set up" column.
+The brief (wants, city, suburbs, budget, agency) is asked on `/start`, and
+Facebook access on the onboarding call, so neither is repeated here.
 
 ### Who can do what (agents use, operators set up)
 Setup actions are **operator-only in the app** (a screen-level lock to stop
@@ -892,6 +902,9 @@ bypass RLS, **so every function must check its own caller.**
    `company`, `fb_page_id`, `fb_ad_account_id` (digits, no `act_`).
 3. Optional white-label: `sidebar_color`, `sidebar_logo_url`.
 4. The agent logs in, goes through `/welcome`, and sets their own password.
+   Then "Get set up" asks for the rest (photo, 3 sales, etc.). Check their
+   "Set up" column on Clients before the onboarding call and do what's left
+   with them.
 5. Build their lead source (below). Check that "New lead — instant agent ping"
    reaches their WhatsApp with a test lead using your own number.
 

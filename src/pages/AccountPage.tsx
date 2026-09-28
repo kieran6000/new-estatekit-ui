@@ -32,6 +32,7 @@ import { getMyProfile, upsertProfile, type AgentProfile } from "../api/agentProf
 import { panicStopAutomations } from "../api/automations";
 import { useIsOperator } from "../hooks/useAutomations";
 import { useSnack } from "../hooks/useSnack";
+import { Link as RouterLink } from "react-router-dom";
 import { trackActivity } from "../lib/activity";
 import AccountSwitcher from "../components/AccountSwitcher";
 import { supabase, getActiveAgentIdSync } from "../api/_client";
@@ -290,6 +291,11 @@ export default function AccountPage() {
                 </CardContent>
               </Card>
             )}
+
+            {/* Once it's all done, "Get set up" leaves the menu; it stays reachable here. */}
+            <Button component={RouterLink} to="/setup" variant="outlined" fullWidth sx={{ mb: 3 }}>
+              Your set-up checklist
+            </Button>
 
             <Card variant="outlined" sx={{ mb: 3 }}>
               <CardContent sx={{ display: "flex", flexDirection: "column", gap: 2.5 }}>
