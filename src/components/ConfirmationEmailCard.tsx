@@ -176,7 +176,7 @@ export default function ConfirmationEmailCard({
           <Box sx={{ display: "flex", alignItems: "center", gap: 0.25 }}>
             <Typography sx={{ fontSize: 12, color: "text.secondary" }}>Preview (sample lead)</Typography>
             <InfoTip>
-              Seller leads also get a selling plan with your name, photo, phone number and recent sales. The button shows it with a made-up seller.
+              Seller leads also get a marketing plan with your name, photo, phone number and recent sales. The button shows it with a made-up seller.
               The "Homes I've sold recently" line only shows if you have sales under Recent sales.
             </InfoTip>
           </Box>
@@ -194,13 +194,13 @@ export default function ConfirmationEmailCard({
               <Box key={i}>
                 <Typography sx={{ fontSize: 14, mb: 1.25 }}>{t}</Typography>
                 {i === 0 && (
-                  <Box sx={{ borderLeft: "4px solid #137a3a", bgcolor: "#f1f8f3", px: 2, py: 1.5, mb: 1.5 }}>
+                  <Box sx={{ borderLeft: "4px solid #1565c0", bgcolor: "#eef4fc", px: 2, py: 1.5, mb: 1.5 }}>
                     <Typography sx={{ fontSize: 15, fontWeight: 700, color: "#111", lineHeight: 1.35, mb: 0.5 }}>{PLAN_BLOCK.title(SAMPLE.address)}</Typography>
                     <Typography sx={{ fontSize: 14, mb: 0.75 }}>{PLAN_BLOCK.intro}</Typography>
                     {[...PLAN_BLOCK.points, PLAN_BLOCK.salesPoint].map((pt) => (
                       <Typography key={pt} sx={{ fontSize: 14, mb: 0.25 }}>✓&nbsp; {pt}</Typography>
                     ))}
-                    <Link href={sampleUrl} target="_blank" rel="noopener" underline="always" sx={{ display: "inline-block", mt: 1, fontSize: 15, fontWeight: 700, color: "#137a3a" }}>
+                    <Link href={sampleUrl} target="_blank" rel="noopener" underline="always" sx={{ display: "inline-block", mt: 1, fontSize: 15, fontWeight: 700, color: "#1565c0" }}>
                       {PLAN_BLOCK.link} →
                     </Link>
                   </Box>

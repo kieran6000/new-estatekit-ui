@@ -78,7 +78,7 @@ function describe(e: LeadEvent): string {
     case "email_clicked":
       return "Tapped WhatsApp in the email";
     case "plan_opened":
-      return "Opened their selling plan";
+      return "Opened their marketing plan";
     default:
       return e.event_type;
   }

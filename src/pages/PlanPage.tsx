@@ -5,16 +5,20 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "../api/_client";
 import "./plan.css";
 
-// The personal "Selling Plan" linked from the confirmation email
-// (leads.estatekit.co/plan/<token>). Built from the lead's own answers: the
-// reason for selling picks the steps, the timeline picks the urgent tip.
-// The same wording for every agent; only the agent's details and the lead's
-// answers change. Real proof only: the agent's own recent sales, no invented
-// testimonials, and no generated signature.
+// The "Marketing Plan" linked from the confirmation email
+// (leads.estatekit.co/plan/<token>). One standard plan for every seller and
+// every agent (Bennie, Sept 2026: keep it simple, people don't read long
+// plans). Only their name, address and one timing tip are personal.
+// Every line must be true for every agent: agent-specific promises (show
+// house, paying for certificates...) need a per-agent opt-in first.
+// Real proof only: the agent's own recent sales, no invented testimonials,
+// and no generated signature.
 //
 // /plan/sample/<agent id>: the same page with the agent's real details and a
 // made-up seller, opened from the Forms page so agents see what sellers get.
 // Only for the agent themselves or an operator; nothing is logged.
+
+const TITLE = "Your Marketing Plan";
 
 interface Plan {
   lead_id: string;
@@ -33,77 +37,13 @@ interface Plan {
   sales: { address: string; price: number | null; status: string; image_url: string | null }[];
 }
 
-type ReasonKey = "downsizing" | "relocating" | "upgrading" | "inherited" | "financial" | "unknown";
 type TimeKey = "asap" | "1-3" | "3-6" | "6-12" | "notsure";
-
-const REASONS: Record<ReasonKey, { title: string; intro: string; steps: [string, string][]; next: string }> = {
-  downsizing: {
-    title: "Your Downsizing Plan",
-    intro: "You want a smaller home. Most people shop for the new place first. That is the wrong order.",
-    steps: [
-      ["Find out your real number", "Your selling price, minus the costs, is the money you get. I will work this out with you."],
-      ["Sell first, then buy", "When your house is sold, you know exactly how much money you have for the next place."],
-      ["Plan one move, not two", "We pick the moving date so you move out and move in on the same day."],
-    ],
-    next: "When we speak, I'll show you your real number and what that means for your next home. Tell me when suits you for a quick call or visit.",
-  },
-  relocating: {
-    title: "Your Moving Plan",
-    intro: "You are moving away. You can sell your house without being here.",
-    steps: [
-      ["Set the right price from day one", "A house that does not sell keeps costing you money every month."],
-      ["I show the house for you", "I handle the keys, the viewings and the buyers."],
-      ["Sign from where you live", "You can sign the papers at an attorney close to your new home."],
-    ],
-    next: "Send me your moving date and when suits you for a quick call. I'll plan the sale around your move.",
-  },
-  upgrading: {
-    title: "Your Upgrade Plan",
-    intro: "You want a bigger home. Sellers like buyers whose house is already sold.",
-    steps: [
-      ["Find out your real number", "The money you get from this house sets your budget for the next one."],
-      ["Get an offer on your house first", "Then your offer on the new house is much stronger."],
-      ["Match the dates", "So you do not pay two bonds at the same time."],
-    ],
-    next: "When we speak, I'll show you your budget for the next home and how to make your offer stronger. Tell me when suits you.",
-  },
-  inherited: {
-    title: "Your Estate Sale Plan",
-    intro: "You inherited this house. I am sorry for your loss. Here is how the sale works.",
-    steps: [
-      ["The executor gets a letter", "The Master of the High Court gives the executor a Letter of Executorship. The sale can only finish after that."],
-      ["Everyone who inherits must agree", "All the family members who inherit should agree on the sale and the price."],
-      ["You can start now", "We can put the house on the market while the papers are being done."],
-    ],
-    next: "Tell me where the estate is right now and when suits you to talk. I'll tell you what we can do today.",
-  },
-  financial: {
-    title: "Your Selling Plan",
-    intro: "If money is tight, acting early gives you more choices and a better price.",
-    steps: [
-      ["Talk to your bank early", "Banks are more helpful when you call them before payments are missed."],
-      ["Find out your real number", "Know how much money you will have after the bond is paid off."],
-      ["Sell on your terms", "A sale you choose gets a better price than a rushed one."],
-    ],
-    next: "This stays private. Tell me when suits you for a quick call, and we'll look at your options together.",
-  },
-  unknown: {
-    title: "Your Selling Plan",
-    intro: "Whatever your reason, these three things decide how much money you get.",
-    steps: [
-      ["Find out your real number", "Your price, minus the costs, is the money you get."],
-      ["Start with the right price", "Houses that start too high take longer and sell for less."],
-      ["Start the papers early", "Some papers take weeks. Starting early stops delays."],
-    ],
-    next: "When we speak, I'll go through your price and a simple plan to sell. Tell me when suits you for a quick call or visit.",
-  },
-};
 
 const TIMES: Record<TimeKey, { label: string; tipTitle: string; tip: string }> = {
   asap: {
     label: "As soon as possible",
     tipTitle: "Do this this week",
-    tip: "If you have a bond, tell your bank you are selling. The bank needs 90 days (3 months) of notice. Also book the electrician for your certificate. These two things slow down most quick sales.",
+    tip: "If you have a bond, tell your bank you are selling. The bank needs 90 days (3 months) of notice. This is what slows down most quick sales.",
   },
   "1-3": {
     label: "In 1 to 3 months",
@@ -113,7 +53,7 @@ const TIMES: Record<TimeKey, { label: string; tipTitle: string; tip: string }> =
   "3-6": {
     label: "In 3 to 6 months",
     tipTitle: "Use this time",
-    tip: "You have time to fix small things, like broken lights and leaking taps. Inspectors and buyers notice these. I can tell you which fixes are worth it.",
+    tip: "You have time to fix small things, like broken lights and leaking taps. Buyers notice these. I can tell you which fixes are worth it.",
   },
   "6-12": {
     label: "In 6 to 12 months",
@@ -126,18 +66,6 @@ const TIMES: Record<TimeKey, { label: string; tipTitle: string; tip: string }> =
     tip: "You do not need to decide today. Knowing what your house is worth makes the choice much easier.",
   },
 };
-
-function reasonKey(r: string): { key: ReasonKey; label: string | null } {
-  const s = r.toLowerCase();
-  if (s.startsWith("downsizing")) return { key: "downsizing", label: "Downsizing" };
-  if (s.startsWith("retirement")) return { key: "downsizing", label: "Retiring" };
-  if (s.startsWith("relocating")) return { key: "relocating", label: "Moving to a new area" };
-  if (s.startsWith("emigrating")) return { key: "relocating", label: "Emigrating" };
-  if (s.startsWith("upgrading")) return { key: "upgrading", label: "Upgrading to a bigger home" };
-  if (s.startsWith("inherited")) return { key: "inherited", label: "Inherited the house" };
-  if (s.startsWith("financial")) return { key: "financial", label: "Money reasons" };
-  return { key: "unknown", label: null };
-}
 
 function timeKey(t: string): TimeKey {
   const s = t.toLowerCase();
@@ -184,12 +112,10 @@ export default function PlanPage() {
     retry: 1,
   });
 
-  const reason = reasonKey(plan?.reason || "");
-  const r = REASONS[reason.key];
   const t = TIMES[timeKey(plan?.timeline || "")];
   useEffect(() => {
-    if (plan) document.title = `${r.title} · ${plan.agent_name}`;
-  }, [plan, r.title]);
+    if (plan) document.title = `${TITLE} · ${plan.agent_name}`;
+  }, [plan]);
 
   if (!valid || isError || (!isLoading && !plan)) {
     return (
@@ -214,7 +140,7 @@ export default function PlanPage() {
   return (
     <div className="plan-viewer" style={{ ["--accent" as string]: plan.accent }}>
       <div className="plan-bar">
-        <span className="plan-file">{sample ? "Sample: what your sellers get (made-up seller, your details)" : r.title}</span>
+        <span className="plan-file">{sample ? "Sample: what your sellers get (made-up seller, your details)" : TITLE}</span>
         <button type="button" onClick={() => window.print()}>Save as PDF</button>
       </div>
 
@@ -238,55 +164,55 @@ export default function PlanPage() {
         </header>
 
         <div className="plan-status" role="status">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#fff" /><path d="M6.5 12.5l3.5 3.5 7.5-8" fill="none" stroke="#137a3a" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#fff" /><path d="M6.5 12.5l3.5 3.5 7.5-8" fill="none" stroke="#1565c0" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
           <div>
             <p className="plan-status-title">Your home evaluation is being prepared</p>
-            <p>{agentFirst} is working on it now. While you wait, here is your plan.</p>
+            <p>{agentFirst} is working on it now. While you wait, here is how I'll sell your home.</p>
           </div>
         </div>
 
-        <h1>{r.title}</h1>
-        <p className="plan-sub"><b>3 steps to sell your home without losing money or time.</b> Made for you, from what you told me.</p>
+        <h1>{TITLE}</h1>
+        <p className="plan-sub"><b>How I'll sell your home, what to have ready, and the one thing to do now.</b></p>
 
         <table className="plan-facts">
           <tbody>
             <tr><th scope="row">Prepared for</th><td>{plan.lead_name || "You"}</td></tr>
             {address && <tr><th scope="row">Property</th><td>{address}</td></tr>}
-            {reason.label && <tr><th scope="row">Why you want to sell</th><td>{reason.label}</td></tr>}
-            <tr><th scope="row">When</th><td>{t.label}</td></tr>
+            <tr><th scope="row">When you want to sell</th><td>{t.label}</td></tr>
           </tbody>
         </table>
 
-        <h2><span>1.</span> What to do, in this order</h2>
-        <p>{r.intro}</p>
-        <ol className="plan-steps">
-          {r.steps.map(([h, d]) => (
-            <li key={h}><b>{h}</b>{d}</li>
-          ))}
-        </ol>
+        <h2><span>1.</span> How I'll sell your home</h2>
+        <ul className="plan-why">
+          <li><b>You pay nothing until your home is sold.</b> My commission is only paid on transfer.</li>
+          <li><b>The right asking price, from real sales.</b> Homes that start too high take longer, sell for less, or go stale.</li>
+          <li><b>Marketed online, and to buyers I'm already talking to</b> in your area.</li>
+          <li><b>I handle the viewings and the offers</b>, so you don't have to.</li>
+          <li><b>You choose the attorney.</b> If you don't have one, I can recommend attorneys I trust.</li>
+          <li><b>Regular updates</b> on who viewed your home and what they said.</li>
+        </ul>
 
+        <h2><span>2.</span> Documents to have ready</h2>
+        <ul className="plan-papers">
+          <li>Your ID (and your spouse's ID, if you are married in community of property)</li>
+          <li>Proof of address (a utility bill, or any account with your address on it)</li>
+          <li>Your latest rates bill from the municipality</li>
+          <li>Your levy statement (only for a sectional title)</li>
+        </ul>
+        <p className="plan-small">
+          Certificates for electrical, gas, an electric fence or solar come later. The attorney asks for them after the sale is signed. I will
+          help you arrange them.
+        </p>
+
+        <h2><span>3.</span> The one thing to do now</h2>
         <div className="plan-notice" role="note">
           <p className="plan-notice-title">{t.tipTitle}</p>
           <p>{t.tip}</p>
         </div>
 
-        <h2><span>2.</span> Papers you will need</h2>
-        <ul className="plan-papers">
-          <li>Your ID (and your spouse's ID, if you are married in community of property)</li>
-          <li>Proof of where you live, like a utility bill</li>
-          <li>Your bond account number (only if you have a bond)</li>
-          <li>Your latest rates bill from the municipality</li>
-          <li>Levy statement (only for a flat or a house in a complex)</li>
-          <li>Electrical compliance certificate (the law says you need one)</li>
-        </ul>
-        <p className="plan-small">
-          Some homes need extra certificates, like for gas, an electric fence or, near the coast, a beetle certificate. I will tell you if yours does,
-          and help you get everything.
-        </p>
-
         {plan.sales.length > 0 && (
           <>
-            <h2><span>3.</span> Homes I've sold recently</h2>
+            <h2><span>4.</span> Homes I've sold recently</h2>
             <ul className="plan-sales">
               {plan.sales.map((s, i) => (
                 <li key={i}>
@@ -301,20 +227,9 @@ export default function PlanPage() {
           </>
         )}
 
-        <h2><span>{plan.sales.length > 0 ? "4." : "3."}</span> What you get when you sell with me</h2>
-        {/* Only promises that hold for every agent on the platform. Staging,
-            professional photos etc. would need a per-agent opt-in first. */}
-        <ul className="plan-why">
-          <li><b>You pay nothing until your house is sold.</b> My commission is only paid on transfer.</li>
-          <li><b>The right price from real sales</b>, not guesswork, so your house doesn't sit on the market.</li>
-          <li><b>Marketed online and to buyers I'm already talking to</b> in your area.</li>
-          <li><b>I handle the viewings, the offers and the attorneys</b>, so you don't have to.</li>
-          <li><b>Regular updates</b> on who viewed your home and what they said.</li>
-        </ul>
-
         <section className="plan-next">
           <h3>Book your free consultation</h3>
-          <p>{r.next}</p>
+          <p>When we speak, I'll go through your price and exactly how I'll market your home. Tell me when suits you for a quick call or visit.</p>
           {waUrl && (
             <a className="plan-wa" href={waUrl} target="_blank" rel="noopener">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#fff" d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18.2c-1.5 0-3-.4-4.2-1.1l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8s-.4-.1-.6.1-.7.8-.8 1-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.2-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.8 11.9 11.9 0 0 0 4.6 4c1.7.7 2.4.8 3.2.7.5-.1 1.5-.6 1.8-1.2s.2-1.1.1-1.2l-.4-.3z"/></svg>

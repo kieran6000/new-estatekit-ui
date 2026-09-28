@@ -1069,11 +1069,15 @@ here ("Team Alex & Storm").
     real details and a made-up seller (`get_sample_selling_plan`, only for
     that agent or an operator, logs nothing). Linked from the email card as
     "See the plan your sellers get".
-  - **Content:** built from their answers. The reason for selling picks the 3
-    steps (downsizing / retirement, relocating / emigrating, upgrading,
-    inherited, financial, or neutral). The timeline picks the urgent tip (the
-    90-day bond notice, etc.). Then the papers checklist and the agent's
-    **real** recent sales.
+  - **Content (Sept 29, after Bennie's review):** one standard "Your Marketing
+    Plan" in blue for every seller: 1. How I'll sell your home (commission on
+    transfer, price from real sales, marketing, viewings/offers, you choose the
+    attorney, updates); 2. Documents to have ready (ID, proof of address, rates
+    bill, levy statement for sectional title; compliance certificates come
+    later, the attorney asks after signing); 3. The one thing to do now (by
+    timeline); 4. the agent's **real** recent sales. Only name, address and the
+    timing tip are personal. Agent-specific promises (show house, paying for
+    certificates) need a per-agent opt-in, not the standard copy.
   - **Next step and PDF:** "What you get when you sell with me" (only claims
     that are true for every agent), then "Book your free consultation" with a
     square WhatsApp button (`/w/<lead>/plan`, its own pre-filled message).

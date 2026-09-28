@@ -53,7 +53,7 @@ Deno.serve(async (req) => {
         ? "I just sent you my details."
         : `I just requested a home evaluation${address ? ` for ${address}` : ""}.`;
   const text = fromPlan
-    ? `Hi ${agentFirst}, it's ${first(lead.name) || lead.name}. I read my selling plan${address ? ` for ${address}` : ""}. I'd like to book a free consultation. When suits you?`
+    ? `Hi ${agentFirst}, it's ${first(lead.name) || lead.name}. I read my marketing plan${address ? ` for ${address}` : ""}. I'd like to book a free consultation. When suits you?`
     : `Hi ${agentFirst}, it's ${first(lead.name) || lead.name}. ${what}`;
 
   // Record it, but never let that hold up the person on their way to WhatsApp.

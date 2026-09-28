@@ -19,7 +19,7 @@
 .plan-ref { text-align: right; font-size: .8em; color: #444; white-space: nowrap; }
 .plan-ref b { color: #111; }
 
-.plan-status { display: flex; gap: 12px; align-items: center; background: #137a3a; color: #fff; padding: 14px 16px; margin-top: 16px; border: 2px solid #0b5528; }
+.plan-status { display: flex; gap: 12px; align-items: center; background: #1565c0; color: #fff; padding: 14px 16px; margin-top: 16px; border: 2px solid #0d47a1; }
 .plan-status svg { width: 34px; height: 34px; flex: none; }
 .plan-status p { margin: 0; font-size: .92em; }
 .plan-status .plan-status-title { font-size: 1.12em; font-weight: 700; margin-bottom: 2px; }
@@ -66,7 +66,7 @@
 }
 
 .plan-why { margin: 0; padding-left: 1.2em; display: grid; gap: 8px; }
-.plan-why li::marker { color: #137a3a; }
+.plan-why li::marker { color: #1565c0; }
 
 .plan-next { position: relative; }
 .plan-qr { display: none; }

@@ -65,23 +65,23 @@ function fillLeadEmail(text: string, v: { name: string; address: string; agent: 
 // KEEP IN STEP with PLAN_BLOCK in src/lib/leadEmail.ts (the Forms page preview).
 const PLAN_BLOCK = {
   title: (address: string) => `How to sell ${address || "your home"} without losing money or time`,
-  intro: "While you wait, I've made you a short plan, based on what you told me. It takes 2 minutes to read.",
+  intro: "While you wait, I've made you a short marketing plan. It takes 2 minutes to read.",
   points: [
-    "What to do first, in the right order for your situation",
-    "The papers you'll need, so nothing holds up your sale at the end",
+    "How I'll market your home, and why you pay nothing until it's sold",
+    "The documents to have ready, and the ones that can wait",
     "The one thing to do now, for your timing",
   ],
   salesPoint: "Homes I've sold recently",
-  link: "Open my selling plan",
+  link: "Open my marketing plan",
 };
 
 function planBlockHtml(url: string, address: string, withSales: boolean): string {
   const points = [...PLAN_BLOCK.points, ...(withSales ? [PLAN_BLOCK.salesPoint] : [])];
-  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:100%;margin:4px 0 18px;border-collapse:collapse"><tr><td style="border-left:4px solid #137a3a;background:#f1f8f3;padding:14px 16px">
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:100%;margin:4px 0 18px;border-collapse:collapse"><tr><td style="border-left:4px solid #1565c0;background:#eef4fc;padding:14px 16px">
 <p style="margin:0 0 6px;font-size:16px;font-weight:bold;color:#111111;line-height:1.35">${esc(PLAN_BLOCK.title(address))}</p>
 <p style="margin:0 0 8px">${esc(PLAN_BLOCK.intro)}</p>
 ${points.map((t) => `<p style="margin:0 0 4px">&#10003;&nbsp; ${esc(t)}</p>`).join("\n")}
-<p style="margin:12px 0 0"><a href="${esc(url)}" style="color:#137a3a;font-weight:bold;font-size:16px">${esc(PLAN_BLOCK.link)} &rarr;</a></p>
+<p style="margin:12px 0 0"><a href="${esc(url)}" style="color:#1565c0;font-weight:bold;font-size:16px">${esc(PLAN_BLOCK.link)} &rarr;</a></p>
 </td></tr></table>`;
 }
 
@@ -199,8 +199,8 @@ Deno.serve(async (req) => {
   const waText = `Hi ${agentFirst}, it's ${first(lead.name) || lead.name}. ${w.wa(address)}`;
   void waText; // built again by email-click, which is what the link opens
   const waUrl = waNumber ? `${APP}/w/${id}` : "";
-  // Seller leads get a personal selling plan (/plan/<token>), built from their
-  // answers; the agent's recent sales are shown inside it. The token is random
+  // Seller leads get a marketing plan (/plan/<token>), with their
+  // timing tip and the agent's recent sales. The token is random
   // because the plan shows their name and address.
   let planUrl = "";
   if (kind === "seller") {

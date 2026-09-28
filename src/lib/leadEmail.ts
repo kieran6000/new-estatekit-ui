@@ -9,20 +9,20 @@
 
 /** The selling-plan box, shown after the first paragraph for seller leads.
  *  Its own box (not a line in a paragraph) so it isn't lost in the text.
- *  Every point must be true of every plan: the steps follow their reason for
- *  selling, the tip follows their timing, and the papers list is always there.
+ *  Every point must be true of every plan (one standard marketing plan; only
+ *  the timing tip is personal).
  *  The recent-sales point only shows when the agent has sales on record.
  *  KEEP IN STEP with planBlock() in send-lead-confirmation. */
 export const PLAN_BLOCK = {
   title: (address: string) => `How to sell ${address || "your home"} without losing money or time`,
-  intro: "While you wait, I've made you a short plan, based on what you told me. It takes 2 minutes to read.",
+  intro: "While you wait, I've made you a short marketing plan. It takes 2 minutes to read.",
   points: [
-    "What to do first, in the right order for your situation",
-    "The papers you'll need, so nothing holds up your sale at the end",
+    "How I'll market your home, and why you pay nothing until it's sold",
+    "The documents to have ready, and the ones that can wait",
     "The one thing to do now, for your timing",
   ],
   salesPoint: "Homes I've sold recently",
-  link: "Open my selling plan",
+  link: "Open my marketing plan",
 };
 
 export const STANDARD_LEAD_EMAIL_BODY = [
