@@ -247,6 +247,19 @@ conditioning).
 `OnboardingGate` sends not-yet-onboarded users to `/welcome`. It checks the
 **logged-in** user, not the account being viewed.
 
+**My results (Leads page)**: one line under the title ("This week: 15 new
+leads, you followed up 6 · 151 waiting for a call"); tap for tiles (new,
+followed up, booked, mandates; week or 30 days) and a "To do now" box.
+Numbers come from `get_agent_results(agent, days)` (security definer; the
+agent, an operator or the service role), the same numbers the internal
+dashboard shows via `internal-client-feed`.
+
+**Internal dashboard split**: this app owns leads, pages, email, plan and
+set-up. The internal service dashboard (separate app, old Supabase) owns
+stages, tasks, check-ins, contracts, areas and team scores, and reads client
+data only through `internal-client-feed` (brief from `signup_requests`
+matched on WhatsApp/email, else `client_dossiers.data.onboarding`).
+
 **Get set up (`/setup`)**: the six things sellers see, in this order: photo,
 3 recent sales, full name, WhatsApp cellphone, reply email, agency
 (`src/lib/setup.ts` decides "done"). No submit button: text saves after a
@@ -692,6 +705,7 @@ checks.
 | `daily-stage-nudge` | off | none; no-op while disabled | EOD digest |
 | `daily-reminders` | on | service-role key | Old daily WhatsApp roll-up (not scheduled) |
 | `track-activity` | off | public | Discord activity embeds (+ PostHog replay links) |
+| `internal-client-feed` | off | `x-internal-key` = secret `INTERNAL_FEED_KEY` | Read-only per-client feed for the internal service dashboard (server-to-server; counts only, no lead contact details) |
 | `send-ticket-email` | on | user | Support tickets to Discord |
 | `sync-pipeline-sheet` | on | user | Google Sheet export (unused: 0 pipelines) |
 
