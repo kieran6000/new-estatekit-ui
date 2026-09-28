@@ -23,6 +23,8 @@ import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import LoginIcon from "@mui/icons-material/Login";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import PhotoCameraOutlinedIcon from "@mui/icons-material/PhotoCameraOutlined";
+import CheckCircleIcon from "@mui/icons-material/CheckCircle";
+import RadioButtonUncheckedIcon from "@mui/icons-material/RadioButtonUnchecked";
 import { tokens } from "../theme";
 import {
   clientPicture,
@@ -33,11 +35,13 @@ import {
   updateClientProfile,
   uploadClientPhoto,
   type ClientDossier,
-  type ClientLive,
-  type ClientProfile,
   type ClientProfilePatch,
 } from "../api/clients";
-import { setActiveAgent } from "../api/_client";
+import { setActiveAgent, supabase } from "../api/_client";
+import { getEmailStats } from "../api/leadEvents";
+import { listSoldListingsForAgent } from "../api/soldListings";
+import { listSignupRequests } from "../api/signup";
+import { setupDone, SALES_TARGET, SETUP_TOTAL, type SetupKey } from "../lib/setup";
 import { useAuth } from "../hooks/useAuth";
 import { useSnack } from "../hooks/useSnack";
 import { trackActivity } from "../lib/activity";
@@ -103,26 +107,38 @@ export default function ClientDetailPage() {
       {data && (
         <>
           <Header data={data} />
-          <Box sx={{ p: { xs: 1.5, md: 2.5 }, maxWidth: 1200, mx: "auto", display: "flex", flexDirection: "column", gap: 1.5 }}>
-            <Kpis profile={data.profile} live={data.live} />
-
-            {/* Two independent columns, so a short card never leaves a gap
-                beside a long one. */}
-            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "minmax(0, 1fr) 380px" }, gap: 1.5, alignItems: "start" }}>
-              {/* Side column first in the DOM so contact comes first on a phone. */}
-              <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5, gridColumn: { md: 2 }, gridRow: { md: 1 }, minWidth: 0 }}>
-                <ContactSection data={data} />
-                <BillingSection data={data} />
-                <AccountSection data={data} />
-              </Box>
-              <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5, gridColumn: { md: 1 }, gridRow: { md: 1 }, minWidth: 0 }}>
-                <Section title="Leads by stage">
-                  <Bars data={data.live?.by_stage ?? {}} />
-                </Section>
-                <OnboardingSection data={data} which="onboarding" />
-                {data.dossier?.onboardingExtra && <OnboardingSection data={data} which="onboardingExtra" />}
-              </Box>
-            </Box>
+          {/* The same groups the internal dashboard reads through
+              internal-client-feed: Results, Leads, Ads, Email & plan, Set up,
+              Brief, Profile, Service. */}
+          <Box sx={{ p: { xs: 1.5, md: 2.5 }, maxWidth: 1200, mx: "auto", display: "flex", flexDirection: "column", gap: 3 }}>
+            <Group title="Results" sub="What they did with their leads">
+              <ResultsSection agentId={data.profile.agent_id} />
+            </Group>
+            <Group title="Leads">
+              <LeadsSection data={data} />
+            </Group>
+            <Group title="Ads">
+              <AdsSection data={data} />
+            </Group>
+            <Group title="Email & plan">
+              <EmailSection data={data} />
+            </Group>
+            <Group title="Set up" sub="What sellers see">
+              <SetupSection data={data} />
+            </Group>
+            <Group title="Brief" sub="Their onboarding answers">
+              <SignupBrief data={data} />
+              <OnboardingSection data={data} which="onboarding" />
+              {data.dossier?.onboardingExtra && <OnboardingSection data={data} which="onboardingExtra" />}
+            </Group>
+            <Group title="Profile">
+              <ProfileSection data={data} />
+              <ContactSection data={data} />
+            </Group>
+            <Group title="Service">
+              <BillingSection data={data} />
+              <AutomationsSection data={data} />
+            </Group>
           </Box>
         </>
       )}
@@ -231,6 +247,28 @@ function Header({ data }: { data: Data }) {
 }
 
 /* ───────────────────────── building blocks ───────────────────────── */
+
+function Group({ title, sub, children }: { title: string; sub?: string; children: ReactNode }) {
+  return (
+    <Box component="section" aria-label={title}>
+      <Box sx={{ display: "flex", alignItems: "baseline", gap: 1, mb: 1, px: 0.5 }}>
+        <Typography component="h2" sx={{ fontSize: 17, fontWeight: 600 }}>{title}</Typography>
+        {sub && <Typography sx={{ fontSize: 13, color: tokens.ink3 }}>{sub}</Typography>}
+      </Box>
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" }, gap: 1.5, alignItems: "start" }}>
+        {children}
+      </Box>
+    </Box>
+  );
+}
+
+function Metrics({ items }: { items: [string, ReactNode][] }) {
+  return (
+    <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 1, gridColumn: "1 / -1" }}>
+      {items.map(([label, value]) => <Metric key={label} label={label} value={value} />)}
+    </Box>
+  );
+}
 
 function Section({ title, children, sub, action }: { title: string; children: ReactNode; sub?: string; action?: ReactNode }) {
   return (
@@ -395,7 +433,65 @@ function ExtLink({ href, children }: { href: string; children: ReactNode }) {
 
 /* ───────────────────────── sections ───────────────────────── */
 
-function Kpis({ profile: p, live }: { profile: ClientProfile; live: ClientLive | null }) {
+interface Results { leads: number; followed_up: number; booked: number; mandates: number; waiting: number; no_answer: number }
+
+function ResultsSection({ agentId }: { agentId: string }) {
+  const [days, setDays] = useState<7 | 30>(7);
+  const { data: r, isLoading } = useQuery({
+    queryKey: ["agentResults", agentId, days],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("get_agent_results", { p_agent: agentId, p_days: days });
+      if (error) throw new Error(error.message);
+      return data as Results | null;
+    },
+    staleTime: 60_000,
+  });
+  const v = (n: number | undefined) => (isLoading ? <Skeleton width={40} /> : (n ?? 0));
+  return (
+    <>
+      <Box sx={{ gridColumn: "1 / -1", display: "flex", gap: 1 }}>
+        {([7, 30] as const).map((d) => (
+          <Button key={d} size="small" variant={days === d ? "contained" : "outlined"} onClick={() => setDays(d)}>
+            {d === 7 ? "This week" : "30 days"}
+          </Button>
+        ))}
+      </Box>
+      <Metrics
+        items={[
+          ["New leads", v(r?.leads)],
+          ["Followed up", v(r?.followed_up)],
+          ["Booked", v(r?.booked)],
+          ["Mandates", v(r?.mandates)],
+          ["Waiting for a call (now)", v(r?.waiting)],
+          ["No answer (now)", v(r?.no_answer)],
+        ]}
+      />
+    </>
+  );
+}
+
+function LeadsSection({ data }: { data: Data }) {
+  const live = data.live;
+  return (
+    <>
+      <Metrics
+        items={[
+          ["Leads · 7 days", live?.leads_7d ?? 0],
+          ["Leads · 30 days", live?.leads_30d ?? 0],
+          ["Leads · all time", live?.leads_total ?? 0],
+          ["Last lead", live?.last_lead_at ? timeAgo(live.last_lead_at) : "never"],
+        ]}
+      />
+      <Section title="Leads by stage">
+        <Bars data={live?.by_stage ?? {}} />
+      </Section>
+    </>
+  );
+}
+
+function AdsSection({ data }: { data: Data }) {
+  const { profile: p, live } = data;
+  const save = useClientSaver(p.agent_id);
   const leads30 = live?.leads_30d ?? 0;
   const { data: spend, isLoading } = useQuery({
     queryKey: ["spend30d", p.fb_ad_account_id],
@@ -404,15 +500,211 @@ function Kpis({ profile: p, live }: { profile: ClientProfile; live: ClientLive |
     staleTime: 30 * 60_000,
     retry: false,
   });
+  const { data: pages = [] } = useQuery({
+    queryKey: ["clientPages", p.agent_id],
+    queryFn: async () => {
+      const { data: rows, error } = await supabase.from("lead_pages").select("id, name, slug").eq("agent_id", p.agent_id).order("created_at");
+      if (error) throw new Error(error.message);
+      return rows as { id: string; name: string; slug: string }[];
+    },
+  });
+  const waiting = !!p.fb_ad_account_id && isLoading;
   return (
-    <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, 1fr)", sm: "repeat(3, 1fr)", md: "repeat(6, 1fr)" }, gap: 1.5 }}>
-      <Metric label="Leads · 7 days" value={live?.leads_7d ?? 0} />
-      <Metric label="Leads · 30 days" value={leads30} />
-      <Metric label="CPL · 30 days" value={p.fb_ad_account_id && isLoading ? <Skeleton width={60} /> : cplLabel(spend, leads30)} />
-      <Metric label="Leads · all time" value={live?.leads_total ?? 0} />
-      <Metric label="Last lead" value={live?.last_lead_at ? timeAgo(live.last_lead_at) : "never"} />
-      <Metric label="Lead sources" value={live?.lead_pages ?? 0} />
-    </Box>
+    <>
+      <Metrics
+        items={[
+          ["Spend · 30 days", waiting ? <Skeleton width={60} /> : spend == null ? "—" : "R" + Math.round(spend).toLocaleString("en-ZA")],
+          ["CPL · 30 days", waiting ? <Skeleton width={60} /> : cplLabel(spend, leads30)],
+        ]}
+      />
+      <EditableSection
+        title="Facebook"
+        view={
+          <KV
+            rows={[
+              ["Ad account", p.fb_ad_account_id ? `act_${p.fb_ad_account_id}` : "Not linked"],
+              ["Facebook page ID", p.fb_page_id || "Not linked"],
+            ]}
+          />
+        }
+        fields={[
+          { key: "ad", label: "Facebook ad account ID", value: p.fb_ad_account_id || "", helper: "Numbers only; act_ is added for you" },
+          { key: "page", label: "Facebook page ID", value: p.fb_page_id || "" },
+        ]}
+        onSave={async (v) => {
+          const ad = v.ad.replace(/^act_/i, "").replace(/\D/g, "");
+          if (v.ad && !ad) return "The ad account ID should be numbers.";
+          const page = v.page.replace(/\D/g, "");
+          if (v.page && !page) return "The Facebook page ID should be numbers.";
+          const ok = await save(() => updateClientProfile(p.agent_id, { fb_ad_account_id: ad, fb_page_id: page }));
+          if (!ok) return "Not saved. Try again.";
+        }}
+      />
+      <Section title="Landing pages" sub={String(pages.length)}>
+        {pages.length ? (
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+            {pages.map((pg) => (
+              <ExtLink key={pg.id} href={`/p/${pg.slug}`}>{pg.name || pg.slug}</ExtLink>
+            ))}
+          </Box>
+        ) : (
+          <Empty>No landing pages yet.</Empty>
+        )}
+      </Section>
+    </>
+  );
+}
+
+function EmailSection({ data }: { data: Data }) {
+  const { profile: p } = data;
+  const save = useClientSaver(p.agent_id);
+  const [toggling, setToggling] = useState(false);
+  const { data: st } = useQuery({ queryKey: ["emailStats", p.agent_id], queryFn: () => getEmailStats(p.agent_id), staleTime: 60_000 });
+  const pct = (n: number) => (st && st.sent > 0 ? ` · ${Math.round((n / st.sent) * 100)}%` : "");
+
+  async function toggle(on: boolean) {
+    setToggling(true);
+    await save(() => updateClientProfile(p.agent_id, { lead_confirmation_email: on }), on ? "Confirmation emails on" : "Confirmation emails off");
+    setToggling(false);
+  }
+
+  return (
+    <>
+      <Metrics
+        items={[
+          ["Sent · 30 days", st?.sent ?? 0],
+          ["Opened", `${st?.opened ?? 0}${pct(st?.opened ?? 0)}`],
+          ["Opened plan", `${st?.planOpened ?? 0}${pct(st?.planOpened ?? 0)}`],
+          ["Tapped WhatsApp", `${st?.clicked ?? 0}${pct(st?.clicked ?? 0)}`],
+        ]}
+      />
+      <Section title="Confirmation email">
+        <Box sx={{ display: "flex", alignItems: "center", ml: -1 }}>
+          <Switch checked={!!p.lead_confirmation_email} disabled={toggling} onChange={(e) => toggle(e.target.checked)} />
+          <Box>
+            <Typography sx={{ fontSize: 13.5 }}>Confirmation email {p.lead_confirmation_email ? "on" : "off"}</Typography>
+            <Typography sx={{ fontSize: 12, color: tokens.ink3 }}>
+              Emails each new lead in {p.display_name?.split(" ")[0] || "the agent"}'s name{p.email ? "" : ". Add their email first so replies reach them"}
+            </Typography>
+          </Box>
+        </Box>
+        <Box sx={{ mt: 1.25 }}>
+          <ExtLink href={`/plan/sample/${p.agent_id}`}>See the marketing plan their sellers get</ExtLink>
+        </Box>
+      </Section>
+    </>
+  );
+}
+
+const SETUP_LABELS: Record<SetupKey, string> = {
+  photo: "Photo",
+  sales: `${SALES_TARGET} recent sales`,
+  name: "Full name",
+  whatsapp: "WhatsApp cellphone",
+  email: "Reply email",
+  agency: "Agency",
+};
+
+function SetupSection({ data }: { data: Data }) {
+  const { profile: p } = data;
+  const { data: sales = [] } = useQuery({ queryKey: ["sold", p.agent_id], queryFn: () => listSoldListingsForAgent(p.agent_id) });
+  const done = setupDone({
+    displayName: p.display_name,
+    company: p.company,
+    whatsappNumber: p.whatsapp_number,
+    email: p.email,
+    avatarUrl: p.avatar_url,
+    salesCount: sales.length,
+  });
+  const n = Object.values(done).filter(Boolean).length;
+  return (
+    <Section title={n === SETUP_TOTAL ? "All done" : `${n} of ${SETUP_TOTAL} done`}>
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+        {(Object.keys(SETUP_LABELS) as SetupKey[]).map((k) => (
+          <Box key={k} sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            {done[k] ? <CheckCircleIcon sx={{ fontSize: 20, color: "success.main" }} /> : <RadioButtonUncheckedIcon sx={{ fontSize: 20, color: tokens.ink3 }} />}
+            <Typography sx={{ fontSize: 13.5, color: done[k] ? tokens.ink : tokens.ink2 }}>
+              {SETUP_LABELS[k]}
+              {k === "sales" && !done.sales ? ` (${sales.length} of ${SALES_TARGET})` : ""}
+            </Typography>
+          </Box>
+        ))}
+      </Box>
+    </Section>
+  );
+}
+
+/** Their answers from the sign-up page (/start), matched on WhatsApp number
+ *  or email. Older clients came in before it and only have the onboarding form. */
+function SignupBrief({ data }: { data: Data }) {
+  const { profile: p } = data;
+  const { data: requests = [] } = useQuery({ queryKey: ["signupRequests"], queryFn: listSignupRequests, staleTime: 5 * 60_000 });
+  const wa = digits(p.whatsapp_number || "");
+  const r = requests.find((x) => (wa && digits(x.whatsapp) === wa) || (x.email && p.email && x.email.toLowerCase() === p.email.toLowerCase()));
+  if (!r) return null;
+  return (
+    <Section title="Sign-up answers" sub={new Date(r.created_at).toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" })}>
+      <KV
+        rows={[
+          ["Wants more", r.wants.join(" and ")],
+          ["City or town", r.city],
+          ["Top suburbs", r.suburbs],
+          ["Monthly ad budget", r.budget],
+          ["Agency", r.agency],
+        ]}
+      />
+    </Section>
+  );
+}
+
+function ProfileSection({ data }: { data: Data }) {
+  const { profile: p } = data;
+  const save = useClientSaver(p.agent_id);
+  return (
+    <EditableSection
+      title="Details"
+      view={
+        <KV
+          rows={[
+            ["Name", p.display_name],
+            ["Agency", p.company],
+            ["Area", p.area],
+          ]}
+        />
+      }
+      fields={[
+        { key: "name", label: "Name", value: p.display_name || "" },
+        { key: "company", label: "Agency", value: p.company || "" },
+        { key: "area", label: "Area", value: p.area || "" },
+      ]}
+      onSave={async (v) => {
+        if (!v.name) return "Give the account a name.";
+        const ok = await save(() => updateClientProfile(p.agent_id, { display_name: v.name, company: v.company, area: v.area }));
+        if (!ok) return "Not saved. Try again.";
+      }}
+    />
+  );
+}
+
+function AutomationsSection({ data }: { data: Data }) {
+  const { profile: p } = data;
+  const save = useClientSaver(p.agent_id);
+  const [toggling, setToggling] = useState(false);
+  async function toggle(on: boolean) {
+    setToggling(true);
+    await save(() => updateClientProfile(p.agent_id, { automations_paused: !on }), on ? "Automations switched on" : "Automations paused");
+    setToggling(false);
+  }
+  return (
+    <Section title="Automations">
+      <Box sx={{ display: "flex", alignItems: "center", ml: -1 }}>
+        <Switch checked={!p.automations_paused} disabled={toggling} onChange={(e) => toggle(e.target.checked)} />
+        <Box>
+          <Typography sx={{ fontSize: 13.5 }}>Automations {p.automations_paused ? "paused" : "on"}</Typography>
+          <Typography sx={{ fontSize: 12, color: tokens.ink3 }}>Follow-up WhatsApps to this client's leads</Typography>
+        </Box>
+      </Box>
+    </Section>
   );
 }
 
@@ -522,79 +814,6 @@ function BillingSection({ data }: { data: Data }) {
             // The old audit value only filled in a missing status; once edited here, this is the answer.
             audit: d?.audit ? { ...d.audit, payment: v.status || undefined } : null,
           }),
-        );
-        if (!ok) return "Not saved. Try again.";
-      }}
-    />
-  );
-}
-
-function AccountSection({ data }: { data: Data }) {
-  const { profile: p } = data;
-  const save = useClientSaver(p.agent_id);
-  const [togglingAuto, setTogglingAuto] = useState(false);
-  const [togglingEmail, setTogglingEmail] = useState(false);
-
-  async function toggleEmail(on: boolean) {
-    setTogglingEmail(true);
-    await save(() => updateClientProfile(p.agent_id, { lead_confirmation_email: on }), on ? "Confirmation emails on" : "Confirmation emails off");
-    setTogglingEmail(false);
-  }
-
-  async function toggleAutomations(on: boolean) {
-    setTogglingAuto(true);
-    await save(() => updateClientProfile(p.agent_id, { automations_paused: !on }), on ? "Automations switched on" : "Automations paused");
-    setTogglingAuto(false);
-  }
-
-  return (
-    <EditableSection
-      title="Account"
-      view={
-        <>
-          <KV
-            rows={[
-              ["Name", p.display_name],
-              ["Agency", p.company],
-              ["Area", p.area],
-              ["Ad account", p.fb_ad_account_id ? `act_${p.fb_ad_account_id}` : "Not linked"],
-              ["Facebook page ID", p.fb_page_id || "Not linked"],
-              ["Lead sources", String(data.live?.lead_pages ?? 0)],
-            ]}
-          />
-          <Box sx={{ display: "flex", alignItems: "center", mt: 1, ml: -1 }}>
-            <Switch checked={!p.automations_paused} disabled={togglingAuto} onChange={(e) => toggleAutomations(e.target.checked)} />
-            <Box>
-              <Typography sx={{ fontSize: 13.5 }}>Automations {p.automations_paused ? "paused" : "on"}</Typography>
-              <Typography sx={{ fontSize: 12, color: tokens.ink3 }}>Follow-up WhatsApps to this client's leads</Typography>
-            </Box>
-          </Box>
-          <Box sx={{ display: "flex", alignItems: "center", mt: 0.5, ml: -1 }}>
-            <Switch checked={!!p.lead_confirmation_email} disabled={togglingEmail} onChange={(e) => toggleEmail(e.target.checked)} />
-            <Box>
-              <Typography sx={{ fontSize: 13.5 }}>Confirmation email {p.lead_confirmation_email ? "on" : "off"}</Typography>
-              <Typography sx={{ fontSize: 12, color: tokens.ink3 }}>
-                Emails each new lead in {p.display_name?.split(" ")[0] || "the agent"}'s name{p.email ? "" : ". Add their email first so replies reach them"}
-              </Typography>
-            </Box>
-          </Box>
-        </>
-      }
-      fields={[
-        { key: "name", label: "Name", value: p.display_name || "" },
-        { key: "company", label: "Agency", value: p.company || "" },
-        { key: "area", label: "Area", value: p.area || "" },
-        { key: "ad", label: "Facebook ad account ID", value: p.fb_ad_account_id || "", helper: "Numbers only; act_ is added for you" },
-        { key: "page", label: "Facebook page ID", value: p.fb_page_id || "" },
-      ]}
-      onSave={async (v) => {
-        if (!v.name) return "Give the account a name.";
-        const ad = v.ad.replace(/^act_/i, "").replace(/\D/g, "");
-        if (v.ad && !ad) return "The ad account ID should be numbers.";
-        const page = v.page.replace(/\D/g, "");
-        if (v.page && !page) return "The Facebook page ID should be numbers.";
-        const ok = await save(() =>
-          updateClientProfile(p.agent_id, { display_name: v.name, company: v.company, area: v.area, fb_ad_account_id: ad, fb_page_id: page }),
         );
         if (!ok) return "Not saved. Try again.";
       }}

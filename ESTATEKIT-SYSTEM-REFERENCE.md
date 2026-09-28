@@ -235,7 +235,7 @@ conditioning).
 | `/upgrade` | UpgradePage | signed in |
 | `/overview` | OverviewPage | **operator** (route guard) |
 | `/admin/clients` | ClientsPage: every client as a card | **operator** (route guard) |
-| `/admin/clients/:agentId` | ClientDetailPage: one client's full record | **operator** (route guard) |
+| `/admin/clients/:agentId` | ClientDetailPage: one client, in groups: Results, Leads, Ads, Email & plan, Set up, Brief, Profile, Service (same groups as `internal-client-feed`) | **operator** (route guard) |
 | `/admin/automations` | AdminAutomationsPage | **operator** (in-page guard) |
 | `/home` | HomePage | dev builds only |
 | `/l/:token` | LeadActionPage: WhatsApp action link | **public**, via token |
