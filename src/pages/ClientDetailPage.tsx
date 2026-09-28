@@ -42,6 +42,7 @@ import { getEmailStats } from "../api/leadEvents";
 import { listSoldListingsForAgent } from "../api/soldListings";
 import { listSignupRequests } from "../api/signup";
 import { setupDone, SALES_TARGET, SETUP_TOTAL, type SetupKey } from "../lib/setup";
+import { BRIEF_FIELDS, BRIEF_QUESTIONS, buildBrief, type BriefSource } from "../lib/brief";
 import { useAuth } from "../hooks/useAuth";
 import { useSnack } from "../hooks/useSnack";
 import { trackActivity } from "../lib/activity";
@@ -58,18 +59,6 @@ const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
 
 // Onboarding answers already shown in Contact or the section header.
 const SHOWN_ELSEWHERE = new Set(["Full name", "Email", "Phone", "Submitted"]);
-// Offered when editing, so a client who never filled the form can be filled in.
-const STANDARD_QUESTIONS = [
-  "Brokerage / agency",
-  "Campaign type",
-  "Top areas to target",
-  "Average price range",
-  "Website",
-  "Business address",
-  "Special offer to leverage",
-  "Deals closed in past 6 months",
-];
-
 type Data = Awaited<ReturnType<typeof getClient>>;
 
 export default function ClientDetailPage() {
@@ -126,9 +115,9 @@ export default function ClientDetailPage() {
             <Group title="Set up" sub="What sellers see">
               <SetupSection data={data} />
             </Group>
-            <Group title="Brief" sub="Their onboarding answers">
-              <SignupBrief data={data} />
-              <OnboardingSection data={data} which="onboarding" />
+            <Group title="Brief" sub="Sign-up and onboarding answers">
+              <BriefSection data={data} />
+              <OtherAnswersSection data={data} />
               {data.dossier?.onboardingExtra && <OnboardingSection data={data} which="onboardingExtra" />}
             </Group>
             <Group title="Profile">
@@ -634,25 +623,89 @@ function SetupSection({ data }: { data: Data }) {
   );
 }
 
-/** Their answers from the sign-up page (/start), matched on WhatsApp number
- *  or email. Older clients came in before it and only have the onboarding form. */
-function SignupBrief({ data }: { data: Data }) {
-  const { profile: p } = data;
+const SOURCE_LABEL: Record<BriefSource, string> = {
+  call: "added here",
+  signup: "sign-up page",
+  form: "onboarding form",
+  profile: "their account",
+};
+
+/** The brief: the same data points for every client (src/lib/brief.ts),
+ *  from the sign-up page, the older onboarding form or the onboarding call.
+ *  Editing saves under the standard names, which then win. */
+function BriefSection({ data }: { data: Data }) {
+  const { profile: p, dossier: d } = data;
+  const save = useClientSaver(p.agent_id);
   const { data: requests = [] } = useQuery({ queryKey: ["signupRequests"], queryFn: listSignupRequests, staleTime: 5 * 60_000 });
   const wa = digits(p.whatsapp_number || "");
-  const r = requests.find((x) => (wa && digits(x.whatsapp) === wa) || (x.email && p.email && x.email.toLowerCase() === p.email.toLowerCase()));
-  if (!r) return null;
+  const signup = requests.find((x) => (wa && digits(x.whatsapp) === wa) || (x.email && p.email && x.email.toLowerCase() === p.email.toLowerCase())) ?? null;
+  const onboarding = d?.onboarding ?? [];
+  const brief = buildBrief({ signup, onboarding, targetAreas: d?.oldDashboard?.targetAreas ?? [], company: p.company });
+  const submitted = onboarding.find((x) => x.q === "Submitted")?.a;
+  const sub = signup
+    ? `Signed up ${new Date(signup.created_at).toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" })}`
+    : submitted
+      ? `Onboarding form ${submitted}`
+      : undefined;
+  const toAsk = BRIEF_FIELDS.filter((f) => f.part === "call" && !brief[f.key]).map((f) => f.label);
+
+  const rowsFor = (part: "signup" | "call") =>
+    BRIEF_FIELDS.filter((f) => f.part === part).map((f) => {
+      const b = brief[f.key];
+      return [
+        f.label,
+        b ? (
+          <Box component="span" key={f.key}>
+            {b.value}
+            <Box component="span" sx={{ color: tokens.ink3, fontSize: 12 }}> · {SOURCE_LABEL[b.source]}</Box>
+          </Box>
+        ) : null,
+      ] as [string, ReactNode];
+    });
+
   return (
-    <Section title="Sign-up answers" sub={new Date(r.created_at).toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" })}>
-      <KV
-        rows={[
-          ["Wants more", r.wants.join(" and ")],
-          ["City or town", r.city],
-          ["Top suburbs", r.suburbs],
-          ["Monthly ad budget", r.budget],
-          ["Agency", r.agency],
-        ]}
-      />
+    <EditableSection
+      title="Brief"
+      sub={sub}
+      view={
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+          <KV labelWidth="42%" rows={rowsFor("signup")} />
+          <Box>
+            <Typography sx={{ fontSize: 12, fontWeight: 600, color: tokens.ink2, mb: 0.75 }}>From the onboarding call</Typography>
+            <KV labelWidth="42%" rows={rowsFor("call")} />
+          </Box>
+          {toAsk.length > 0 && (
+            <Typography sx={{ fontSize: 13, color: "warning.dark" }}>Still to ask: {toAsk.join(", ")}.</Typography>
+          )}
+        </Box>
+      }
+      fields={BRIEF_FIELDS.map((f) => ({ key: f.key, label: f.label, value: brief[f.key]?.value ?? "", placeholder: f.placeholder, multiline: f.key === "suburbs" || f.key === "offer" }))}
+      onSave={async (v) => {
+        // Keep everything that isn't part of the brief; save the brief under
+        // the standard names (old names are dropped, their answer carried over).
+        const kept = onboarding.filter((x) => !BRIEF_QUESTIONS.has(x.q));
+        const answered = BRIEF_FIELDS.map((f) => ({ q: f.label, a: v[f.key] || "" })).filter((x) => x.a);
+        const areas = (v.suburbs || "").split(/[;,\n]/).map((x) => x.trim()).filter(Boolean);
+        const ok = await save(() =>
+          saveClientDossier(p.agent_id, d, {
+            onboarding: [...kept, ...answered],
+            oldDashboard: { ...(d?.oldDashboard ?? { joined: null }), targetAreas: areas },
+          }),
+        );
+        if (!ok) return "Not saved. Try again.";
+      }}
+    />
+  );
+}
+
+/** Older onboarding-form answers that aren't part of the brief (e.g. whether
+ *  they'd send a headshot). Read-only; hidden when there are none. */
+function OtherAnswersSection({ data }: { data: Data }) {
+  const rows = (data.dossier?.onboarding ?? []).filter((x) => !BRIEF_QUESTIONS.has(x.q) && !SHOWN_ELSEWHERE.has(x.q) && x.a);
+  if (!rows.length) return null;
+  return (
+    <Section title="Other onboarding answers">
+      <KV labelWidth="42%" rows={rows.map((x) => [x.q, x.a] as [string, ReactNode])} />
     </Section>
   );
 }
@@ -831,8 +884,7 @@ function OnboardingSection({ data, which }: { data: Data; which: "onboarding" | 
   const targets = which === "onboarding" ? (d?.oldDashboard?.targetAreas ?? []) : [];
   const title = which === "onboarding" ? "Onboarding form" : extraName ? `${extraName}'s answers` : "Second agent's answers";
 
-  // Existing answers plus any standard question they skipped.
-  const questions = [...rows.map((x) => x.q), ...(which === "onboarding" ? STANDARD_QUESTIONS.filter((q) => !rows.some((x) => x.q === q)) : [])];
+  const questions = rows.map((x) => x.q);
   const fields: FieldDef[] = questions.map((q, i) => ({ key: `q${i}`, label: q, value: rows.find((x) => x.q === q)?.a || "", multiline: true }));
   if (which === "onboarding") fields.push({ key: "targets", label: "Target areas", value: targets.join("; "), helper: "Separate with ;" });
 

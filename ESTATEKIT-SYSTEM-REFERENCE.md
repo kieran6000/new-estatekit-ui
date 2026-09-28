@@ -254,6 +254,8 @@ Numbers come from `get_agent_results(agent, days)` (security definer; the
 agent, an operator or the service role), the same numbers the internal
 dashboard shows via `internal-client-feed`.
 
+**Brief (one shape for every client)**: `src/lib/brief.ts` (copied into `internal-client-feed`). Sign-up part: wants, city, suburbs, budget, agency. Onboarding-call part: deals in the last 6 months, average home price, commission %, 3-month goal, callback times, special offer, team, website, business address. Each answer comes from (first found): saved on the client page (standard label) → /start sign-up → the older onboarding form (old question names are aliases) → the profile. The client page shows "Still to ask" for empty call questions.
+
 **Internal dashboard split**: this app owns leads, pages, email, plan and
 set-up. The internal service dashboard (separate app, old Supabase) owns
 stages, tasks, check-ins, contracts, areas and team scores, and reads client

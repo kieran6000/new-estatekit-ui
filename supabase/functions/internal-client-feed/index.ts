@@ -61,6 +61,88 @@ async function all<T>(query: (from: number, to: number) => PromiseLike<{ data: T
   }
 }
 
+// ---- The brief. COPY of src/lib/brief.ts (edge functions can't import app
+// code). KEEP IN STEP: change both together.
+type BriefKey =
+  | "wants" | "city" | "suburbs" | "budget" | "agency"
+  | "deals" | "price" | "commission" | "goal" | "callback" | "offer" | "team" | "website" | "address";
+
+type BriefPart = "signup" | "call";
+
+interface BriefField {
+  key: BriefKey;
+  label: string;
+  /** Question names the older onboarding form used for this. */
+  aliases: string[];
+  /** Asked on the sign-up page, or on the onboarding call. */
+  part: BriefPart;
+  placeholder?: string;
+}
+
+const BRIEF_FIELDS: BriefField[] = [
+  { key: "wants", label: "Wants more", aliases: ["Campaign type", "Lead focus"], part: "signup", placeholder: "e.g. Sellers, or Sellers and Buyers (60/40)" },
+  { key: "city", label: "City or town", aliases: ["City / town"], part: "signup" },
+  { key: "suburbs", label: "Top suburbs", aliases: ["Top areas to target"], part: "signup", placeholder: "Separate with commas" },
+  { key: "budget", label: "Monthly ad budget", aliases: [], part: "signup", placeholder: "e.g. R2 000 – R5 000" },
+  { key: "agency", label: "Agency", aliases: ["Brokerage / agency"], part: "signup" },
+  { key: "deals", label: "Deals closed in the last 6 months", aliases: ["Deals closed in past 6 months"], part: "call" },
+  { key: "price", label: "Average home price", aliases: ["Average price range"], part: "call", placeholder: "e.g. R1.5m – R3m" },
+  { key: "commission", label: "Commission %", aliases: [], part: "call" },
+  { key: "goal", label: "Goal for the first 3 months", aliases: [], part: "call", placeholder: "e.g. 3 listings" },
+  { key: "callback", label: "When they can call leads back", aliases: [], part: "call", placeholder: "e.g. within the hour, not Sundays" },
+  { key: "offer", label: "Special offer", aliases: ["Special offer to leverage"], part: "call", placeholder: "e.g. show house, pays the electrical certificate" },
+  { key: "team", label: "Team", aliases: ["Team type"], part: "call" },
+  { key: "website", label: "Website", aliases: [], part: "call" },
+  { key: "address", label: "Business address", aliases: [], part: "call" },
+];
+
+/** Every question name that belongs to the brief (standard labels and old names). */
+const BRIEF_QUESTIONS = new Set(BRIEF_FIELDS.flatMap((f) => [f.label, ...f.aliases]));
+
+type BriefSource = "call" | "signup" | "form" | "profile";
+
+interface BriefSignup {
+  wants: string[];
+  city: string;
+  suburbs: string;
+  budget: string;
+  agency: string;
+}
+
+// Answers like "No", "Na" or "None" to "Special offer" mean there isn't one.
+const blank = (s: string | null | undefined) => !s || /^(n\/?a|no|none|-)$/i.test(s.trim());
+
+function buildBrief(input: {
+  signup: BriefSignup | null;
+  onboarding: { q: string; a: string }[];
+  targetAreas: string[];
+  company: string | null | undefined;
+}): Record<BriefKey, { value: string; source: BriefSource } | null> {
+  const answer = (q: string) => input.onboarding.find((x) => x.q === q && !blank(x.a))?.a.trim() || "";
+  const s = input.signup;
+  const fromSignup: Partial<Record<BriefKey, string>> = s
+    ? { wants: s.wants.join(" and "), city: s.city, suburbs: s.suburbs, budget: s.budget, agency: s.agency }
+    : {};
+  const out = {} as Record<BriefKey, { value: string; source: BriefSource } | null>;
+  for (const f of BRIEF_FIELDS) {
+    const saved = answer(f.label);
+    const signed = (fromSignup[f.key] || "").trim();
+    const old = f.aliases.map(answer).find(Boolean) || "";
+    const fallback =
+      f.key === "suburbs" ? input.targetAreas.join(", ") : f.key === "agency" ? (input.company || "").trim() : "";
+    out[f.key] = saved
+      ? { value: saved, source: "call" }
+      : signed
+        ? { value: signed, source: "signup" }
+        : old
+          ? { value: old, source: "form" }
+          : fallback
+            ? { value: fallback, source: "profile" }
+            : null;
+  }
+  return out;
+}
+
 interface Profile {
   agent_id: string;
   display_name: string | null;
@@ -121,26 +203,29 @@ Deno.serve(async (req) => {
 
   const clients = await Promise.all(
     (profiles as Profile[]).map(async (p) => {
-      // The brief: the /start sign-up answers (matched on WhatsApp number or
-      // email), else the older onboarding form kept in the client's dossier.
+      // The brief: the same data points for every client (see buildBrief):
+      // the /start sign-up (matched on WhatsApp number or email), the older
+      // onboarding form, answers added on the client page, then the profile.
       const wa = digits(p.whatsapp_number);
       const signup = (signups.data ?? []).find(
         (s) => (wa && digits(s.whatsapp) === wa) || (s.email && p.email && s.email.toLowerCase() === p.email.toLowerCase()),
       );
-      const oldForm = (dossierBy.get(p.agent_id) as { onboarding?: { q: string; a: string }[] } | undefined)?.onboarding ?? null;
-      const brief = signup
-        ? {
-            source: "signup",
-            submittedAt: signup.created_at,
-            wants: signup.wants,
-            city: signup.city,
-            suburbs: signup.suburbs,
-            budget: signup.budget,
-            agency: signup.agency,
-          }
-        : oldForm
-          ? { source: "onboarding_form", answers: oldForm }
-          : null;
+      const dossier = dossierBy.get(p.agent_id) as { onboarding?: { q: string; a: string }[]; oldDashboard?: { targetAreas?: string[] } } | undefined;
+      const onboarding = dossier?.onboarding ?? [];
+      const built = buildBrief({
+        signup: signup ? { wants: signup.wants ?? [], city: signup.city ?? "", suburbs: signup.suburbs ?? "", budget: signup.budget ?? "", agency: signup.agency ?? "" } : null,
+        onboarding,
+        targetAreas: dossier?.oldDashboard?.targetAreas ?? [],
+        company: p.company,
+      });
+      const brief = {
+        signedUpAt: signup?.created_at ?? null,
+        onboardingFormAt: onboarding.find((x) => x.q === "Submitted")?.a ?? null,
+        // { key: { label, value, source } } in the standard order; null = not answered yet.
+        fields: Object.fromEntries(BRIEF_FIELDS.map((f) => [f.key, built[f.key] ? { label: f.label, ...built[f.key]! } : null])),
+        stillToAsk: BRIEF_FIELDS.filter((f) => f.part === "call" && !built[f.key]).map((f) => f.label),
+        otherAnswers: onboarding.filter((x) => !BRIEF_QUESTIONS.has(x.q) && !["Full name", "Email", "Phone", "Submitted"].includes(x.q) && x.a),
+      };
 
       const myLeads = leadsBy.get(p.agent_id) ?? [];
       const byStage: Record<string, number> = {};
