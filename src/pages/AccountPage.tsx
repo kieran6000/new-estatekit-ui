@@ -37,6 +37,7 @@ import { trackActivity } from "../lib/activity";
 import AccountSwitcher from "../components/AccountSwitcher";
 import { supabase, getActiveAgentIdSync } from "../api/_client";
 import { tokens } from "../theme";
+import { MAX_IMAGE_BYTES, uploadImage } from "../lib/image";
 
 export default function AccountPage() {
   const { user, signOut } = useAuth();
@@ -152,9 +153,7 @@ export default function AccountPage() {
 
   async function onLogoUpload(file: File | null) {
     if (!file || !user) return;
-    if (file.size > 2 * 1024 * 1024) { showSnack("Image must be under 2 MB"); return; }
-    const ext = file.name.split(".").pop() || "png";
-    const path = `${user.id}/logo-${Date.now()}.${ext}`;
+    if (file.size > MAX_IMAGE_BYTES) { showSnack("That image is too big. Try another one."); return; }
     const prevLogo = form.sidebarLogoUrl;
     // Show the picked file immediately (a blob: URL renders fine everywhere
     // in this page, sidebar included) while the real upload happens in the
@@ -164,12 +163,10 @@ export default function AccountPage() {
     applyOptimistic({ sidebarLogoUrl: previewUrl });
     setLogoUploading(true);
     try {
-      const { error } = await supabase.storage.from("logos").upload(path, file, { upsert: true });
-      if (error) throw error;
-      const { data: urlData } = supabase.storage.from("logos").getPublicUrl(path);
-      await upsertProfile({ sidebarLogoUrl: urlData.publicUrl }, profile?.agentId);
-      setForm((f) => ({ ...f, sidebarLogoUrl: urlData.publicUrl }));
-      applyOptimistic({ sidebarLogoUrl: urlData.publicUrl });
+      const logoUrl = await uploadImage(file, "logo", user.id);
+      await upsertProfile({ sidebarLogoUrl: logoUrl }, profile?.agentId);
+      setForm((f) => ({ ...f, sidebarLogoUrl: logoUrl }));
+      applyOptimistic({ sidebarLogoUrl: logoUrl });
       await queryClient.invalidateQueries({ queryKey: ["myProfile"] });
       showSnack("Logo uploaded");
     } catch (e) {
@@ -188,19 +185,15 @@ export default function AccountPage() {
   // both meant a client photo sat where a real logo belonged.
   async function onAvatarUpload(file: File | null) {
     if (!file || !user) return;
-    if (file.size > 2 * 1024 * 1024) { showSnack("Image must be under 2 MB"); return; }
-    const ext = file.name.split(".").pop() || "png";
-    const path = `${user.id}/avatar-${Date.now()}.${ext}`;
+    if (file.size > MAX_IMAGE_BYTES) { showSnack("That photo is too big. Try another one."); return; }
     const prev = form.avatarUrl;
     const previewUrl = URL.createObjectURL(file);
     setForm((f) => ({ ...f, avatarUrl: previewUrl }));
     setAvatarUploading(true);
     try {
-      const { error } = await supabase.storage.from("logos").upload(path, file, { upsert: true });
-      if (error) throw error;
-      const { data: urlData } = supabase.storage.from("logos").getPublicUrl(path);
-      await upsertProfile({ avatarUrl: urlData.publicUrl }, profile?.agentId);
-      setForm((f) => ({ ...f, avatarUrl: urlData.publicUrl }));
+      const avatarUrl = await uploadImage(file, "photo", user.id);
+      await upsertProfile({ avatarUrl }, profile?.agentId);
+      setForm((f) => ({ ...f, avatarUrl }));
       await queryClient.invalidateQueries({ queryKey: ["myProfile"] });
       await queryClient.invalidateQueries({ queryKey: ["agentProfiles"] });
       showSnack("Photo uploaded");

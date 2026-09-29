@@ -71,6 +71,7 @@ import OptionsEditor from "../components/OptionsEditor";
 import { cleanOptions } from "../lib/options";
 import { applyFormPreset, FORM_PRESET_VERSION, presetByKey } from "../lib/formPresets";
 import type { FormPresetKey } from "../types";
+import { MAX_IMAGE_BYTES, uploadImage } from "../lib/image";
 
 export default function LeadPagePage() {
   const navigate = useNavigate();
@@ -185,20 +186,30 @@ export default function LeadPagePage() {
     updatePage.mutate({ id: page!.id, patch });
   }
 
-  function onLogoChange(file: File | null) {
-    if (!file) return;
-    if (file.size > 2 * 1024 * 1024) { showSnack("Image must be under 2 MB"); return; }
-    const reader = new FileReader();
-    reader.onload = () => { update({ logoDataUrl: reader.result as string }); showSnack("Logo uploaded"); };
-    reader.readAsDataURL(file);
+  // Pictures go to Storage (shrunk); the row only keeps the link. They used
+  // to be stored inside the row, so every page view re-downloaded them.
+  async function onLogoChange(file: File | null) {
+    if (!file || !page) return;
+    if (file.size > MAX_IMAGE_BYTES) { showSnack("That image is too big. Try another one."); return; }
+    try {
+      update({ logoDataUrl: await uploadImage(file, "logo", page.agentId) });
+      showSnack("Logo uploaded");
+    } catch (e) {
+      console.error(e);
+      showSnack("Couldn't upload the logo. Try again.");
+    }
   }
 
-  function onPhotoChange(file: File | null) {
-    if (!file) return;
-    if (file.size > 2 * 1024 * 1024) { showSnack("Image must be under 2 MB"); return; }
-    const reader = new FileReader();
-    reader.onload = () => { update({ profilePhotoDataUrl: reader.result as string }); showSnack("Profile photo uploaded"); };
-    reader.readAsDataURL(file);
+  async function onPhotoChange(file: File | null) {
+    if (!file || !page) return;
+    if (file.size > MAX_IMAGE_BYTES) { showSnack("That photo is too big. Try another one."); return; }
+    try {
+      update({ profilePhotoDataUrl: await uploadImage(file, "photo", page.agentId) });
+      showSnack("Profile photo uploaded");
+    } catch (e) {
+      console.error(e);
+      showSnack("Couldn't upload the photo. Try again.");
+    }
   }
 
   return (
@@ -1374,7 +1385,7 @@ function CapiSettings({ pixelId }: { pixelId: string }) {
     queryKey: ["capiEvents", cleanPixel],
     queryFn: () => listCapiEvents(cleanPixel),
     enabled: !!cleanPixel,
-    refetchInterval: 30_000,
+    refetchInterval: 2 * 60_000,
   });
 
   const [token, setToken] = useState("");

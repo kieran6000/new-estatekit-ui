@@ -1,4 +1,5 @@
 import { supabase } from "./_client";
+import { uploadImage } from "../lib/image";
 
 // Admin "Clients" tab. Operator-only: the table and the function both refuse
 // anyone else (see supabase/migrations/20260925_0003_client_dossiers.sql).
@@ -131,11 +132,7 @@ export async function saveClientDossier(agentId: string, current: ClientDossier 
 
 /** Uploads a client photo to the same bucket the Account page uses. */
 export async function uploadClientPhoto(uploaderId: string, file: File): Promise<string> {
-  const ext = file.name.split(".").pop() || "png";
-  const path = `${uploaderId}/avatar-${Date.now()}.${ext}`;
-  const { error } = await supabase.storage.from("logos").upload(path, file, { upsert: true });
-  if (error) throw new Error(error.message);
-  return supabase.storage.from("logos").getPublicUrl(path).data.publicUrl;
+  return uploadImage(file, "photo", uploaderId);
 }
 
 /** The picture for a client: their photo, then their Facebook page picture,

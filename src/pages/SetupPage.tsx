@@ -22,13 +22,13 @@ import CheckIcon from "@mui/icons-material/Check";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import RadioButtonUncheckedIcon from "@mui/icons-material/RadioButtonUnchecked";
 import PhotoCameraOutlinedIcon from "@mui/icons-material/PhotoCameraOutlined";
-import { supabase } from "../api/_client";
 import { getMyProfile, upsertProfile, type AgentProfile } from "../api/agentProfile";
 import { listMySoldListings } from "../api/soldListings";
 import { useSnack } from "../hooks/useSnack";
 import { trackActivity } from "../lib/activity";
 import { isCellphone, isEmail, isFullName, SALES_TARGET, setupDone, setupProgress } from "../lib/setup";
 import RecentSalesEditor from "../components/RecentSalesEditor";
+import { MAX_IMAGE_BYTES, uploadImage } from "../lib/image";
 
 type SaveState = "saving" | "saved" | "error" | null;
 
@@ -66,15 +66,10 @@ export default function SetupPage() {
 
   async function onPhoto(file: File | null) {
     if (!file || !profile) return;
-    if (file.size > 5 * 1024 * 1024) { showSnack("The photo must be under 5 MB"); return; }
+    if (file.size > MAX_IMAGE_BYTES) { showSnack("That photo is too big. Try another one."); return; }
     setPhotoBusy(true);
     try {
-      const ext = file.name.split(".").pop() || "jpg";
-      const path = `${profile.agentId}/avatar-${Date.now()}.${ext}`;
-      const { error } = await supabase.storage.from("logos").upload(path, file, { upsert: true });
-      if (error) throw error;
-      const { data } = supabase.storage.from("logos").getPublicUrl(path);
-      await save({ avatarUrl: data.publicUrl });
+      await save({ avatarUrl: await uploadImage(file, "photo", profile.agentId) });
       await qc.invalidateQueries({ queryKey: ["agentProfiles"] });
       showSnack("Photo added");
     } catch (e) {

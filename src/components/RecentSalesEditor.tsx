@@ -4,7 +4,8 @@ import { Box, Button, Chip, CircularProgress, IconButton, TextField, ToggleButto
 import AddIcon from "@mui/icons-material/Add";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlineRounded";
 import { tokens } from "../theme";
-import { supabase, getActiveAgentIdSync } from "../api/_client";
+import { getActiveAgentIdSync } from "../api/_client";
+import { MAX_IMAGE_BYTES, uploadImage } from "../lib/image";
 import { listMySoldListings, addSoldListing, deleteSoldListing, type SoldListingStatus } from "../api/soldListings";
 import { trackActivity } from "../lib/activity";
 import { useSnack } from "../hooks/useSnack";
@@ -22,18 +23,22 @@ export default function RecentSalesEditor() {
 
   async function onImage(file: File | null) {
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) { showSnack("Image must be under 5 MB"); return; }
+    if (file.size > MAX_IMAGE_BYTES) { showSnack("That photo is too big. Try another one."); return; }
     if (!address.trim()) { showSnack("Add the address first"); return; }
     setBusy(true);
     try {
       const agentId = getActiveAgentIdSync() || "agent";
-      const ext = file.name.split(".").pop() || "jpg";
-      const path = `${agentId}/sale-${Date.now()}.${ext}`;
-      const { error } = await supabase.storage.from("logos").upload(path, file, { upsert: true });
-      if (error) { console.error(error); showSnack("Couldn't upload the photo. Try again."); setBusy(false); return; }
-      const { data: urlData } = supabase.storage.from("logos").getPublicUrl(path);
+      let imageUrl: string;
+      try {
+        imageUrl = await uploadImage(file, "sale", agentId);
+      } catch (e) {
+        console.error(e);
+        showSnack("Couldn't upload the photo. Try again.");
+        setBusy(false);
+        return;
+      }
       const priceNum = price ? Number(price.replace(/\D/g, "")) : null;
-      await addSoldListing({ imageUrl: urlData.publicUrl, address: address.trim(), price: priceNum, status });
+      await addSoldListing({ imageUrl, address: address.trim(), price: priceNum, status });
       trackActivity("sold_listing_added", { sale: { address: address.trim(), price: priceNum ?? undefined } });
       await qc.invalidateQueries({ queryKey: ["mySold"] });
       await qc.invalidateQueries({ queryKey: ["publicSold"] });

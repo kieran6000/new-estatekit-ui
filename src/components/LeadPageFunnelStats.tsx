@@ -22,7 +22,7 @@ export default function LeadPageFunnelStats({ pageId }: { pageId: string }) {
     queryKey: ["leadPageFunnel", pageId, period],
     queryFn: () => getLeadPageFunnel(pageId, since),
     staleTime: 30_000,
-    refetchInterval: 60_000,
+    refetchInterval: 5 * 60_000,
   });
 
   const cells = data
