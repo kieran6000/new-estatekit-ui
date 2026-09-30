@@ -63,6 +63,7 @@ import { useSnack } from "../hooks/useSnack";
 import { trackActivity } from "../lib/activity";
 import { timeAgo } from "../lib/timeAgo";
 import RangePicker from "../components/RangePicker";
+import FundingChip from "../components/FundingChip";
 
 /** Digits in international form, so 083… and +2783… compare equal. */
 const digits = (s: string) => {
@@ -606,11 +607,12 @@ function AdAccountSection({ data }: { data: Data }) {
               "Pays by",
               kind ? (
                 <Box component="span" key="pay" sx={{ display: "inline-flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
-                  <Chip size="small" variant="outlined" color={kind === "Prepaid" ? "primary" : "default"} label={kind === "Prepaid" ? "Prepaid funds" : kind} sx={{ height: 22 }} />
+                  <FundingChip type={a?.fundingType} label={a?.fundingLabel} balance={a?.balance} />
                   {a?.fundingLabel && <Box component="span" sx={{ color: tokens.ink2, fontSize: 13 }}>{a.fundingLabel}</Box>}
                 </Box>
               ) : "Not set up",
             ],
+            ["Owes Facebook", a?.balance != null && a.balance > 0 ? <Box component="span" key="owed" sx={{ color: "warning.dark", fontWeight: 600 }}>{money(a.balance)}</Box> : "Nothing due"],
             ["Status", a?.accountStatus != null ? ACCOUNT_STATUS[a.accountStatus] ?? `Code ${a.accountStatus}` : null],
             ["Spent all time", a?.amountSpent != null ? money(a.amountSpent) : null],
             ["Spending limit", a?.spendCap ? money(a.spendCap) : "None"],

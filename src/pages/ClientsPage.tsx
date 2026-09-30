@@ -5,7 +5,6 @@ import {
   AppBar,
   Avatar,
   Box,
-  Chip,
   IconButton,
   InputAdornment,
   Skeleton,
@@ -43,6 +42,7 @@ import { resolveRange, useDateRange, ymd } from "../lib/range";
 import { timeAgo } from "../lib/timeAgo";
 import SignupRequests from "../components/SignupRequests";
 import RangePicker from "../components/RangePicker";
+import FundingChip from "../components/FundingChip";
 
 type ColKey = "name" | "agency" | "leads" | "spend" | "cpl" | "funding" | "last" | "setup";
 type Dir = "asc" | "desc";
@@ -57,7 +57,10 @@ interface Row {
   spend: number | null | undefined;
   cpl: number | null | undefined;
   funding: string | null | undefined;
+  fundingType: string | null;
   fundingLabel: string | null;
+  /** Amount due to Facebook right now (Meta's balance); > 0 means they owe. */
+  owed: number | null;
   last: number | null;
   /** Get set up: how many of the six are done. */
   setup: number;
@@ -168,7 +171,9 @@ export default function ClientsPage() {
         spend,
         cpl,
         funding: !acct ? null : fq?.isLoading ? undefined : fundingKind(fq?.data?.fundingType),
+        fundingType: fq?.data?.fundingType ?? null,
         fundingLabel: fq?.data?.fundingLabel ?? null,
+        owed: fq?.data?.balance ?? null,
         last: c.live?.last_lead_at ? new Date(c.live.last_lead_at).getTime() : null,
         setup: setupProgress({
           displayName: c.display_name,
@@ -186,7 +191,8 @@ export default function ClientsPage() {
 
   const shown = useMemo(() => {
     const list = rows.filter((r) => matches(r.c, search.trim()));
-    return list.sort((a, b) => cmp(a[sort.k], b[sort.k], sort.dir) || a.name.localeCompare(b.name));
+    const key = (r: Row) => (sort.k === "funding" ? (r.owed && r.owed > 0 ? -r.owed : r.funding) : r[sort.k]);
+    return list.sort((a, b) => cmp(key(a) as string | number | null | undefined, key(b) as string | number | null | undefined, sort.dir) || a.name.localeCompare(b.name));
   }, [rows, search, sort]);
 
   // Totals for the range (spend only once every account's figure is in).
@@ -194,7 +200,8 @@ export default function ClientsPage() {
     const leads = rows.reduce((a, r) => a + r.leads, 0);
     const loading = rows.some((r) => r.spend === undefined);
     const spend = rows.reduce((a, r) => a + (r.spend || 0), 0);
-    return { leads, spend, loading, active: rows.filter((r) => r.leads > 0).length };
+    const owing = rows.filter((r) => r.owed && r.owed > 0);
+    return { leads, spend, loading, active: rows.filter((r) => r.leads > 0).length, owing: owing.length, owed: owing.reduce((a, r) => a + (r.owed || 0), 0) };
   }, [rows]);
 
   function onSort(k: ColKey) {
@@ -243,15 +250,20 @@ export default function ClientsPage() {
         <RangePicker value={range} onChange={setRange} />
       </Box>
 
-      <Box sx={{ p: { xs: 1.5, md: 2 }, maxWidth: 1400, mx: "auto", display: "flex", flexDirection: "column", gap: 2 }}>
+      <Box sx={{ p: { xs: 1.5, md: 2 }, display: "flex", flexDirection: "column", gap: 2 }}>
         <SignupRequests />
 
         {/* Totals for the chosen dates. */}
-        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, 1fr)", md: "repeat(4, 1fr)" }, gap: 1.5 }}>
+        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, 1fr)", md: "repeat(5, 1fr)" }, gap: 1.5 }}>
           <Kpi label={`Leads · ${label}`} value={counts ? totals.leads.toLocaleString("en-ZA") : <Skeleton width={60} />} />
           <Kpi label={`Ad spend · ${label}`} value={totals.loading ? <Skeleton width={80} /> : money(totals.spend)} />
           <Kpi label="Cost per lead" value={totals.loading ? <Skeleton width={60} /> : cplLabel(totals.spend, totals.leads)} />
           <Kpi label="Accounts with leads" value={counts ? `${totals.active} of ${rows.length}` : <Skeleton width={60} />} />
+          <Kpi
+            label={totals.owing ? `Owed to Facebook · ${totals.owing} ${totals.owing === 1 ? "account" : "accounts"}` : "Owed to Facebook"}
+            value={totals.loading ? <Skeleton width={60} /> : money(totals.owed)}
+            warn={totals.owed > 0}
+          />
         </Box>
 
         {isError && (
@@ -324,15 +336,7 @@ export default function ClientsPage() {
                       {r.funding === undefined ? (
                         <Skeleton width={60} />
                       ) : r.funding ? (
-                        <Tooltip title={r.fundingLabel || ""} disableHoverListener={!r.fundingLabel}>
-                          <Chip
-                            size="small"
-                            variant="outlined"
-                            label={r.funding === "Prepaid" ? "Prepaid funds" : r.funding}
-                            color={r.funding === "Prepaid" ? "primary" : "default"}
-                            sx={{ height: 22, fontSize: 12 }}
-                          />
-                        </Tooltip>
+                        <FundingChip type={r.fundingType} label={r.fundingLabel} balance={r.owed} />
                       ) : (
                         <Typography component="span" sx={{ fontSize: 13, color: tokens.ink3 }}>—</Typography>
                       )}
@@ -382,10 +386,10 @@ export default function ClientsPage() {
   );
 }
 
-function Kpi({ label, value }: { label: string; value: ReactNode }) {
+function Kpi({ label, value, warn }: { label: string; value: ReactNode; warn?: boolean }) {
   return (
-    <Box sx={{ bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "8px", px: 2, py: 1.5 }}>
-      <Typography component="div" sx={{ fontSize: 22, fontWeight: 600, lineHeight: 1.2, fontVariantNumeric: "tabular-nums" }}>{value}</Typography>
+    <Box sx={{ bgcolor: "background.paper", border: `1px solid ${warn ? "#ed6c02" : tokens.divider}`, borderRadius: "8px", px: 2, py: 1.5 }}>
+      <Typography component="div" sx={{ fontSize: 22, fontWeight: 600, lineHeight: 1.2, fontVariantNumeric: "tabular-nums", color: warn ? "warning.dark" : undefined }}>{value}</Typography>
       <Typography sx={{ fontSize: 12.5, color: tokens.ink2, mt: 0.25 }}>{label}</Typography>
     </Box>
   );
