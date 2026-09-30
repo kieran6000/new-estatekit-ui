@@ -6,13 +6,18 @@ import {
   Avatar,
   Box,
   Button,
+  Chip,
   CircularProgress,
   IconButton,
+  InputAdornment,
   Link,
   Skeleton,
   Switch,
+  Tab,
+  Tabs,
   TextField,
   Toolbar,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
@@ -25,28 +30,39 @@ import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import PhotoCameraOutlinedIcon from "@mui/icons-material/PhotoCameraOutlined";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import RadioButtonUncheckedIcon from "@mui/icons-material/RadioButtonUnchecked";
+import LockResetIcon from "@mui/icons-material/LockReset";
+import VisibilityIcon from "@mui/icons-material/Visibility";
+import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
+import UploadFileIcon from "@mui/icons-material/UploadFile";
 import { tokens } from "../theme";
 import {
+  adsManagerUrl,
   clientPicture,
   cplLabel,
+  fundingKind,
   getClient,
-  getSpend30d,
+  getResultsBetween,
+  getSpendDaily,
   saveClientDossier,
+  spendBetween,
   updateClientProfile,
   uploadClientPhoto,
   type ClientDossier,
   type ClientProfilePatch,
 } from "../api/clients";
+import { getFbAdAccount, setAgentPassword } from "../api/agentProfile";
 import { setActiveAgent, supabase } from "../api/_client";
 import { getEmailStats } from "../api/leadEvents";
 import { listSoldListingsForAgent } from "../api/soldListings";
 import { listSignupRequests } from "../api/signup";
-import { setupDone, SALES_TARGET, SETUP_TOTAL, type SetupKey } from "../lib/setup";
+import { setupDone, setupProgress, SALES_TARGET, SETUP_TOTAL, type SetupKey } from "../lib/setup";
 import { BRIEF_FIELDS, BRIEF_QUESTIONS, buildBrief, type BriefSource } from "../lib/brief";
+import { resolveRange, useDateRange, ymd } from "../lib/range";
 import { useAuth } from "../hooks/useAuth";
 import { useSnack } from "../hooks/useSnack";
 import { trackActivity } from "../lib/activity";
 import { timeAgo } from "../lib/timeAgo";
+import RangePicker from "../components/RangePicker";
 
 /** Digits in international form, so 083… and +2783… compare equal. */
 const digits = (s: string) => {
@@ -56,25 +72,43 @@ const digits = (s: string) => {
 // Lists are typed with ";" between items, the same as form answer options.
 const splitList = (s: string) => s.split(/[;\n]/).map((x) => x.trim()).filter(Boolean);
 const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+const money = (n: number) => "R" + Math.round(n).toLocaleString("en-ZA");
 
 // Onboarding answers already shown in Contact or the section header.
 const SHOWN_ELSEWHERE = new Set(["Full name", "Email", "Phone", "Submitted"]);
 type Data = Awaited<ReturnType<typeof getClient>>;
+type TabKey = "overview" | "brief" | "settings";
+const TAB_KEY = "estatekit_account_tab";
 
+/** Operators: one account. Overview (numbers for the chosen dates), Brief
+ *  (onboarding answers) and Settings (everything editable, including their
+ *  login and contract, which used to live on the Account page). */
 export default function ClientDetailPage() {
   const { agentId = "" } = useParams();
   const navigate = useNavigate();
   const { data, isLoading, isError, error } = useQuery({ queryKey: ["client", agentId], queryFn: () => getClient(agentId), enabled: !!agentId });
+  const [tab, setTab] = useState<TabKey>(() => {
+    try {
+      const t = sessionStorage.getItem(TAB_KEY);
+      return t === "brief" || t === "settings" ? t : "overview";
+    } catch {
+      return "overview";
+    }
+  });
+  function pick(t: TabKey) {
+    setTab(t);
+    try { sessionStorage.setItem(TAB_KEY, t); } catch { /* ignore */ }
+  }
 
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: "background.default" }}>
       <AppBar position="sticky">
         <Toolbar sx={{ height: 56, minHeight: "56px !important" }}>
-          <IconButton onClick={() => navigate("/admin/clients")} aria-label="Back to clients">
+          <IconButton onClick={() => navigate("/admin/clients")} aria-label="Back to accounts">
             <ArrowBackIcon />
           </IconButton>
           <Typography sx={{ fontSize: 18, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {data?.profile.display_name || "Client"}
+            {data?.profile.display_name || "Account"}
           </Typography>
         </Toolbar>
       </AppBar>
@@ -87,47 +121,50 @@ export default function ClientDetailPage() {
       {isError && (
         <Box sx={{ p: 4 }}>
           <Typography sx={{ fontWeight: 500 }}>
-            {(error as Error)?.message === "not_found" ? "This account doesn't exist any more." : "Couldn't load this client."}
+            {(error as Error)?.message === "not_found" ? "This account doesn't exist any more." : "Couldn't load this account."}
           </Typography>
-          <Typography sx={{ color: tokens.ink2, mt: 0.5, fontSize: 14 }}>Go back to Clients and pick them again, or refresh the page.</Typography>
+          <Typography sx={{ color: tokens.ink2, mt: 0.5, fontSize: 14 }}>Go back to Accounts and pick them again, or refresh the page.</Typography>
         </Box>
       )}
 
       {data && (
         <>
           <Header data={data} />
-          {/* The same groups the internal dashboard reads through
-              internal-client-feed: Results, Leads, Ads, Email & plan, Set up,
-              Brief, Profile, Service. */}
-          <Box sx={{ p: { xs: 1.5, md: 2.5 }, maxWidth: 1200, mx: "auto", display: "flex", flexDirection: "column", gap: 3 }}>
-            <Group title="Results" sub="What they did with their leads">
-              <ResultsSection agentId={data.profile.agent_id} />
-            </Group>
-            <Group title="Leads">
-              <LeadsSection data={data} />
-            </Group>
-            <Group title="Ads">
-              <AdsSection data={data} />
-            </Group>
-            <Group title="Email & plan">
-              <EmailSection data={data} />
-            </Group>
-            <Group title="Set up" sub="What sellers see">
-              <SetupSection data={data} />
-            </Group>
-            <Group title="Brief" sub="Sign-up and onboarding answers">
-              <BriefSection data={data} />
-              <OtherAnswersSection data={data} />
-              {data.dossier?.onboardingExtra && <OnboardingSection data={data} which="onboardingExtra" />}
-            </Group>
-            <Group title="Profile">
-              <ProfileSection data={data} />
-              <ContactSection data={data} />
-            </Group>
-            <Group title="Service">
-              <BillingSection data={data} />
-              <AutomationsSection data={data} />
-            </Group>
+          <Box sx={{ bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
+            <Box sx={{ maxWidth: 1200, mx: "auto", px: { xs: 0.5, md: 2 } }}>
+              <Tabs value={tab} onChange={(_e, v) => pick(v)} variant="scrollable" allowScrollButtonsMobile>
+                <Tab value="overview" label="Overview" />
+                <Tab value="brief" label="Brief" />
+                <Tab value="settings" label="Settings" />
+              </Tabs>
+            </Box>
+          </Box>
+          <Box sx={{ p: { xs: 1.5, md: 2.5 }, maxWidth: 1200, mx: "auto", display: "flex", flexDirection: "column", gap: 2 }}>
+            {tab === "overview" && <OverviewTab data={data} />}
+            {tab === "brief" && (
+              <Cols>
+                <BriefSection data={data} />
+                <Box sx={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+                  <OtherAnswersSection data={data} />
+                  {data.dossier?.onboardingExtra && <OnboardingSection data={data} which="onboardingExtra" />}
+                </Box>
+              </Cols>
+            )}
+            {tab === "settings" && (
+              <Cols>
+                <Box sx={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+                  <ProfileSection data={data} />
+                  <ContactSection data={data} />
+                  <LoginSection data={data} />
+                </Box>
+                <Box sx={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+                  <MessagesSection data={data} />
+                  <FacebookSection data={data} />
+                  <ContractSection data={data} />
+                  <BillingSection data={data} />
+                </Box>
+              </Cols>
+            )}
           </Box>
         </>
       )}
@@ -166,13 +203,21 @@ function Header({ data }: { data: Data }) {
   const { user } = useAuth();
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const showSnack = useSnack();
   const save = useClientSaver(p.agent_id);
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const { data: sales = [] } = useQuery({ queryKey: ["sold", p.agent_id], queryFn: () => listSoldListingsForAgent(p.agent_id) });
   const name = p.display_name || p.whatsapp_number || "Unnamed account";
   const phone = p.whatsapp_number || d?.contact.phones[0] || "";
   const email = p.email || d?.contact.emails[0] || "";
+  const setup = setupProgress({
+    displayName: p.display_name,
+    company: p.company,
+    whatsappNumber: p.whatsapp_number,
+    email: p.email,
+    avatarUrl: p.avatar_url,
+    salesCount: sales.length,
+  });
 
   function openDashboard() {
     setActiveAgent(p.agent_id === user?.id ? null : p.agent_id);
@@ -182,7 +227,6 @@ function Header({ data }: { data: Data }) {
 
   async function onPhoto(file: File | undefined) {
     if (!file || !user) return;
-    if (file.size > 2 * 1024 * 1024) { showSnack("Image must be under 2 MB"); return; }
     setUploading(true);
     await save(async () => {
       const url = await uploadClientPhoto(user.id, file);
@@ -193,7 +237,7 @@ function Header({ data }: { data: Data }) {
 
   return (
     <Box sx={{ bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
-      <Box sx={{ maxWidth: 1200, mx: "auto", p: { xs: 2, md: 3 }, display: "flex", gap: { xs: 2, md: 3 }, alignItems: { xs: "flex-start", md: "center" }, flexDirection: { xs: "column", md: "row" } }}>
+      <Box sx={{ maxWidth: 1200, mx: "auto", px: { xs: 2, md: 3 }, py: { xs: 2, md: 2.5 }, display: "flex", gap: { xs: 2, md: 3 }, alignItems: { xs: "flex-start", md: "center" }, flexDirection: { xs: "column", md: "row" } }}>
         <Box sx={{ display: "flex", gap: 2, alignItems: "center", flex: 1, minWidth: 0 }}>
           <Box
             component="button"
@@ -202,7 +246,7 @@ function Header({ data }: { data: Data }) {
             title="Change photo"
             sx={{ position: "relative", p: 0, border: 0, bgcolor: "transparent", borderRadius: "50%", cursor: "pointer", flexShrink: 0, "&:hover .cam, &:focus-visible .cam": { opacity: 1 } }}
           >
-            <Avatar src={clientPicture(p)} alt={name} sx={{ width: 80, height: 80, fontSize: 30, fontWeight: 600, bgcolor: p.sidebar_color || "#111827" }}>
+            <Avatar src={clientPicture(p)} alt={name} sx={{ width: 72, height: 72, fontSize: 28, fontWeight: 600, bgcolor: p.sidebar_color || "#111827" }}>
               {name[0]?.toUpperCase()}
             </Avatar>
             <Box
@@ -218,17 +262,49 @@ function Header({ data }: { data: Data }) {
           </Box>
           <Box sx={{ minWidth: 0 }}>
             <Typography sx={{ fontSize: 22, fontWeight: 600, lineHeight: 1.2 }}>{name}</Typography>
-            <Typography sx={{ fontSize: 14.5, color: tokens.ink2, mt: 0.25 }}>{p.company || "No agency on file"}</Typography>
-            {p.area && <Typography sx={{ fontSize: 13, color: tokens.ink3, mt: 0.25 }}>{p.area}</Typography>}
+            <Typography sx={{ fontSize: 14, color: tokens.ink2, mt: 0.25, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {[p.company || "No agency on file", p.area].filter(Boolean).join(" · ")}
+            </Typography>
+            <Box sx={{ display: "flex", gap: 0.75, flexWrap: "wrap", mt: 1 }}>
+              <Chip
+                size="small"
+                label={setup.complete ? "Set up: done" : `Set up: ${setup.done}/${SETUP_TOTAL}`}
+                color={setup.complete ? "success" : "default"}
+                variant="outlined"
+              />
+              <Chip size="small" variant="outlined" label={p.lead_confirmation_email ? "Email to leads: on" : "Email to leads: off"} />
+              {p.automations_paused && <Chip size="small" color="warning" variant="outlined" label="Automations paused" />}
+            </Box>
           </Box>
         </Box>
         <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
           <Button variant="contained" startIcon={<LoginIcon />} onClick={openDashboard}>Open their dashboard</Button>
-          {phone && (
-            <Button variant="outlined" startIcon={<WhatsAppIcon />} href={`https://wa.me/${digits(phone)}`} target="_blank" rel="noopener">WhatsApp</Button>
+          {p.fb_ad_account_id && (
+            <Button variant="outlined" endIcon={<OpenInNewIcon />} href={adsManagerUrl(p.fb_ad_account_id)} target="_blank" rel="noopener">
+              Ads Manager
+            </Button>
           )}
-          {phone && <Button variant="outlined" startIcon={<PhoneIcon />} href={`tel:+${digits(phone)}`}>Call</Button>}
-          {email && <Button variant="outlined" startIcon={<MailOutlineIcon />} href={`mailto:${email}`}>Email</Button>}
+          {phone && (
+            <Tooltip title="WhatsApp">
+              <IconButton href={`https://wa.me/${digits(phone)}`} target="_blank" rel="noopener" aria-label="WhatsApp" sx={{ border: `1px solid ${tokens.divider}` }}>
+                <WhatsAppIcon />
+              </IconButton>
+            </Tooltip>
+          )}
+          {phone && (
+            <Tooltip title="Call">
+              <IconButton href={`tel:+${digits(phone)}`} aria-label="Call" sx={{ border: `1px solid ${tokens.divider}` }}>
+                <PhoneIcon />
+              </IconButton>
+            </Tooltip>
+          )}
+          {email && (
+            <Tooltip title="Email">
+              <IconButton href={`mailto:${email}`} aria-label="Email" sx={{ border: `1px solid ${tokens.divider}` }}>
+                <MailOutlineIcon />
+              </IconButton>
+            </Tooltip>
+          )}
         </Box>
       </Box>
     </Box>
@@ -237,24 +313,11 @@ function Header({ data }: { data: Data }) {
 
 /* ───────────────────────── building blocks ───────────────────────── */
 
-function Group({ title, sub, children }: { title: string; sub?: string; children: ReactNode }) {
+/** Two columns on a computer, one on a phone. */
+function Cols({ children }: { children: ReactNode }) {
   return (
-    <Box component="section" aria-label={title}>
-      <Box sx={{ display: "flex", alignItems: "baseline", gap: 1, mb: 1, px: 0.5 }}>
-        <Typography component="h2" sx={{ fontSize: 17, fontWeight: 600 }}>{title}</Typography>
-        {sub && <Typography sx={{ fontSize: 13, color: tokens.ink3 }}>{sub}</Typography>}
-      </Box>
-      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" }, gap: 1.5, alignItems: "start" }}>
-        {children}
-      </Box>
-    </Box>
-  );
-}
-
-function Metrics({ items }: { items: [string, ReactNode][] }) {
-  return (
-    <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 1, gridColumn: "1 / -1" }}>
-      {items.map(([label, value]) => <Metric key={label} label={label} value={value} />)}
+    <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" }, gap: 2, alignItems: "start" }}>
+      {children}
     </Box>
   );
 }
@@ -379,15 +442,6 @@ function Empty({ children }: { children: ReactNode }) {
   return <Typography sx={{ fontSize: 13.5, color: tokens.ink3 }}>{children}</Typography>;
 }
 
-function Metric({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <Box sx={{ bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "8px", px: 2, py: 1.5 }}>
-      <Typography component="div" sx={{ fontSize: 22, fontWeight: 600, lineHeight: 1.2 }}>{value}</Typography>
-      <Typography sx={{ fontSize: 12, color: tokens.ink2, mt: 0.25 }}>{label}</Typography>
-    </Box>
-  );
-}
-
 function Bars({ data }: { data: Record<string, number> }) {
   const entries = Object.entries(data).sort((a, b) => b[1] - a[1]);
   if (!entries.length) return <Empty>No leads yet.</Empty>;
@@ -420,168 +474,407 @@ function ExtLink({ href, children }: { href: string; children: ReactNode }) {
   );
 }
 
-/* ───────────────────────── sections ───────────────────────── */
+/* ───────────────────────── overview ───────────────────────── */
 
-interface Results { leads: number; followed_up: number; booked: number; mandates: number; waiting: number; no_answer: number }
+function Tile({ label, value, tone }: { label: string; value: ReactNode; tone?: "warning" }) {
+  return (
+    <Box sx={{ bgcolor: "background.paper", border: `1px solid ${tone === "warning" ? "#f0c36d" : tokens.divider}`, borderRadius: "8px", px: 2, py: 1.5, minWidth: 0 }}>
+      <Typography component="div" sx={{ fontSize: 24, fontWeight: 600, lineHeight: 1.2, fontVariantNumeric: "tabular-nums" }}>{value}</Typography>
+      <Typography sx={{ fontSize: 12.5, color: tokens.ink2, mt: 0.25 }}>{label}</Typography>
+    </Box>
+  );
+}
 
-function ResultsSection({ agentId }: { agentId: string }) {
-  const [days, setDays] = useState<7 | 30>(7);
+function OverviewTab({ data }: { data: Data }) {
+  const p = data.profile;
+  const agentId = p.agent_id;
+  const acct = p.fb_ad_account_id;
+  const [range, setRange] = useDateRange("estatekit_account_range");
+  const { since, until, label } = resolveRange(range);
+  const sinceDay = ymd(since);
+  const untilDay = ymd(until);
+
   const { data: r, isLoading } = useQuery({
-    queryKey: ["agentResults", agentId, days],
-    queryFn: async () => {
-      const { data, error } = await supabase.rpc("get_agent_results", { p_agent: agentId, p_days: days });
-      if (error) throw new Error(error.message);
-      return data as Results | null;
-    },
+    queryKey: ["resultsBetween", agentId, sinceDay, untilDay],
+    queryFn: () => getResultsBetween(agentId, since, until),
     staleTime: 60_000,
   });
-  const v = (n: number | undefined) => (isLoading ? <Skeleton width={40} /> : (n ?? 0));
-  return (
-    <>
-      <Box sx={{ gridColumn: "1 / -1", display: "flex", gap: 1 }}>
-        {([7, 30] as const).map((d) => (
-          <Button key={d} size="small" variant={days === d ? "contained" : "outlined"} onClick={() => setDays(d)}>
-            {d === 7 ? "This week" : "30 days"}
-          </Button>
-        ))}
-      </Box>
-      <Metrics
-        items={[
-          ["New leads", v(r?.leads)],
-          ["Followed up", v(r?.followed_up)],
-          ["Booked", v(r?.booked)],
-          ["Mandates", v(r?.mandates)],
-          ["Waiting for a call (now)", v(r?.waiting)],
-          ["No answer (now)", v(r?.no_answer)],
-        ]}
-      />
-    </>
-  );
-}
-
-function LeadsSection({ data }: { data: Data }) {
-  const live = data.live;
-  return (
-    <>
-      <Metrics
-        items={[
-          ["Leads · 7 days", live?.leads_7d ?? 0],
-          ["Leads · 30 days", live?.leads_30d ?? 0],
-          ["Leads · all time", live?.leads_total ?? 0],
-          ["Last lead", live?.last_lead_at ? timeAgo(live.last_lead_at) : "never"],
-        ]}
-      />
-      <Section title="Leads by stage">
-        <Bars data={live?.by_stage ?? {}} />
-      </Section>
-    </>
-  );
-}
-
-function AdsSection({ data }: { data: Data }) {
-  const { profile: p, live } = data;
-  const save = useClientSaver(p.agent_id);
-  const leads30 = live?.leads_30d ?? 0;
-  const { data: spend, isLoading } = useQuery({
-    queryKey: ["spend30d", p.fb_ad_account_id],
-    queryFn: () => getSpend30d(p.fb_ad_account_id!),
-    enabled: !!p.fb_ad_account_id,
+  const { data: daily, isLoading: spendLoading } = useQuery({
+    queryKey: ["spendDaily", acct, sinceDay],
+    queryFn: () => getSpendDaily(acct!, sinceDay),
+    enabled: !!acct,
     staleTime: 30 * 60_000,
     retry: false,
   });
-  const { data: pages = [] } = useQuery({
-    queryKey: ["clientPages", p.agent_id],
-    queryFn: async () => {
-      const { data: rows, error } = await supabase.from("lead_pages").select("id, name, slug").eq("agent_id", p.agent_id).order("created_at");
-      if (error) throw new Error(error.message);
-      return rows as { id: string; name: string; slug: string }[];
-    },
-  });
-  const waiting = !!p.fb_ad_account_id && isLoading;
+  const spend = !acct ? null : spendLoading ? undefined : spendBetween(daily ?? null, sinceDay, untilDay);
+  const v = (n: number | undefined) => (isLoading ? <Skeleton width={40} /> : (n ?? 0));
+
   return (
     <>
-      <Metrics
-        items={[
-          ["Spend · 30 days", waiting ? <Skeleton width={60} /> : spend == null ? "—" : "R" + Math.round(spend).toLocaleString("en-ZA")],
-          ["CPL · 30 days", waiting ? <Skeleton width={60} /> : cplLabel(spend, leads30)],
-        ]}
-      />
-      <EditableSection
-        title="Facebook"
-        view={
-          <KV
-            rows={[
-              ["Ad account", p.fb_ad_account_id ? `act_${p.fb_ad_account_id}` : "Not linked"],
-              ["Facebook page ID", p.fb_page_id || "Not linked"],
-            ]}
-          />
-        }
-        fields={[
-          { key: "ad", label: "Facebook ad account ID", value: p.fb_ad_account_id || "", helper: "Numbers only; act_ is added for you" },
-          { key: "page", label: "Facebook page ID", value: p.fb_page_id || "" },
-        ]}
-        onSave={async (v) => {
-          const ad = v.ad.replace(/^act_/i, "").replace(/\D/g, "");
-          if (v.ad && !ad) return "The ad account ID should be numbers.";
-          const page = v.page.replace(/\D/g, "");
-          if (v.page && !page) return "The Facebook page ID should be numbers.";
-          const ok = await save(() => updateClientProfile(p.agent_id, { fb_ad_account_id: ad, fb_page_id: page }));
-          if (!ok) return "Not saved. Try again.";
-        }}
-      />
-      <Section title="Landing pages" sub={String(pages.length)}>
-        {pages.length ? (
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
-            {pages.map((pg) => (
-              <ExtLink key={pg.id} href={`/p/${pg.slug}`}>{pg.name || pg.slug}</ExtLink>
-            ))}
-          </Box>
-        ) : (
-          <Empty>No landing pages yet.</Empty>
-        )}
-      </Section>
+      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1.5, flexWrap: "wrap" }}>
+        <Typography component="h2" sx={{ fontSize: 17, fontWeight: 600 }}>{label}</Typography>
+        <RangePicker value={range} onChange={setRange} />
+      </Box>
+
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, 1fr)", sm: "repeat(3, 1fr)", lg: "repeat(6, 1fr)" }, gap: 1.5 }}>
+        <Tile label="New leads" value={v(r?.leads)} />
+        <Tile label="Ad spend" value={spend === undefined ? <Skeleton width={70} /> : spend == null ? "—" : money(spend)} />
+        <Tile label="Cost per lead" value={spend === undefined || isLoading ? <Skeleton width={60} /> : cplLabel(spend, r?.leads ?? 0)} />
+        <Tile label="Followed up" value={v(r?.followed_up)} />
+        <Tile label="Booked" value={v(r?.booked)} />
+        <Tile label="Mandates" value={v(r?.mandates)} />
+      </Box>
+
+      {r && (r.waiting > 0 || r.no_answer > 0) && (
+        <Box sx={{ bgcolor: tokens.amberTint, border: "1px solid #f0c36d", borderRadius: "8px", px: 2, py: 1.5 }}>
+          <Typography sx={{ fontSize: 14, fontWeight: 600 }}>Right now</Typography>
+          <Typography sx={{ fontSize: 14 }}>
+            {[
+              r.waiting > 0 ? `${r.waiting} ${r.waiting === 1 ? "lead is" : "leads are"} waiting for a first call` : "",
+              r.no_answer > 0 ? `${r.no_answer} didn't answer and need another try` : "",
+            ].filter(Boolean).join(" · ")}
+          </Typography>
+        </Box>
+      )}
+
+      <Cols>
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+          <Section title="Leads by stage" sub="All time">
+            <Bars data={data.live?.by_stage ?? {}} />
+            <Typography sx={{ fontSize: 12.5, color: tokens.ink3, mt: 1.5 }}>
+              {data.live?.leads_total ?? 0} leads in total · last lead {data.live?.last_lead_at ? timeAgo(data.live.last_lead_at) : "never"}
+            </Typography>
+          </Section>
+          <EmailStatsSection data={data} since={since} until={until} />
+        </Box>
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+          <AdAccountSection data={data} />
+          <SetupSection data={data} />
+          <LandingPagesSection data={data} />
+        </Box>
+      </Cols>
     </>
   );
 }
 
-function EmailSection({ data }: { data: Data }) {
-  const { profile: p } = data;
-  const save = useClientSaver(p.agent_id);
-  const [toggling, setToggling] = useState(false);
-  const { data: st } = useQuery({ queryKey: ["emailStats", p.agent_id], queryFn: () => getEmailStats(p.agent_id), staleTime: 60_000 });
-  const pct = (n: number) => (st && st.sent > 0 ? ` · ${Math.round((n / st.sent) * 100)}%` : "");
+// Meta's ad account statuses, in plain words.
+const ACCOUNT_STATUS: Record<number, string> = {
+  1: "Active",
+  2: "Disabled",
+  3: "Unpaid bill",
+  7: "Under review",
+  8: "Payment pending",
+  9: "Grace period",
+  100: "Closing",
+  101: "Closed",
+};
 
-  async function toggle(on: boolean) {
-    setToggling(true);
-    await save(() => updateClientProfile(p.agent_id, { lead_confirmation_email: on }), on ? "Confirmation emails on" : "Confirmation emails off");
-    setToggling(false);
+function AdAccountSection({ data }: { data: Data }) {
+  const acct = data.profile.fb_ad_account_id;
+  const { data: a, isLoading } = useQuery({
+    queryKey: ["fbAdAccount", acct],
+    queryFn: () => getFbAdAccount(acct!),
+    enabled: !!acct,
+    staleTime: 60 * 60_000,
+    retry: false,
+  });
+  if (!acct) {
+    return (
+      <Section title="Ad account">
+        <Empty>No ad account linked. Add it under Settings → Facebook.</Empty>
+      </Section>
+    );
+  }
+  const kind = fundingKind(a?.fundingType);
+  return (
+    <Section
+      title="Ad account"
+      action={
+        <Button size="small" endIcon={<OpenInNewIcon sx={{ fontSize: "16px !important" }} />} href={adsManagerUrl(acct)} target="_blank" rel="noopener" sx={{ my: -0.5 }}>
+          Ads Manager
+        </Button>
+      }
+    >
+      {isLoading ? (
+        <Skeleton height={90} />
+      ) : a?.note ? (
+        <Empty>Facebook won't show us this ad account. Check it's shared with EstateKit's Business Manager.</Empty>
+      ) : (
+        <KV
+          rows={[
+            [
+              "Pays by",
+              kind ? (
+                <Box component="span" key="pay" sx={{ display: "inline-flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+                  <Chip size="small" variant="outlined" color={kind === "Prepaid" ? "primary" : "default"} label={kind === "Prepaid" ? "Prepaid funds" : kind} sx={{ height: 22 }} />
+                  {a?.fundingLabel && <Box component="span" sx={{ color: tokens.ink2, fontSize: 13 }}>{a.fundingLabel}</Box>}
+                </Box>
+              ) : "Not set up",
+            ],
+            ["Status", a?.accountStatus != null ? ACCOUNT_STATUS[a.accountStatus] ?? `Code ${a.accountStatus}` : null],
+            ["Spent all time", a?.amountSpent != null ? money(a.amountSpent) : null],
+            ["Spending limit", a?.spendCap ? money(a.spendCap) : "None"],
+            ["Account", `act_${acct}`],
+          ]}
+        />
+      )}
+    </Section>
+  );
+}
+
+function EmailStatsSection({ data, since, until }: { data: Data; since: Date; until: Date }) {
+  const p = data.profile;
+  const { data: st, isLoading } = useQuery({
+    queryKey: ["emailStats", p.agent_id, ymd(since), ymd(until)],
+    queryFn: () => getEmailStats(p.agent_id, 30, { since, until }),
+    staleTime: 60_000,
+  });
+  const pct = (n: number) => (st && st.sent > 0 ? ` (${Math.round((n / st.sent) * 100)}%)` : "");
+  return (
+    <Section title="Email to leads & marketing plan" sub={p.lead_confirmation_email ? "On" : "Off"}>
+      {isLoading ? (
+        <Skeleton height={80} />
+      ) : !st?.sent ? (
+        <Empty>{p.lead_confirmation_email ? "No emails sent in these dates." : "Switched off. Turn it on under Settings → Messages to leads."}</Empty>
+      ) : (
+        <KV
+          rows={[
+            ["Sent", String(st.sent)],
+            ["Opened", `${st.opened}${pct(st.opened)}`],
+            ["Opened the plan", `${st.planOpened}${pct(st.planOpened)}`],
+            ["Tapped WhatsApp", `${st.clicked}${pct(st.clicked)}`],
+            ["Bounced or spam", st.bounced + st.failed + st.spam ? String(st.bounced + st.failed + st.spam) : null],
+          ]}
+        />
+      )}
+      <Box sx={{ mt: 1.25 }}>
+        <ExtLink href={`/plan/sample/${p.agent_id}`}>See the plan their sellers get</ExtLink>
+      </Box>
+    </Section>
+  );
+}
+
+function LandingPagesSection({ data }: { data: Data }) {
+  const p = data.profile;
+  const { data: pages = [] } = useQuery({
+    queryKey: ["clientPages", p.agent_id],
+    queryFn: async () => {
+      const { data: rows, error } = await supabase.from("lead_pages").select("id, name, slug, source_type").eq("agent_id", p.agent_id).order("created_at");
+      if (error) throw new Error(error.message);
+      return rows as { id: string; name: string; slug: string; source_type: string }[];
+    },
+  });
+  return (
+    <Section title="Lead sources" sub={String(pages.length)}>
+      {pages.length ? (
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+          {pages.map((pg) =>
+            pg.source_type === "fb_form" ? (
+              <Typography key={pg.id} sx={{ fontSize: 13.5 }}>
+                {pg.name} <Box component="span" sx={{ color: tokens.ink3 }}>· Facebook form</Box>
+              </Typography>
+            ) : (
+              <ExtLink key={pg.id} href={`/p/${pg.slug}`}>{pg.name || pg.slug}</ExtLink>
+            ),
+          )}
+        </Box>
+      ) : (
+        <Empty>No lead sources yet.</Empty>
+      )}
+    </Section>
+  );
+}
+
+/* ───────────────────────── settings ───────────────────────── */
+
+/** Their login: the WhatsApp number is the username; a new password can be set
+ *  (passwords are encrypted, so the old one can't be shown). */
+function LoginSection({ data }: { data: Data }) {
+  const p = data.profile;
+  const showSnack = useSnack();
+  const [open, setOpen] = useState(false);
+  const [pw, setPw] = useState("");
+  const [show, setShow] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  async function save() {
+    if (pw.trim().length < 8) return;
+    setBusy(true);
+    try {
+      await setAgentPassword(p.agent_id, pw.trim());
+      trackActivity("client_details_edited", { agentId: p.agent_id, detail: "New password set" });
+      showSnack(`New password set for ${p.display_name || "this account"}`);
+      setOpen(false);
+      setPw("");
+      setShow(false);
+    } catch (e) {
+      console.error(e);
+      showSnack("Couldn't set the password. Try again.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
-    <>
-      <Metrics
-        items={[
-          ["Sent · 30 days", st?.sent ?? 0],
-          ["Opened", `${st?.opened ?? 0}${pct(st?.opened ?? 0)}`],
-          ["Opened plan", `${st?.planOpened ?? 0}${pct(st?.planOpened ?? 0)}`],
-          ["Tapped WhatsApp", `${st?.clicked ?? 0}${pct(st?.clicked ?? 0)}`],
-        ]}
-      />
-      <Section title="Confirmation email">
-        <Box sx={{ display: "flex", alignItems: "center", ml: -1 }}>
-          <Switch checked={!!p.lead_confirmation_email} disabled={toggling} onChange={(e) => toggle(e.target.checked)} />
-          <Box>
-            <Typography sx={{ fontSize: 13.5 }}>Confirmation email {p.lead_confirmation_email ? "on" : "off"}</Typography>
-            <Typography sx={{ fontSize: 12, color: tokens.ink3 }}>
-              Emails each new lead in {p.display_name?.split(" ")[0] || "the agent"}'s name{p.email ? "" : ". Add their email first so replies reach them"}
-            </Typography>
-          </Box>
+    <Section
+      title="Login"
+      action={
+        <Button size="small" startIcon={<LockResetIcon sx={{ fontSize: "16px !important" }} />} onClick={() => { setOpen((o) => !o); setPw(""); setShow(false); }} sx={{ my: -0.5 }}>
+          {open ? "Cancel" : "Set new password"}
+        </Button>
+      }
+    >
+      <KV rows={[["Username", p.whatsapp_number || "No number on file"]]} />
+      <Typography sx={{ fontSize: 12.5, color: tokens.ink3, mt: 1 }}>
+        They log in with their phone number. Passwords are encrypted, so you can't see the old one, only set a new one and send it to them.
+      </Typography>
+      {open && (
+        <Box sx={{ display: "flex", gap: 1, mt: 1.5, flexWrap: "wrap", alignItems: "flex-start" }}>
+          <TextField
+            size="small"
+            autoFocus
+            type={show ? "text" : "password"}
+            label="New password"
+            value={pw}
+            onChange={(e) => setPw(e.target.value)}
+            helperText="At least 8 characters"
+            sx={{ flex: 1, minWidth: 200 }}
+            slotProps={{
+              input: {
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton size="small" onClick={() => setShow((s) => !s)} aria-label={show ? "Hide password" : "Show password"}>
+                      {show ? <VisibilityOffIcon fontSize="small" /> : <VisibilityIcon fontSize="small" />}
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              },
+            }}
+          />
+          <Button variant="contained" disabled={busy || pw.trim().length < 8} onClick={save} sx={{ height: 40 }}>
+            {busy ? "Saving…" : "Save"}
+          </Button>
         </Box>
-        <Box sx={{ mt: 1.25 }}>
-          <ExtLink href={`/plan/sample/${p.agent_id}`}>See the marketing plan their sellers get</ExtLink>
+      )}
+    </Section>
+  );
+}
+
+function MessagesSection({ data }: { data: Data }) {
+  const { profile: p } = data;
+  const save = useClientSaver(p.agent_id);
+  const [busy, setBusy] = useState<"email" | "auto" | null>(null);
+
+  async function toggleEmail(on: boolean) {
+    setBusy("email");
+    await save(() => updateClientProfile(p.agent_id, { lead_confirmation_email: on }), on ? "Confirmation emails on" : "Confirmation emails off");
+    setBusy(null);
+  }
+  async function toggleAuto(on: boolean) {
+    setBusy("auto");
+    await save(() => updateClientProfile(p.agent_id, { automations_paused: !on }), on ? "Automations switched on" : "Automations paused");
+    setBusy(null);
+  }
+
+  return (
+    <Section title="Messages to leads">
+      <Box sx={{ display: "flex", alignItems: "center", ml: -1 }}>
+        <Switch checked={!!p.lead_confirmation_email} disabled={busy === "email"} onChange={(e) => toggleEmail(e.target.checked)} />
+        <Box>
+          <Typography sx={{ fontSize: 13.5 }}>Confirmation email {p.lead_confirmation_email ? "on" : "off"}</Typography>
+          <Typography sx={{ fontSize: 12, color: tokens.ink3 }}>
+            Emails each new lead in {p.display_name?.split(" ")[0] || "the agent"}'s name{p.email ? "" : ". Add their email first so replies reach them"}
+          </Typography>
         </Box>
-      </Section>
-    </>
+      </Box>
+      <Box sx={{ display: "flex", alignItems: "center", mt: 0.5, ml: -1 }}>
+        <Switch checked={!p.automations_paused} disabled={busy === "auto"} onChange={(e) => toggleAuto(e.target.checked)} />
+        <Box>
+          <Typography sx={{ fontSize: 13.5 }}>Automations {p.automations_paused ? "paused" : "on"}</Typography>
+          <Typography sx={{ fontSize: 12, color: tokens.ink3 }}>Follow-up WhatsApps to this account's leads</Typography>
+        </Box>
+      </Box>
+    </Section>
+  );
+}
+
+function FacebookSection({ data }: { data: Data }) {
+  const { profile: p } = data;
+  const save = useClientSaver(p.agent_id);
+  return (
+    <EditableSection
+      title="Facebook"
+      view={
+        <KV
+          rows={[
+            ["Ad account", p.fb_ad_account_id ? `act_${p.fb_ad_account_id}` : "Not linked"],
+            ["Facebook page ID", p.fb_page_id || "Not linked"],
+          ]}
+        />
+      }
+      fields={[
+        { key: "ad", label: "Facebook ad account ID", value: p.fb_ad_account_id || "", helper: "Numbers only; act_ is added for you" },
+        { key: "page", label: "Facebook page ID", value: p.fb_page_id || "" },
+      ]}
+      onSave={async (v) => {
+        const ad = v.ad.replace(/^act_/i, "").replace(/\D/g, "");
+        if (v.ad && !ad) return "The ad account ID should be numbers.";
+        const page = v.page.replace(/\D/g, "");
+        if (v.page && !page) return "The Facebook page ID should be numbers.";
+        const ok = await save(() => updateClientProfile(p.agent_id, { fb_ad_account_id: ad, fb_page_id: page }));
+        if (!ok) return "Not saved. Try again.";
+      }}
+    />
+  );
+}
+
+/** Plan, renewal date and the signed agreement (moved here from the Account page). */
+function ContractSection({ data }: { data: Data }) {
+  const { profile: p } = data;
+  const save = useClientSaver(p.agent_id);
+  const showSnack = useSnack();
+  const [uploading, setUploading] = useState(false);
+
+  async function onPdf(file: File | undefined) {
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith(".pdf")) { showSnack("Only PDF files are allowed"); return; }
+    if (file.size > 10 * 1024 * 1024) { showSnack("File must be under 10 MB"); return; }
+    setUploading(true);
+    await save(async () => {
+      const path = `${p.agent_id}/contract-${Date.now()}.pdf`;
+      const { error } = await supabase.storage.from("logos").upload(path, file, { upsert: true, contentType: "application/pdf" });
+      if (error) throw error;
+      const url = supabase.storage.from("logos").getPublicUrl(path).data.publicUrl;
+      await updateClientProfile(p.agent_id, { contract_pdf_url: url });
+    }, "Contract uploaded");
+    setUploading(false);
+  }
+
+  return (
+    <EditableSection
+      title="Contract"
+      view={
+        <>
+          <KV
+            rows={[
+              ["Plan", p.tier === "paid" ? "Paid" : "Free"],
+              ["Renewal date", p.renewal_date ? new Date(p.renewal_date + "T00:00:00").toLocaleDateString("en-ZA", { day: "numeric", month: "long", year: "numeric" }) : "Not set"],
+              ["Agreement", p.contract_pdf_url ? <ExtLink key="pdf" href={p.contract_pdf_url}>View PDF</ExtLink> : "Not uploaded"],
+            ]}
+          />
+          <Button component="label" size="small" variant="outlined" startIcon={uploading ? <CircularProgress size={14} /> : <UploadFileIcon />} disabled={uploading} sx={{ mt: 1.5 }}>
+            {p.contract_pdf_url ? "Replace PDF" : "Upload PDF"}
+            <input type="file" hidden accept=".pdf,application/pdf" onChange={(e) => { onPdf(e.target.files?.[0]); e.target.value = ""; }} />
+          </Button>
+        </>
+      }
+      fields={[{ key: "renewal", label: "Renewal date (YYYY-MM-DD)", value: p.renewal_date || "", placeholder: "e.g. 2026-12-01" }]}
+      onSave={async (v) => {
+        if (v.renewal && !/^\d{4}-\d{2}-\d{2}$/.test(v.renewal)) return "Use the format YYYY-MM-DD, e.g. 2026-12-01.";
+        const ok = await save(() => updateClientProfile(p.agent_id, { renewal_date: v.renewal || null }));
+        if (!ok) return "Not saved. Try again.";
+      }}
+    />
   );
 }
 
@@ -736,28 +1029,6 @@ function ProfileSection({ data }: { data: Data }) {
         if (!ok) return "Not saved. Try again.";
       }}
     />
-  );
-}
-
-function AutomationsSection({ data }: { data: Data }) {
-  const { profile: p } = data;
-  const save = useClientSaver(p.agent_id);
-  const [toggling, setToggling] = useState(false);
-  async function toggle(on: boolean) {
-    setToggling(true);
-    await save(() => updateClientProfile(p.agent_id, { automations_paused: !on }), on ? "Automations switched on" : "Automations paused");
-    setToggling(false);
-  }
-  return (
-    <Section title="Automations">
-      <Box sx={{ display: "flex", alignItems: "center", ml: -1 }}>
-        <Switch checked={!p.automations_paused} disabled={toggling} onChange={(e) => toggle(e.target.checked)} />
-        <Box>
-          <Typography sx={{ fontSize: 13.5 }}>Automations {p.automations_paused ? "paused" : "on"}</Typography>
-          <Typography sx={{ fontSize: 12, color: tokens.ink3 }}>Follow-up WhatsApps to this client's leads</Typography>
-        </Box>
-      </Box>
-    </Section>
   );
 }
 

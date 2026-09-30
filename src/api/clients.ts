@@ -51,6 +51,8 @@ export interface ClientProfile {
   /** Email each new lead a confirmation in the agent's name. Off by default. */
   lead_confirmation_email: boolean;
   tier: string;
+  renewal_date: string | null;
+  contract_pdf_url: string | null;
 }
 
 export interface ClientCardRow extends ClientProfile {
@@ -60,7 +62,7 @@ export interface ClientCardRow extends ClientProfile {
 }
 
 const PROFILE_COLS =
-  "agent_id, display_name, whatsapp_number, email, area, company, avatar_url, sidebar_logo_url, sidebar_color, fb_page_id, fb_ad_account_id, is_operator, onboarded, automations_paused, lead_confirmation_email, tier";
+  "agent_id, display_name, whatsapp_number, email, area, company, avatar_url, sidebar_logo_url, sidebar_color, fb_page_id, fb_ad_account_id, is_operator, onboarded, automations_paused, lead_confirmation_email, tier, renewal_date, contract_pdf_url";
 
 /** Everything the grid needs, in two small reads. */
 export async function listClients(): Promise<ClientCardRow[]> {
@@ -76,13 +78,64 @@ export async function listClients(): Promise<ClientCardRow[]> {
   return (profiles.data as ClientProfile[]).map((p) => ({ ...p, live: liveBy.get(p.agent_id) ?? null, sales_count: salesBy.get(p.agent_id) ?? 0 }));
 }
 
-/** Ad spend over the last 30 days, from Meta. null when there's no ad
- *  account or Meta couldn't be read. */
-export async function getSpend30d(adAccountId: string): Promise<number | null> {
-  const since = new Date(Date.now() - 29 * 864e5).toISOString().slice(0, 10);
+/** Daily ad spend from `since` ("YYYY-MM-DD") to today, from Meta:
+ *  { "2026-09-01": 123.45, … }. null when Meta couldn't be read. */
+export async function getSpendDaily(adAccountId: string, since: string): Promise<Record<string, number> | null> {
   const { data, error } = await supabase.functions.invoke("fb-ad-insights", { body: { adAccountId, since } });
   if (error || data?.error || data?.note) return null;
-  return Object.values((data?.daily ?? {}) as Record<string, number>).reduce((a, b) => a + (Number(b) || 0), 0);
+  return (data?.daily ?? {}) as Record<string, number>;
+}
+
+/** Spend on the days from `since` up to (not including) `until`, both "YYYY-MM-DD". */
+export function spendBetween(daily: Record<string, number> | null | undefined, since: string, until: string): number | null {
+  if (!daily) return null;
+  return Object.entries(daily).reduce((a, [d, v]) => (d >= since && d < until ? a + (Number(v) || 0) : a), 0);
+}
+
+/** Leads per account in [since, until), for the Accounts list (operators only). */
+export async function getLeadCounts(since: Date, until: Date): Promise<Map<string, number>> {
+  const { data, error } = await supabase.rpc("operator_lead_counts", { p_since: since.toISOString(), p_until: until.toISOString() });
+  if (error) throw new Error(error.message);
+  return new Map(((data ?? []) as { agent_id: string; leads: number }[]).map((r) => [r.agent_id, Number(r.leads)]));
+}
+
+export interface AgentResults {
+  leads: number;
+  followed_up: number;
+  booked: number;
+  mandates: number;
+  waiting: number;
+  no_answer: number;
+}
+
+/** One account's results in [since, until); waiting and no_answer are "now". */
+export async function getResultsBetween(agentId: string, since: Date, until: Date): Promise<AgentResults | null> {
+  const { data, error } = await supabase.rpc("get_agent_results_between", {
+    p_agent: agentId,
+    p_since: since.toISOString(),
+    p_until: until.toISOString(),
+  });
+  if (error) throw new Error(error.message);
+  return (data as AgentResults) ?? null;
+}
+
+/** Their Ads Manager, opened on this ad account. */
+export const adsManagerUrl = (adAccountId: string) =>
+  `https://adsmanager.facebook.com/adsmanager/manage/campaigns?act=${adAccountId.replace(/^act_/, "")}`;
+
+/** How the ad account pays, from Meta's funding source type: a card, or
+ *  money added up front ("prepaid"). Meta's codes: 1 = card, 20 = stored
+ *  balance (prepaid), 12/13 = PayPal, 17 = direct debit. */
+export function fundingKind(type: string | null | undefined): "Card" | "Prepaid" | "PayPal" | "Debit order" | "Other" | null {
+  if (type == null || type === "") return null;
+  switch (String(type)) {
+    case "1": return "Card";
+    case "20": return "Prepaid";
+    case "12":
+    case "13": return "PayPal";
+    case "17": return "Debit order";
+    default: return "Other";
+  }
 }
 
 /** Cost per lead for the card and header: "R12" or "—" when it can't be
@@ -109,7 +162,7 @@ export async function getClient(agentId: string): Promise<{ profile: ClientProfi
 }
 
 export type ClientProfilePatch = Partial<
-  Pick<ClientProfile, "display_name" | "whatsapp_number" | "email" | "area" | "company" | "avatar_url" | "fb_page_id" | "fb_ad_account_id" | "automations_paused" | "lead_confirmation_email">
+  Pick<ClientProfile, "display_name" | "whatsapp_number" | "email" | "area" | "company" | "avatar_url" | "fb_page_id" | "fb_ad_account_id" | "automations_paused" | "lead_confirmation_email" | "renewal_date" | "contract_pdf_url" | "tier">
 >;
 
 /** Operator edit of a client's account row. Throws if nothing was saved

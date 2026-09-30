@@ -234,8 +234,8 @@ conditioning).
 | `/setup` | SetupPage: "Get set up" checklist with progress bar, autosaves | signed in |
 | `/upgrade` | UpgradePage | signed in |
 | `/overview` | OverviewPage | **operator** (route guard) |
-| `/admin/clients` | ClientsPage: every client as a card | **operator** (route guard) |
-| `/admin/clients/:agentId` | ClientDetailPage: one client, in groups: Results, Leads, Ads, Email & plan, Set up, Brief, Profile, Service (same groups as `internal-client-feed`) | **operator** (route guard) |
+| `/admin/clients` | ClientsPage (**"Accounts"** in the menu): every account with a date-range picker (last 7/30/90 days, this/last month, custom): leads, ad spend, CPL, "Pays by" (card / prepaid funds, from Meta's funding source), last lead, set-up, Ads Manager link | **operator** (route guard) |
+| `/admin/clients/:agentId` | ClientDetailPage: one account. Header (photo, status chips, Open their dashboard, Ads Manager, WhatsApp/call/email) and tabs: **Overview** (date range: leads, spend, CPL, followed up, booked, mandates; right-now waiting/no-answer; leads by stage; ad account + how it pays; email & plan; set up; lead sources), **Brief**, **Settings** (details, contact, **login + set new password**, messages to leads, Facebook IDs, **contract** (renewal date, PDF), billing). Agent logins and contract editing moved here from the Account page. | **operator** (route guard) |
 | `/admin/automations` | AdminAutomationsPage | **operator** (in-page guard) |
 | `/home` | HomePage | dev builds only |
 | `/l/:token` | LeadActionPage: WhatsApp action link | **public**, via token |
@@ -247,12 +247,7 @@ conditioning).
 `OnboardingGate` sends not-yet-onboarded users to `/welcome`. It checks the
 **logged-in** user, not the account being viewed.
 
-**My results (Leads page)**: one line under the title ("This week: 15 new
-leads, you followed up 6 · 151 waiting for a call"); tap for tiles (new,
-followed up, booked, mandates; week or 30 days) and a "To do now" box.
-Numbers come from `get_agent_results(agent, days)` (security definer; the
-agent, an operator or the service role), the same numbers the internal
-dashboard shows via `internal-client-feed`.
+**Account results**: `get_agent_results(agent, days)` and `get_agent_results_between(agent, since, until)` (security definer; the agent, an operator or the service role), plus `operator_lead_counts(since, until)` for the Accounts list. The internal dashboard gets the same numbers via `internal-client-feed`. (The agents' "My results" line on Leads was removed on 30 Sept.)
 
 **Brief (one shape for every client)**: `src/lib/brief.ts` (copied into `internal-client-feed`). Sign-up part: wants, city, suburbs, budget, agency. Onboarding-call part: deals in the last 6 months, average home price, commission %, 3-month goal, callback times, special offer, team, website, business address. Each answer comes from (first found): saved on the client page (standard label) → /start sign-up → the older onboarding form (old question names are aliases) → the profile. The client page shows "Still to ask" for empty call questions.
 

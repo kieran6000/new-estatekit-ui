@@ -62,7 +62,6 @@ import { syncFbLeads } from "../api/leadPages";
 import { getActiveAgentIdSync } from "../api/_client";
 import { getMyProfile } from "../api/agentProfile";
 import GSheetIcon from "../components/GSheetIcon";
-import MyResults from "../components/MyResults";
 import StageMenu from "../components/StageMenu";
 import OutcomeSheet from "../components/OutcomeSheet";
 import FocusCallModal from "../components/FocusCallModal";
@@ -351,8 +350,6 @@ export default function LeadsPage() {
           <Avatar sx={{ width: 32, height: 32, bgcolor: tokens.primary, fontSize: 14, ml: 0.5 }}>K</Avatar>
         </Toolbar>
       </AppBar>
-
-      <MyResults />
 
       {pendingLead && (
         <Box sx={{ display: "flex", alignItems: "center", gap: 1.25, p: "12px 12px 12px 16px", bgcolor: tokens.amberTint, borderBottom: `1px solid ${tokens.divider}` }}>

@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import {
   AppBar,
   Avatar,
   Box,
+  Chip,
   IconButton,
   InputAdornment,
   Skeleton,
@@ -16,20 +17,34 @@ import {
   TableSortLabel,
   TextField,
   Toolbar,
+  Tooltip,
   Typography,
   useMediaQuery,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import SearchIcon from "@mui/icons-material/Search";
 import CloseIcon from "@mui/icons-material/Close";
+import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import { tokens } from "../theme";
-import { clientPicture, cplLabel, getSpend30d, listClients, type ClientCardRow } from "../api/clients";
+import {
+  adsManagerUrl,
+  clientPicture,
+  cplLabel,
+  fundingKind,
+  getLeadCounts,
+  getSpendDaily,
+  listClients,
+  spendBetween,
+  type ClientCardRow,
+} from "../api/clients";
+import { getFbAdAccount } from "../api/agentProfile";
 import { setupProgress, SETUP_TOTAL } from "../lib/setup";
-
+import { resolveRange, useDateRange, ymd } from "../lib/range";
 import { timeAgo } from "../lib/timeAgo";
 import SignupRequests from "../components/SignupRequests";
+import RangePicker from "../components/RangePicker";
 
-type ColKey = "name" | "agency" | "area" | "leads" | "cpl" | "last" | "setup";
+type ColKey = "name" | "agency" | "leads" | "spend" | "cpl" | "funding" | "last" | "setup";
 type Dir = "asc" | "desc";
 
 interface Row {
@@ -38,23 +53,28 @@ interface Row {
   agency: string;
   area: string;
   leads: number;
-  /** undefined while Meta is still loading; null when it can't be worked out. */
-  cpl: number | null | undefined;
+  /** undefined while Meta is still loading; null when there's no ad account or Meta can't be read. */
   spend: number | null | undefined;
+  cpl: number | null | undefined;
+  funding: string | null | undefined;
+  fundingLabel: string | null;
   last: number | null;
   /** Get set up: how many of the six are done. */
   setup: number;
 }
 
 const COLS: { k: ColKey; label: string; num?: boolean; wideOnly?: boolean; firstDir: Dir }[] = [
-  { k: "name", label: "Client", firstDir: "asc" },
+  { k: "name", label: "Account", firstDir: "asc" },
   { k: "agency", label: "Agency", wideOnly: true, firstDir: "asc" },
-  { k: "area", label: "Area", wideOnly: true, firstDir: "asc" },
-  { k: "leads", label: "Leads 30d", num: true, firstDir: "desc" },
-  { k: "cpl", label: "CPL 30d", num: true, firstDir: "asc" },
-  { k: "last", label: "Last lead", num: true, firstDir: "desc" },
-  { k: "setup", label: "Set up", num: true, firstDir: "asc" },
+  { k: "leads", label: "Leads", num: true, firstDir: "desc" },
+  { k: "spend", label: "Ad spend", num: true, firstDir: "desc" },
+  { k: "cpl", label: "CPL", num: true, firstDir: "asc" },
+  { k: "funding", label: "Pays by", wideOnly: true, firstDir: "asc" },
+  { k: "last", label: "Last lead", num: true, wideOnly: true, firstDir: "desc" },
+  { k: "setup", label: "Set up", num: true, wideOnly: true, firstDir: "asc" },
 ];
+
+const money = (n: number) => "R" + Math.round(n).toLocaleString("en-ZA");
 
 function cityOf(area: string): string {
   return (area || "").split(/[,/•|]/)[0].trim();
@@ -82,39 +102,62 @@ function cmp(a: string | number | null | undefined, b: string | number | null | 
 
 function loadSort(): { k: ColKey; dir: Dir } {
   try {
-    const s = JSON.parse(localStorage.getItem("estatekit_clients_table_sort") || "null");
+    const s = JSON.parse(localStorage.getItem("estatekit_accounts_table_sort") || "null");
     if (s && COLS.some((c) => c.k === s.k) && (s.dir === "asc" || s.dir === "desc")) return s;
   } catch { /* ignore */ }
   return { k: "leads", dir: "desc" };
 }
 
+/** Operators: every account, with leads, ad spend and cost per lead for the
+ *  chosen dates, how they pay for ads, and a way into their Ads Manager. */
 export default function ClientsPage() {
   const navigate = useNavigate();
   const wide = useMediaQuery("(min-width:900px)");
+  const [range, setRange] = useDateRange("estatekit_accounts_range");
+  const { since, until, label } = resolveRange(range);
+  const sinceDay = ymd(since);
+  const untilDay = ymd(until);
+
   const { data: clients, isLoading, isError } = useQuery({ queryKey: ["clients"], queryFn: listClients, staleTime: 60_000 });
+  const { data: counts } = useQuery({
+    queryKey: ["leadCounts", sinceDay, untilDay],
+    queryFn: () => getLeadCounts(since, until),
+    staleTime: 60_000,
+  });
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState(loadSort);
-  useEffect(() => { try { localStorage.setItem("estatekit_clients_table_sort", JSON.stringify(sort)); } catch { /* ignore */ } }, [sort]);
+  useEffect(() => { try { localStorage.setItem("estatekit_accounts_table_sort", JSON.stringify(sort)); } catch { /* ignore */ } }, [sort]);
 
-  // One Meta read per ad account (same cache key as the client page), so CPL
-  // is known up front and the column can sort.
+  // One Meta read per ad account for spend (from the range's first day), and
+  // one for how it pays. Both cached, so moving between ranges stays light.
   const withAds = (clients ?? []).filter((c) => c.fb_ad_account_id);
   const spendQueries = useQueries({
     queries: withAds.map((c) => ({
-      queryKey: ["spend30d", c.fb_ad_account_id],
-      queryFn: () => getSpend30d(c.fb_ad_account_id!),
+      queryKey: ["spendDaily", c.fb_ad_account_id, sinceDay],
+      queryFn: () => getSpendDaily(c.fb_ad_account_id!, sinceDay),
       staleTime: 30 * 60_000,
       retry: false,
     })),
   });
+  const fundingQueries = useQueries({
+    queries: withAds.map((c) => ({
+      queryKey: ["fbAdAccount", c.fb_ad_account_id],
+      queryFn: () => getFbAdAccount(c.fb_ad_account_id!),
+      staleTime: 60 * 60_000,
+      retry: false,
+    })),
+  });
   const spendBy = new Map(withAds.map((c, i) => [c.fb_ad_account_id!, spendQueries[i]]));
-  const spendKey = spendQueries.map((q) => `${q.status}:${q.data ?? ""}`).join("|");
+  const fundingBy = new Map(withAds.map((c, i) => [c.fb_ad_account_id!, fundingQueries[i]]));
+  const metaKey = [...spendQueries, ...fundingQueries].map((q) => `${q.status}:${q.dataUpdatedAt}`).join("|");
 
   const rows: Row[] = useMemo(() => {
     return (clients ?? []).map((c) => {
-      const leads = c.live?.leads_30d ?? 0;
-      const q = c.fb_ad_account_id ? spendBy.get(c.fb_ad_account_id) : undefined;
-      const spend = !c.fb_ad_account_id ? null : q?.isLoading ? undefined : (q?.data ?? null);
+      const leads = counts?.get(c.agent_id) ?? 0;
+      const acct = c.fb_ad_account_id;
+      const sq = acct ? spendBy.get(acct) : undefined;
+      const fq = acct ? fundingBy.get(acct) : undefined;
+      const spend = !acct ? null : sq?.isLoading ? undefined : spendBetween(sq?.data ?? null, sinceDay, untilDay);
       const cpl = spend === undefined ? undefined : spend && leads ? spend / leads : null;
       return {
         c,
@@ -122,8 +165,10 @@ export default function ClientsPage() {
         agency: c.company || "",
         area: cityOf(c.area),
         leads,
-        cpl,
         spend,
+        cpl,
+        funding: !acct ? null : fq?.isLoading ? undefined : fundingKind(fq?.data?.fundingType),
+        fundingLabel: fq?.data?.fundingLabel ?? null,
         last: c.live?.last_lead_at ? new Date(c.live.last_lead_at).getTime() : null,
         setup: setupProgress({
           displayName: c.display_name,
@@ -135,14 +180,22 @@ export default function ClientsPage() {
         }).done,
       };
     });
-    // spendKey stands in for the query results, which are a new array each render.
+    // metaKey stands in for the Meta query results, which are new arrays each render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clients, spendKey]);
+  }, [clients, counts, metaKey, sinceDay, untilDay]);
 
   const shown = useMemo(() => {
     const list = rows.filter((r) => matches(r.c, search.trim()));
     return list.sort((a, b) => cmp(a[sort.k], b[sort.k], sort.dir) || a.name.localeCompare(b.name));
   }, [rows, search, sort]);
+
+  // Totals for the range (spend only once every account's figure is in).
+  const totals = useMemo(() => {
+    const leads = rows.reduce((a, r) => a + r.leads, 0);
+    const loading = rows.some((r) => r.spend === undefined);
+    const spend = rows.reduce((a, r) => a + (r.spend || 0), 0);
+    return { leads, spend, loading, active: rows.filter((r) => r.leads > 0).length };
+  }, [rows]);
 
   function onSort(k: ColKey) {
     const col = COLS.find((c) => c.k === k)!;
@@ -155,21 +208,21 @@ export default function ClientsPage() {
     <Box sx={{ minHeight: "100vh", bgcolor: "background.default" }}>
       <AppBar position="sticky">
         <Toolbar sx={{ height: 56, minHeight: "56px !important" }}>
-          <IconButton onClick={() => navigate("/leads")}>
+          <IconButton onClick={() => navigate("/leads")} aria-label="Back">
             <ArrowBackIcon />
           </IconButton>
-          <Typography sx={{ fontSize: 18, fontWeight: 500 }}>Clients</Typography>
+          <Typography sx={{ fontSize: 18, fontWeight: 500 }}>Accounts</Typography>
           {clients && <Typography sx={{ ml: 1, fontSize: 14, color: tokens.ink3 }}>{clients.length}</Typography>}
         </Toolbar>
       </AppBar>
 
-      <Box sx={{ bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}`, px: 2, py: 1.5 }}>
+      <Box sx={{ bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}`, px: 2, py: 1.5, display: "flex", gap: 1.5, flexWrap: "wrap", alignItems: "center" }}>
         <TextField
           size="small"
-          fullWidth
           placeholder="Search name, agency, area, phone…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
+          sx={{ flex: 1, minWidth: 220 }}
           slotProps={{
             input: {
               startAdornment: (
@@ -187,17 +240,27 @@ export default function ClientsPage() {
             },
           }}
         />
+        <RangePicker value={range} onChange={setRange} />
       </Box>
 
-      <Box sx={{ p: { xs: 0, md: 2 }, maxWidth: 1400, mx: "auto" }}>
+      <Box sx={{ p: { xs: 1.5, md: 2 }, maxWidth: 1400, mx: "auto", display: "flex", flexDirection: "column", gap: 2 }}>
         <SignupRequests />
+
+        {/* Totals for the chosen dates. */}
+        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, 1fr)", md: "repeat(4, 1fr)" }, gap: 1.5 }}>
+          <Kpi label={`Leads · ${label}`} value={counts ? totals.leads.toLocaleString("en-ZA") : <Skeleton width={60} />} />
+          <Kpi label={`Ad spend · ${label}`} value={totals.loading ? <Skeleton width={80} /> : money(totals.spend)} />
+          <Kpi label="Cost per lead" value={totals.loading ? <Skeleton width={60} /> : cplLabel(totals.spend, totals.leads)} />
+          <Kpi label="Accounts with leads" value={counts ? `${totals.active} of ${rows.length}` : <Skeleton width={60} />} />
+        </Box>
+
         {isError && (
           <Typography sx={{ color: tokens.ink2, p: 2 }}>
-            Couldn't load your clients. Check your connection and refresh the page.
+            Couldn't load the accounts. Check your connection and refresh the page.
           </Typography>
         )}
 
-        <Box sx={{ bgcolor: "background.paper", border: { md: `1px solid ${tokens.divider}` }, borderRadius: { md: "8px" }, overflow: "hidden" }}>
+        <Box sx={{ bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "8px", overflow: "hidden" }}>
           <Table size="small" sx={{ "& td, & th": { borderColor: tokens.divider2 } }}>
             <TableHead>
               <TableRow>
@@ -213,6 +276,7 @@ export default function ClientsPage() {
                     </TableSortLabel>
                   </TableCell>
                 ))}
+                <TableCell sx={{ bgcolor: tokens.surface2, width: 48 }} aria-label="Ads Manager" />
               </TableRow>
             </TableHead>
             <TableBody>
@@ -222,6 +286,7 @@ export default function ClientsPage() {
                     {cols.map((col) => (
                       <TableCell key={col.k}><Skeleton /></TableCell>
                     ))}
+                    <TableCell />
                   </TableRow>
                 ))}
               {shown.map((r) => (
@@ -238,23 +303,67 @@ export default function ClientsPage() {
                       </Avatar>
                       <Box sx={{ minWidth: 0 }}>
                         <Typography sx={{ fontSize: 14, fontWeight: 600, lineHeight: 1.3 }}>{r.name || "Unnamed account"}</Typography>
-                        {!wide && (r.agency || r.area) && (
-                          <Typography sx={{ fontSize: 12, color: tokens.ink2, lineHeight: 1.3 }}>{[r.agency, r.area].filter(Boolean).join(" · ")}</Typography>
-                        )}
+                        <Typography sx={{ fontSize: 12, color: tokens.ink2, lineHeight: 1.3 }}>
+                          {wide ? r.area : [r.agency, r.area].filter(Boolean).join(" · ")}
+                        </Typography>
                       </Box>
                     </Box>
                   </TableCell>
                   {wide && <TableCell sx={{ color: tokens.ink2 }}>{r.agency || "—"}</TableCell>}
-                  {wide && <TableCell sx={{ color: tokens.ink2 }}>{r.area || "—"}</TableCell>}
-                  <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{r.leads}</TableCell>
+                  <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>
+                    {counts ? r.leads : <Skeleton width={30} sx={{ ml: "auto" }} />}
+                  </TableCell>
+                  <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums" }}>
+                    {r.spend === undefined ? <Skeleton width={50} sx={{ ml: "auto" }} /> : r.spend == null ? "—" : money(r.spend)}
+                  </TableCell>
                   <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums" }}>
                     {r.cpl === undefined ? <Skeleton width={44} sx={{ ml: "auto" }} /> : cplLabel(r.spend, r.leads)}
                   </TableCell>
-                  <TableCell align="right" sx={{ whiteSpace: "nowrap", color: r.last ? tokens.ink : tokens.ink3 }}>
-                    {r.c.live?.last_lead_at ? timeAgo(r.c.live.last_lead_at) : "never"}
-                  </TableCell>
-                  <TableCell align="right" sx={{ whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums", color: r.setup === SETUP_TOTAL ? "success.main" : tokens.ink }}>
-                    {r.setup === SETUP_TOTAL ? "Done" : `${r.setup}/${SETUP_TOTAL}`}
+                  {wide && (
+                    <TableCell>
+                      {r.funding === undefined ? (
+                        <Skeleton width={60} />
+                      ) : r.funding ? (
+                        <Tooltip title={r.fundingLabel || ""} disableHoverListener={!r.fundingLabel}>
+                          <Chip
+                            size="small"
+                            variant="outlined"
+                            label={r.funding === "Prepaid" ? "Prepaid funds" : r.funding}
+                            color={r.funding === "Prepaid" ? "primary" : "default"}
+                            sx={{ height: 22, fontSize: 12 }}
+                          />
+                        </Tooltip>
+                      ) : (
+                        <Typography component="span" sx={{ fontSize: 13, color: tokens.ink3 }}>—</Typography>
+                      )}
+                    </TableCell>
+                  )}
+                  {wide && (
+                    <TableCell align="right" sx={{ whiteSpace: "nowrap", color: r.last ? tokens.ink : tokens.ink3 }}>
+                      {r.c.live?.last_lead_at ? timeAgo(r.c.live.last_lead_at) : "never"}
+                    </TableCell>
+                  )}
+                  {wide && (
+                    <TableCell align="right" sx={{ whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums", color: r.setup === SETUP_TOTAL ? "success.main" : tokens.ink }}>
+                      {r.setup === SETUP_TOTAL ? "Done" : `${r.setup}/${SETUP_TOTAL}`}
+                    </TableCell>
+                  )}
+                  <TableCell align="right" sx={{ py: "2px !important" }}>
+                    {r.c.fb_ad_account_id && (
+                      <Tooltip title="Open Ads Manager">
+                        <IconButton
+                          size="small"
+                          component="a"
+                          href={adsManagerUrl(r.c.fb_ad_account_id)}
+                          target="_blank"
+                          rel="noopener"
+                          onClick={(e) => e.stopPropagation()}
+                          aria-label={`Open ${r.name}'s Ads Manager`}
+                        >
+                          <OpenInNewIcon sx={{ fontSize: 18 }} />
+                        </IconButton>
+                      </Tooltip>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
@@ -263,12 +372,21 @@ export default function ClientsPage() {
 
           {clients && shown.length === 0 && (
             <Box sx={{ textAlign: "center", py: 6, color: tokens.ink2 }}>
-              <Typography sx={{ fontWeight: 500 }}>No clients match</Typography>
+              <Typography sx={{ fontWeight: 500 }}>No accounts match</Typography>
               <Typography sx={{ fontSize: 13.5, mt: 0.5 }}>Try a different name, agency or area.</Typography>
             </Box>
           )}
         </Box>
       </Box>
+    </Box>
+  );
+}
+
+function Kpi({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <Box sx={{ bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "8px", px: 2, py: 1.5 }}>
+      <Typography component="div" sx={{ fontSize: 22, fontWeight: 600, lineHeight: 1.2, fontVariantNumeric: "tabular-nums" }}>{value}</Typography>
+      <Typography sx={{ fontSize: 12.5, color: tokens.ink2, mt: 0.25 }}>{label}</Typography>
     </Box>
   );
 }

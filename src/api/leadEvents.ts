@@ -80,15 +80,16 @@ export interface EmailStats {
 /** Confirmation email results for one agent: the number of LEADS with each
  *  outcome in the last `days` days (not raw event counts). Operators only
  *  (lead history is operator-readable). */
-export async function getEmailStats(agentId: string, days = 30): Promise<EmailStats> {
-  const since = new Date(Date.now() - days * 864e5).toISOString();
-  const { data, error } = await supabase
+export async function getEmailStats(agentId: string, days = 30, range?: { since: Date; until: Date }): Promise<EmailStats> {
+  const since = (range?.since ?? new Date(Date.now() - days * 864e5)).toISOString();
+  let q = supabase
     .from("lead_events")
     .select("lead_id, event_type")
     .eq("agent_id", agentId)
     .or("event_type.like.email_%,event_type.eq.plan_opened")
-    .gte("created_at", since)
-    .limit(5000);
+    .gte("created_at", since);
+  if (range) q = q.lt("created_at", range.until.toISOString());
+  const { data, error } = await q.limit(5000);
   if (error) throw new Error(error.message);
   const leads = (t: string) => new Set((data ?? []).filter((r) => r.event_type === t).map((r) => r.lead_id)).size;
   return {
