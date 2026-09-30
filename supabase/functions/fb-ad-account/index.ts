@@ -53,7 +53,7 @@ Deno.serve(async (req) => {
     }
     if (tokens.length === 0) return json({ error: "No FB token configured" }, 500);
 
-    const fields = "balance,amount_spent,spend_cap,currency,name,account_status,funding_source_details";
+    const fields = "balance,amount_spent,spend_cap,currency,name,account_status,disable_reason,funding_source_details";
     let lastErr = "";
     for (const token of tokens) {
       const res = await fetch(`${GRAPH}/${actId}?fields=${fields}&access_token=${token}`);
@@ -69,6 +69,8 @@ Deno.serve(async (req) => {
           spendCap: toMajor(data.spend_cap),
           name: data.name ?? null,
           accountStatus: data.account_status ?? null,
+          // 3 = disabled over a payment problem (RISK_PAYMENT).
+          disableReason: data.disable_reason ?? null,
           // e.g. "Visa •••• 1234" for a card, or the wallet/prepaid label Meta gives it.
           fundingLabel: funding?.display_string ?? null,
           fundingType: funding?.type ?? null,
@@ -80,7 +82,7 @@ Deno.serve(async (req) => {
     // "no access" state instead of erroring. Common cause: the ad account
     // owner hasn't granted the app ads_read/ads_management.
     console.warn("fb-ad-account: all tokens failed:", lastErr);
-    return json({ currency: "ZAR", balance: null, amountSpent: null, spendCap: null, name: null, accountStatus: null, fundingLabel: null, fundingType: null, note: lastErr });
+    return json({ currency: "ZAR", balance: null, amountSpent: null, spendCap: null, name: null, accountStatus: null, disableReason: null, fundingLabel: null, fundingType: null, note: lastErr });
   } catch (err) {
     return json({ error: String(err) }, 500);
   }

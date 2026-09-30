@@ -119,6 +119,22 @@ export async function getResultsBetween(agentId: string, since: Date, until: Dat
   return (data as AgentResults) ?? null;
 }
 
+/** A real payment problem, not just spend building up until the next charge:
+ *  Facebook says the bill is unpaid, pending or in its grace period, or it
+ *  disabled the account over payment; or the amount due is more than about a
+ *  week of this account's normal spend (min R500), meaning a charge didn't go
+ *  through. Only used to colour the icon; the reason isn't shown. */
+export function hasPaymentProblem(
+  a: { accountStatus?: number | null; disableReason?: number | null; balance?: number | null } | null | undefined,
+  avgDailySpend: number | null | undefined,
+): boolean {
+  if (!a) return false;
+  if (a.accountStatus === 3 || a.accountStatus === 8 || a.accountStatus === 9) return true;
+  if (a.accountStatus === 2 && a.disableReason === 3) return true;
+  const due = a.balance ?? 0;
+  return due > Math.max(500, (avgDailySpend ?? 0) * 7);
+}
+
 /** Their Ads Manager, opened on this ad account. */
 export const adsManagerUrl = (adAccountId: string) =>
   `https://adsmanager.facebook.com/adsmanager/manage/campaigns?act=${adAccountId.replace(/^act_/, "")}`;

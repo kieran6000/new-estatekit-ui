@@ -32,6 +32,7 @@ import {
   fundingKind,
   getLeadCounts,
   getSpendDaily,
+  hasPaymentProblem,
   listClients,
   spendBetween,
   type ClientCardRow,
@@ -59,8 +60,11 @@ interface Row {
   funding: string | null | undefined;
   fundingType: string | null;
   fundingLabel: string | null;
-  /** Amount due to Facebook right now (Meta's balance); > 0 means they owe. */
+  /** Amount due to Facebook right now (Meta's balance). Shown on hover only. */
   owed: number | null;
+  accountStatus: number | null;
+  /** A real payment problem (hasPaymentProblem), not just normal spend. */
+  problem: boolean;
   last: number | null;
   /** Get set up: how many of the six are done. */
   setup: number;
@@ -120,6 +124,7 @@ export default function ClientsPage() {
   const { since, until, label } = resolveRange(range);
   const sinceDay = ymd(since);
   const untilDay = ymd(until);
+  const rangeDays = Math.max(1, Math.round((until.getTime() - since.getTime()) / 864e5));
 
   const { data: clients, isLoading, isError } = useQuery({ queryKey: ["clients"], queryFn: listClients, staleTime: 60_000 });
   const { data: counts } = useQuery({
@@ -174,6 +179,8 @@ export default function ClientsPage() {
         fundingType: fq?.data?.fundingType ?? null,
         fundingLabel: fq?.data?.fundingLabel ?? null,
         owed: fq?.data?.balance ?? null,
+        accountStatus: fq?.data?.accountStatus ?? null,
+        problem: hasPaymentProblem(fq?.data, spend != null ? spend / rangeDays : null),
         last: c.live?.last_lead_at ? new Date(c.live.last_lead_at).getTime() : null,
         setup: setupProgress({
           displayName: c.display_name,
@@ -187,11 +194,12 @@ export default function ClientsPage() {
     });
     // metaKey stands in for the Meta query results, which are new arrays each render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clients, counts, metaKey, sinceDay, untilDay]);
+  }, [clients, counts, metaKey, sinceDay, untilDay, rangeDays]);
 
   const shown = useMemo(() => {
     const list = rows.filter((r) => matches(r.c, search.trim()));
-    const key = (r: Row) => (sort.k === "funding" ? (r.owed && r.owed > 0 ? -r.owed : r.funding) : r[sort.k]);
+    // "Pays by": accounts with a payment problem first.
+    const key = (r: Row) => (sort.k === "funding" ? (r.funding ? (r.problem ? "0" : "1") + r.funding : null) : r[sort.k]);
     return list.sort((a, b) => cmp(key(a) as string | number | null | undefined, key(b) as string | number | null | undefined, sort.dir) || a.name.localeCompare(b.name));
   }, [rows, search, sort]);
 
@@ -200,8 +208,7 @@ export default function ClientsPage() {
     const leads = rows.reduce((a, r) => a + r.leads, 0);
     const loading = rows.some((r) => r.spend === undefined);
     const spend = rows.reduce((a, r) => a + (r.spend || 0), 0);
-    const owing = rows.filter((r) => r.owed && r.owed > 0);
-    return { leads, spend, loading, active: rows.filter((r) => r.leads > 0).length, owing: owing.length, owed: owing.reduce((a, r) => a + (r.owed || 0), 0) };
+    return { leads, spend, loading, active: rows.filter((r) => r.leads > 0).length, problems: rows.filter((r) => r.problem).length };
   }, [rows]);
 
   function onSort(k: ColKey) {
@@ -260,9 +267,9 @@ export default function ClientsPage() {
           <Kpi label="Cost per lead" value={totals.loading ? <Skeleton width={60} /> : cplLabel(totals.spend, totals.leads)} />
           <Kpi label="Accounts with leads" value={counts ? `${totals.active} of ${rows.length}` : <Skeleton width={60} />} />
           <Kpi
-            label={totals.owing ? `Owed to Facebook · ${totals.owing} ${totals.owing === 1 ? "account" : "accounts"}` : "Owed to Facebook"}
-            value={totals.loading ? <Skeleton width={60} /> : money(totals.owed)}
-            warn={totals.owed > 0}
+            label="Payment problems"
+            value={totals.loading ? <Skeleton width={60} /> : totals.problems ? `${totals.problems} ${totals.problems === 1 ? "account" : "accounts"}` : "None"}
+            warn={totals.problems > 0}
           />
         </Box>
 
@@ -336,7 +343,7 @@ export default function ClientsPage() {
                       {r.funding === undefined ? (
                         <Skeleton width={60} />
                       ) : r.funding ? (
-                        <FundingChip type={r.fundingType} label={r.fundingLabel} balance={r.owed} />
+                        <FundingChip type={r.fundingType} label={r.fundingLabel} balance={r.owed} problem={r.problem} status={r.accountStatus} showLabel />
                       ) : (
                         <Typography component="span" sx={{ fontSize: 13, color: tokens.ink3 }}>—</Typography>
                       )}

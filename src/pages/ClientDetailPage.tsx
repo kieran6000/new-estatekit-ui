@@ -41,6 +41,7 @@ import {
   cplLabel,
   fundingKind,
   getClient,
+  hasPaymentProblem,
   getResultsBetween,
   getSpendDaily,
   saveClientDossier,
@@ -579,6 +580,14 @@ function AdAccountSection({ data }: { data: Data }) {
     staleTime: 60 * 60_000,
     retry: false,
   });
+  const since30 = ymd(new Date(Date.now() - 29 * 864e5));
+  const { data: daily30 } = useQuery({
+    queryKey: ["spendDaily", acct, since30],
+    queryFn: () => getSpendDaily(acct!, since30),
+    enabled: !!acct,
+    staleTime: 30 * 60_000,
+    retry: false,
+  });
   if (!acct) {
     return (
       <Section title="Ad account">
@@ -587,6 +596,8 @@ function AdAccountSection({ data }: { data: Data }) {
     );
   }
   const kind = fundingKind(a?.fundingType);
+  const avgDaily = daily30 ? (spendBetween(daily30, since30, ymd(new Date(Date.now() + 864e5))) ?? 0) / 30 : null;
+  const problem = hasPaymentProblem(a, avgDaily);
   return (
     <Section
       title="Ad account"
@@ -607,12 +618,12 @@ function AdAccountSection({ data }: { data: Data }) {
               "Pays by",
               kind ? (
                 <Box component="span" key="pay" sx={{ display: "inline-flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
-                  <FundingChip type={a?.fundingType} label={a?.fundingLabel} balance={a?.balance} />
+                  <FundingChip type={a?.fundingType} label={a?.fundingLabel} balance={a?.balance} problem={problem} status={a?.accountStatus} showLabel />
                   {a?.fundingLabel && <Box component="span" sx={{ color: tokens.ink2, fontSize: 13 }}>{a.fundingLabel}</Box>}
                 </Box>
               ) : "Not set up",
             ],
-            ["Owes Facebook", a?.balance != null && a.balance > 0 ? <Box component="span" key="owed" sx={{ color: "warning.dark", fontWeight: 600 }}>{money(a.balance)}</Box> : "Nothing due"],
+            ["Balance due", a?.balance != null && a.balance > 0 ? <Box component="span" key="due" sx={problem ? { color: "warning.dark", fontWeight: 600 } : undefined}>{money(a.balance)}</Box> : "Nothing due"],
             ["Status", a?.accountStatus != null ? ACCOUNT_STATUS[a.accountStatus] ?? `Code ${a.accountStatus}` : null],
             ["Spent all time", a?.amountSpent != null ? money(a.amountSpent) : null],
             ["Spending limit", a?.spendCap ? money(a.spendCap) : "None"],

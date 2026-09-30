@@ -10,6 +10,8 @@ export interface FbAdAccount {
   /** e.g. "Visa •••• 1234" for a card, or Meta's own label for a wallet/prepaid source. */
   fundingLabel: string | null;
   fundingType: string | null;
+  /** Why Meta disabled it; 3 = a payment problem. */
+  disableReason?: number | null;
   /** Present when Meta could not be read (e.g. missing ads_read permission). */
   note?: string;
 }
