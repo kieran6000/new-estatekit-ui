@@ -63,6 +63,22 @@ function stagePatch(stage: string, appointmentAt?: string | null): Record<string
   return {};
 }
 
+/** Who is actually using the link. A logged-in user other than the agent
+ *  (e.g. an operator opening it from a Discord card) is recorded as
+ *  themselves, so their clicks never count as the agent's activity. With no
+ *  login (the agent from WhatsApp), it's the agent the link was sent to. */
+// deno-lint-ignore no-explicit-any
+async function actorFor(req: Request, admin: any, agentId: string): Promise<string> {
+  const jwt = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+  if (!jwt) return agentId;
+  try {
+    const { data } = await admin.auth.getUser(jwt);
+    return data?.user?.id || agentId;
+  } catch {
+    return agentId;
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
 
@@ -103,11 +119,12 @@ Deno.serve(async (req) => {
     }
 
     // Tag the write so the lead history shows the agent, via their WhatsApp link.
+    const actor = await actorFor(req, admin, tokenRow.agent_id);
     const writer = createClient(SUPABASE_URL, SERVICE_KEY, {
       global: {
         headers: {
           "x-ek-source": "action_link",
-          "x-ek-actor": tokenRow.agent_id,
+          "x-ek-actor": actor,
           "x-ek-device": (req.headers.get("user-agent") ?? "").slice(0, 300),
         },
       },

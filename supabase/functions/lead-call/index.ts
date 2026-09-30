@@ -20,6 +20,22 @@ function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 }
 
+/** Who is actually using the link. A logged-in user other than the agent
+ *  (e.g. an operator opening it from a Discord card) is recorded as
+ *  themselves, so their clicks never count as the agent's activity. With no
+ *  login (the agent from WhatsApp), it's the agent the link was sent to. */
+// deno-lint-ignore no-explicit-any
+async function actorFor(req: Request, admin: any, agentId: string): Promise<string> {
+  const jwt = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+  if (!jwt) return agentId;
+  try {
+    const { data } = await admin.auth.getUser(jwt);
+    return data?.user?.id || agentId;
+  } catch {
+    return agentId;
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   try {
@@ -44,10 +60,11 @@ Deno.serve(async (req) => {
     if (!lead) return json({ error: "Lead not found" }, 404);
     if (lead.agent_id !== tokenRow.agent_id) return json({ error: "Not allowed" }, 403);
 
+    const actor = await actorFor(req, admin, tokenRow.agent_id);
     const { error } = await admin.from("lead_events").insert({
       lead_id: lead.id,
       agent_id: lead.agent_id,
-      actor_id: tokenRow.agent_id,
+      actor_id: actor,
       event_type: "call",
       source: "action_link",
       device: req.headers.get("user-agent")?.slice(0, 300) ?? null,
