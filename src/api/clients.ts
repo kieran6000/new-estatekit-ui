@@ -99,6 +99,27 @@ export async function getLeadCounts(since: Date, until: Date): Promise<Map<strin
   return new Map(((data ?? []) as { agent_id: string; leads: number }[]).map((r) => [r.agent_id, Number(r.leads)]));
 }
 
+export interface LastActivity {
+  /** Latest of the two below. */
+  lastSeen: string | null;
+  /** Logged in or had the app open. */
+  lastInApp: string | null;
+  /** Called, moved or noted a lead (in the app or via a WhatsApp action link). */
+  lastLeadAction: string | null;
+}
+
+/** Each account's latest sign of life (operators only). */
+export async function getLastActivity(): Promise<Map<string, LastActivity>> {
+  const { data, error } = await supabase.rpc("operator_last_activity");
+  if (error) throw new Error(error.message);
+  return new Map(
+    ((data ?? []) as { agent_id: string; last_seen: string | null; last_in_app: string | null; last_lead_action: string | null }[]).map((r) => [
+      r.agent_id,
+      { lastSeen: r.last_seen, lastInApp: r.last_in_app, lastLeadAction: r.last_lead_action },
+    ]),
+  );
+}
+
 export interface AgentResults {
   leads: number;
   followed_up: number;
