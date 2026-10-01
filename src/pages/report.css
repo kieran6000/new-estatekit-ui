@@ -101,7 +101,6 @@
 .wr-how-tip { margin: 6px 0 0; padding: 8px 10px; border-radius: 4px; background: var(--wr-warn-bg); font-size: 15px; }
 @media (max-width: 600px) { .wr-how { margin: 0 16px 16px; } .wr-how-list { grid-template-columns: minmax(0, 1fr); } .wr-how-list dd { margin-bottom: 6px; } }
 
-.wr-foot { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 24px; border-top: 1px solid var(--wr-line); font-size: 14px; color: var(--wr-ink2); }
 
 /* Printed / saved as PDF: one page on A4 or Letter. Zero page margin stops
    the browser adding its own date, title and URL lines. */
