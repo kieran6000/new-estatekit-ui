@@ -25,6 +25,8 @@ import PrivacyPolicyPage from "./pages/PrivacyPolicyPage";
 import SignupPage from "./pages/SignupPage";
 import SoldPage from "./pages/SoldPage";
 import PlanPage from "./pages/PlanPage";
+import WeeklyReportPage from "./pages/WeeklyReportPage";
+import AuditLogPage from "./pages/AuditLogPage";
 
 function Splash() {
   return (
@@ -80,6 +82,9 @@ export default function App() {
         <>
           <Route path="/login" element={<Navigate to="/leads" replace />} />
           <Route path="/welcome" element={<WelcomePage />} />
+          {/* A printable document, so no app shell around it. */}
+          <Route path="/report/:agentId" element={<OperatorOnly><WeeklyReportPage /></OperatorOnly>} />
+          <Route path="/report" element={<OperatorOnly><WeeklyReportPage /></OperatorOnly>} />
           <Route element={<OnboardingGate><AppShell /></OnboardingGate>}>
             <Route path="/leads" element={<LeadsPage />} />
             <Route path="/leads/:id" element={<LeadDetailPage />} />
@@ -94,6 +99,7 @@ export default function App() {
             <Route path="/admin/clients" element={<OperatorOnly><ClientsPage /></OperatorOnly>} />
             <Route path="/admin/clients/:agentId" element={<OperatorOnly><ClientDetailPage /></OperatorOnly>} />
             <Route path="/account" element={<AccountPage />} />
+            <Route path="/account/audit" element={<OperatorOnly><AuditLogPage /></OperatorOnly>} />
             <Route path="/setup" element={<SetupPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/leads" replace />} />

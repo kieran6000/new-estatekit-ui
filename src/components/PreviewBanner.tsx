@@ -20,6 +20,8 @@ export default function PreviewBanner() {
         px: 2,
         py: 0.75,
         lineHeight: 1.35,
+        // Never on a printed or saved PDF (the weekly report goes to clients).
+        "@media print": { display: "none" },
       }}
     >
       PREVIEW - live data. Clients can't see this link.
