@@ -169,7 +169,9 @@ const FILTER_LABEL: Record<FilterField, string> = {
 
 const STAGES = Array.from(new Set([...PIPELINE_STAGES.seller, ...PIPELINE_STAGES.buyer]));
 
-const MERGE_FIELDS = ["{{first_name}}", "{{name}}", "{{phone}}", "{{area}}", "{{address}}", "{{stage}}", "{{agent_name}}", "{{agent_phone}}", "{{action_link}}", "{{plan_link}}"];
+// No {{phone}}: agents tapped the number in the WhatsApp instead of the call
+// link, so the call was never logged in EstateKit (Oct 2026).
+const MERGE_FIELDS = ["{{first_name}}", "{{name}}", "{{area}}", "{{address}}", "{{stage}}", "{{agent_name}}", "{{agent_phone}}", "{{action_link}}", "{{plan_link}}"];
 
 const SAMPLE_LEAD = { id: "sample", name: "Thandi Mokoena", phone: "082 555 0199", stage: "No Answer", next_label: "Retry today" };
 
@@ -308,7 +310,7 @@ const TEMPLATES: { name: string; blurb: string; make: () => Workflow }[] = [
       id: nid(), name: "New lead: speed-to-lead", published: false, updatedAt: new Date().toISOString(),
       trigger: { kind: "lead_created" }, filters: [], exits: ALL_EXITS(), settings: { ...DEFAULT_SETTINGS(), quietHours: false },
       steps: [
-        { id: nid(), type: "whatsapp", to: "agent", text: "New lead: {{name}} ({{phone}}). Tap to contact: {{action_link}}" },
+        { id: nid(), type: "whatsapp", to: "agent", text: "New lead: {{name}}. Tap to contact: {{action_link}}" },
         { id: nid(), type: "wait", amount: 10, unit: "minutes" },
         { id: nid(), type: "branch", check: "stage_is", value: "New Lead", yes: [{ id: nid(), type: "whatsapp", to: "agent", text: "{{first_name}} is still waiting for your call: {{action_link}}" }], no: [] },
         { id: nid(), type: "wait", amount: 1, unit: "hours" },
