@@ -1,3 +1,4 @@
+import { trackActivity } from "../lib/activity";
 import { supabase, getCurrentUserId, getActiveAgentId } from "./_client";
 
 export interface FbAdAccount {
@@ -31,6 +32,7 @@ export async function setAgentPassword(agentId: string, newPassword: string): Pr
   });
   if (error) throw new Error(data?.error || error.message);
   if (data?.error) throw new Error(data.error);
+  trackActivity("password_reset", { agentId, detail: "New password set by an operator" });
 }
 
 export interface ActiveAd {

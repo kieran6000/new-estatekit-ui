@@ -6,11 +6,12 @@ import { supabase } from "./_client";
 //                          WhatsApps and emails, lead arrivals, plan opens)
 //   operator_last_activity each user's last sign-in and last action
 //   agent_profiles         every user's details
-// Not recorded yet (they only go to Discord via track-activity): setup changes,
-// ad pauses, account changes, sign-in history and IP/country. Those need an
-// add-only audit table that track-activity also writes to.
+//   audit_log              sign-ins and sign-outs, setup changes, ad pauses,
+//                          automation switches, password resets, account
+//                          switching, with IP, country and location. Written
+//                          by track-activity from the caller's verified sign-in.
 
-export type AuditCategory = "login" | "leads" | "automations";
+export type AuditCategory = "login" | "leads" | "automations" | "setup" | "ads" | "account";
 
 export interface AuditUser {
   id: string;
@@ -27,6 +28,10 @@ export interface AuditUser {
   lastSignIn: string | null;
   lastLeadAction: string | null;
   lastDevice: string;
+  /** From the latest audit_log entry with a location. */
+  lastCountry: string;
+  lastLocation: string;
+  lastIp: string;
   leads: number;
   pages: number;
 }
@@ -47,6 +52,9 @@ export interface AuditEvent {
   after?: string;
   device: string;
   via: string;
+  ip?: string;
+  country?: string;
+  location?: string;
 }
 
 /** PostgREST returns at most 1000 rows per request: page through. */
@@ -142,6 +150,70 @@ function toEvent(r: EventRow): AuditEvent {
   }
 }
 
+const AUDIT_ACTION: Record<string, string> = {
+  login: "Signed in",
+  logout: "Signed out",
+  form_type_changed: "Changed the form type",
+  email_switched: "Switched the confirmation email",
+  email_wording_changed: "Changed the confirmation email wording",
+  client_details_edited: "Edited client details",
+  whatsapp_number_changed: "Changed the WhatsApp number",
+  page_link_changed: "Changed a page link",
+  lead_page_created: "Created a lead page",
+  lead_page_deleted: "Deleted a lead page",
+  sold_listing_added: "Added a recent sale",
+  ad_paused: "Paused an ad",
+  ad_resumed: "Turned an ad back on",
+  automation_toggled: "Switched an automation",
+  automations_stopped: "Emergency stop: all automations off",
+  account_switched: "Switched account",
+  password_reset: "Reset a password",
+};
+
+interface AuditRow {
+  id: string;
+  created_at: string;
+  event: string;
+  category: string;
+  actor_id: string | null;
+  account_id: string | null;
+  detail: string | null;
+  ip: string | null;
+  country: string | null;
+  location: string | null;
+  device: string | null;
+}
+
+const AUDIT_COLS = "id, created_at, event, category, actor_id, account_id, detail, ip, country, location, device";
+
+function fromAudit(r: AuditRow): AuditEvent {
+  return {
+    id: `a-${r.id}`,
+    at: r.created_at,
+    actorId: r.actor_id,
+    actorLabel: r.actor_id ? "" : "Not signed in",
+    accountId: r.account_id,
+    category: (["login", "setup", "ads", "automations", "account"].includes(r.category) ? r.category : "setup") as AuditCategory,
+    action: AUDIT_ACTION[r.event] ?? r.event,
+    target: r.detail ?? undefined,
+    device: deviceLabel(r.device),
+    via: "EstateKit app",
+    ip: r.ip ?? undefined,
+    country: r.country ?? undefined,
+    location: r.location ?? undefined,
+  };
+}
+
+/** audit_log rows, or none if the table isn't there yet (it's created by a migration). */
+async function auditRows(build: () => PromiseLike<{ data: unknown; error: { message: string; code?: string } | null }>): Promise<AuditRow[]> {
+  const { data, error } = await build();
+  if (error) {
+    if (error.code === "42P01" || /audit_log/.test(error.message)) return [];
+    throw new Error(error.message);
+  }
+  return (data ?? []) as AuditRow[];
+}
+
 interface ActivityRow { agent_id: string; last_seen: string | null; last_in_app: string | null; last_lead_action: string | null }
 
 export interface AuditData {
@@ -154,7 +226,7 @@ export interface AuditData {
 const EVENT_CAP = 5000;
 
 export async function getAuditData(sinceIso: string): Promise<AuditData> {
-  const [profilesRes, activityRes, leadRows, pageRows, deviceRows, eventRows] = await Promise.all([
+  const [profilesRes, activityRes, leadRows, pageRows, deviceRows, eventRows, auditInRange, auditLatest] = await Promise.all([
     supabase.from("agent_profiles").select("agent_id, display_name, whatsapp_number, email, company, area, tier, is_operator, automations_paused, renewal_date"),
     supabase.rpc("operator_last_activity"),
     fetchAll<{ agent_id: string }>((a, b) => supabase.from("leads").select("agent_id").eq("archived", false).range(a, b)),
@@ -169,6 +241,8 @@ export async function getAuditData(sinceIso: string): Promise<AuditData> {
         .range(a, b) as unknown as PromiseLike<{ data: EventRow[] | null; error: { message: string } | null }>,
       EVENT_CAP,
     ),
+    auditRows(() => supabase.from("audit_log").select(AUDIT_COLS).gte("created_at", sinceIso).order("created_at", { ascending: false }).limit(EVENT_CAP)),
+    auditRows(() => supabase.from("audit_log").select(AUDIT_COLS).not("actor_id", "is", null).not("country", "is", null).order("created_at", { ascending: false }).limit(1000)),
   ]);
   if (profilesRes.error) throw new Error(profilesRes.error.message);
   if (activityRes.error) throw new Error(activityRes.error.message);
@@ -177,6 +251,8 @@ export async function getAuditData(sinceIso: string): Promise<AuditData> {
   const leadCount = count(leadRows);
   const pageCount = count(pageRows);
   const activity = new Map(((activityRes.data ?? []) as ActivityRow[]).map((a) => [a.agent_id, a]));
+  const lastPlace = new Map<string, AuditRow>();
+  for (const a of auditLatest) if (a.actor_id && !lastPlace.has(a.actor_id)) lastPlace.set(a.actor_id, a);
   const lastDevice = new Map<string, string>();
   for (const d of (deviceRows.data ?? []) as { actor_id: string; device: string }[]) {
     if (!lastDevice.has(d.actor_id)) lastDevice.set(d.actor_id, deviceLabel(d.device));
@@ -198,17 +274,23 @@ export async function getAuditData(sinceIso: string): Promise<AuditData> {
       lastSeen: a?.last_seen ?? null,
       lastSignIn: a?.last_in_app ?? null,
       lastLeadAction: a?.last_lead_action ?? null,
-      lastDevice: lastDevice.get(p.agent_id) ?? "",
+      lastDevice: lastDevice.get(p.agent_id) || deviceLabel(lastPlace.get(p.agent_id)?.device),
+      lastCountry: lastPlace.get(p.agent_id)?.country ?? "",
+      lastLocation: lastPlace.get(p.agent_id)?.location ?? "",
+      lastIp: lastPlace.get(p.agent_id)?.ip ?? "",
       leads: leadCount.get(p.agent_id) ?? 0,
       pages: pageCount.get(p.agent_id) ?? 0,
     };
   }).sort((x, y) => (y.lastSeen ?? "").localeCompare(x.lastSeen ?? ""));
 
-  // Sign-ins: only the latest one per user is stored today, so that is what we show.
+  // Sign-ins now come from audit_log. For anyone with none logged there yet
+  // (before the table existed), fall back to their latest sign-in time.
+  const audited = auditInRange.map(fromAudit);
+  const loggedIn = new Set(audited.filter((e) => e.category === "login" && e.actorId).map((e) => e.actorId));
   const signIns: AuditEvent[] = users
-    .filter((u) => u.lastSignIn && u.lastSignIn >= sinceIso)
+    .filter((u) => u.lastSignIn && u.lastSignIn >= sinceIso && !loggedIn.has(u.id))
     .map((u) => ({ id: `signin-${u.id}`, at: u.lastSignIn!, actorId: u.id, actorLabel: "", accountId: u.id, category: "login", action: "Last signed in", device: u.lastDevice, via: "EstateKit app" }));
 
-  const events = [...eventRows.map(toEvent), ...signIns].sort((x, y) => y.at.localeCompare(x.at));
+  const events = [...eventRows.map(toEvent), ...audited, ...signIns].sort((x, y) => y.at.localeCompare(x.at));
   return { users, events, capped: eventRows.length >= EVENT_CAP };
 }

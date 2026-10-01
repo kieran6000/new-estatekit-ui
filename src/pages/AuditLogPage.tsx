@@ -40,6 +40,15 @@ import UnarchiveOutlinedIcon from "@mui/icons-material/UnarchiveOutlined";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import ErrorOutlineIcon from "@mui/icons-material/ErrorOutlined";
 import DriveFileMoveOutlinedIcon from "@mui/icons-material/DriveFileMoveOutlined";
+import LogoutIcon from "@mui/icons-material/Logout";
+import KeyIcon from "@mui/icons-material/Key";
+import BlockIcon from "@mui/icons-material/Block";
+import TuneIcon from "@mui/icons-material/Tune";
+import CampaignOutlinedIcon from "@mui/icons-material/CampaignOutlined";
+import PauseCircleOutlinedIcon from "@mui/icons-material/PauseCircleOutlined";
+import PlayCircleOutlinedIcon from "@mui/icons-material/PlayCircleOutlined";
+import LinkIcon from "@mui/icons-material/Link";
+import WebIcon from "@mui/icons-material/Web";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { tokens } from "../theme";
@@ -47,25 +56,39 @@ import { timeAgo } from "../lib/timeAgo";
 import { getAuditData, type AuditCategory, type AuditEvent, type AuditUser } from "../api/audit";
 
 // Audit log: who did what, to which account, and when. Operators only.
-// Real data from src/api/audit.ts (lead history, last sign-ins, profiles).
-// Setup changes, ad changes and sign-in history aren't stored yet; see the
-// note under the filters.
+// Real data from src/api/audit.ts: lead history, the audit_log table
+// (sign-ins, setup, ads, automation switches, access) and profiles.
 
 const CATEGORY_LABEL: Record<AuditCategory, string> = {
   login: "Sign-ins",
   leads: "Leads",
+  setup: "Setup changes",
+  ads: "Ads",
   automations: "Automations & emails",
+  account: "Users & access",
 };
 
 const CATEGORY_ICON: Record<AuditCategory, { icon: React.ReactNode; color: string }> = {
   login: { icon: <LoginIcon />, color: "#1565c0" },
   leads: { icon: <PersonOutlineIcon />, color: "#2e7d32" },
   automations: { icon: <BoltIcon />, color: "#e65100" },
+  setup: { icon: <TuneIcon />, color: "#6a1b9a" },
+  ads: { icon: <CampaignOutlinedIcon />, color: "#0277bd" },
+  account: { icon: <KeyIcon />, color: "#c62828" },
 };
 
 /** A specific icon per action where one fits; otherwise its category's. */
 const ACTION_ICON: [RegExp, typeof LoginIcon][] = [
   [/signed in/i, LoginIcon],
+  [/signed out/i, LogoutIcon],
+  [/^Switched account/, SwapHorizIcon],
+  [/password/i, KeyIcon],
+  [/emergency stop/i, BlockIcon],
+  [/ad back on/, PlayCircleOutlinedIcon],
+  [/^Paused an ad/, PauseCircleOutlinedIcon],
+  [/WhatsApp number/, WhatsAppIcon],
+  [/page link/i, LinkIcon],
+  [/lead page|recent sale/i, WebIcon],
   [/^New lead/, PersonAddAltIcon],
   [/another pipeline/, DriveFileMoveOutlinedIcon],
   [/^Moved lead/, SwapHorizIcon],
@@ -86,6 +109,30 @@ function ActionIcon({ e }: { e: { action: string; category: AuditCategory } }) {
     <Box sx={{ width: 30, height: 30, borderRadius: "8px", flex: "none", display: "grid", placeItems: "center", bgcolor: `${c.color}14`, color: c.color, "& svg": { fontSize: 17 } }}>
       {Icon ? <Icon /> : c.icon}
     </Box>
+  );
+}
+
+const COUNTRY_NAME: Record<string, string> = { ZA: "South Africa", GB: "United Kingdom", US: "United States", NA: "Namibia", BW: "Botswana", ZW: "Zimbabwe", MZ: "Mozambique", AE: "United Arab Emirates", AU: "Australia", NL: "Netherlands", DE: "Germany", IE: "Ireland" };
+
+/** A flag image (Windows doesn't draw flag emoji), with the country as text for screen readers. */
+function Flag({ code }: { code?: string }) {
+  const [failed, setFailed] = useState(false);
+  if (!code || !/^[A-Z]{2}$/.test(code)) return null;
+  const name = COUNTRY_NAME[code] ?? code;
+  if (failed) return <Box component="span" title={name} sx={{ fontSize: 10.5, fontWeight: 700, px: 0.5, borderRadius: "2px", bgcolor: tokens.surface2, color: "text.secondary" }}>{code}</Box>;
+  return (
+    <Box
+      component="img"
+      src={`https://flagcdn.com/20x15/${code.toLowerCase()}.png`}
+      srcSet={`https://flagcdn.com/40x30/${code.toLowerCase()}.png 2x`}
+      width={20}
+      height={15}
+      alt={name}
+      title={name}
+      loading="lazy"
+      onError={() => setFailed(true)}
+      sx={{ borderRadius: "2px", boxShadow: "0 0 0 1px rgba(0,0,0,.08)", flex: "none", verticalAlign: "-2px" }}
+    />
   );
 }
 
@@ -193,7 +240,7 @@ function ActivityTab({ users, events, capped, selected, setSelected, range, setR
       if (ids.size && !(e.actorId && ids.has(e.actorId)) && !(e.accountId && ids.has(e.accountId))) return false;
       if (categories.length && !categories.includes(e.category)) return false;
       if (needle) {
-        const hay = [e.action, e.target, e.before, e.after, e.device, e.via, who(e), e.accountId ? byId.get(e.accountId)?.name : ""].join(" ").toLowerCase();
+        const hay = [e.action, e.target, e.before, e.after, e.device, e.via, e.location, e.ip, who(e), e.accountId ? byId.get(e.accountId)?.name : ""].join(" ").toLowerCase();
         if (!hay.includes(needle)) return false;
       }
       return true;
@@ -207,8 +254,8 @@ function ActivityTab({ users, events, capped, selected, setSelected, range, setR
     download(
       "estatekit-audit-log.csv",
       toCsv([
-        ["When", "Who", "Account", "Category", "Action", "Lead", "Before", "After", "Via", "Device"],
-        ...rows.map((e) => [fullDate(e.at), who(e), e.accountId ? byId.get(e.accountId)?.name ?? "" : "", CATEGORY_LABEL[e.category], e.action, e.target ?? "", e.before ?? "", e.after ?? "", e.via, e.device]),
+        ["When", "Who", "Account", "Category", "Action", "Lead / details", "Before", "After", "Via", "Device", "Location", "IP"],
+        ...rows.map((e) => [fullDate(e.at), who(e), e.accountId ? byId.get(e.accountId)?.name ?? "" : "", CATEGORY_LABEL[e.category], e.action, e.target ?? "", e.before ?? "", e.after ?? "", e.via, e.device, e.location ?? "", e.ip ?? ""]),
       ]),
     );
   }
@@ -229,7 +276,7 @@ function ActivityTab({ users, events, capped, selected, setSelected, range, setR
         <TextField select size="small" label="When" value={range} onChange={(e) => setRange(e.target.value)}>
           {RANGES.map((r) => <MenuItem key={r.v} value={r.v}>{r.label}</MenuItem>)}
         </TextField>
-        <TextField size="small" label="Search" placeholder="Lead name, stage, device…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <TextField size="small" label="Search" placeholder="Lead, change, device, place…" value={q} onChange={(e) => setQ(e.target.value)} />
       </Box>
       <Box sx={{ display: "flex", gap: 0.75, flexWrap: "wrap", alignItems: "center", mb: 1 }}>
         {(Object.keys(CATEGORY_LABEL) as AuditCategory[]).map((c) => {
@@ -253,7 +300,7 @@ function ActivityTab({ users, events, capped, selected, setSelected, range, setR
         </Button>
       </Box>
       <Typography sx={{ fontSize: 12, color: "text.secondary", mb: 2 }}>
-        Sign-ins show each user's most recent one only.
+        Sign-ins, setup, ad and access changes are recorded from 1 Oct 2026. Before that, only each user's latest sign-in is known.
         {capped ? " This range has more events than we load at once: pick a shorter range or a user." : ""}
       </Typography>
 
@@ -302,11 +349,16 @@ function ActivityTab({ users, events, capped, selected, setSelected, range, setR
                           {e.target && <Box component="span" sx={{ color: "text.secondary" }}> · {e.target}</Box>}
                           <Box sx={{ fontSize: 12, color: "text.secondary" }}>
                             {e.before !== undefined && e.after !== undefined && e.action === "Moved lead" ? `${e.before || "—"} → ${e.after || "—"}` : CATEGORY_LABEL[e.category]}
+                            {!isDesktop && e.country && <> · <Flag code={e.country} /></>}
                           </Box>
                         </Box>
                       </Box>
                     </TableCell>
-                    {isDesktop && <TableCell sx={{ fontSize: 12.5, color: "text.secondary", whiteSpace: "nowrap" }}>{e.device || e.via}</TableCell>}
+                    {isDesktop && (
+                      <TableCell sx={{ fontSize: 12.5, color: "text.secondary", whiteSpace: "nowrap" }}>
+                        <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.75 }}><Flag code={e.country} />{e.device || e.via}</Box>
+                      </TableCell>
+                    )}
                     <TableCell padding="checkbox">{expanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}</TableCell>
                   </TableRow>
                   <TableRow>
@@ -317,11 +369,13 @@ function ActivityTab({ users, events, capped, selected, setSelected, range, setR
                           <Detail k="Category" v={CATEGORY_LABEL[e.category]} />
                           <Detail k="Done by" v={e.actorId ? `${name} (${byId.get(e.actorId)?.role ?? "User"})` : name} />
                           <Detail k="In account" v={account?.name ?? ""} />
-                          {e.target && <Detail k="Lead" v={e.target} />}
+                          {e.target && <Detail k={e.category === "leads" || e.category === "automations" ? "Lead" : "Details"} v={e.target} />}
                           {e.before !== undefined && <Detail k="Before" v={e.before} />}
                           {e.after !== undefined && <Detail k={e.action.startsWith("WhatsApp") ? "Automation" : "After"} v={e.after} />}
                           <Detail k="Done from" v={e.via} />
                           <Detail k="Device" v={e.device || "Not recorded"} />
+                          {e.location && <Detail k="Location" v={e.location} />}
+                          {e.ip && <Detail k="IP address" v={e.ip} />}
                         </Box>
                       </Collapse>
                     </TableCell>
@@ -363,8 +417,8 @@ function UsersTab({ users, onShowActivity }: { users: AuditUser[]; onShowActivit
     download(
       "estatekit-users.csv",
       toCsv([
-        ["Name", "Role", "WhatsApp", "Email", "Company", "Area", "Plan", "Status", "Renewal", "Last seen", "Last sign-in", "Last lead action", "Last device", "Leads", "Lead pages"],
-        ...rows.map((u) => [u.name, u.role, u.phone, u.email, u.company, u.area, u.plan, u.status, u.renewalDate ?? "", when(u.lastSeen), when(u.lastSignIn), when(u.lastLeadAction), u.lastDevice, String(u.leads), String(u.pages)]),
+        ["Name", "Role", "WhatsApp", "Email", "Company", "Area", "Plan", "Status", "Renewal", "Last seen", "Last sign-in", "Last lead action", "Last device", "Last location", "Last IP", "Leads", "Lead pages"],
+        ...rows.map((u) => [u.name, u.role, u.phone, u.email, u.company, u.area, u.plan, u.status, u.renewalDate ?? "", when(u.lastSeen), when(u.lastSignIn), when(u.lastLeadAction), u.lastDevice, u.lastLocation, u.lastIp, String(u.leads), String(u.pages)]),
       ]),
     );
   }
@@ -411,7 +465,9 @@ function UsersTab({ users, onShowActivity }: { users: AuditUser[]; onShowActivit
                       </TableCell>
                     )}
                     {isDesktop && <TableCell sx={{ fontSize: 13 }}>{u.company || "—"}<Box sx={{ color: "text.secondary", fontSize: 12.5 }}>{u.area}</Box></TableCell>}
-                    <TableCell sx={{ fontSize: 13, whiteSpace: "nowrap" }} title={u.lastSeen ? fullDate(u.lastSeen) : ""}>{u.lastSeen ? timeAgo(u.lastSeen) : "Never"}</TableCell>
+                    <TableCell sx={{ fontSize: 13, whiteSpace: "nowrap" }} title={u.lastSeen ? fullDate(u.lastSeen) : ""}>
+                      <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.75 }}><Flag code={u.lastCountry} />{u.lastSeen ? timeAgo(u.lastSeen) : "Never"}</Box>
+                    </TableCell>
                     {isDesktop && <TableCell align="right" sx={{ fontSize: 13 }}>{u.leads}</TableCell>}
                     <TableCell>
                       <Chip size="small" label={u.status} color={u.status === "Active" ? "success" : "warning"} variant="outlined" />
@@ -436,6 +492,8 @@ function UsersTab({ users, onShowActivity }: { users: AuditUser[]; onShowActivit
                             <Detail k="Last sign-in" v={when(u.lastSignIn)} />
                             <Detail k="Last lead action" v={when(u.lastLeadAction)} />
                             <Detail k="Last device" v={u.lastDevice || "Not recorded"} />
+                            <Detail k="Last location" v={u.lastLocation || "Not recorded yet"} />
+                            <Detail k="Last IP" v={u.lastIp || "Not recorded yet"} />
                             <Detail k="Leads" v={String(u.leads)} />
                             <Detail k="Lead pages" v={String(u.pages)} />
                           </Box>

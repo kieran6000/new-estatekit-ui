@@ -17,6 +17,7 @@ import { useAutomations, useAutomationSteps } from "../hooks/useAutomations";
 import { useSnack } from "../hooks/useSnack";
 import type { AutomationStepRow } from "../types/automations";
 import WhatsAppPreview from "./WhatsAppPreview";
+import { trackActivity } from "../lib/activity";
 
 // What's about to go out for the account you're viewing: every queued automation
 // message, soonest first, with pause / send now / skip on each. Double-click a
@@ -116,7 +117,9 @@ export default function ScheduledAutomations() {
   async function toggleAccount(paused: boolean) {
     setTogglingAccount(true);
     try {
-      await setAccountAutomationsPaused(await getActiveAgentId(), paused);
+      const accountId = await getActiveAgentId();
+      await setAccountAutomationsPaused(accountId, paused);
+      trackActivity("automation_toggled", { agentId: accountId, detail: paused ? "Paused all automations for this account" : "Turned automations back on for this account" });
       await Promise.all([qc.invalidateQueries({ queryKey: pausedKey }), refresh()]);
       showSnack(paused ? "Automations paused for this account" : "Automations back on for this account");
     } catch (e) {
