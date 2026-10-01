@@ -50,7 +50,6 @@ import ZoomInIcon from "@mui/icons-material/ZoomIn";
 import ZoomOutIcon from "@mui/icons-material/ZoomOut";
 import FitScreenIcon from "@mui/icons-material/FitScreen";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
-import FolderOutlinedIcon from "@mui/icons-material/FolderOutlined";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import { tokens } from "../theme";
 import { PIPELINE_STAGES } from "../types";
@@ -100,12 +99,10 @@ interface Exit { kind: ExitKind; on: boolean }
 
 interface Settings { quietHours: boolean; reEnter: boolean; senderName: string }
 
-type Folder = "live" | "email" | "draft";
 
 interface Workflow {
   id: string;
   name: string;
-  folder: Folder;
   published: boolean;
   trigger: Trigger;
   filters: Filter[];
@@ -117,11 +114,6 @@ interface Workflow {
   note?: string;
 }
 
-const FOLDER_LABEL: Record<Folder, string> = {
-  live: "Live today: WhatsApp nudges",
-  email: "Live today: emails to leads",
-  draft: "Drafts",
-};
 
 const TRIGGERS: { kind: TriggerKind; label: string; help: string }[] = [
   { kind: "lead_created", label: "New lead comes in", help: "From a Facebook form or an EstateKit page." },
@@ -238,7 +230,7 @@ function fromAutomation(a: AutomationRow, steps: AutomationStepRow[]): Workflow 
   return {
     id: a.id,
     name: a.name.replace(/â€”/g, "—"),
-    folder: "live",
+   
     published: a.enabled,
     trigger,
     filters: [],
@@ -260,7 +252,7 @@ function confirmationEmail(): Workflow {
   return {
     id: "confirmation-email",
     name: "Lead confirmation email",
-    folder: "email",
+   
     published: true,
     trigger: { kind: "lead_created" },
     filters: [{ field: "has_email", value: "yes" }, { field: "confirmation_email", value: "on" }],
@@ -290,7 +282,7 @@ const TEMPLATES: { name: string; blurb: string; make: () => Workflow }[] = [
     name: "No answer → email sequence",
     blurb: "Two missed calls, then 3 emails over a week. Stops when they reply or book.",
     make: () => ({
-      id: nid(), name: "No answer → email sequence", folder: "draft", published: false, updatedAt: new Date().toISOString(),
+      id: nid(), name: "No answer → email sequence", published: false, updatedAt: new Date().toISOString(),
       trigger: { kind: "no_answer_times", count: 2 },
       filters: [{ field: "has_email", value: "yes" }],
       exits: ALL_EXITS(), settings: DEFAULT_SETTINGS(),
@@ -313,7 +305,7 @@ const TEMPLATES: { name: string; blurb: string; make: () => Workflow }[] = [
     name: "New lead: speed-to-lead",
     blurb: "Alert the agent now, nudge again at 10 and 60 minutes if nobody has called.",
     make: () => ({
-      id: nid(), name: "New lead: speed-to-lead", folder: "draft", published: false, updatedAt: new Date().toISOString(),
+      id: nid(), name: "New lead: speed-to-lead", published: false, updatedAt: new Date().toISOString(),
       trigger: { kind: "lead_created" }, filters: [], exits: ALL_EXITS(), settings: { ...DEFAULT_SETTINGS(), quietHours: false },
       steps: [
         { id: nid(), type: "whatsapp", to: "agent", text: "New lead: {{name}} ({{phone}}). Tap to contact: {{action_link}}" },
@@ -328,7 +320,7 @@ const TEMPLATES: { name: string; blurb: string; make: () => Workflow }[] = [
     name: "Gone quiet: re-engage",
     blurb: "Contacted but nothing for 14 days: one email, then a reminder for the agent.",
     make: () => ({
-      id: nid(), name: "Gone quiet: re-engage", folder: "draft", published: false, updatedAt: new Date().toISOString(),
+      id: nid(), name: "Gone quiet: re-engage", published: false, updatedAt: new Date().toISOString(),
       trigger: { kind: "not_contacted_for", days: 14 }, filters: [{ field: "stage", value: "Contacted" }], exits: ALL_EXITS(), settings: DEFAULT_SETTINGS(),
       steps: [
         { id: nid(), type: "email", to: "lead", subject: "Still thinking about selling, {{first_name}}?", body: "Hi {{first_name}},\n\nJust checking in. Happy to update your valuation whenever suits you.\n\n{{agent_name}}" },
@@ -340,7 +332,7 @@ const TEMPLATES: { name: string; blurb: string; make: () => Workflow }[] = [
   {
     name: "Blank workflow",
     blurb: "Pick your own trigger and steps.",
-    make: () => ({ id: nid(), name: "Untitled workflow", folder: "draft", published: false, updatedAt: new Date().toISOString(), trigger: { kind: "lead_created" }, filters: [], exits: ALL_EXITS(), settings: DEFAULT_SETTINGS(), steps: [] }),
+    make: () => ({ id: nid(), name: "Untitled workflow", published: false, updatedAt: new Date().toISOString(), trigger: { kind: "lead_created" }, filters: [], exits: ALL_EXITS(), settings: DEFAULT_SETTINGS(), steps: [] }),
   },
 ];
 
@@ -382,16 +374,6 @@ function countSteps(steps: Step[]): number {
   return steps.reduce((n, s) => n + 1 + (s.type === "branch" ? countSteps(s.yes) + countSteps(s.no) : 0), 0);
 }
 
-function channels(steps: Step[]): Set<"whatsapp" | "email"> {
-  const out = new Set<"whatsapp" | "email">();
-  mapSteps(steps, (s) => {
-    if (s.type === "whatsapp" || s.type === "notify") out.add("whatsapp");
-    if (s.type === "email") out.add("email");
-    return s;
-  });
-  return out;
-}
-
 function triggerSummary(t: Trigger): string {
   switch (t.kind) {
     case "stage_changed": return `Lead moves to "${t.stage ?? "…"}"`;
@@ -429,7 +411,6 @@ function filterSummary(f: Filter): string {
   return `${FILTER_LABEL[f.field]}: ${f.value || "…"}`;
 }
 
-const dateLabel = (iso: string) => new Date(iso).toLocaleString("en-ZA", { day: "numeric", month: "short", year: "numeric" });
 
 // ── Root: list ↔ editor ──────────────────────────────────────────────────
 
@@ -492,113 +473,117 @@ function Workflows({ initial }: { initial: Workflow[] }) {
 
 // ── List ─────────────────────────────────────────────────────────────────
 
-function ChannelIcons({ steps }: { steps: Step[] }) {
-  const ch = channels(steps);
+/** Who gets what, in words: "WhatsApp to you", "Email to lead". */
+function sendsLabel(steps: Step[]): { icon: React.ReactNode; text: string }[] {
+  const seen = new Map<string, { icon: React.ReactNode; text: string }>();
+  mapSteps(steps, (s) => {
+    if (s.type === "whatsapp") seen.set(`wa-${s.to}`, { icon: <WhatsAppIcon sx={{ fontSize: 16, color: STEP_COLOR.whatsapp }} />, text: s.to === "agent" ? "WhatsApp to agent" : "WhatsApp to lead" });
+    if (s.type === "notify") seen.set("wa-agent", { icon: <WhatsAppIcon sx={{ fontSize: 16, color: STEP_COLOR.whatsapp }} />, text: "WhatsApp to agent" });
+    if (s.type === "email") seen.set(`em-${s.to}`, { icon: <EmailIcon sx={{ fontSize: 16, color: STEP_COLOR.email }} />, text: s.to === "lead" ? "Email to lead" : "Email to agent" });
+    return s;
+  });
+  return [...seen.values()];
+}
+
+function Sends({ steps }: { steps: Step[] }) {
   return (
-    <Box sx={{ display: "inline-flex", gap: 0.5, color: "text.secondary" }}>
-      {ch.has("whatsapp") && <WhatsAppIcon sx={{ fontSize: 16, color: STEP_COLOR.whatsapp }} titleAccess="WhatsApp" />}
-      {ch.has("email") && <EmailIcon sx={{ fontSize: 16, color: STEP_COLOR.email }} titleAccess="Email" />}
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 0.25 }}>
+      {sendsLabel(steps).map((x) => (
+        <Box key={x.text} sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, fontSize: 13, whiteSpace: "nowrap" }}>{x.icon}{x.text}</Box>
+      ))}
     </Box>
   );
 }
 
-function StatusChip({ published }: { published: boolean }) {
-  return <Chip size="small" label={published ? "Published" : "Draft"} color={published ? "success" : "default"} variant="outlined" sx={{ height: 22, fontSize: 12 }} />;
+function OnOffChip({ on }: { on: boolean }) {
+  return <Chip size="small" label={on ? "On" : "Off"} color={on ? "success" : "default"} variant={on ? "filled" : "outlined"} sx={{ height: 22, fontSize: 12, fontWeight: 600, minWidth: 44 }} />;
 }
 
+/** One plain list: on first, then off. No folders. */
 function WorkflowList({ workflows, onOpen, onCreate }: { workflows: Workflow[]; onOpen: (id: string) => void; onCreate: () => void }) {
   const isDesktop = useMediaQuery("(min-width:900px)");
   const [q, setQ] = useState("");
-  const [status, setStatus] = useState<"all" | "published" | "draft">("all");
-  const shown = workflows.filter((w) =>
-    (status === "all" || (status === "published") === w.published) &&
-    (!q.trim() || (w.name + " " + triggerSummary(w.trigger)).toLowerCase().includes(q.trim().toLowerCase())));
-  const folders = (Object.keys(FOLDER_LABEL) as Folder[]).filter((f) => shown.some((w) => w.folder === f));
+  const [filter, setFilter] = useState<"all" | "on" | "off">("all");
+  const count = (on: boolean) => workflows.filter((w) => w.published === on).length;
+  const shown = workflows
+    .filter((w) => (filter === "all" || (filter === "on") === w.published) && (!q.trim() || (w.name + " " + triggerSummary(w.trigger)).toLowerCase().includes(q.trim().toLowerCase())))
+    .sort((a, b) => Number(b.published) - Number(a.published));
 
   return (
     <Box sx={{ maxWidth: 1100, mx: "auto", p: 2, pb: 6 }}>
       <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, mb: 2, flexWrap: "wrap" }}>
         <Box sx={{ flex: 1, minWidth: 200 }}>
           <Typography sx={{ fontSize: 20, fontWeight: 500 }}>Workflows</Typography>
-          <Typography sx={{ fontSize: 13, color: "text.secondary" }}>Today's WhatsApp nudges and emails are shown here as workflows, so you can see how they'd look.</Typography>
+          <Typography sx={{ fontSize: 13, color: "text.secondary" }}>Each workflow sends messages for you when something happens to a lead.</Typography>
         </Box>
         <Button variant="contained" startIcon={<AddIcon />} onClick={onCreate}>Create workflow</Button>
       </Box>
-      <Box sx={{ display: "flex", gap: 1.5, mb: 2, flexWrap: "wrap" }}>
+      <Box sx={{ display: "flex", gap: 1.5, mb: 2, flexWrap: "wrap", alignItems: "center" }}>
+        <Tabs value={filter} onChange={(_, v) => setFilter(v)} sx={{ minHeight: 40, "& .MuiTab-root": { minHeight: 40, textTransform: "none", fontWeight: 600, px: 1.5, minWidth: 0 } }}>
+          <Tab value="all" label={`All (${workflows.length})`} />
+          <Tab value="on" label={`On (${count(true)})`} />
+          <Tab value="off" label={`Off (${count(false)})`} />
+        </Tabs>
+        <Box sx={{ flex: 1 }} />
         <TextField
           size="small"
-          placeholder="Search workflows"
+          placeholder="Search"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          sx={{ flex: 1, minWidth: 200, maxWidth: 380, bgcolor: "background.paper" }}
+          sx={{ width: 260, maxWidth: "100%", bgcolor: "background.paper" }}
           slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> } }}
         />
-        <TextField select size="small" value={status} onChange={(e) => setStatus(e.target.value as typeof status)} sx={{ width: 150, bgcolor: "background.paper" }}>
-          <MenuItem value="all">All statuses</MenuItem>
-          <MenuItem value="published">Published</MenuItem>
-          <MenuItem value="draft">Draft</MenuItem>
-        </TextField>
       </Box>
 
-      {folders.map((f) => (
-        <Box key={f} sx={{ mb: 3 }}>
-          <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, mb: 1, color: "text.secondary" }}>
-            <FolderOutlinedIcon sx={{ fontSize: 18 }} />
-            <Typography sx={{ fontSize: 13, fontWeight: 600, letterSpacing: ".02em" }}>{FOLDER_LABEL[f]}</Typography>
-          </Box>
-          <Box sx={{ border: `1px solid ${tokens.divider}`, borderRadius: "6px", bgcolor: "background.paper", overflow: "hidden" }}>
-            {isDesktop ? (
-              <Table size="small">
-                <TableHead>
-                  <TableRow sx={{ "& th": { color: "text.secondary", fontSize: 12.5, bgcolor: tokens.surface2 } }}>
-                    <TableCell>Name</TableCell>
-                    <TableCell>Trigger</TableCell>
-                    <TableCell>Sends</TableCell>
-                    <TableCell>Status</TableCell>
-                    <TableCell align="right">Steps</TableCell>
-                    <TableCell>Last updated</TableCell>
-                    <TableCell padding="checkbox" />
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {shown.filter((w) => w.folder === f).map((w) => (
-                    <TableRow key={w.id} hover onClick={() => onOpen(w.id)} sx={{ cursor: "pointer", "&:last-child td": { borderBottom: 0 } }}>
-                      <TableCell sx={{ fontWeight: 500, fontSize: 14 }}>
-                        {w.name}
-                        {w.note && <Tooltip title={w.note}><WarningAmberIcon sx={{ fontSize: 16, color: "#e65100", ml: 0.75, verticalAlign: "-3px" }} /></Tooltip>}
-                      </TableCell>
-                      <TableCell sx={{ fontSize: 13, color: "text.secondary" }}>{triggerSummary(w.trigger)}</TableCell>
-                      <TableCell><ChannelIcons steps={w.steps} /></TableCell>
-                      <TableCell><StatusChip published={w.published} /></TableCell>
-                      <TableCell align="right" sx={{ fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{countSteps(w.steps)}</TableCell>
-                      <TableCell sx={{ fontSize: 13, color: "text.secondary", whiteSpace: "nowrap" }}>{dateLabel(w.updatedAt)}</TableCell>
-                      <TableCell padding="checkbox"><ChevronRightIcon fontSize="small" sx={{ color: "text.disabled" }} /></TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            ) : (
-              shown.filter((w) => w.folder === f).map((w, i) => (
-                <Box
-                  key={w.id}
-                  component="button"
-                  type="button"
-                  onClick={() => onOpen(w.id)}
-                  sx={{ display: "flex", alignItems: "center", gap: 1, width: "100%", textAlign: "left", font: "inherit", color: "inherit", bgcolor: "transparent", border: 0, borderTop: i ? `1px solid ${tokens.divider}` : 0, p: "12px 14px", minHeight: 56, cursor: "pointer" }}
-                >
-                  <Box sx={{ flex: 1, minWidth: 0 }}>
-                    <Typography sx={{ fontWeight: 500, fontSize: 14.5 }}>{w.name}</Typography>
-                    <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>{triggerSummary(w.trigger)} · {countSteps(w.steps)} steps</Typography>
-                  </Box>
-                  <ChannelIcons steps={w.steps} />
-                  <StatusChip published={w.published} />
-                </Box>
-              ))
-            )}
-          </Box>
-        </Box>
-      ))}
-      {!folders.length && <Typography sx={{ color: "text.secondary", textAlign: "center", py: 6 }}>No workflows match.</Typography>}
+      <Box sx={{ border: `1px solid ${tokens.divider}`, borderRadius: "4px", bgcolor: "background.paper", overflow: "hidden" }}>
+        {isDesktop ? (
+          <Table size="small">
+            <TableHead>
+              <TableRow sx={{ "& th": { color: "text.secondary", fontSize: 12.5, bgcolor: tokens.surface2, whiteSpace: "nowrap" } }}>
+                <TableCell>Name</TableCell>
+                <TableCell>Starts when</TableCell>
+                <TableCell>Sends</TableCell>
+                <TableCell align="right">Steps</TableCell>
+                <TableCell>Status</TableCell>
+                <TableCell padding="checkbox" />
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {shown.map((w) => (
+                <TableRow key={w.id} hover onClick={() => onOpen(w.id)} sx={{ cursor: "pointer", "&:last-child td": { borderBottom: 0 }, "& td": { py: 1.25 } }}>
+                  <TableCell sx={{ fontWeight: 500, fontSize: 14 }}>
+                    {w.name}
+                    {w.note && <Tooltip title={w.note}><WarningAmberIcon sx={{ fontSize: 16, color: "#e65100", ml: 0.75, verticalAlign: "-3px" }} /></Tooltip>}
+                  </TableCell>
+                  <TableCell sx={{ fontSize: 13, color: "text.secondary" }}>{triggerSummary(w.trigger)}</TableCell>
+                  <TableCell><Sends steps={w.steps} /></TableCell>
+                  <TableCell align="right" sx={{ fontSize: 13 }}>{countSteps(w.steps)}</TableCell>
+                  <TableCell><OnOffChip on={w.published} /></TableCell>
+                  <TableCell padding="checkbox"><ChevronRightIcon fontSize="small" sx={{ color: "text.disabled" }} /></TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        ) : (
+          shown.map((w, i) => (
+            <Box
+              key={w.id}
+              component="button"
+              type="button"
+              onClick={() => onOpen(w.id)}
+              sx={{ display: "flex", alignItems: "center", gap: 1.5, width: "100%", textAlign: "left", font: "inherit", color: "inherit", bgcolor: "transparent", border: 0, borderTop: i ? `1px solid ${tokens.divider}` : 0, p: "12px 14px", minHeight: 64, cursor: "pointer" }}
+            >
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Typography sx={{ fontWeight: 500, fontSize: 14.5 }}>{w.name}</Typography>
+                <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>{triggerSummary(w.trigger)}</Typography>
+                <Box sx={{ mt: 0.5 }}><Sends steps={w.steps} /></Box>
+              </Box>
+              <OnOffChip on={w.published} />
+            </Box>
+          ))
+        )}
+        {!shown.length && <Typography sx={{ color: "text.secondary", textAlign: "center", py: 6 }}>No workflows match.</Typography>}
+      </Box>
     </Box>
   );
 }
@@ -672,6 +657,7 @@ function Editor({ initial, onBack }: { initial: Workflow; onBack: (w: Workflow) 
       onDelete={selectedStep ? () => removeStep(selectedStep.id) : undefined}
       deleteLabel={selectedStep?.type === "branch" ? "Delete step and its paths" : "Delete step"}
     >
+      <NodePreview sel={sel} wf={wf} step={selectedStep} />
       {sel?.kind === "trigger" && <TriggerEditor t={wf.trigger} onChange={(trigger) => update({ trigger }, "trigger")} />}
       {sel?.kind === "filters" && <FiltersEditor filters={wf.filters} onChange={(filters) => update({ filters }, "filters")} />}
       {sel?.kind === "exits" && <ExitsEditor exits={wf.exits} onChange={(exits) => update({ exits })} />}
@@ -707,10 +693,10 @@ function Editor({ initial, onBack }: { initial: Workflow; onBack: (w: Workflow) 
         </Box>
         <Tooltip title="Undo (Ctrl+Z)"><span><IconButton onClick={undo} disabled={!canUndo} aria-label="Undo"><UndoIcon fontSize="small" /></IconButton></span></Tooltip>
         {isDesktop && <Tooltip title="Redo (Ctrl+Shift+Z)"><span><IconButton onClick={redo} disabled={!canRedo} aria-label="Redo"><RedoIcon fontSize="small" /></IconButton></span></Tooltip>}
-        <Tooltip title={wf.published ? "Published: running for new leads" : "Draft: not running"}>
+        <Tooltip title={wf.published ? "On: running for leads" : "Off: not running"}>
           <Box sx={{ display: "flex", alignItems: "center", flex: "none" }}>
-            {isDesktop && <Typography sx={{ fontSize: 13, color: "text.secondary" }}>{wf.published ? "Published" : "Draft"}</Typography>}
-            <Switch checked={wf.published} onChange={(e) => update({ published: e.target.checked })} slotProps={{ input: { "aria-label": "Published" } }} />
+            {isDesktop && <Typography sx={{ fontSize: 13, color: "text.secondary" }}>{wf.published ? "On" : "Off"}</Typography>}
+            <Switch checked={wf.published} onChange={(e) => update({ published: e.target.checked })} slotProps={{ input: { "aria-label": "Workflow on" } }} />
           </Box>
         </Tooltip>
         <Tooltip title="Preview only: saving comes with the backend">
@@ -1287,9 +1273,6 @@ function EmailPreview({ subject, body }: { subject: string; body: string }) {
   );
 }
 
-function PreviewLabel() {
-  return <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase", color: "text.secondary", mb: -1 }}>Preview for a sample lead</Typography>;
-}
 
 function StepEditor({ step, onChange }: { step: Step; onChange: (p: Partial<Step>, key?: string) => void }) {
   switch (step.type) {
@@ -1316,8 +1299,6 @@ function StepEditor({ step, onChange }: { step: Step; onChange: (p: Partial<Step
           </TextField>
           <TextField size="small" multiline minRows={4} label="Message" value={step.text} onChange={(e) => onChange({ text: e.target.value }, "text")} />
           <MergeFields onInsert={(f) => onChange({ text: step.text + f })} />
-          <PreviewLabel />
-          <WhatsAppPreview lead={SAMPLE_LEAD} text={step.text} sampleFields={SAMPLE_FIELDS} />
         </>
       );
     case "email":
@@ -1330,8 +1311,6 @@ function StepEditor({ step, onChange }: { step: Step; onChange: (p: Partial<Step
           <TextField size="small" label="Subject" value={step.subject} onChange={(e) => onChange({ subject: e.target.value }, "subject")} />
           <TextField size="small" multiline minRows={7} label="Email" value={step.body} onChange={(e) => onChange({ body: e.target.value }, "body")} />
           <MergeFields onInsert={(f) => onChange({ body: step.body + f })} />
-          <PreviewLabel />
-          <EmailPreview subject={step.subject} body={step.body} />
           <Typography sx={{ fontSize: 12, color: "text.secondary" }}>Skipped for leads without an email address. Opens and clicks are tracked.</Typography>
         </>
       );
@@ -1340,8 +1319,6 @@ function StepEditor({ step, onChange }: { step: Step; onChange: (p: Partial<Step
         <>
           <TextField size="small" multiline minRows={3} label="Alert text" value={step.text} onChange={(e) => onChange({ text: e.target.value }, "text")} />
           <MergeFields onInsert={(f) => onChange({ text: step.text + f })} />
-          <PreviewLabel />
-          <WhatsAppPreview lead={SAMPLE_LEAD} text={step.text} sampleFields={SAMPLE_FIELDS} />
         </>
       );
     case "set_stage":
@@ -1387,4 +1364,197 @@ function StepEditor({ step, onChange }: { step: Step; onChange: (p: Partial<Step
         </>
       );
   }
+}
+
+// ── Previews: what each node actually does, on a sample lead ─────────────
+
+const STAGE_COLOR: Record<string, string> = {
+  "New Lead": "#1976d2", "No Answer": "#e65100", Contacted: "#6a1b9a", Booked: "#2e7d32", "Viewing Booked": "#2e7d32",
+  "Offer Made": "#00838f", "Mandate Signed": "#1b5e20", Bought: "#1b5e20", Lost: "#757575", "Invalid Number": "#757575",
+};
+
+function StageChip({ stage, glow }: { stage: string; glow?: boolean }) {
+  const c = STAGE_COLOR[stage] ?? "#546e7a";
+  return (
+    <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, fontSize: 12.5, fontWeight: 500, px: 1, py: 0.25, borderRadius: "999px", color: c, bgcolor: `${c}14`, border: `1px solid ${c}55`, boxShadow: glow ? `0 0 0 3px ${c}33` : "none", whiteSpace: "nowrap" }}>
+      <Box component="span" sx={{ width: 7, height: 7, borderRadius: "50%", bgcolor: c }} />{stage || "…"}
+    </Box>
+  );
+}
+
+/** A lead as it appears in the agent's leads list, so the change is obvious. */
+function LeadRowMock({ stage, next, nextDue, tags = [], newTag, highlight }: { stage: string; next?: string; nextDue?: string; tags?: string[]; newTag?: string; highlight?: "stage" | "next" | "tag" }) {
+  const hl = (on: boolean) => (on ? { bgcolor: "#fff8e1", outline: "2px solid #ffb300", outlineOffset: 2, borderRadius: "4px" } : {});
+  return (
+    <Box sx={{ border: `1px solid ${tokens.divider}`, borderRadius: "4px", bgcolor: "background.paper", p: 1.25, display: "grid", gap: 0.75 }}>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+        <Box sx={{ width: 32, height: 32, borderRadius: "50%", bgcolor: tokens.primaryBg, color: "primary.main", display: "grid", placeItems: "center", fontSize: 12, fontWeight: 700, flex: "none" }}>TM</Box>
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography sx={{ fontSize: 14, fontWeight: 500 }}>{SAMPLE_LEAD.name}</Typography>
+          <Typography sx={{ fontSize: 12, color: "text.secondary" }}>{SAMPLE_LEAD.phone} · Bryanston</Typography>
+        </Box>
+        <Box sx={hl(highlight === "stage")}><StageChip stage={stage} glow={highlight === "stage"} /></Box>
+      </Box>
+      {(next || nextDue) && (
+        <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, fontSize: 13, color: nextDue ? "#e65100" : "text.secondary", ...hl(highlight === "next"), px: highlight === "next" ? 0.5 : 0 }}>
+          {nextDue && <AlarmIcon sx={{ fontSize: 15 }} />}
+          <span>Next: {next}</span>
+          {nextDue && <Box component="span" sx={{ color: "text.secondary" }}>· {nextDue}</Box>}
+        </Box>
+      )}
+      {(tags.length > 0 || newTag !== undefined) && (
+        <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap" }}>
+          {tags.map((t) => <Chip key={t} size="small" icon={<LocalOfferIcon />} label={t} sx={{ height: 22, fontSize: 12 }} />)}
+          {newTag !== undefined && (
+            <Chip size="small" icon={<LocalOfferIcon />} label={newTag || "your tag"} color="info" sx={{ height: 22, fontSize: 12, ...(highlight === "tag" ? { outline: "2px solid #ffb300", outlineOffset: 2 } : {}) }} />
+          )}
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+function Arrow({ label }: { label: string }) {
+  return (
+    <Box sx={{ display: "flex", alignItems: "center", gap: 1, color: "text.secondary", fontSize: 12.5, pl: 2 }}>
+      <Box sx={{ width: 2, height: 18, bgcolor: LINE }} />{label}
+    </Box>
+  );
+}
+
+const addMinutes = (d: Date, m: number) => new Date(d.getTime() + m * 60000);
+const when = (d: Date) => d.toLocaleString("en-ZA", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+
+function NodePreview({ sel, wf, step }: { sel: Selection; wf: Workflow; step: Step | undefined }) {
+  let body: React.ReactNode = null;
+  if (sel?.kind === "trigger") {
+    const t = wf.trigger;
+    const event =
+      t.kind === "stage_changed" ? <>Agent moves {SAMPLE_LEAD.name.split(" ")[0]} to <StageChip stage={t.stage ?? ""} /></>
+        : t.kind === "lead_created" ? <>{SAMPLE_LEAD.name} fills in the form on your ad</>
+          : t.kind === "no_answer_times" ? <>Agent logs "No answer" for the {t.count ?? 1}{(t.count ?? 1) === 1 ? "st" : (t.count ?? 1) === 2 ? "nd" : (t.count ?? 1) === 3 ? "rd" : "th"} time</>
+            : t.kind === "daily_at" ? <>It's a weekday and the clock hits {t.time ?? "16:00"}</>
+              : <>{triggerSummary(t)}</>;
+    body = (
+      <>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap", fontSize: 13.5 }}><BoltIcon sx={{ fontSize: 18, color: "#1976d2" }} />{event}</Box>
+        <Arrow label="This workflow starts for that lead" />
+        {t.kind !== "daily_at" && <LeadRowMock stage={t.kind === "stage_changed" ? t.stage ?? "New Lead" : t.kind === "no_answer_times" ? "No Answer" : "New Lead"} highlight={t.kind === "stage_changed" ? "stage" : undefined} />}
+      </>
+    );
+  } else if (sel?.kind === "filters") {
+    body = wf.filters.length ? (
+      <Box sx={{ display: "grid", gap: 0.75 }}>
+        {wf.filters.map((f, i) => (
+          <Box key={i} sx={{ display: "flex", alignItems: "center", gap: 1, fontSize: 13.5 }}>
+            <Box sx={{ width: 20, height: 20, borderRadius: "50%", bgcolor: "#e8f5e9", color: "#2e7d32", display: "grid", placeItems: "center", fontSize: 13, fontWeight: 700 }}>✓</Box>
+            {filterSummary(f)}
+          </Box>
+        ))}
+        <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>{SAMPLE_LEAD.name} matches all of these, so she goes through. A lead that misses one is skipped.</Typography>
+      </Box>
+    ) : <Typography sx={{ fontSize: 13.5 }}>No filters: every lead goes through.</Typography>;
+  } else if (sel?.kind === "exits") {
+    const on = wf.exits.filter((x) => x.on);
+    body = on.length ? (
+      <>
+        <LeadRowMock stage="Booked" highlight="stage" />
+        <Arrow label="She booked, so she leaves the workflow" />
+        <Typography sx={{ fontSize: 13.5 }}>No more messages go to her or about her.</Typography>
+      </>
+    ) : <Typography sx={{ fontSize: 13.5, color: "#b26a00" }}>Nothing stops it: every step runs, even after she books.</Typography>;
+  } else if (step) {
+    const start = new Date();
+    start.setHours(10, 0, 0, 0);
+    switch (step.type) {
+      case "whatsapp":
+      case "notify": {
+        const text = step.text;
+        const toAgent = step.type === "notify" || step.to === "agent";
+        body = (
+          <>
+            <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>{toAgent ? "Arrives on the agent's WhatsApp:" : `Arrives on ${SAMPLE_LEAD.name.split(" ")[0]}'s WhatsApp:`}</Typography>
+            <WhatsAppPreview lead={SAMPLE_LEAD} text={text} sampleFields={SAMPLE_FIELDS} />
+          </>
+        );
+        break;
+      }
+      case "email":
+        body = (
+          <>
+            <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>Lands in {step.to === "lead" ? `${SAMPLE_LEAD.name.split(" ")[0]}'s` : "the agent's"} inbox:</Typography>
+            <EmailPreview subject={step.subject} body={step.body} />
+          </>
+        );
+        break;
+      case "wait": {
+        const mins = step.amount * (step.unit === "minutes" ? 1 : step.unit === "hours" ? 60 : 1440);
+        let next = addMinutes(start, mins);
+        const h = next.getHours();
+        const deferred = wf.settings.quietHours && (h >= 20 || h < 8);
+        if (deferred) { next = new Date(next); if (h >= 20) next.setDate(next.getDate() + 1); next.setHours(8, 0, 0, 0); }
+        body = (
+          <Box sx={{ display: "grid", gap: 0.5, fontSize: 13.5 }}>
+            <Box sx={{ display: "flex", gap: 1 }}><Box sx={{ color: "text.secondary", width: 96 }}>Step before</Box><b>{when(start)}</b></Box>
+            <Arrow label={`waits ${unitLabel(step.amount, step.unit)}`} />
+            <Box sx={{ display: "flex", gap: 1 }}><Box sx={{ color: "text.secondary", width: 96 }}>Next step</Box><b>{when(next)}</b></Box>
+            {deferred && <Typography sx={{ fontSize: 12.5, color: "#b26a00" }}>Pushed to 08:00 by quiet hours.</Typography>}
+          </Box>
+        );
+        break;
+      }
+      case "set_stage":
+        body = (
+          <>
+            <LeadRowMock stage="New Lead" />
+            <Arrow label={`stage changes to ${step.stage || "…"}`} />
+            <LeadRowMock stage={step.stage} highlight="stage" />
+          </>
+        );
+        break;
+      case "reminder": {
+        const due = addMinutes(start, step.inDays * 1440);
+        body = (
+          <>
+            <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>On the agent's leads list:</Typography>
+            <LeadRowMock stage="No Answer" next={fill(step.label) || "Follow up"} nextDue={step.inDays === 0 ? "due today" : `due ${when(due)}`} highlight="next" />
+          </>
+        );
+        break;
+      }
+      case "tag":
+        body = (
+          <>
+            <LeadRowMock stage="Contacted" tags={["Seller"]} />
+            <Arrow label="tag added" />
+            <LeadRowMock stage="Contacted" tags={["Seller"]} newTag={step.tag} highlight="tag" />
+          </>
+        );
+        break;
+      case "branch": {
+        const yesLabel = step.check === "email_opened" ? "She opened it" : step.check === "has_email" ? "She has an email" : `${BRANCH_LABEL[step.check]} "${step.value || "…"}"`;
+        body = (
+          <>
+            <Typography sx={{ fontSize: 13.5 }}>The workflow checks {SAMPLE_LEAD.name.split(" ")[0]}: <b>{stepSummary(step)}</b></Typography>
+            <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1 }}>
+              <Box sx={{ border: "1px solid #a5d6a7", bgcolor: "#e8f5e9", borderRadius: "4px", p: 1, fontSize: 12.5 }}>
+                <b style={{ color: "#1b5e20" }}>Yes</b><br />{yesLabel} → follows the Yes path ({step.yes.length} step{step.yes.length === 1 ? "" : "s"})
+              </Box>
+              <Box sx={{ border: `1px solid ${tokens.divider}`, bgcolor: tokens.surface2, borderRadius: "4px", p: 1, fontSize: 12.5 }}>
+                <b>No</b><br />Otherwise → follows the No path ({step.no.length} step{step.no.length === 1 ? "" : "s"})
+              </Box>
+            </Box>
+          </>
+        );
+        break;
+      }
+    }
+  }
+  if (!body) return null;
+  return (
+    <Box sx={{ bgcolor: tokens.bg, border: `1px solid ${tokens.divider}`, borderRadius: "6px", p: 1.5, display: "grid", gap: 1 }}>
+      <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "text.secondary" }}>What happens</Typography>
+      {body}
+    </Box>
+  );
 }
