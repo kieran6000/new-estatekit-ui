@@ -5,53 +5,109 @@ import { listAgentProfiles } from "../api/_client";
 import estateKitLogo from "../assets/blue logo full.png";
 import "./report.css";
 
-// The weekly performance report we send each client: one printable page,
-// same plain style as the Selling Plan. Operators open it from a client's
-// page (/report/<agent id>) and "Save as PDF".
+// Weekly Results: the report every client gets each week. Opened from a
+// client's page (/report/<agent id>), saved as PDF.
 //
-// UI ONLY FOR NOW: the agent's name, company and photo are real, every number
-// is SAMPLE data so the layout can be signed off before it's wired up. The
-// numbers it will need, and where each comes from, are listed in WIRING below.
+// EVERGREEN: every word on the page lives in COPY below and is the same for
+// every client, every week. Only the numbers (WeekData) change, so nobody
+// writes anything by hand. The "focus" tips are picked by fixed rules from
+// the numbers. Ad spend and cost per lead are deliberately never shown.
 //
-// WIRING (for the backend pass)
-//   new leads, booked, mandates, waiting, no answer  get_agent_results(agent, 7) and (agent, 14) minus (agent, 7)
-//   ad spend, per-ad leads/CPL                      fb-ad-insights for the week
-//   called, spoke to, median time to first call     lead_events: first 'call' / 'stage_changed' per lead
-//   leads still waiting (oldest 5)                  leads where stage = 'New Lead' order by created_at
+// UI ONLY FOR NOW: the agent's name and photo are real; SAMPLE_WEEK is made
+// up. Backend pass, where each number comes from:
+//   leads, booked, mandates, waiting, stage counts  get_agent_results(agent, 7) (+ prior 7 days)
+//   contacted, spoke, median minutes to first call  lead_events: first 'call' / 'stage_changed' per lead
+//   4-week trend                                    the same, for each of the last 4 weeks
+//   waiting list, sources                           leads (stage = 'New Lead'), leads.source_page_id / fb form
 
-interface Week {
-  leads: number; spend: number; called: number; within5: number; spoke: number; booked: number; mandates: number; medianMins: number;
+interface WeekData {
+  leads: number; contacted: number; spoke: number; booked: number; mandates: number;
+  medianMins: number; within5: number;
+  last: { leads: number; contacted: number; booked: number; mandates: number; medianMins: number };
+  /** Oldest first, the last 4 weeks including this one. */
+  trend: { leads: number[]; booked: number[] };
+  stages: { newLead: number; noAnswer: number; contacted: number; booked: number; mandate: number };
+  waiting: { name: string; area: string; days: number }[];
+  sources: { name: string; leads: number }[];
 }
 
-const THIS: Week = { leads: 34, spend: 1395, called: 27, within5: 12, spoke: 18, booked: 5, mandates: 1, medianMins: 7 };
-const LAST: Week = { leads: 28, spend: 1288, called: 19, within5: 6, spoke: 13, booked: 3, mandates: 1, medianMins: 22 };
+const SAMPLE_WEEK: WeekData = {
+  leads: 34, contacted: 27, spoke: 18, booked: 5, mandates: 1, medianMins: 7, within5: 12,
+  last: { leads: 28, contacted: 19, booked: 3, mandates: 1, medianMins: 22 },
+  trend: { leads: [22, 31, 28, 34], booked: [2, 4, 3, 5] },
+  stages: { newLead: 7, noAnswer: 9, contacted: 21, booked: 6, mandate: 2 },
+  waiting: [
+    { name: "Thandi M.", area: "Bryanston", days: 6 },
+    { name: "Pieter v. d. Merwe", area: "Fourways", days: 5 },
+    { name: "Lerato K.", area: "Sandton", days: 4 },
+    { name: "Ahmed S.", area: "Rivonia", days: 3 },
+  ],
+  sources: [
+    { name: "Home valuation form", leads: 19 },
+    { name: "Sold in 21 days", leads: 11 },
+    { name: "Free selling guide", leads: 4 },
+  ],
+};
 
-const WAITING = [
-  { name: "Thandi M.", area: "Bryanston", days: 6, source: "Valuation form" },
-  { name: "Pieter v. d. Merwe", area: "Fourways", days: 5, source: "Valuation form" },
-  { name: "Lerato K.", area: "Sandton", days: 4, source: "Selling guide" },
-  { name: "Ahmed S.", area: "Rivonia", days: 3, source: "Valuation form" },
-  { name: "Jessica B.", area: "Morningside", days: 2, source: "Selling guide" },
+// Every sentence on the report. {placeholders} are filled from the numbers.
+const COPY = {
+  title: "Your week in leads",
+  hello: "Hi {first},",
+  summary: "{leads} new leads came in and {booked} booked an appointment.",
+  kpi: { leads: "New leads", contacted: "Leads contacted", booked: "Appointments", mandates: "Mandates signed" },
+  vsLast: "vs last week",
+  trendCap: "Last 4 weeks",
+  journey: "Where this week's leads got to",
+  journeySteps: ["New leads", "Contacted", "Spoke to", "Appointment", "Mandate"],
+  speed: "Speed to lead",
+  speedLine: "Half of your leads were called within {mins} minutes. {within5} of {leads} were called inside 5 minutes.",
+  speedTarget: "Aim: under 5 minutes. Leads called quickly are far more likely to answer.",
+  pipeline: "Your pipeline right now",
+  stages: { newLead: "Not called yet", noAnswer: "No answer", contacted: "Contacted", booked: "Appointments", mandate: "Mandates" },
+  waiting: "Waiting for a first call",
+  waitingNone: "Every lead has had a call. Well done.",
+  waitingMore: "+ {n} more in your EstateKit leads list",
+  sources: "Where your leads came from",
+  focus: "Your focus for next week",
+  footLeft: "Prepared by EstateKit for {name}",
+  footRight: "Your leads, live: leads.estatekit.co",
+};
+
+/** Fixed rules, checked in order; the first three that apply are shown. */
+const FOCUS_RULES: { when: (d: WeekData) => boolean; title: string; body: string }[] = [
+  { when: (d) => d.stages.newLead > 0, title: "Call your {waiting} waiting leads first.", body: "Start with the oldest. A lead cools off fast after the first day." },
+  { when: (d) => d.medianMins > 5, title: "Call new leads within 5 minutes.", body: "Your WhatsApp alert has a one-tap call button. Use it the moment it arrives." },
+  { when: (d) => d.stages.noAnswer > 0, title: "Try your {noAnswer} 'No answer' leads again.", body: "Call at a different time of day than last time. Early evening works well." },
+  { when: (d) => d.booked < d.spoke / 3, title: "Ask for the appointment on every call.", body: "Offer two times: \"Would Tuesday at 10 or Wednesday at 4 suit you better?\"" },
+  { when: () => true, title: "Keep every lead's stage up to date.", body: "It keeps your follow-up reminders right, and this report accurate." },
 ];
-const WAITING_TOTAL = 7;
 
-const ADS = [
-  { name: "What's my home worth? (video)", leads: 19, spend: 702, status: "Running" },
-  { name: "Sold in 21 days (carousel)", leads: 11, spend: 488, status: "Running" },
-  { name: "Free selling guide (image)", leads: 4, spend: 205, status: "Paused" },
-];
-
-const money = (n: number) => "R" + Math.round(n).toLocaleString("en-ZA");
+const fillIn = (s: string, v: Record<string, string | number>) => s.replace(/\{(\w+)\}/g, (m, k: string) => (k in v ? String(v[k]) : m));
 const pct = (a: number, b: number) => (b ? Math.round((a / b) * 100) : 0);
-const cpl = (w: Week) => (w.leads ? w.spend / w.leads : 0);
 
-/** "+6", "−R5": the change vs last week, coloured by whether it's good. */
-function Delta({ now, before, money: isMoney = false, lowerIsBetter = false, suffix = "" }: { now: number; before: number; money?: boolean; lowerIsBetter?: boolean; suffix?: string }) {
+function Delta({ now, before, lowerIsBetter = false, suffix = "" }: { now: number; before: number; lowerIsBetter?: boolean; suffix?: string }) {
   const d = Math.round(now - before);
-  if (d === 0) return <span>Same as last week</span>;
   const good = lowerIsBetter ? d < 0 : d > 0;
-  const abs = isMoney ? money(Math.abs(d)) : Math.abs(d) + suffix;
-  return <span className={good ? "rep-up" : "rep-down"}>{d > 0 ? "▲ +" : "▼ −"}{abs}</span>;
+  return (
+    <span className="wr-delta-row">
+      {d === 0
+        ? <span className="wr-delta flat">Same</span>
+        : <span className={`wr-delta ${good ? "up" : "down"}`}>{d > 0 ? "▲" : "▼"} {Math.abs(d)}{suffix}</span>}
+      <span className="wr-delta-cap">{COPY.vsLast}</span>
+    </span>
+  );
+}
+
+function Spark({ values, label }: { values: number[]; label: string }) {
+  const max = Math.max(1, ...values);
+  return (
+    <div>
+      <div className="wr-spark" role="img" aria-label={`${label}, last 4 weeks: ${values.join(", ")}`}>
+        {values.map((v, i) => <i key={i} style={{ height: `${Math.max(10, (v / max) * 100)}%` }} title={`${v}`} />)}
+      </div>
+      <div className="wr-spark-cap">{COPY.trendCap}</div>
+    </div>
+  );
 }
 
 function weekRange(offsetWeeks: number) {
@@ -61,7 +117,7 @@ function weekRange(offsetWeeks: number) {
   const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() - day - 1 - offsetWeeks * 7);
   const start = new Date(end.getFullYear(), end.getMonth(), end.getDate() - 6);
   const f = (d: Date, y = false) => d.toLocaleDateString("en-ZA", { day: "numeric", month: "short", ...(y ? { year: "numeric" } : {}) });
-  return { label: `${f(start)} – ${f(end, true)}`, start };
+  return `${f(start)} – ${f(end, true)}`;
 }
 
 export default function WeeklyReportPage() {
@@ -69,166 +125,158 @@ export default function WeeklyReportPage() {
   const [weeksBack, setWeeksBack] = useState(0);
   const { data: profiles = [] } = useQuery({ queryKey: ["agentProfiles"], queryFn: listAgentProfiles });
   const p = profiles.find((x) => x.agent_id === agentId);
-  const agentName = p?.display_name || "Megan Demo";
-  const company = p?.company || "";
-  const area = p?.area || "";
-  const initials = agentName.split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase();
-  const week = weekRange(weeksBack);
-  const ref = `EK-WR-${week.start.getFullYear()}${String(week.start.getMonth() + 1).padStart(2, "0")}${String(week.start.getDate()).padStart(2, "0")}-${(agentId || "sample").replace(/-/g, "").slice(0, 4).toUpperCase()}`;
+  const name = p?.display_name || "Megan Demo";
+  const first = name.split(/\s+/)[0];
+  const initials = name.split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+  const period = weekRange(weeksBack);
+  const d = SAMPLE_WEEK;
+  const vars = { first, name, leads: d.leads, booked: d.booked, mins: d.medianMins, within5: d.within5, waiting: d.stages.newLead, noAnswer: d.stages.noAnswer };
+  const focus = FOCUS_RULES.filter((r) => r.when(d)).slice(0, 3);
+  const journey = [d.leads, d.contacted, d.spoke, d.booked, d.mandates];
+  const maxSource = Math.max(1, ...d.sources.map((s) => s.leads));
+  const extraWaiting = d.stages.newLead - d.waiting.length;
 
   useEffect(() => {
-    document.title = `Weekly Report · ${agentName} · ${week.label}`;
-  }, [agentName, week.label]);
-
-  const t = THIS, l = LAST;
-  const funnel = [
-    { k: "New leads", v: t.leads },
-    { k: "Called", v: t.called },
-    { k: "Spoke to", v: t.spoke },
-    { k: "Appointment", v: t.booked },
-    { k: "Mandate", v: t.mandates },
-  ];
+    document.title = `Weekly results · ${name} · ${period}`;
+  }, [name, period]);
 
   return (
-    <div className="rep-viewer">
-      <div className="rep-bar">
-        <span className="rep-file">Weekly Report · {agentName} · <span style={{ color: "#ffcc80" }}>Sample numbers (layout preview)</span></span>
+    <div className="wr-viewer">
+      <div className="wr-bar">
+        <div className="wr-bar-title">Weekly results · {name} <span>· sample numbers</span></div>
         <select value={weeksBack} onChange={(e) => setWeeksBack(Number(e.target.value))} aria-label="Week">
-          {[0, 1, 2, 3].map((n) => <option key={n} value={n}>{weekRange(n).label}</option>)}
+          {[0, 1, 2, 3].map((n) => <option key={n} value={n}>{weekRange(n)}</option>)}
         </select>
         <button type="button" onClick={() => window.print()}>Save as PDF</button>
       </div>
 
-      <article className="rep-page">
-        <header className="rep-letterhead">
-          <div>
-            <img className="rep-logo" src={estateKitLogo} alt="EstateKit" />
-            <h1>Weekly Performance Report</h1>
-            <p>{week.label}</p>
-          </div>
-          <div className="rep-ref">
-            Ref: <b>{ref}</b>
-            <br />
-            Period: <b>7 days</b>
-            <br />
-            Compared to: <b>previous week</b>
+      <article className="wr-page">
+        <header className="wr-head">
+          <img className="wr-logo" src={estateKitLogo} alt="EstateKit" />
+          <div className="wr-period">
+            <small>Weekly results</small>
+            <b>{period}</b>
           </div>
         </header>
 
-        <div className="rep-for">
-          {p?.avatar_url ? <img className="rep-photo" src={p.avatar_url} alt="" /> : <div className="rep-photo">{initials}</div>}
+        <div className="wr-hello">
+          {p?.avatar_url ? <img className="wr-avatar" src={p.avatar_url} alt="" /> : <div className="wr-avatar">{initials}</div>}
           <div>
-            <p className="rep-for-name">Prepared for {agentName}<span className="rep-sample">Sample data</span></p>
-            <p className="rep-for-co">{[company, area].filter(Boolean).join(" · ") || "EstateKit client"}</p>
+            <h1>{COPY.title}<span className="wr-sample">Sample</span></h1>
+            <p>{fillIn(COPY.hello, vars)} {fillIn(COPY.summary, vars)}</p>
           </div>
         </div>
 
-        <div className="rep-summary" role="status">
-          <p className="rep-summary-title">{t.booked} appointments from {t.leads} leads this week.</p>
-          <p>
-            That's {t.booked - l.booked > 0 ? `${t.booked - l.booked} more than` : "the same as"} last week, at {money(cpl(t))} a lead. {WAITING_TOTAL} leads still
-            haven't been called. Calling them is the quickest win for next week.
-          </p>
-        </div>
-
-        <div className="rep-tiles">
-          <div className="rep-tile">
-            <div className="rep-tile-label">New leads</div>
-            <div className="rep-tile-value">{t.leads}</div>
-            <div className="rep-tile-delta"><Delta now={t.leads} before={l.leads} /></div>
-          </div>
-          <div className="rep-tile">
-            <div className="rep-tile-label">Cost per lead</div>
-            <div className="rep-tile-value">{money(cpl(t))}</div>
-            <div className="rep-tile-delta"><Delta now={cpl(t)} before={cpl(l)} money lowerIsBetter /></div>
-          </div>
-          <div className="rep-tile">
-            <div className="rep-tile-label">Appointments</div>
-            <div className="rep-tile-value">{t.booked}</div>
-            <div className="rep-tile-delta"><Delta now={t.booked} before={l.booked} /></div>
-          </div>
-          <div className="rep-tile">
-            <div className="rep-tile-label">Mandates</div>
-            <div className="rep-tile-value">{t.mandates}</div>
-            <div className="rep-tile-delta"><Delta now={t.mandates} before={l.mandates} /></div>
-          </div>
-          <div className="rep-tile">
-            <div className="rep-tile-label">Time to call</div>
-            <div className="rep-tile-value">{t.medianMins}m</div>
-            <div className="rep-tile-delta"><Delta now={t.medianMins} before={l.medianMins} lowerIsBetter suffix="m" /></div>
-          </div>
-        </div>
-
-        <h2><span>1.</span> This week vs last week</h2>
-        <table className="rep-table">
-          <thead>
-            <tr><th>Measure</th><th className="num">This week</th><th className="num">Last week</th><th className="num">Change</th></tr>
-          </thead>
-          <tbody>
-            <tr><th scope="row">New leads</th><td className="num">{t.leads}</td><td className="num">{l.leads}</td><td className="num"><Delta now={t.leads} before={l.leads} /></td></tr>
-            <tr><th scope="row">Ad spend</th><td className="num">{money(t.spend)}</td><td className="num">{money(l.spend)}</td><td className="num">{money(t.spend - l.spend)}</td></tr>
-            <tr><th scope="row">Cost per lead</th><td className="num">{money(cpl(t))}</td><td className="num">{money(cpl(l))}</td><td className="num"><Delta now={cpl(t)} before={cpl(l)} money lowerIsBetter /></td></tr>
-            <tr><th scope="row">Leads called</th><td className="num">{t.called} ({pct(t.called, t.leads)}%)</td><td className="num">{l.called} ({pct(l.called, l.leads)}%)</td><td className="num"><Delta now={pct(t.called, t.leads)} before={pct(l.called, l.leads)} suffix=" pts" /></td></tr>
-            <tr><th scope="row">Called within 5 minutes</th><td className="num">{t.within5} ({pct(t.within5, t.leads)}%)</td><td className="num">{l.within5} ({pct(l.within5, l.leads)}%)</td><td className="num"><Delta now={pct(t.within5, t.leads)} before={pct(l.within5, l.leads)} suffix=" pts" /></td></tr>
-            <tr><th scope="row">Appointments booked</th><td className="num">{t.booked}</td><td className="num">{l.booked}</td><td className="num"><Delta now={t.booked} before={l.booked} /></td></tr>
-            <tr><th scope="row">Cost per appointment</th><td className="num">{money(t.spend / t.booked)}</td><td className="num">{money(l.spend / l.booked)}</td><td className="num"><Delta now={t.spend / t.booked} before={l.spend / l.booked} money lowerIsBetter /></td></tr>
-            <tr><th scope="row">Mandates signed</th><td className="num">{t.mandates}</td><td className="num">{l.mandates}</td><td className="num"><Delta now={t.mandates} before={l.mandates} /></td></tr>
-          </tbody>
-        </table>
-
-        <h2><span>2.</span> Where your leads got to</h2>
-        <div className="rep-funnel">
-          {funnel.map((f) => (
-            <div className="rep-funnel-row" key={f.k}>
-              <span>{f.k}</span>
-              <div className="rep-funnel-track"><div className="rep-funnel-fill" style={{ width: `${Math.max(2, pct(f.v, t.leads))}%` }} /></div>
-              <b>{f.v} <span className="pct">{pct(f.v, t.leads)}%</span></b>
+        <div className="wr-body">
+          <section className="wr-section" aria-label="This week">
+            <div className="wr-kpis">
+              <div className="wr-kpi">
+                <span className="wr-kpi-label">{COPY.kpi.leads}</span>
+                <span className="wr-kpi-value">{d.leads}</span>
+                <Delta now={d.leads} before={d.last.leads} />
+                <Spark values={d.trend.leads} label={COPY.kpi.leads} />
+              </div>
+              <div className="wr-kpi">
+                <span className="wr-kpi-label">{COPY.kpi.contacted}</span>
+                <span className="wr-kpi-value">{pct(d.contacted, d.leads)}<small>%</small></span>
+                <Delta now={pct(d.contacted, d.leads)} before={pct(d.last.contacted, d.last.leads)} suffix=" pts" />
+                <span className="wr-spark-cap">{d.contacted} of {d.leads} leads</span>
+              </div>
+              <div className="wr-kpi">
+                <span className="wr-kpi-label">{COPY.kpi.booked}</span>
+                <span className="wr-kpi-value">{d.booked}</span>
+                <Delta now={d.booked} before={d.last.booked} />
+                <Spark values={d.trend.booked} label={COPY.kpi.booked} />
+              </div>
+              <div className="wr-kpi">
+                <span className="wr-kpi-label">{COPY.kpi.mandates}</span>
+                <span className="wr-kpi-value">{d.mandates}</span>
+                <Delta now={d.mandates} before={d.last.mandates} />
+              </div>
             </div>
-          ))}
+          </section>
+
+          <div className="wr-two">
+            <section className="wr-card wr-section">
+              <h2>{COPY.journey}</h2>
+              <div className="wr-funnel">
+                {COPY.journeySteps.map((label, i) => (
+                  <div className="wr-step" key={label}>
+                    <span>{label}</span>
+                    <div className="wr-step-track"><div className="wr-step-fill" style={{ width: `${Math.max(2, pct(journey[i], d.leads))}%` }} /></div>
+                    <b>{journey[i]}<span>{pct(journey[i], d.leads)}%</span></b>
+                  </div>
+                ))}
+              </div>
+            </section>
+            <section className="wr-card wr-section">
+              <h2>{COPY.speed}</h2>
+              <div className="wr-speed-num">{d.medianMins}<small>min</small></div>
+              <Delta now={d.medianMins} before={d.last.medianMins} lowerIsBetter suffix=" min" />
+              <div className="wr-gauge" aria-hidden="true"><i style={{ left: `${Math.min(100, (d.medianMins / 20) * 100)}%` }} /></div>
+              <div className="wr-gauge-scale" aria-hidden="true"><span style={{ left: 0 }}>0</span><span style={{ left: "25%" }}>5</span><span style={{ left: "60%" }}>12</span><span style={{ right: 0 }}>20+ min</span></div>
+              <p className="wr-muted">{fillIn(COPY.speedLine, vars)} {COPY.speedTarget}</p>
+            </section>
+          </div>
+
+          <section className="wr-section">
+            <h2>{COPY.pipeline}</h2>
+            <div className="wr-stages">
+              {(Object.keys(COPY.stages) as (keyof typeof COPY.stages)[]).map((k) => (
+                <div key={k} className={`wr-stage${k === "newLead" && d.stages.newLead ? " hot" : ""}`}>
+                  <b>{d.stages[k]}</b>
+                  <span>{COPY.stages[k]}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <div className="wr-two">
+            <section className="wr-card wr-section">
+              <h2>{COPY.waiting}</h2>
+              {d.waiting.length ? (
+                <ul className="wr-list">
+                  {d.waiting.map((w) => (
+                    <li key={w.name}>
+                      <span className="grow">{w.name}</span>
+                      <span className="meta">{w.area}</span>
+                      <span className="wr-pill">{w.days} days</span>
+                    </li>
+                  ))}
+                  {extraWaiting > 0 && <li className="meta">{fillIn(COPY.waitingMore, { n: extraWaiting })}</li>}
+                </ul>
+              ) : <p className="wr-muted">{COPY.waitingNone}</p>}
+            </section>
+            <section className="wr-card wr-section">
+              <h2>{COPY.sources}</h2>
+              <ul className="wr-list">
+                {d.sources.map((s) => (
+                  <li key={s.name}>
+                    <span className="grow">{s.name}</span>
+                    <span className="wr-source-bar"><i style={{ width: `${(s.leads / maxSource) * 100}%` }} /></span>
+                    <b style={{ minWidth: 22, textAlign: "right" }}>{s.leads}</b>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          </div>
+
+          <section className="wr-section">
+            <h2>{COPY.focus}</h2>
+            <div className="wr-focus">
+              {focus.map((f, i) => (
+                <div className="wr-focus-item" key={f.title}>
+                  <span className="wr-focus-n">{i + 1}</span>
+                  <div><b>{fillIn(f.title, vars)}</b>{f.body}</div>
+                </div>
+              ))}
+            </div>
+          </section>
         </div>
-        <div className="rep-notice" role="note">
-          <p className="rep-notice-title">Speed matters</p>
-          <p>
-            Half your leads were called within <b>{t.medianMins} minutes</b> (last week: {l.medianMins}). {t.within5} of {t.leads} were called inside 5 minutes.
-            Leads called quickly are far more likely to pick up and book.
-          </p>
-        </div>
 
-        <h2><span>3.</span> Leads still waiting for a call ({WAITING_TOTAL})</h2>
-        <table className="rep-table">
-          <thead>
-            <tr><th>Name</th><th>Area</th><th>Came from</th><th className="num">Waiting</th></tr>
-          </thead>
-          <tbody>
-            {WAITING.map((w) => (
-              <tr key={w.name}><td>{w.name}</td><td>{w.area}</td><td>{w.source}</td><td className="num">{w.days} days</td></tr>
-            ))}
-          </tbody>
-        </table>
-        {WAITING_TOTAL > WAITING.length && <p className="rep-small">Plus {WAITING_TOTAL - WAITING.length} more. All of them are in your EstateKit leads list.</p>}
-
-        <h2><span>4.</span> Your ads</h2>
-        <table className="rep-table">
-          <thead>
-            <tr><th>Ad</th><th className="num">Leads</th><th className="num">Spend</th><th className="num">Cost per lead</th><th>Status</th></tr>
-          </thead>
-          <tbody>
-            {ADS.map((a) => (
-              <tr key={a.name}><td>{a.name}</td><td className="num">{a.leads}</td><td className="num">{money(a.spend)}</td><td className="num">{money(a.spend / a.leads)}</td><td>{a.status}</td></tr>
-            ))}
-          </tbody>
-        </table>
-
-        <h2><span>5.</span> Focus for next week</h2>
-        <ol className="rep-actions">
-          <li><b>Call the {WAITING_TOTAL} waiting leads first.</b> Oldest first: they cool off fast.</li>
-          <li><b>Keep calling inside 5 minutes.</b> You did it for {pct(t.within5, t.leads)}% of leads. Aim for half.</li>
-          <li><b>We're moving budget to "{ADS[0].name}".</b> It brings leads at {money(ADS[0].spend / ADS[0].leads)} each, your cheapest.</li>
-        </ol>
-
-        <footer className="rep-foot">
-          <span>Prepared by EstateKit for {agentName} · leads.estatekit.co</span>
-          <span>Questions? Reply on WhatsApp to your EstateKit contact.</span>
+        <footer className="wr-foot">
+          <span>{fillIn(COPY.footLeft, vars)}</span>
+          <span>{COPY.footRight}</span>
         </footer>
       </article>
     </div>

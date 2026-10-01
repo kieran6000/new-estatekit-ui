@@ -56,30 +56,70 @@ async function getAccessToken(serviceAccountKey: string): Promise<string> {
   return tokenData.access_token;
 }
 
-async function createSheet(accessToken: string, title: string, stages: string[]): Promise<{ spreadsheetId: string }> {
-  const res = await fetch("https://sheets.googleapis.com/v4/spreadsheets", {
+/**
+ * Access token for EstateKit's own Google account (a free Gmail account works).
+ * A service account can't own files on a free account ("storage quota
+ * exceeded"), so this is the preferred way: one refresh token, made once in
+ * the OAuth Playground with the drive.file scope (see the setup guide).
+ */
+async function getOAuthToken(clientId: string, clientSecret: string, refreshToken: string): Promise<string> {
+  const res = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
-    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      properties: { title },
-      sheets: [{
-        properties: { title: "Leads", sheetId: 0 },
-        data: [{
-          startRow: 0,
-          startColumn: 0,
-          rowData: [{ values: HEADERS.map((h) => ({ userEnteredValue: { stringValue: h }, userEnteredFormat: { textFormat: { bold: true }, backgroundColor: { red: 0.9, green: 0.93, blue: 0.96 } } })) }],
-        }],
-      }],
-    }),
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: "refresh_token" }),
   });
   const data = await res.json();
-  if (!data.spreadsheetId) throw new Error(`Sheet creation failed: ${JSON.stringify(data)}`);
+  if (!data.access_token) throw new Error(`Google auth failed: ${JSON.stringify(data)}`);
+  return data.access_token;
+}
+
+/** The "EstateKit Client Sheets" folder this app made, creating it the first
+ *  time. With the drive.file scope the app only sees folders it made itself. */
+async function getOrCreateFolder(accessToken: string): Promise<string> {
+  const name = "EstateKit Client Sheets";
+  const q = encodeURIComponent(`name = '${name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`);
+  const found = await (await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)`, { headers: { Authorization: `Bearer ${accessToken}` } })).json();
+  if (found.files?.[0]?.id) return found.files[0].id;
+  const made = await (await fetch("https://www.googleapis.com/drive/v3/files?fields=id", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ name, mimeType: "application/vnd.google-apps.folder" }),
+  })).json();
+  if (!made.id) throw new Error(`Folder creation failed: ${JSON.stringify(made)}`);
+  return made.id;
+}
+
+async function createSheet(accessToken: string, title: string, stages: string[], folderId: string | null): Promise<{ spreadsheetId: string }> {
+  // Created through Drive so it can go straight into a folder (a shared drive
+  // for a service account, or our own folder for the OAuth account).
+  const fileRes = await fetch("https://www.googleapis.com/drive/v3/files?supportsAllDrives=true&fields=id", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ name: title, mimeType: "application/vnd.google-apps.spreadsheet", ...(folderId ? { parents: [folderId] } : {}) }),
+  });
+  const file = await fileRes.json();
+  if (!file.id) throw new Error(`Sheet creation failed: ${JSON.stringify(file)}`);
+  const data = { spreadsheetId: file.id as string };
+
+  await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${data.spreadsheetId}/values/A1:G1?valueInputOption=RAW`, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ values: [HEADERS] }),
+  });
 
   await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${data.spreadsheetId}:batchUpdate`, {
     method: "POST",
     headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       requests: [
+        { updateSheetProperties: { properties: { sheetId: 0, title: "Leads", gridProperties: { frozenRowCount: 1 } }, fields: "title,gridProperties.frozenRowCount" } },
+        {
+          repeatCell: {
+            range: { sheetId: 0, startRowIndex: 0, endRowIndex: 1 },
+            cell: { userEnteredFormat: { textFormat: { bold: true }, backgroundColor: { red: 0.9, green: 0.93, blue: 0.96 } } },
+            fields: "userEnteredFormat(textFormat,backgroundColor)",
+          },
+        },
         {
           setDataValidation: {
             range: { sheetId: 0, startRowIndex: 1, startColumnIndex: 3, endColumnIndex: 4 },
@@ -102,7 +142,24 @@ async function createSheet(accessToken: string, title: string, stages: string[])
   return { spreadsheetId: data.spreadsheetId };
 }
 
+/** Same wording as the app's Next column: an untouched new lead says how
+ *  long it has waited, instead of "Just came in" forever. */
+function nextStep(l: { stage: string; next_label: string; created_at: string }): string {
+  const untouched = l.stage === "New Lead" && (!l.next_label || l.next_label === "Just came in" || l.next_label === "—");
+  if (!untouched) return l.next_label;
+  const mins = Math.max(0, Math.floor((Date.now() - new Date(l.created_at).getTime()) / 60000));
+  if (mins < 60) return "Call now";
+  if (mins < 1440) return `Call today · waiting ${Math.floor(mins / 60)}h`;
+  const days = Math.floor(mins / 1440);
+  return days < 14 ? `Not called · ${days} day${days === 1 ? "" : "s"}` : `Not called · ${Math.floor(days / 7)} wks`;
+}
+
 async function syncLeadsToSheet(accessToken: string, spreadsheetId: string, leads: any[]) {
+  // Clear first, so leads that were deleted don't linger at the bottom.
+  await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Leads!A2:G:clear`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
   await fetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Leads!A2:G?valueInputOption=RAW`,
     {
@@ -116,7 +173,7 @@ async function syncLeadsToSheet(accessToken: string, spreadsheetId: string, lead
           l.phone,
           l.email || "",
           l.stage,
-          l.next_label,
+          nextStep(l),
           l.note || "",
           new Date(l.created_at).toLocaleDateString("en-GB"),
         ]),
@@ -125,12 +182,16 @@ async function syncLeadsToSheet(accessToken: string, spreadsheetId: string, lead
   );
 }
 
-async function shareSheet(accessToken: string, spreadsheetId: string) {
-  await fetch(`https://www.googleapis.com/drive/v3/files/${spreadsheetId}/permissions`, {
+/** Gives the agent edit access by email. Never "anyone with the link": the
+ *  sheet holds the client's leads (names, phone numbers), so a forwarded link
+ *  must not open it. */
+async function shareSheet(accessToken: string, spreadsheetId: string, email: string) {
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${spreadsheetId}/permissions?supportsAllDrives=true&sendNotificationEmail=true`, {
     method: "POST",
     headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ role: "writer", type: "anyone" }),
+    body: JSON.stringify({ role: "writer", type: "user", emailAddress: email }),
   });
+  if (!res.ok) console.error("share failed", spreadsheetId, await res.text());
 }
 
 Deno.serve(async (req) => {
@@ -142,15 +203,23 @@ Deno.serve(async (req) => {
     const authHeader = req.headers.get("Authorization")!;
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    // Service-account JSON: env var first, else the vault secret (so it can be
+    // Each secret: the function's env first, else the vault (so it can be
     // configured without dashboard access).
-    let GOOGLE_SERVICE_ACCOUNT_KEY = Deno.env.get("GOOGLE_SERVICE_ACCOUNT_KEY");
-    if (!GOOGLE_SERVICE_ACCOUNT_KEY) {
-      const { data } = await supabase.rpc("get_secret", { secret_name: "GOOGLE_SERVICE_ACCOUNT_KEY" });
-      GOOGLE_SERVICE_ACCOUNT_KEY = data || undefined;
-    }
-    if (!GOOGLE_SERVICE_ACCOUNT_KEY) {
-      return new Response(JSON.stringify({ error: "Google Sheets not configured — service account key missing." }), { status: 500, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
+    const secret = async (name: string): Promise<string | undefined> => {
+      const v = Deno.env.get(name);
+      if (v) return v;
+      const { data } = await supabase.rpc("get_secret", { secret_name: name });
+      return data || undefined;
+    };
+    // Preferred: EstateKit's own Google account (works on free Gmail).
+    // Fallback: a service account writing into a Workspace shared drive.
+    const oauthId = await secret("GOOGLE_OAUTH_CLIENT_ID");
+    const oauthSecret = await secret("GOOGLE_OAUTH_CLIENT_SECRET");
+    const oauthRefresh = await secret("GOOGLE_OAUTH_REFRESH_TOKEN");
+    const useOAuth = !!(oauthId && oauthSecret && oauthRefresh);
+    const GOOGLE_SERVICE_ACCOUNT_KEY = useOAuth ? undefined : await secret("GOOGLE_SERVICE_ACCOUNT_KEY");
+    if (!useOAuth && !GOOGLE_SERVICE_ACCOUNT_KEY) {
+      return new Response(JSON.stringify({ error: "Google Sheets not configured: no Google account connected (service account key missing)." }), { status: 500, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
     }
     const userClient = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_ANON_KEY")!, {
       global: { headers: { Authorization: authHeader } },
@@ -168,13 +237,21 @@ Deno.serve(async (req) => {
       .single();
     if (!pipeline) return new Response(JSON.stringify({ error: "Pipeline not found" }), { status: 404, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
 
+    // Only the agent themselves or an operator may export a pipeline.
+    if (pipeline.agent_id !== user.id) {
+      const { data: me } = await supabase.from("agent_profiles").select("is_operator").eq("agent_id", user.id).maybeSingle();
+      if (!me?.is_operator) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
+    }
+
     const { data: profile } = await supabase
       .from("agent_profiles")
-      .select("display_name")
+      .select("display_name, email")
       .eq("agent_id", pipeline.agent_id)
       .maybeSingle();
 
-    const accessToken = await getAccessToken(GOOGLE_SERVICE_ACCOUNT_KEY);
+    const accessToken = useOAuth
+      ? await getOAuthToken(oauthId!, oauthSecret!, oauthRefresh!)
+      : await getAccessToken(GOOGLE_SERVICE_ACCOUNT_KEY!);
     const stages = PIPELINE_STAGES[pipeline.kind] || PIPELINE_STAGES.seller;
 
     let spreadsheetId = "";
@@ -183,11 +260,12 @@ Deno.serve(async (req) => {
     if (!sheetUrl) {
       const agentLabel = profile?.display_name || "Agent";
       const title = `${agentLabel} — ${pipeline.name} Pipeline`;
-      const result = await createSheet(accessToken, title, stages);
+      const folderId = useOAuth ? await getOrCreateFolder(accessToken) : (await secret("GOOGLE_SHEETS_FOLDER_ID")) ?? null;
+      const result = await createSheet(accessToken, title, stages, folderId);
       spreadsheetId = result.spreadsheetId;
       sheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}`;
 
-      await shareSheet(accessToken, spreadsheetId);
+      if (profile?.email) await shareSheet(accessToken, spreadsheetId, profile.email);
 
       await supabase
         .from("pipelines")

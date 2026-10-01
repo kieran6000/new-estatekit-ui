@@ -25,6 +25,20 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import DownloadIcon from "@mui/icons-material/Download";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
+import LoginIcon from "@mui/icons-material/Login";
+import SwapHorizIcon from "@mui/icons-material/SwapHoriz";
+import CallIcon from "@mui/icons-material/Call";
+import CancelOutlinedIcon from "@mui/icons-material/CancelOutlined";
+import EmailOutlinedIcon from "@mui/icons-material/EmailOutlined";
+import WhatsAppIcon from "@mui/icons-material/WhatsApp";
+import LinkIcon from "@mui/icons-material/Link";
+import PauseCircleOutlineIcon from "@mui/icons-material/PauseCircleOutlined";
+import BoltIcon from "@mui/icons-material/Bolt";
+import BlockIcon from "@mui/icons-material/Block";
+import KeyIcon from "@mui/icons-material/Key";
+import TuneIcon from "@mui/icons-material/Tune";
+import CampaignOutlinedIcon from "@mui/icons-material/CampaignOutlined";
+import PersonOutlineIcon from "@mui/icons-material/PersonOutlined";
 import { useNavigate } from "react-router-dom";
 import { tokens } from "../theme";
 import { timeAgo } from "../lib/timeAgo";
@@ -49,6 +63,63 @@ const CATEGORY_LABEL: Record<Category, string> = {
   account: "Users & access",
 };
 
+const CATEGORY_ICON: Record<Category, { icon: React.ReactNode; color: string }> = {
+  login: { icon: <LoginIcon />, color: "#1565c0" },
+  leads: { icon: <PersonOutlineIcon />, color: "#2e7d32" },
+  setup: { icon: <TuneIcon />, color: "#6a1b9a" },
+  automations: { icon: <BoltIcon />, color: "#e65100" },
+  ads: { icon: <CampaignOutlinedIcon />, color: "#0277bd" },
+  account: { icon: <KeyIcon />, color: "#c62828" },
+};
+
+/** A specific icon per action where one fits; otherwise its category's. */
+const ACTION_ICON: [RegExp, typeof LoginIcon][] = [
+  [/^Signed in/, LoginIcon],
+  [/^Moved lead/, SwapHorizIcon],
+  [/^Called/, CallIcon],
+  [/lost|Invalid/i, CancelOutlinedIcon],
+  [/email/i, EmailOutlinedIcon],
+  [/WhatsApp/i, WhatsAppIcon],
+  [/link/i, LinkIcon],
+  [/^Paused ad|^Resumed ad/, PauseCircleOutlineIcon],
+  [/automation/i, BoltIcon],
+  [/^Paused account|^Disabled/, BlockIcon],
+  [/password/i, KeyIcon],
+];
+
+function ActionIcon({ e }: { e: { action: string; category: Category } }) {
+  const c = CATEGORY_ICON[e.category];
+  const Icon = ACTION_ICON.find(([re]) => re.test(e.action))?.[1];
+  return (
+    <Box sx={{ width: 30, height: 30, borderRadius: "8px", flex: "none", display: "grid", placeItems: "center", bgcolor: `${c.color}14`, color: c.color, "& svg": { fontSize: 17 } }}>
+      {Icon ? <Icon /> : c.icon}
+    </Box>
+  );
+}
+
+const COUNTRY_NAME: Record<string, string> = { ZA: "South Africa", GB: "United Kingdom", US: "United States", NA: "Namibia", BW: "Botswana", AE: "United Arab Emirates" };
+
+/** A flag image (Windows doesn't draw flag emoji), with the country as text for screen readers. */
+function Flag({ code }: { code: string }) {
+  const name = COUNTRY_NAME[code] ?? code;
+  const [failed, setFailed] = useState(false);
+  if (failed) return <Box component="span" title={name} sx={{ fontSize: 10.5, fontWeight: 700, px: 0.5, borderRadius: "2px", bgcolor: tokens.surface2, color: "text.secondary" }}>{code}</Box>;
+  return (
+    <Box
+      component="img"
+      src={`https://flagcdn.com/20x15/${code.toLowerCase()}.png`}
+      srcSet={`https://flagcdn.com/40x30/${code.toLowerCase()}.png 2x`}
+      width={20}
+      height={15}
+      alt={name}
+      title={name}
+      loading="lazy"
+      onError={() => setFailed(true)}
+      sx={{ borderRadius: "2px", boxShadow: "0 0 0 1px rgba(0,0,0,.08)", flex: "none", verticalAlign: "-2px" }}
+    />
+  );
+}
+
 interface AuditUser {
   id: string;
   name: string;
@@ -62,6 +133,8 @@ interface AuditUser {
   lastLoginAt: string;
   lastDevice: string;
   lastIp: string;
+  /** ISO country of the last sign-in, from the IP. */
+  lastCountry: string;
   status: "Active" | "Paused" | "Disabled";
   leads: number;
   pages: number;
@@ -80,34 +153,36 @@ interface AuditEvent {
   after?: string;
   ip: string;
   device: string;
+  /** ISO country of the device, looked up from the IP when the event is logged. */
+  country: string;
 }
 
 const ago = (mins: number) => new Date(Date.now() - mins * 60000).toISOString();
 
 const SAMPLE_USERS: AuditUser[] = [
-  { id: "u1", name: "Kieran (EstateKit)", role: "Operator", phone: "072 555 0101", email: "ops@estatekit.co", company: "EstateKit", area: "—", plan: "Paid", createdAt: ago(60 * 24 * 300), lastLoginAt: ago(12), lastDevice: "Chrome · Windows", lastIp: "102.65.12.4", status: "Active", leads: 0, pages: 0 },
-  { id: "u2", name: "Bennie Botha", role: "Operator", phone: "082 555 0102", email: "bennie@estatekit.co", company: "EstateKit", area: "—", plan: "Paid", createdAt: ago(60 * 24 * 280), lastLoginAt: ago(95), lastDevice: "Safari · iPhone", lastIp: "41.13.88.20", status: "Active", leads: 0, pages: 0 },
-  { id: "u3", name: "Megan Demo", role: "Agent", phone: "083 555 0103", email: "megan@demo-realty.co.za", company: "Demo Realty", area: "Bryanston", plan: "Paid", createdAt: ago(60 * 24 * 120), lastLoginAt: ago(60 * 5), lastDevice: "Chrome · Android", lastIp: "105.224.3.77", status: "Active", leads: 214, pages: 2 },
-  { id: "u4", name: "Sipho Ndlovu", role: "Agent", phone: "084 555 0104", email: "sipho@ndlovuprops.co.za", company: "Ndlovu Properties", area: "Midrand", plan: "Paid", createdAt: ago(60 * 24 * 64), lastLoginAt: ago(60 * 26), lastDevice: "Chrome · Android", lastIp: "197.184.9.51", status: "Active", leads: 131, pages: 1 },
-  { id: "u5", name: "Anke de Villiers", role: "Agent", phone: "071 555 0105", email: "anke@capeestates.co.za", company: "Cape Estates", area: "Durbanville", plan: "Free", createdAt: ago(60 * 24 * 21), lastLoginAt: ago(60 * 24 * 9), lastDevice: "Safari · iPhone", lastIp: "41.76.110.2", status: "Paused", leads: 18, pages: 1 },
+  { id: "u1", name: "Kieran (EstateKit)", role: "Operator", phone: "072 555 0101", email: "ops@estatekit.co", company: "EstateKit", area: "—", plan: "Paid", createdAt: ago(60 * 24 * 300), lastLoginAt: ago(12), lastDevice: "Chrome · Windows", lastIp: "102.65.12.4", lastCountry: "ZA", status: "Active", leads: 0, pages: 0 },
+  { id: "u2", name: "Jordan (EstateKit)", role: "Operator", phone: "082 555 0102", email: "jordan@estatekit.co", company: "EstateKit", area: "—", plan: "Paid", createdAt: ago(60 * 24 * 280), lastLoginAt: ago(95), lastDevice: "Safari · iPhone", lastIp: "81.2.69.160", lastCountry: "GB", status: "Active", leads: 0, pages: 0 },
+  { id: "u3", name: "Megan Demo", role: "Agent", phone: "083 555 0103", email: "megan@demo-realty.co.za", company: "Demo Realty", area: "Bryanston", plan: "Paid", createdAt: ago(60 * 24 * 120), lastLoginAt: ago(60 * 5), lastDevice: "Chrome · Android", lastIp: "105.224.3.77", lastCountry: "ZA", status: "Active", leads: 214, pages: 2 },
+  { id: "u4", name: "Sipho Ndlovu", role: "Agent", phone: "084 555 0104", email: "sipho@ndlovuprops.co.za", company: "Ndlovu Properties", area: "Midrand", plan: "Paid", createdAt: ago(60 * 24 * 64), lastLoginAt: ago(60 * 26), lastDevice: "Chrome · Android", lastIp: "197.184.9.51", lastCountry: "ZA", status: "Active", leads: 131, pages: 1 },
+  { id: "u5", name: "Anke de Villiers", role: "Agent", phone: "071 555 0105", email: "anke@capeestates.co.za", company: "Cape Estates", area: "Durbanville", plan: "Free", createdAt: ago(60 * 24 * 21), lastLoginAt: ago(60 * 24 * 9), lastDevice: "Safari · iPhone", lastIp: "41.76.110.2", lastCountry: "ZA", status: "Paused", leads: 18, pages: 1 },
 ];
 
 const SAMPLE_EVENTS: AuditEvent[] = [
-  { id: "e1", at: ago(12), actorId: "u1", accountId: "u1", category: "login", action: "Signed in", ip: "102.65.12.4", device: "Chrome · Windows" },
-  { id: "e2", at: ago(18), actorId: "u1", accountId: "u3", category: "setup", action: "Changed confirmation email wording", target: "Valuation page", before: "Hi {{first_name}}, thanks for…", after: "Hi {{first_name}}, your evaluation is being prepared…", ip: "102.65.12.4", device: "Chrome · Windows" },
-  { id: "e3", at: ago(40), actorId: "u3", accountId: "u3", category: "leads", action: "Moved lead", target: "Thandi M.", before: "New Lead", after: "Booked", ip: "105.224.3.77", device: "Chrome · Android" },
-  { id: "e4", at: ago(55), actorId: "u3", accountId: "u3", category: "leads", action: "Called lead", target: "Thandi M.", ip: "105.224.3.77", device: "Chrome · Android" },
-  { id: "e5", at: ago(95), actorId: "u2", accountId: "u2", category: "login", action: "Signed in", ip: "41.13.88.20", device: "Safari · iPhone" },
-  { id: "e6", at: ago(110), actorId: "u2", accountId: "u4", category: "ads", action: "Paused ad", target: "Free selling guide (image)", before: "Active", after: "Paused", ip: "41.13.88.20", device: "Safari · iPhone" },
-  { id: "e7", at: ago(180), actorId: "u1", accountId: "u1", category: "automations", action: "Turned off automation", target: "No-answer follow-up", before: "On", after: "Off", ip: "102.65.12.4", device: "Chrome · Windows" },
-  { id: "e8", at: ago(60 * 5), actorId: "u3", accountId: "u3", category: "login", action: "Signed in", ip: "105.224.3.77", device: "Chrome · Android" },
-  { id: "e9", at: ago(60 * 6), actorId: "u3", accountId: "u3", category: "setup", action: "Changed WhatsApp number", before: "083 555 0000", after: "083 555 0103", ip: "105.224.3.77", device: "Chrome · Android" },
-  { id: "e10", at: ago(60 * 26), actorId: "u4", accountId: "u4", category: "login", action: "Signed in", ip: "197.184.9.51", device: "Chrome · Android" },
-  { id: "e11", at: ago(60 * 27), actorId: "u4", accountId: "u4", category: "leads", action: "Marked lead lost", target: "Johan P.", before: "No Answer", after: "Lost", ip: "197.184.9.51", device: "Chrome · Android" },
-  { id: "e12", at: ago(60 * 30), actorId: "u1", accountId: "u5", category: "account", action: "Paused account", before: "Active", after: "Paused", ip: "102.65.12.4", device: "Chrome · Windows" },
-  { id: "e13", at: ago(60 * 31), actorId: "u1", accountId: "u5", category: "account", action: "Reset password", ip: "102.65.12.4", device: "Chrome · Windows" },
-  { id: "e14", at: ago(60 * 24 * 3), actorId: "u2", accountId: "u3", category: "setup", action: "Changed page link", target: "Valuation page", before: "/p/megan-val", after: "/p/megan-demo", ip: "41.13.88.20", device: "Safari · iPhone" },
-  { id: "e15", at: ago(60 * 24 * 9), actorId: "u5", accountId: "u5", category: "login", action: "Signed in", ip: "41.76.110.2", device: "Safari · iPhone" },
+  { id: "e1", at: ago(12), actorId: "u1", accountId: "u1", category: "login", action: "Signed in", ip: "102.65.12.4", country: "ZA", device: "Chrome · Windows" },
+  { id: "e2", at: ago(18), actorId: "u1", accountId: "u3", category: "setup", action: "Changed confirmation email wording", target: "Valuation page", before: "Hi {{first_name}}, thanks for…", after: "Hi {{first_name}}, your evaluation is being prepared…", ip: "102.65.12.4", country: "ZA", device: "Chrome · Windows" },
+  { id: "e3", at: ago(40), actorId: "u3", accountId: "u3", category: "leads", action: "Moved lead", target: "Thandi M.", before: "New Lead", after: "Booked", ip: "105.224.3.77", country: "ZA", device: "Chrome · Android" },
+  { id: "e4", at: ago(55), actorId: "u3", accountId: "u3", category: "leads", action: "Called lead", target: "Thandi M.", ip: "105.224.3.77", country: "ZA", device: "Chrome · Android" },
+  { id: "e5", at: ago(95), actorId: "u2", accountId: "u2", category: "login", action: "Signed in", ip: "81.2.69.160", country: "GB", device: "Safari · iPhone" },
+  { id: "e6", at: ago(110), actorId: "u2", accountId: "u4", category: "ads", action: "Paused ad", target: "Free selling guide (image)", before: "Active", after: "Paused", ip: "81.2.69.160", country: "GB", device: "Safari · iPhone" },
+  { id: "e7", at: ago(180), actorId: "u1", accountId: "u1", category: "automations", action: "Turned off automation", target: "No-answer follow-up", before: "On", after: "Off", ip: "102.65.12.4", country: "ZA", device: "Chrome · Windows" },
+  { id: "e8", at: ago(60 * 5), actorId: "u3", accountId: "u3", category: "login", action: "Signed in", ip: "105.224.3.77", country: "ZA", device: "Chrome · Android" },
+  { id: "e9", at: ago(60 * 6), actorId: "u3", accountId: "u3", category: "setup", action: "Changed WhatsApp number", before: "083 555 0000", after: "083 555 0103", ip: "105.224.3.77", country: "ZA", device: "Chrome · Android" },
+  { id: "e10", at: ago(60 * 26), actorId: "u4", accountId: "u4", category: "login", action: "Signed in", ip: "197.184.9.51", country: "ZA", device: "Chrome · Android" },
+  { id: "e11", at: ago(60 * 27), actorId: "u4", accountId: "u4", category: "leads", action: "Marked lead lost", target: "Johan P.", before: "No Answer", after: "Lost", ip: "197.184.9.51", country: "ZA", device: "Chrome · Android" },
+  { id: "e12", at: ago(60 * 30), actorId: "u1", accountId: "u5", category: "account", action: "Paused account", before: "Active", after: "Paused", ip: "102.65.12.4", country: "ZA", device: "Chrome · Windows" },
+  { id: "e13", at: ago(60 * 31), actorId: "u1", accountId: "u5", category: "account", action: "Reset password", ip: "102.65.12.4", country: "ZA", device: "Chrome · Windows" },
+  { id: "e14", at: ago(60 * 24 * 3), actorId: "u2", accountId: "u3", category: "setup", action: "Changed page link", target: "Valuation page", before: "/p/megan-val", after: "/p/megan-demo", ip: "81.2.69.160", country: "GB", device: "Safari · iPhone" },
+  { id: "e15", at: ago(60 * 24 * 9), actorId: "u5", accountId: "u5", category: "login", action: "Signed in", ip: "41.76.110.2", country: "ZA", device: "Safari · iPhone" },
 ];
 
 const RANGES = [
@@ -204,10 +279,10 @@ function ActivityTab({ selected, setSelected }: { selected: AuditUser[]; setSele
     download(
       "estatekit-audit-log.csv",
       toCsv([
-        ["When", "Who", "Role", "Account", "Category", "Action", "Target", "Before", "After", "IP", "Device"],
+        ["When", "Who", "Role", "Account", "Category", "Action", "Target", "Before", "After", "IP", "Device", "Country"],
         ...rows.map((e) => {
           const a = userById(e.actorId);
-          return [fullDate(e.at), a?.name ?? "", a?.role ?? "", userById(e.accountId)?.name ?? "", CATEGORY_LABEL[e.category], e.action, e.target ?? "", e.before ?? "", e.after ?? "", e.ip, e.device];
+          return [fullDate(e.at), a?.name ?? "", a?.role ?? "", userById(e.accountId)?.name ?? "", CATEGORY_LABEL[e.category], e.action, e.target ?? "", e.before ?? "", e.after ?? "", e.ip, e.device, COUNTRY_NAME[e.country] ?? e.country];
         }),
       ]),
     );
@@ -289,13 +364,23 @@ function ActivityTab({ selected, setSelected }: { selected: AuditUser[]; setSele
                       </TableCell>
                     )}
                     <TableCell sx={{ fontSize: 13.5 }}>
-                      <Box component="span" sx={{ fontWeight: 500 }}>{e.action}</Box>
-                      {e.target && <Box component="span" sx={{ color: "text.secondary" }}> · {e.target}</Box>}
-                      <Box sx={{ mt: 0.25 }}>
-                        <Chip size="small" variant="outlined" label={CATEGORY_LABEL[e.category]} sx={{ height: 20, fontSize: 11 }} />
+                      <Box sx={{ display: "flex", gap: 1.25, alignItems: "center" }}>
+                        <ActionIcon e={e} />
+                        <Box sx={{ minWidth: 0 }}>
+                          <Box component="span" sx={{ fontWeight: 500 }}>{e.action}</Box>
+                          {e.target && <Box component="span" sx={{ color: "text.secondary" }}> · {e.target}</Box>}
+                          <Box sx={{ fontSize: 12, color: "text.secondary" }}>
+                            {CATEGORY_LABEL[e.category]}
+                            {!isDesktop && <> · <Flag code={e.country} /></>}
+                          </Box>
+                        </Box>
                       </Box>
                     </TableCell>
-                    {isDesktop && <TableCell sx={{ fontSize: 12.5, color: "text.secondary", whiteSpace: "nowrap" }}>{e.device}</TableCell>}
+                    {isDesktop && (
+                      <TableCell sx={{ fontSize: 12.5, color: "text.secondary", whiteSpace: "nowrap" }}>
+                        <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.75 }}><Flag code={e.country} />{e.device}</Box>
+                      </TableCell>
+                    )}
                     <TableCell padding="checkbox">{expanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}</TableCell>
                   </TableRow>
                   <TableRow>
@@ -310,6 +395,7 @@ function ActivityTab({ selected, setSelected }: { selected: AuditUser[]; setSele
                           {e.after !== undefined && <Detail k="After" v={e.after} />}
                           <Detail k="IP address" v={e.ip} />
                           <Detail k="Device" v={e.device} />
+                          <Detail k="Location" v={COUNTRY_NAME[e.country] ?? e.country} />
                         </Box>
                       </Collapse>
                     </TableCell>
@@ -397,7 +483,9 @@ function UsersTab({ onShowActivity }: { onShowActivity: (u: AuditUser) => void }
                       </TableCell>
                     )}
                     {isDesktop && <TableCell sx={{ fontSize: 13 }}>{u.company}<Box sx={{ color: "text.secondary", fontSize: 12.5 }}>{u.area}</Box></TableCell>}
-                    <TableCell sx={{ fontSize: 13, whiteSpace: "nowrap" }} title={fullDate(u.lastLoginAt)}>{timeAgo(u.lastLoginAt)}</TableCell>
+                    <TableCell sx={{ fontSize: 13, whiteSpace: "nowrap" }} title={fullDate(u.lastLoginAt)}>
+                      <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.75 }}><Flag code={u.lastCountry} />{timeAgo(u.lastLoginAt)}</Box>
+                    </TableCell>
                     <TableCell>
                       <Chip size="small" label={u.status} color={u.status === "Active" ? "success" : u.status === "Paused" ? "warning" : "default"} variant="outlined" />
                     </TableCell>
@@ -419,6 +507,7 @@ function UsersTab({ onShowActivity }: { onShowActivity: (u: AuditUser) => void }
                             <Detail k="Joined" v={fullDate(u.createdAt)} />
                             <Detail k="Last sign-in" v={fullDate(u.lastLoginAt)} />
                             <Detail k="Last device" v={u.lastDevice} />
+                            <Detail k="Last location" v={COUNTRY_NAME[u.lastCountry] ?? u.lastCountry} />
                             <Detail k="Last IP" v={u.lastIp} />
                             <Detail k="Leads" v={String(u.leads)} />
                             <Detail k="Lead pages" v={String(u.pages)} />

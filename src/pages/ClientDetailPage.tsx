@@ -35,6 +35,7 @@ import VisibilityIcon from "@mui/icons-material/Visibility";
 import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import { tokens } from "../theme";
+import TeamSection from "../components/TeamSection";
 import {
   adsManagerUrl,
   clientPicture,
@@ -171,6 +172,7 @@ export default function ClientDetailPage() {
                   <ProfileSection data={data} />
                   <ContactSection data={data} />
                   <LoginSection data={data} />
+                  <TeamSection agentId={data.profile.agent_id} name={data.profile.display_name || "This agent"} />
                 </Box>
                 <Box sx={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
                   <MessagesSection data={data} />

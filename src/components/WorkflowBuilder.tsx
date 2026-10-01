@@ -1,26 +1,33 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Box,
   Button,
   Chip,
+  CircularProgress,
   Dialog,
   DialogContent,
   DialogTitle,
-  Divider,
   Drawer,
   IconButton,
-  List,
-  ListItemButton,
-  ListItemText,
+  InputAdornment,
+  InputBase,
   Menu,
   MenuItem,
   Switch,
+  Tab,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
+  Tabs,
   TextField,
   Tooltip,
   Typography,
   useMediaQuery,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
+import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import BoltIcon from "@mui/icons-material/Bolt";
 import ScheduleIcon from "@mui/icons-material/Schedule";
 import WhatsAppIcon from "@mui/icons-material/WhatsApp";
@@ -30,23 +37,38 @@ import FlagIcon from "@mui/icons-material/Flag";
 import AlarmIcon from "@mui/icons-material/Alarm";
 import NotificationsIcon from "@mui/icons-material/Notifications";
 import LocalOfferIcon from "@mui/icons-material/LocalOffer";
-import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
+import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
 import FilterAltIcon from "@mui/icons-material/FilterAlt";
 import BlockIcon from "@mui/icons-material/Block";
 import CloseIcon from "@mui/icons-material/Close";
+import UndoIcon from "@mui/icons-material/Undo";
+import RedoIcon from "@mui/icons-material/Redo";
+import EditIcon from "@mui/icons-material/Edit";
+import SearchIcon from "@mui/icons-material/Search";
+import RefreshIcon from "@mui/icons-material/Refresh";
+import ZoomInIcon from "@mui/icons-material/ZoomIn";
+import ZoomOutIcon from "@mui/icons-material/ZoomOut";
+import FitScreenIcon from "@mui/icons-material/FitScreen";
+import WarningAmberIcon from "@mui/icons-material/WarningAmber";
+import FolderOutlinedIcon from "@mui/icons-material/FolderOutlined";
+import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import { tokens } from "../theme";
 import { PIPELINE_STAGES } from "../types";
+import { useAutomations, useAutomationSteps } from "../hooks/useAutomations";
+import type { AutomationRow, AutomationStepRow } from "../types/automations";
+import WhatsAppPreview from "./WhatsAppPreview";
 
 // Workflow builder: trigger → (only if) → steps, with waits and if/else
-// branches, like Zapier / GoHighLevel. Replaces the fixed presets on the
+// branches, like Zapier / GoHighLevel. Will replace the fixed presets on the
 // Setup tab once it's wired up.
 //
-// UI ONLY FOR NOW: workflows live in this component's state and Save is off.
-// Backend plan (add-only): `workflows` (trigger json, filters json, exits json,
-// enabled) + `workflow_steps` (parent_id, branch 'yes'|'no'|null, order, type,
-// config json). run-automations already does "wait N minutes, then act" per
-// step; it grows a step-type switch, branch walking, and the exit checks.
-// The existing automations become workflows built from the templates below.
+// UI ONLY FOR NOW. Today's real automations (from the `automations` table)
+// and the lead confirmation email are converted into workflows here, so you
+// can see how they'd look; edits stay in this screen and Save is off.
+// Backend plan (add-only): `workflows` (trigger, filters, exits, settings,
+// status) + `workflow_steps` (parent_id, branch, order, type, config).
+// run-automations already does "wait N minutes, then act" per step; it grows
+// a step-type switch, branch walking and the stop-early checks.
 
 // ── Model ────────────────────────────────────────────────────────────────
 
@@ -59,7 +81,7 @@ interface Trigger { kind: TriggerKind; stage?: string; count?: number; days?: nu
 type Unit = "minutes" | "hours" | "days";
 
 type Step =
-  | { id: string; type: "wait"; amount: number; unit: Unit; workHoursOnly: boolean }
+  | { id: string; type: "wait"; amount: number; unit: Unit }
   | { id: string; type: "whatsapp"; to: "agent" | "lead"; text: string }
   | { id: string; type: "email"; to: "lead" | "agent"; subject: string; body: string }
   | { id: string; type: "notify"; text: string }
@@ -68,21 +90,38 @@ type Step =
   | { id: string; type: "tag"; tag: string }
   | { id: string; type: "branch"; check: BranchCheck; value: string; yes: Step[]; no: Step[] };
 
-type BranchCheck = "stage_is" | "email_opened" | "has_email" | "lead_source" | "answer_contains";
+type BranchCheck = "stage_is" | "pipeline_is" | "email_opened" | "has_email" | "lead_source" | "answer_contains";
 
-interface Filter { field: "pipeline" | "source" | "stage" | "has_email"; value: string }
+type FilterField = "pipeline" | "source" | "stage" | "has_email" | "confirmation_email";
+interface Filter { field: FilterField; value: string }
 
-interface Exit { kind: "stage_changed" | "booked" | "lead_replied" | "marked_lost"; on: boolean }
+type ExitKind = "stage_changed" | "booked" | "lead_replied" | "marked_lost";
+interface Exit { kind: ExitKind; on: boolean }
+
+interface Settings { quietHours: boolean; reEnter: boolean; senderName: string }
+
+type Folder = "live" | "email" | "draft";
 
 interface Workflow {
   id: string;
   name: string;
-  enabled: boolean;
+  folder: Folder;
+  published: boolean;
   trigger: Trigger;
   filters: Filter[];
   steps: Step[];
   exits: Exit[];
+  settings: Settings;
+  updatedAt: string;
+  /** Shown above the canvas: what's true about this workflow today. */
+  note?: string;
 }
+
+const FOLDER_LABEL: Record<Folder, string> = {
+  live: "Live today: WhatsApp nudges",
+  email: "Live today: emails to leads",
+  draft: "Drafts",
+};
 
 const TRIGGERS: { kind: TriggerKind; label: string; help: string }[] = [
   { kind: "lead_created", label: "New lead comes in", help: "From a Facebook form or an EstateKit page." },
@@ -101,13 +140,18 @@ const STEP_TYPES: { type: Step["type"]; label: string; icon: React.ReactNode; he
   { type: "whatsapp", label: "Send WhatsApp", icon: <WhatsAppIcon />, help: "To the agent or the lead" },
   { type: "email", label: "Send email", icon: <EmailIcon />, help: "To the lead, from the agent" },
   { type: "branch", label: "If / else", icon: <CallSplitIcon />, help: "Split on a condition" },
-  { type: "notify", label: "Alert the agent", icon: <NotificationsIcon />, help: "Push + WhatsApp nudge" },
+  { type: "notify", label: "Alert the agent", icon: <NotificationsIcon />, help: "WhatsApp nudge to the agent" },
   { type: "set_stage", label: "Move stage", icon: <FlagIcon />, help: "Change the lead's stage" },
   { type: "reminder", label: "Set reminder", icon: <AlarmIcon />, help: "Puts it on the agent's list" },
   { type: "tag", label: "Add tag", icon: <LocalOfferIcon />, help: "Label the lead" },
 ];
 
-const EXIT_LABEL: Record<Exit["kind"], string> = {
+const STEP_COLOR: Record<Step["type"], string> = {
+  wait: "#607d8b", whatsapp: "#1da851", email: "#1565c0", notify: "#e65100",
+  set_stage: "#6a1b9a", reminder: "#ad1457", tag: "#00838f", branch: "#455a64",
+};
+
+const EXIT_LABEL: Record<ExitKind, string> = {
   stage_changed: "The lead's stage changes",
   booked: "An appointment is booked",
   lead_replied: "The lead replies (WhatsApp or email)",
@@ -116,28 +160,45 @@ const EXIT_LABEL: Record<Exit["kind"], string> = {
 
 const BRANCH_LABEL: Record<BranchCheck, string> = {
   stage_is: "Lead's stage is",
+  pipeline_is: "Lead's pipeline is",
   email_opened: "Opened the last email",
   has_email: "Lead has an email address",
   lead_source: "Lead came from",
   answer_contains: "A form answer contains",
 };
 
+const FILTER_LABEL: Record<FilterField, string> = {
+  pipeline: "Pipeline",
+  source: "Source",
+  stage: "Stage",
+  has_email: "Email",
+  confirmation_email: "Page setting",
+};
+
 const STAGES = Array.from(new Set([...PIPELINE_STAGES.seller, ...PIPELINE_STAGES.buyer]));
+
+const MERGE_FIELDS = ["{{first_name}}", "{{name}}", "{{phone}}", "{{area}}", "{{address}}", "{{stage}}", "{{agent_name}}", "{{agent_phone}}", "{{action_link}}", "{{plan_link}}"];
+
+const SAMPLE_LEAD = { id: "sample", name: "Thandi Mokoena", phone: "082 555 0199", stage: "No Answer", next_label: "Retry today" };
+
+const LINE = "#b6bec7";
 
 let seq = 0;
 const nid = () => `n${Date.now().toString(36)}${(seq++).toString(36)}`;
 
-const DEFAULT_EXITS = (): Exit[] => [
-  { kind: "stage_changed", on: true },
-  { kind: "booked", on: true },
-  { kind: "lead_replied", on: true },
-  { kind: "marked_lost", on: true },
+const NO_EXITS = (): Exit[] => [
+  { kind: "stage_changed", on: false },
+  { kind: "booked", on: false },
+  { kind: "lead_replied", on: false },
+  { kind: "marked_lost", on: false },
 ];
+const ALL_EXITS = (): Exit[] => NO_EXITS().map((e) => ({ ...e, on: true }));
+const DEFAULT_SETTINGS = (): Settings => ({ quietHours: true, reEnter: false, senderName: "{{agent_name}}" });
 
 function newStep(type: Step["type"]): Step {
   const id = nid();
   switch (type) {
-    case "wait": return { id, type, amount: 1, unit: "days", workHoursOnly: true };
+    case "wait": return { id, type, amount: 1, unit: "days" };
     case "whatsapp": return { id, type, to: "agent", text: "" };
     case "email": return { id, type, to: "lead", subject: "", body: "" };
     case "notify": return { id, type, text: "" };
@@ -148,31 +209,101 @@ function newStep(type: Step["type"]): Step {
   }
 }
 
-// ── Templates (also what today's presets turn into) ─────────────────────
+/** Minutes → the friendliest whole unit ("2 days", not "2880 minutes"). */
+function waitFrom(minutes: number): Step {
+  if (minutes % 1440 === 0) return { id: nid(), type: "wait", amount: minutes / 1440, unit: "days" };
+  if (minutes % 60 === 0) return { id: nid(), type: "wait", amount: minutes / 60, unit: "hours" };
+  return { id: nid(), type: "wait", amount: minutes, unit: "minutes" };
+}
+
+// ── Today's automations, as workflows ────────────────────────────────────
+
+function fromAutomation(a: AutomationRow, steps: AutomationStepRow[]): Workflow {
+  const out: Step[] = [];
+  for (const s of [...steps].sort((x, y) => x.step_order - y.step_order)) {
+    if (s.delay_minutes > 0 && a.trigger_type !== "daily_digest") out.push(waitFrom(s.delay_minutes));
+    if (s.action_type === "send_whatsapp") out.push({ id: nid(), type: "whatsapp", to: "agent", text: s.template_text ?? "" });
+    else if (s.action_type === "set_stage") out.push({ id: nid(), type: "set_stage", stage: String(s.payload?.stage ?? "") });
+    else if (s.action_type === "set_reminder") {
+      const p = s.payload as { label?: string; offset_minutes?: number };
+      out.push({ id: nid(), type: "reminder", label: p.label ?? "Follow up", inDays: Math.round((p.offset_minutes ?? 0) / 1440) });
+    }
+  }
+  const trigger: Trigger =
+    a.trigger_type === "stage_changed" ? { kind: "stage_changed", stage: a.trigger_stage ?? undefined }
+      : a.trigger_type === "daily_digest" ? { kind: "daily_at", time: "16:00" }
+        : a.trigger_type === "reminder_due" ? { kind: "reminder_due" }
+          : { kind: "lead_created" };
+  const multiStep = out.filter((s) => s.type !== "wait").length > 1 || out[0]?.type === "wait";
+  return {
+    id: a.id,
+    name: a.name.replace(/â€”/g, "—"),
+    folder: "live",
+    published: a.enabled,
+    trigger,
+    filters: [],
+    steps: out,
+    // The engine today never ends a run early (run-automations has no stage
+    // check), so every converted workflow starts with all stop rules off.
+    exits: NO_EXITS(),
+    settings: { ...DEFAULT_SETTINGS(), quietHours: a.trigger_type !== "lead_created" },
+    updatedAt: a.created_at,
+    note: multiStep && trigger.kind === "stage_changed"
+      ? "Today nothing stops this early: a lead who books after this starts still gets the later nudges. Turn on the stop rules to fix that."
+      : undefined,
+  };
+}
+
+/** send-lead-confirmation, drawn as a workflow: one email per pipeline type. */
+function confirmationEmail(): Workflow {
+  const sign = "\n\n{{agent_name}}\n{{agent_phone}}";
+  return {
+    id: "confirmation-email",
+    name: "Lead confirmation email",
+    folder: "email",
+    published: true,
+    trigger: { kind: "lead_created" },
+    filters: [{ field: "has_email", value: "yes" }, { field: "confirmation_email", value: "on" }],
+    exits: NO_EXITS(),
+    settings: { ...DEFAULT_SETTINGS(), quietHours: false },
+    updatedAt: "2026-09-27T10:00:00Z",
+    steps: [
+      {
+        id: nid(), type: "branch", check: "pipeline_is", value: "Sellers",
+        yes: [{ id: nid(), type: "email", to: "lead", subject: "Your {{area}} home evaluation request", body: "Hi {{first_name}},\n\nThanks for requesting a free home evaluation for {{address}}.\n\nI'm having a look at what's sold near you recently. I'll be in touch shortly to go through what your home could be worth, and whether I have buyers looking in the area.\n\nWhile you wait, here's how I'd sell your home: {{plan_link}}" + sign }],
+        no: [
+          {
+            id: nid(), type: "branch", check: "pipeline_is", value: "Buyers",
+            yes: [{ id: nid(), type: "email", to: "lead", subject: "Your {{area}} property search", body: "Hi {{first_name}},\n\nThanks for getting in touch about finding your next home.\n\nI've received your details and I'll be in touch shortly." + sign }],
+            no: [{ id: nid(), type: "email", to: "lead", subject: "We've received your details", body: "Hi {{first_name}},\n\nThanks for getting in touch.\n\nI've received your details and I'll be in touch shortly." + sign }],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+// ── Templates ────────────────────────────────────────────────────────────
 
 const TEMPLATES: { name: string; blurb: string; make: () => Workflow }[] = [
   {
     name: "No answer → email sequence",
     blurb: "Two missed calls, then 3 emails over a week. Stops when they reply or book.",
     make: () => ({
-      id: nid(), name: "No answer → email sequence", enabled: false,
+      id: nid(), name: "No answer → email sequence", folder: "draft", published: false, updatedAt: new Date().toISOString(),
       trigger: { kind: "no_answer_times", count: 2 },
       filters: [{ field: "has_email", value: "yes" }],
-      exits: DEFAULT_EXITS(),
+      exits: ALL_EXITS(), settings: DEFAULT_SETTINGS(),
       steps: [
-        { id: nid(), type: "wait", amount: 30, unit: "minutes", workHoursOnly: true },
+        { id: nid(), type: "wait", amount: 30, unit: "minutes" },
         { id: nid(), type: "email", to: "lead", subject: "Sorry I missed you, {{first_name}}", body: "Hi {{first_name}},\n\nI tried calling about your home in {{area}}. When's a good time for a quick 5-minute chat?\n\n{{agent_name}}\n{{agent_phone}}" },
-        { id: nid(), type: "wait", amount: 2, unit: "days", workHoursOnly: true },
+        { id: nid(), type: "wait", amount: 2, unit: "days" },
         {
           id: nid(), type: "branch", check: "email_opened", value: "",
-          yes: [
-            { id: nid(), type: "notify", text: "{{first_name}} opened your email. Good moment to call: {{lead_link}}" },
-          ],
-          no: [
-            { id: nid(), type: "email", to: "lead", subject: "What is your home worth right now?", body: "Hi {{first_name}},\n\nHomes like yours in {{area}} have been selling quickly. I'd be happy to give you a free, no-obligation valuation.\n\n{{agent_name}}" },
-          ],
+          yes: [{ id: nid(), type: "notify", text: "{{first_name}} opened your email. Good moment to call: {{action_link}}" }],
+          no: [{ id: nid(), type: "email", to: "lead", subject: "What is your home worth right now?", body: "Hi {{first_name}},\n\nHomes like yours in {{area}} have been selling. I'd be happy to give you a free, no-obligation valuation.\n\n{{agent_name}}" }],
         },
-        { id: nid(), type: "wait", amount: 4, unit: "days", workHoursOnly: true },
+        { id: nid(), type: "wait", amount: 4, unit: "days" },
         { id: nid(), type: "email", to: "lead", subject: "Should I close your file?", body: "Hi {{first_name}},\n\nI haven't been able to reach you, so I'll assume now isn't the right time. If anything changes, just reply to this email.\n\n{{agent_name}}" },
         { id: nid(), type: "reminder", label: "Last try: call", inDays: 1 },
       ],
@@ -182,15 +313,13 @@ const TEMPLATES: { name: string; blurb: string; make: () => Workflow }[] = [
     name: "New lead: speed-to-lead",
     blurb: "Alert the agent now, nudge again at 10 and 60 minutes if nobody has called.",
     make: () => ({
-      id: nid(), name: "New lead: speed-to-lead", enabled: true,
-      trigger: { kind: "lead_created" },
-      filters: [],
-      exits: DEFAULT_EXITS(),
+      id: nid(), name: "New lead: speed-to-lead", folder: "draft", published: false, updatedAt: new Date().toISOString(),
+      trigger: { kind: "lead_created" }, filters: [], exits: ALL_EXITS(), settings: { ...DEFAULT_SETTINGS(), quietHours: false },
       steps: [
-        { id: nid(), type: "whatsapp", to: "agent", text: "New lead: {{name}} ({{phone}}). Call now: {{lead_link}}" },
-        { id: nid(), type: "wait", amount: 10, unit: "minutes", workHoursOnly: false },
-        { id: nid(), type: "branch", check: "stage_is", value: "New Lead", yes: [{ id: nid(), type: "whatsapp", to: "agent", text: "{{first_name}} is still waiting for your call: {{lead_link}}" }], no: [] },
-        { id: nid(), type: "wait", amount: 60, unit: "minutes", workHoursOnly: true },
+        { id: nid(), type: "whatsapp", to: "agent", text: "New lead: {{name}} ({{phone}}). Tap to contact: {{action_link}}" },
+        { id: nid(), type: "wait", amount: 10, unit: "minutes" },
+        { id: nid(), type: "branch", check: "stage_is", value: "New Lead", yes: [{ id: nid(), type: "whatsapp", to: "agent", text: "{{first_name}} is still waiting for your call: {{action_link}}" }], no: [] },
+        { id: nid(), type: "wait", amount: 1, unit: "hours" },
         { id: nid(), type: "branch", check: "stage_is", value: "New Lead", yes: [{ id: nid(), type: "reminder", label: "Call {{first_name}}", inDays: 0 }], no: [] },
       ],
     }),
@@ -199,13 +328,11 @@ const TEMPLATES: { name: string; blurb: string; make: () => Workflow }[] = [
     name: "Gone quiet: re-engage",
     blurb: "Contacted but nothing for 14 days: one email, then a reminder for the agent.",
     make: () => ({
-      id: nid(), name: "Gone quiet: re-engage", enabled: false,
-      trigger: { kind: "not_contacted_for", days: 14 },
-      filters: [{ field: "stage", value: "Contacted" }],
-      exits: DEFAULT_EXITS(),
+      id: nid(), name: "Gone quiet: re-engage", folder: "draft", published: false, updatedAt: new Date().toISOString(),
+      trigger: { kind: "not_contacted_for", days: 14 }, filters: [{ field: "stage", value: "Contacted" }], exits: ALL_EXITS(), settings: DEFAULT_SETTINGS(),
       steps: [
         { id: nid(), type: "email", to: "lead", subject: "Still thinking about selling, {{first_name}}?", body: "Hi {{first_name}},\n\nJust checking in. Happy to update your valuation whenever suits you.\n\n{{agent_name}}" },
-        { id: nid(), type: "wait", amount: 3, unit: "days", workHoursOnly: true },
+        { id: nid(), type: "wait", amount: 3, unit: "days" },
         { id: nid(), type: "reminder", label: "Call: re-engage", inDays: 0 },
       ],
     }),
@@ -213,11 +340,9 @@ const TEMPLATES: { name: string; blurb: string; make: () => Workflow }[] = [
   {
     name: "Blank workflow",
     blurb: "Pick your own trigger and steps.",
-    make: () => ({ id: nid(), name: "Untitled workflow", enabled: false, trigger: { kind: "lead_created" }, filters: [], exits: DEFAULT_EXITS(), steps: [] }),
+    make: () => ({ id: nid(), name: "Untitled workflow", folder: "draft", published: false, updatedAt: new Date().toISOString(), trigger: { kind: "lead_created" }, filters: [], exits: ALL_EXITS(), settings: DEFAULT_SETTINGS(), steps: [] }),
   },
 ];
-
-const MERGE_FIELDS = ["{{first_name}}", "{{name}}", "{{phone}}", "{{area}}", "{{stage}}", "{{agent_name}}", "{{agent_phone}}", "{{lead_link}}", "{{plan_link}}"];
 
 // ── Tree helpers ─────────────────────────────────────────────────────────
 
@@ -242,7 +367,7 @@ function findStep(steps: Step[], id: string): Step | undefined {
   return undefined;
 }
 
-/** Insert `step` into the list identified by `path` ("root" or "<branchId>:yes|no") at `index`. */
+/** Insert `step` into the list at `path` ("root" or "<branchId>:yes|no") at `index`. */
 function insertAt(steps: Step[], path: string, index: number, step: Step): Step[] {
   if (path === "root") return [...steps.slice(0, index), step, ...steps.slice(index)];
   const [bid, side] = path.split(":") as [string, "yes" | "no"];
@@ -257,6 +382,16 @@ function countSteps(steps: Step[]): number {
   return steps.reduce((n, s) => n + 1 + (s.type === "branch" ? countSteps(s.yes) + countSteps(s.no) : 0), 0);
 }
 
+function channels(steps: Step[]): Set<"whatsapp" | "email"> {
+  const out = new Set<"whatsapp" | "email">();
+  mapSteps(steps, (s) => {
+    if (s.type === "whatsapp" || s.type === "notify") out.add("whatsapp");
+    if (s.type === "email") out.add("email");
+    return s;
+  });
+  return out;
+}
+
 function triggerSummary(t: Trigger): string {
   switch (t.kind) {
     case "stage_changed": return `Lead moves to "${t.stage ?? "…"}"`;
@@ -267,16 +402,18 @@ function triggerSummary(t: Trigger): string {
   }
 }
 
+const unitLabel = (n: number, u: Unit) => `${n} ${n === 1 ? u.replace(/s$/, "") : u}`;
+
 function stepSummary(s: Step): string {
   switch (s.type) {
-    case "wait": return `Wait ${s.amount} ${s.amount === 1 ? s.unit.replace(/s$/, "") : s.unit}${s.workHoursOnly ? " (08:00–20:00 only)" : ""}`;
-    case "whatsapp": return s.text || "(no message yet)";
-    case "email": return s.subject || "(no subject yet)";
-    case "notify": return s.text || "(no message yet)";
-    case "set_stage": return `Move to ${s.stage}`;
+    case "wait": return `Wait ${unitLabel(s.amount, s.unit)}`;
+    case "whatsapp": return s.text.split("\n")[0] || "No message yet";
+    case "email": return s.subject || "No subject yet";
+    case "notify": return s.text || "No message yet";
+    case "set_stage": return `Move to ${s.stage || "…"}`;
     case "reminder": return `${s.label} · ${s.inDays === 0 ? "today" : `in ${s.inDays} day${s.inDays === 1 ? "" : "s"}`}`;
-    case "tag": return s.tag ? `Tag "${s.tag}"` : "(no tag yet)";
-    case "branch": return `${BRANCH_LABEL[s.check]}${s.check === "stage_is" || s.check === "lead_source" || s.check === "answer_contains" ? ` "${s.value || "…"}"` : ""}?`;
+    case "tag": return s.tag ? `Tag "${s.tag}"` : "No tag yet";
+    case "branch": return `${BRANCH_LABEL[s.check]}${["stage_is", "pipeline_is", "lead_source", "answer_contains"].includes(s.check) ? ` "${s.value || "…"}"` : ""}?`;
   }
 }
 
@@ -286,114 +423,396 @@ function stepTitle(s: Step): string {
   return STEP_TYPES.find((x) => x.type === s.type)?.label ?? s.type;
 }
 
-const STEP_COLOR: Record<Step["type"], string> = {
-  wait: "#757575", whatsapp: "#1da851", email: "#1565c0", notify: "#e65100",
-  set_stage: "#6a1b9a", reminder: "#ad1457", tag: "#00838f", branch: "#37474f",
-};
+function filterSummary(f: Filter): string {
+  if (f.field === "has_email") return f.value === "yes" ? "Has an email" : "No email";
+  if (f.field === "confirmation_email") return "Confirmation email is on for the page";
+  return `${FILTER_LABEL[f.field]}: ${f.value || "…"}`;
+}
 
-// ── Component ───────────────────────────────────────────────────────────
+const dateLabel = (iso: string) => new Date(iso).toLocaleString("en-ZA", { day: "numeric", month: "short", year: "numeric" });
 
-type Selection = { kind: "trigger" } | { kind: "filters" } | { kind: "exits" } | { kind: "step"; id: string } | null;
+// ── Root: list ↔ editor ──────────────────────────────────────────────────
 
 export default function WorkflowBuilder() {
-  const isDesktop = useMediaQuery("(min-width:1000px)");
-  const [workflows, setWorkflows] = useState<Workflow[]>(() => [TEMPLATES[1].make(), TEMPLATES[0].make()]);
-  const [activeId, setActiveId] = useState(workflows[0].id);
-  const [sel, setSel] = useState<Selection>(null);
+  const { data: automations, isLoading: l1 } = useAutomations();
+  const { data: steps, isLoading: l2 } = useAutomationSteps();
+  if (l1 || l2) return <Box sx={{ display: "flex", justifyContent: "center", p: 6 }}><CircularProgress /></Box>;
+  const initial = [
+    ...(automations ?? []).map((a) => fromAutomation(a, (steps ?? []).filter((s) => s.automation_id === a.id))),
+    confirmationEmail(),
+    TEMPLATES[0].make(),
+  ];
+  return <Workflows initial={initial} />;
+}
+
+function Workflows({ initial }: { initial: Workflow[] }) {
+  const [workflows, setWorkflows] = useState(initial);
+  const [openId, setOpenId] = useState<string | null>(null);
   const [picker, setPicker] = useState(false);
-  const wf = workflows.find((w) => w.id === activeId) ?? workflows[0];
+  const open = workflows.find((w) => w.id === openId);
 
-  const update = (patch: Partial<Workflow> | ((w: Workflow) => Workflow)) =>
-    setWorkflows((all) => all.map((w) => (w.id !== wf.id ? w : typeof patch === "function" ? patch(w) : { ...w, ...patch })));
+  const create = (t: (typeof TEMPLATES)[number]) => {
+    const w = t.make();
+    setWorkflows((all) => [...all, w]);
+    setOpenId(w.id);
+    setPicker(false);
+  };
 
-  const updateStep = (id: string, patch: Partial<Step>) =>
-    update((w) => ({ ...w, steps: mapSteps(w.steps, (s) => (s.id === id ? ({ ...s, ...patch } as Step) : s)) }));
+  return (
+    <>
+      {open ? (
+        <Editor
+          key={open.id}
+          initial={open}
+          onBack={(w) => { setWorkflows((all) => all.map((x) => (x.id === w.id ? w : x))); setOpenId(null); }}
+        />
+      ) : (
+        <WorkflowList workflows={workflows} onOpen={setOpenId} onCreate={() => setPicker(true)} />
+      )}
+      <Dialog open={picker} onClose={() => setPicker(false)} fullWidth maxWidth="sm">
+        <DialogTitle>Start from a template</DialogTitle>
+        <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+          {TEMPLATES.map((t) => (
+            <Box
+              key={t.name}
+              component="button"
+              type="button"
+              onClick={() => create(t)}
+              sx={{ textAlign: "left", font: "inherit", color: "inherit", bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "6px", p: 1.5, cursor: "pointer", "&:hover, &:focus-visible": { borderColor: "primary.main", bgcolor: tokens.hover, outline: "none" } }}
+            >
+              <Typography sx={{ fontWeight: 600, fontSize: 14.5 }}>{t.name}</Typography>
+              <Typography sx={{ fontSize: 13, color: "text.secondary" }}>{t.blurb}</Typography>
+            </Box>
+          ))}
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+// ── List ─────────────────────────────────────────────────────────────────
+
+function ChannelIcons({ steps }: { steps: Step[] }) {
+  const ch = channels(steps);
+  return (
+    <Box sx={{ display: "inline-flex", gap: 0.5, color: "text.secondary" }}>
+      {ch.has("whatsapp") && <WhatsAppIcon sx={{ fontSize: 16, color: STEP_COLOR.whatsapp }} titleAccess="WhatsApp" />}
+      {ch.has("email") && <EmailIcon sx={{ fontSize: 16, color: STEP_COLOR.email }} titleAccess="Email" />}
+    </Box>
+  );
+}
+
+function StatusChip({ published }: { published: boolean }) {
+  return <Chip size="small" label={published ? "Published" : "Draft"} color={published ? "success" : "default"} variant="outlined" sx={{ height: 22, fontSize: 12 }} />;
+}
+
+function WorkflowList({ workflows, onOpen, onCreate }: { workflows: Workflow[]; onOpen: (id: string) => void; onCreate: () => void }) {
+  const isDesktop = useMediaQuery("(min-width:900px)");
+  const [q, setQ] = useState("");
+  const [status, setStatus] = useState<"all" | "published" | "draft">("all");
+  const shown = workflows.filter((w) =>
+    (status === "all" || (status === "published") === w.published) &&
+    (!q.trim() || (w.name + " " + triggerSummary(w.trigger)).toLowerCase().includes(q.trim().toLowerCase())));
+  const folders = (Object.keys(FOLDER_LABEL) as Folder[]).filter((f) => shown.some((w) => w.folder === f));
+
+  return (
+    <Box sx={{ maxWidth: 1100, mx: "auto", p: 2, pb: 6 }}>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, mb: 2, flexWrap: "wrap" }}>
+        <Box sx={{ flex: 1, minWidth: 200 }}>
+          <Typography sx={{ fontSize: 20, fontWeight: 500 }}>Workflows</Typography>
+          <Typography sx={{ fontSize: 13, color: "text.secondary" }}>Today's WhatsApp nudges and emails are shown here as workflows, so you can see how they'd look.</Typography>
+        </Box>
+        <Button variant="contained" startIcon={<AddIcon />} onClick={onCreate}>Create workflow</Button>
+      </Box>
+      <Box sx={{ display: "flex", gap: 1.5, mb: 2, flexWrap: "wrap" }}>
+        <TextField
+          size="small"
+          placeholder="Search workflows"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          sx={{ flex: 1, minWidth: 200, maxWidth: 380, bgcolor: "background.paper" }}
+          slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> } }}
+        />
+        <TextField select size="small" value={status} onChange={(e) => setStatus(e.target.value as typeof status)} sx={{ width: 150, bgcolor: "background.paper" }}>
+          <MenuItem value="all">All statuses</MenuItem>
+          <MenuItem value="published">Published</MenuItem>
+          <MenuItem value="draft">Draft</MenuItem>
+        </TextField>
+      </Box>
+
+      {folders.map((f) => (
+        <Box key={f} sx={{ mb: 3 }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, mb: 1, color: "text.secondary" }}>
+            <FolderOutlinedIcon sx={{ fontSize: 18 }} />
+            <Typography sx={{ fontSize: 13, fontWeight: 600, letterSpacing: ".02em" }}>{FOLDER_LABEL[f]}</Typography>
+          </Box>
+          <Box sx={{ border: `1px solid ${tokens.divider}`, borderRadius: "6px", bgcolor: "background.paper", overflow: "hidden" }}>
+            {isDesktop ? (
+              <Table size="small">
+                <TableHead>
+                  <TableRow sx={{ "& th": { color: "text.secondary", fontSize: 12.5, bgcolor: tokens.surface2 } }}>
+                    <TableCell>Name</TableCell>
+                    <TableCell>Trigger</TableCell>
+                    <TableCell>Sends</TableCell>
+                    <TableCell>Status</TableCell>
+                    <TableCell align="right">Steps</TableCell>
+                    <TableCell>Last updated</TableCell>
+                    <TableCell padding="checkbox" />
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {shown.filter((w) => w.folder === f).map((w) => (
+                    <TableRow key={w.id} hover onClick={() => onOpen(w.id)} sx={{ cursor: "pointer", "&:last-child td": { borderBottom: 0 } }}>
+                      <TableCell sx={{ fontWeight: 500, fontSize: 14 }}>
+                        {w.name}
+                        {w.note && <Tooltip title={w.note}><WarningAmberIcon sx={{ fontSize: 16, color: "#e65100", ml: 0.75, verticalAlign: "-3px" }} /></Tooltip>}
+                      </TableCell>
+                      <TableCell sx={{ fontSize: 13, color: "text.secondary" }}>{triggerSummary(w.trigger)}</TableCell>
+                      <TableCell><ChannelIcons steps={w.steps} /></TableCell>
+                      <TableCell><StatusChip published={w.published} /></TableCell>
+                      <TableCell align="right" sx={{ fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{countSteps(w.steps)}</TableCell>
+                      <TableCell sx={{ fontSize: 13, color: "text.secondary", whiteSpace: "nowrap" }}>{dateLabel(w.updatedAt)}</TableCell>
+                      <TableCell padding="checkbox"><ChevronRightIcon fontSize="small" sx={{ color: "text.disabled" }} /></TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            ) : (
+              shown.filter((w) => w.folder === f).map((w, i) => (
+                <Box
+                  key={w.id}
+                  component="button"
+                  type="button"
+                  onClick={() => onOpen(w.id)}
+                  sx={{ display: "flex", alignItems: "center", gap: 1, width: "100%", textAlign: "left", font: "inherit", color: "inherit", bgcolor: "transparent", border: 0, borderTop: i ? `1px solid ${tokens.divider}` : 0, p: "12px 14px", minHeight: 56, cursor: "pointer" }}
+                >
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography sx={{ fontWeight: 500, fontSize: 14.5 }}>{w.name}</Typography>
+                    <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>{triggerSummary(w.trigger)} · {countSteps(w.steps)} steps</Typography>
+                  </Box>
+                  <ChannelIcons steps={w.steps} />
+                  <StatusChip published={w.published} />
+                </Box>
+              ))
+            )}
+          </Box>
+        </Box>
+      ))}
+      {!folders.length && <Typography sx={{ color: "text.secondary", textAlign: "center", py: 6 }}>No workflows match.</Typography>}
+    </Box>
+  );
+}
+
+// ── Editor ───────────────────────────────────────────────────────────────
+
+type Selection = { kind: "trigger" } | { kind: "filters" } | { kind: "exits" } | { kind: "step"; id: string } | null;
+type EditorTab = "builder" | "settings" | "enrollments" | "logs";
+
+/** Undo/redo over whole-workflow snapshots. Typing into one field within a
+ *  second is one entry, so Ctrl+Z undoes a word, not a letter. */
+function useHistory(initial: Workflow) {
+  const [state, setState] = useState({ past: [] as Workflow[], present: initial, future: [] as Workflow[] });
+  const last = useRef({ key: "", at: 0 });
+  const set = useCallback((fn: (w: Workflow) => Workflow, key = "") => {
+    setState((h) => {
+      const next = { ...fn(h.present), updatedAt: new Date().toISOString() };
+      const now = Date.now();
+      const coalesce = key && key === last.current.key && now - last.current.at < 1000;
+      last.current = { key, at: now };
+      return { past: coalesce ? h.past : [...h.past, h.present].slice(-100), present: next, future: [] };
+    });
+  }, []);
+  const undo = useCallback(() => setState((h) => (h.past.length ? { past: h.past.slice(0, -1), present: h.past[h.past.length - 1], future: [h.present, ...h.future] } : h)), []);
+  const redo = useCallback(() => setState((h) => (h.future.length ? { past: [...h.past, h.present], present: h.future[0], future: h.future.slice(1) } : h)), []);
+  return { wf: state.present, set, undo, redo, canUndo: state.past.length > 0, canRedo: state.future.length > 0, dirty: state.past.length > 0 };
+}
+
+function Editor({ initial, onBack }: { initial: Workflow; onBack: (w: Workflow) => void }) {
+  const isDesktop = useMediaQuery("(min-width:1000px)");
+  const { wf, set, undo, redo, canUndo, canRedo, dirty } = useHistory(initial);
+  const [tab, setTab] = useState<EditorTab>("builder");
+  const [sel, setSel] = useState<Selection>(null);
+  const [editingName, setEditingName] = useState(false);
+
+  const update = (patch: Partial<Workflow>, key?: string) => set((w) => ({ ...w, ...patch }), key);
+  const updateStep = (id: string, patch: Partial<Step>, key?: string) =>
+    set((w) => ({ ...w, steps: mapSteps(w.steps, (s) => (s.id === id ? ({ ...s, ...patch } as Step) : s)) }), key ? `${id}:${key}` : "");
   const removeStep = (id: string) => {
-    update((w) => ({ ...w, steps: mapSteps(w.steps, (s) => (s.id === id ? null : s)) }));
+    set((w) => ({ ...w, steps: mapSteps(w.steps, (s) => (s.id === id ? null : s)) }));
     setSel(null);
   };
   const addStep = (path: string, index: number, type: Step["type"]) => {
     const s = newStep(type);
-    update((w) => ({ ...w, steps: insertAt(w.steps, path, index, s) }));
+    set((w) => ({ ...w, steps: insertAt(w.steps, path, index, s) }));
     setSel({ kind: "step", id: s.id });
   };
 
+  // Keyboard: Esc closes the panel, Ctrl/Cmd+Z undoes, Shift (or Y) redoes.
+  // Skipped while typing so the field's own undo still works.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const typing = /^(INPUT|TEXTAREA|SELECT)$/.test((e.target as HTMLElement)?.tagName ?? "");
+      if (e.key === "Escape") setSel(null);
+      if (typing || !(e.metaKey || e.ctrlKey)) return;
+      if (e.key.toLowerCase() === "z") { e.preventDefault(); (e.shiftKey ? redo : undo)(); }
+      if (e.key.toLowerCase() === "y") { e.preventDefault(); redo(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [undo, redo]);
+
   const selectedStep = sel?.kind === "step" ? findStep(wf.steps, sel.id) : undefined;
-  const panelOpen = !!sel && (sel.kind !== "step" || !!selectedStep);
+  const panelOpen = tab === "builder" && !!sel && (sel.kind !== "step" || !!selectedStep);
+  const panelTitle = sel?.kind === "trigger" ? "Trigger" : sel?.kind === "filters" ? "Only run if" : sel?.kind === "exits" ? "Stop early when" : selectedStep ? stepTitle(selectedStep) : "";
 
   const panel = panelOpen && (
-    <Box sx={{ p: 2, display: "flex", flexDirection: "column", gap: 2 }}>
-      <Box sx={{ display: "flex", alignItems: "center" }}>
-        <Typography sx={{ fontWeight: 600, flex: 1 }}>
-          {sel?.kind === "trigger" ? "Trigger" : sel?.kind === "filters" ? "Only run if" : sel?.kind === "exits" ? "Stop when" : selectedStep ? stepTitle(selectedStep) : ""}
-        </Typography>
-        <IconButton size="small" onClick={() => setSel(null)} aria-label="Close"><CloseIcon fontSize="small" /></IconButton>
-      </Box>
-      {sel?.kind === "trigger" && <TriggerEditor t={wf.trigger} onChange={(trigger) => update({ trigger })} />}
-      {sel?.kind === "filters" && <FiltersEditor filters={wf.filters} onChange={(filters) => update({ filters })} />}
+    <DetailsPanel
+      title={panelTitle}
+      onClose={() => setSel(null)}
+      onDelete={selectedStep ? () => removeStep(selectedStep.id) : undefined}
+      deleteLabel={selectedStep?.type === "branch" ? "Delete step and its paths" : "Delete step"}
+    >
+      {sel?.kind === "trigger" && <TriggerEditor t={wf.trigger} onChange={(trigger) => update({ trigger }, "trigger")} />}
+      {sel?.kind === "filters" && <FiltersEditor filters={wf.filters} onChange={(filters) => update({ filters }, "filters")} />}
       {sel?.kind === "exits" && <ExitsEditor exits={wf.exits} onChange={(exits) => update({ exits })} />}
-      {selectedStep && <StepEditor step={selectedStep} onChange={(p) => updateStep(selectedStep.id, p)} onDelete={() => removeStep(selectedStep.id)} />}
-    </Box>
+      {selectedStep && <StepEditor step={selectedStep} onChange={(p, key) => updateStep(selectedStep.id, p, key)} />}
+    </DetailsPanel>
   );
 
   return (
-    <Box sx={{ display: "flex", minHeight: "calc(100vh - 100px)", alignItems: "stretch" }}>
-      {/* Workflow list */}
-      {isDesktop && (
-        <Box sx={{ width: 250, flex: "none", borderRight: `1px solid ${tokens.divider}`, bgcolor: "background.paper" }}>
-          <Box sx={{ p: 1.5 }}>
-            <Button fullWidth variant="contained" startIcon={<AddIcon />} onClick={() => setPicker(true)}>New workflow</Button>
-          </Box>
-          <List dense disablePadding>
-            {workflows.map((w) => (
-              <ListItemButton key={w.id} selected={w.id === wf.id} onClick={() => { setActiveId(w.id); setSel(null); }}>
-                <ListItemText
-                  primary={w.name}
-                  secondary={`${triggerSummary(w.trigger)} · ${countSteps(w.steps)} steps`}
-                  slotProps={{ primary: { sx: { fontSize: 14, fontWeight: 500 } }, secondary: { sx: { fontSize: 12 } } }}
-                />
-                <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: w.enabled ? "success.main" : tokens.divider, ml: 1, flex: "none" }} />
-              </ListItemButton>
-            ))}
-          </List>
-        </Box>
-      )}
-
-      {/* Canvas */}
-      <Box sx={{ flex: 1, minWidth: 0, bgcolor: tokens.bg, overflowX: "auto" }}>
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1, p: 1.5, bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}`, flexWrap: "wrap" }}>
-          {!isDesktop && (
-            <TextField select size="small" value={wf.id} onChange={(e) => { setActiveId(e.target.value); setSel(null); }} sx={{ minWidth: 180 }}>
-              {workflows.map((w) => <MenuItem key={w.id} value={w.id}>{w.name}</MenuItem>)}
-            </TextField>
+    // A fixed-height frame: the header and tabs never scroll away, and the
+    // canvas and the details panel each scroll on their own.
+    <Box sx={{ height: { xs: "calc(100dvh - 100px)", md: "calc(100dvh - 100px)" }, display: "flex", flexDirection: "column", minHeight: 420 }}>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1, px: 1.5, height: 56, flex: "none", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
+        <Button startIcon={<ArrowBackIcon />} onClick={() => onBack(wf)} sx={{ textTransform: "none", color: "text.primary", flex: "none" }}>
+          {isDesktop ? "Workflows" : ""}
+        </Button>
+        <Box sx={{ flex: 1, minWidth: 0, display: "flex", justifyContent: "center", alignItems: "center", gap: 0.5 }}>
+          {editingName ? (
+            <InputBase
+              autoFocus
+              value={wf.name}
+              onChange={(e) => update({ name: e.target.value }, "name")}
+              onBlur={() => setEditingName(false)}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") setEditingName(false); }}
+              inputProps={{ "aria-label": "Workflow name" }}
+              sx={{ fontWeight: 600, fontSize: 15, borderBottom: "2px solid", borderColor: "primary.main", maxWidth: 420, width: "100%", "& input": { textAlign: "center" } }}
+            />
+          ) : (
+            <Box component="button" type="button" onClick={() => setEditingName(true)} sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, minWidth: 0, font: "inherit", color: "inherit", bgcolor: "transparent", border: 0, cursor: "text", p: "6px 8px", borderRadius: "4px", "&:hover": { bgcolor: tokens.hover } }}>
+              <Typography noWrap sx={{ fontWeight: 600, fontSize: 15 }}>{wf.name}</Typography>
+              <EditIcon sx={{ fontSize: 16, color: "text.secondary" }} />
+            </Box>
           )}
-          <TextField
-            size="small"
-            value={wf.name}
-            onChange={(e) => update({ name: e.target.value })}
-            sx={{ flex: 1, minWidth: 180, "& input": { fontWeight: 600 } }}
-            aria-label="Workflow name"
-          />
-          <Box sx={{ display: "flex", alignItems: "center" }}>
-            <Typography sx={{ fontSize: 13, color: "text.secondary" }}>{wf.enabled ? "On" : "Off"}</Typography>
-            <Switch checked={wf.enabled} onChange={(e) => update({ enabled: e.target.checked })} />
-          </Box>
-          {!isDesktop && <Button size="small" startIcon={<AddIcon />} onClick={() => setPicker(true)}>New</Button>}
-          <Tooltip title="Preview only: saving comes with the backend">
-            <span><Button variant="contained" size="small" disabled>Save</Button></span>
-          </Tooltip>
         </Box>
+        <Tooltip title="Undo (Ctrl+Z)"><span><IconButton onClick={undo} disabled={!canUndo} aria-label="Undo"><UndoIcon fontSize="small" /></IconButton></span></Tooltip>
+        {isDesktop && <Tooltip title="Redo (Ctrl+Shift+Z)"><span><IconButton onClick={redo} disabled={!canRedo} aria-label="Redo"><RedoIcon fontSize="small" /></IconButton></span></Tooltip>}
+        <Tooltip title={wf.published ? "Published: running for new leads" : "Draft: not running"}>
+          <Box sx={{ display: "flex", alignItems: "center", flex: "none" }}>
+            {isDesktop && <Typography sx={{ fontSize: 13, color: "text.secondary" }}>{wf.published ? "Published" : "Draft"}</Typography>}
+            <Switch checked={wf.published} onChange={(e) => update({ published: e.target.checked })} slotProps={{ input: { "aria-label": "Published" } }} />
+          </Box>
+        </Tooltip>
+        <Tooltip title="Preview only: saving comes with the backend">
+          <span>
+            <Button variant="contained" size="small" disabled sx={{ position: "relative", overflow: "visible" }}>
+              Save
+              {dirty && <Box component="span" sx={{ position: "absolute", top: -4, right: -4, width: 10, height: 10, borderRadius: "50%", bgcolor: "#e53935", border: "2px solid #fff" }} aria-label="Unsaved changes" />}
+            </Button>
+          </span>
+        </Tooltip>
+      </Box>
 
-        <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", py: 3, px: 2, minWidth: "fit-content" }}>
-          <Node
-            color="#1976d2"
-            icon={<BoltIcon />}
-            title="When"
-            text={triggerSummary(wf.trigger)}
-            selected={sel?.kind === "trigger"}
-            onClick={() => setSel({ kind: "trigger" })}
-          />
-          <Connector />
+      <Tabs
+        value={tab}
+        onChange={(_, v) => setTab(v)}
+        variant="scrollable"
+        allowScrollButtonsMobile
+        sx={{ flex: "none", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}`, minHeight: 44, "& .MuiTabs-flexContainer": { justifyContent: { md: "center" } } }}
+      >
+        {([["builder", "Builder"], ["settings", "Settings"], ["enrollments", "Enrollment history"], ["logs", "Execution logs"]] as const).map(([v, l]) => (
+          <Tab key={v} value={v} label={l} sx={{ minHeight: 44, textTransform: "none", fontWeight: 600 }} />
+        ))}
+      </Tabs>
+
+      <Box sx={{ flex: 1, minHeight: 0, display: "flex" }}>
+        {tab === "builder" && (
+          <>
+            <Canvas wf={wf} sel={sel} setSel={setSel} onAdd={addStep} />
+            {isDesktop ? (
+              panelOpen && <Box sx={{ width: 380, flex: "none", borderLeft: `1px solid ${tokens.divider}`, bgcolor: "background.paper", minHeight: 0 }}>{panel}</Box>
+            ) : (
+              <Drawer anchor="bottom" open={panelOpen} onClose={() => setSel(null)} slotProps={{ paper: { sx: { height: "85dvh", borderRadius: "12px 12px 0 0" } } }}>
+                {panel}
+              </Drawer>
+            )}
+          </>
+        )}
+        {tab === "settings" && <SettingsTab wf={wf} onChange={update} />}
+        {tab === "enrollments" && <HistoryTab kind="enrollments" wf={wf} />}
+        {tab === "logs" && <HistoryTab kind="logs" wf={wf} />}
+      </Box>
+    </Box>
+  );
+}
+
+/** The side/bottom sheet: title and close stay pinned at the top, Done and
+ *  Delete at the bottom, and only the fields in between scroll. */
+function DetailsPanel({ title, onClose, onDelete, deleteLabel, children }: { title: string; onClose: () => void; onDelete?: () => void; deleteLabel: string; children: React.ReactNode }) {
+  const [confirming, setConfirming] = useState(false);
+  return (
+    <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
+      <Box sx={{ position: "sticky", top: 0, zIndex: 1, display: "flex", alignItems: "center", gap: 1, px: 2, height: 52, flex: "none", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
+        <Typography sx={{ fontWeight: 600, flex: 1, minWidth: 0 }} noWrap>{title}</Typography>
+        <IconButton onClick={onClose} aria-label="Close" size="small"><CloseIcon fontSize="small" /></IconButton>
+      </Box>
+      <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", overscrollBehavior: "contain", p: 2, display: "flex", flexDirection: "column", gap: 2, "& > *": { flexShrink: 0 } }}>
+        {children}
+      </Box>
+      <Box sx={{ position: "sticky", bottom: 0, display: "flex", alignItems: "center", gap: 1, px: 2, py: 1.25, pb: "calc(10px + env(safe-area-inset-bottom, 0px))", flex: "none", bgcolor: "background.paper", borderTop: `1px solid ${tokens.divider}` }}>
+        {onDelete && (confirming ? (
+          <>
+            <Typography sx={{ fontSize: 13, flex: 1 }}>Delete this step?</Typography>
+            <Button size="small" onClick={() => setConfirming(false)}>Keep</Button>
+            <Button size="small" color="error" variant="contained" onClick={onDelete}>Delete</Button>
+          </>
+        ) : (
+          <Button color="error" startIcon={<DeleteOutlinedIcon />} onClick={() => setConfirming(true)} sx={{ textTransform: "none" }}>{deleteLabel}</Button>
+        ))}
+        {!confirming && <><Box sx={{ flex: 1 }} /><Button variant="contained" onClick={onClose}>Done</Button></>}
+      </Box>
+    </Box>
+  );
+}
+
+// ── Canvas ───────────────────────────────────────────────────────────────
+
+function Canvas({ wf, sel, setSel, onAdd }: { wf: Workflow; sel: Selection; setSel: (s: Selection) => void; onAdd: (path: string, index: number, t: Step["type"]) => void }) {
+  const narrow = useMediaQuery("(max-width:700px)");
+  const [zoom, setZoom] = useState(1);
+  const scroller = useRef<HTMLDivElement>(null);
+  const exitsOn = wf.exits.filter((x) => x.on);
+
+  return (
+    <Box sx={{ flex: 1, minWidth: 0, position: "relative", bgcolor: tokens.bg }}>
+      <Box
+        ref={scroller}
+        sx={{
+          position: "absolute", inset: 0, overflow: "auto",
+          // Dot grid, the usual "this is a canvas" cue.
+          backgroundImage: "radial-gradient(circle, #d3d8de 1px, transparent 1px)",
+          backgroundSize: `${20 * zoom}px ${20 * zoom}px`,
+        }}
+      >
+        {wf.note && (
+          <Box sx={{ position: "sticky", top: 0, left: 0, zIndex: 2, display: "flex", gap: 1, alignItems: "flex-start", bgcolor: tokens.amberTint, borderBottom: `1px solid #f0d58a`, px: 2, py: 1 }}>
+            <WarningAmberIcon sx={{ fontSize: 18, color: "#b26a00", mt: "2px" }} />
+            <Typography sx={{ fontSize: 13 }}>{wf.note}</Typography>
+          </Box>
+        )}
+        <Box sx={{ zoom, display: "flex", flexDirection: "column", alignItems: "center", py: 4, px: 3, minWidth: "fit-content" }}>
+          <Node color="#1976d2" icon={<BoltIcon />} title="Trigger" text={triggerSummary(wf.trigger)} selected={sel?.kind === "trigger"} onClick={() => setSel({ kind: "trigger" })} />
+          <Line />
           <Node
             color="#546e7a"
             icon={<FilterAltIcon />}
@@ -403,88 +822,72 @@ export default function WorkflowBuilder() {
             onClick={() => setSel({ kind: "filters" })}
             dashed={!wf.filters.length}
           />
-          <StepList steps={wf.steps} path="root" sel={sel} setSel={setSel} onAdd={addStep} />
-          <Connector />
+          <StepList steps={wf.steps} path="root" sel={sel} setSel={setSel} onAdd={onAdd} narrow={narrow} />
+          <Line />
           <Node
             color="#b71c1c"
             icon={<BlockIcon />}
             title="Stop early when"
-            text={wf.exits.filter((x) => x.on).map((x) => EXIT_LABEL[x.kind]).join(" · ") || "Never (runs every step)"}
+            text={exitsOn.length ? exitsOn.map((x) => EXIT_LABEL[x.kind]).join(" · ") : "Nothing: every step always runs"}
             selected={sel?.kind === "exits"}
             onClick={() => setSel({ kind: "exits" })}
+            dashed={!exitsOn.length}
           />
+          <Line />
+          <Box sx={{ px: 1.5, py: 0.5, borderRadius: "999px", bgcolor: "#37474f", color: "#fff", fontSize: 11, fontWeight: 700, letterSpacing: ".08em" }}>END</Box>
           <Timeline wf={wf} />
         </Box>
       </Box>
 
-      {/* Editor panel */}
-      {isDesktop ? (
-        panelOpen && (
-          <Box sx={{ width: 360, flex: "none", borderLeft: `1px solid ${tokens.divider}`, bgcolor: "background.paper", overflowY: "auto" }}>{panel}</Box>
-        )
-      ) : (
-        <Drawer anchor="bottom" open={panelOpen} onClose={() => setSel(null)} slotProps={{ paper: { sx: { maxHeight: "85vh", borderRadius: "12px 12px 0 0" } } }}>
-          {panel}
-        </Drawer>
-      )}
-
-      <Dialog open={picker} onClose={() => setPicker(false)} fullWidth maxWidth="sm">
-        <DialogTitle>Start from a template</DialogTitle>
-        <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-          {TEMPLATES.map((t) => (
-            <Box
-              key={t.name}
-              role="button"
-              tabIndex={0}
-              onClick={() => {
-                const w = t.make();
-                setWorkflows((all) => [...all, w]);
-                setActiveId(w.id);
-                setSel(null);
-                setPicker(false);
-              }}
-              sx={{ border: `1px solid ${tokens.divider}`, borderRadius: "4px", p: 1.5, cursor: "pointer", "&:hover": { borderColor: "primary.main", bgcolor: tokens.hover } }}
-            >
-              <Typography sx={{ fontWeight: 600, fontSize: 14.5 }}>{t.name}</Typography>
-              <Typography sx={{ fontSize: 13, color: "text.secondary" }}>{t.blurb}</Typography>
-            </Box>
-          ))}
-        </DialogContent>
-      </Dialog>
+      <Box sx={{ position: "absolute", left: 12, bottom: 12, display: "flex", alignItems: "center", bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "6px", boxShadow: "0 1px 3px rgba(0,0,0,.08)" }}>
+        <IconButton size="small" onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.1).toFixed(1)))} aria-label="Zoom out"><ZoomOutIcon fontSize="small" /></IconButton>
+        <Typography sx={{ fontSize: 12, width: 40, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>{Math.round(zoom * 100)}%</Typography>
+        <IconButton size="small" onClick={() => setZoom((z) => Math.min(1.5, +(z + 0.1).toFixed(1)))} aria-label="Zoom in"><ZoomInIcon fontSize="small" /></IconButton>
+        <Tooltip title="Fit to screen">
+          <IconButton
+            size="small"
+            aria-label="Fit to screen"
+            onClick={() => {
+              const el = scroller.current;
+              if (!el) return;
+              const inner = el.lastElementChild as HTMLElement | null;
+              const w = (inner?.scrollWidth ?? el.scrollWidth) / zoom;
+              setZoom(Math.max(0.5, Math.min(1, +((el.clientWidth - 24) / w).toFixed(2))));
+              el.scrollTo({ top: 0, left: 0 });
+            }}
+          >
+            <FitScreenIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      </Box>
     </Box>
   );
 }
 
-function filterSummary(f: Filter): string {
-  if (f.field === "has_email") return f.value === "yes" ? "Has an email" : "No email";
-  return `${f.field === "pipeline" ? "Pipeline" : f.field === "source" ? "Source" : "Stage"}: ${f.value || "…"}`;
-}
-
-// ── Canvas pieces ───────────────────────────────────────────────────────
-
-function Connector() {
-  return <Box sx={{ width: 2, height: 22, bgcolor: "#b0b7bf" }} />;
+function Line({ h = 24 }: { h?: number }) {
+  return <Box sx={{ width: 2, height: h, bgcolor: LINE, flex: "none" }} />;
 }
 
 function Node({ color, icon, title, text, selected, onClick, dashed }: { color: string; icon: React.ReactNode; title: string; text: string; selected: boolean; onClick: () => void; dashed?: boolean }) {
   return (
     <Box
-      role="button"
-      tabIndex={0}
+      component="button"
+      type="button"
       onClick={onClick}
-      onKeyDown={(e) => { if (e.key === "Enter") onClick(); }}
       sx={{
-        width: 300, maxWidth: "100%", display: "flex", gap: 1.25, alignItems: "flex-start",
-        bgcolor: "background.paper", borderRadius: "6px", p: 1.25, cursor: "pointer",
-        border: `${selected ? 2 : 1}px ${dashed ? "dashed" : "solid"} ${selected ? "#1976d2" : tokens.divider}`,
-        borderLeft: `4px solid ${color}`,
-        boxShadow: selected ? "0 2px 8px rgba(25,118,210,.25)" : "0 1px 2px rgba(0,0,0,.06)",
+        width: 300, maxWidth: "calc(100vw - 48px)", display: "flex", gap: 1.25, alignItems: "center", textAlign: "left", font: "inherit", color: "inherit",
+        bgcolor: "background.paper", borderRadius: "8px", p: 1.25, cursor: "pointer", flex: "none",
+        border: `1px ${dashed ? "dashed" : "solid"} ${selected ? "#1976d2" : tokens.divider}`,
+        boxShadow: selected ? "0 0 0 3px rgba(25,118,210,.25)" : "0 1px 2px rgba(0,0,0,.06)",
+        transition: "box-shadow .12s, border-color .12s",
+        "&:hover": { borderColor: selected ? "#1976d2" : "#9aa5b1" },
+        "&:focus-visible": { outline: "none", boxShadow: "0 0 0 3px rgba(25,118,210,.4)" },
       }}
     >
-      <Box sx={{ color, display: "flex", mt: "1px", "& svg": { fontSize: 20 } }}>{icon}</Box>
+      <Box sx={{ width: 32, height: 32, flex: "none", borderRadius: "6px", bgcolor: color, color: "#fff", display: "grid", placeItems: "center", "& svg": { fontSize: 18 } }}>{icon}</Box>
       <Box sx={{ minWidth: 0 }}>
         <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase", color: "text.secondary" }}>{title}</Typography>
-        <Typography sx={{ fontSize: 13.5, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{text}</Typography>
+        <Typography sx={{ fontSize: 13.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{text}</Typography>
       </Box>
     </Box>
   );
@@ -494,19 +897,22 @@ function AddButton({ onPick }: { onPick: (t: Step["type"]) => void }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   return (
     <>
-      <Connector />
-      <IconButton
-        size="small"
-        onClick={(e) => setAnchor(e.currentTarget)}
-        aria-label="Add a step"
-        sx={{ width: 28, height: 28, border: `1px solid #b0b7bf`, bgcolor: "background.paper", "&:hover": { bgcolor: tokens.hover, borderColor: "primary.main" } }}
-      >
-        <AddIcon sx={{ fontSize: 18 }} />
-      </IconButton>
+      <Line h={14} />
+      <Tooltip title="Add a step">
+        <IconButton
+          size="small"
+          onClick={(e) => setAnchor(e.currentTarget)}
+          aria-label="Add a step"
+          sx={{ width: 26, height: 26, flex: "none", border: `1px solid ${LINE}`, bgcolor: "background.paper", "&:hover": { bgcolor: "primary.main", color: "#fff", borderColor: "primary.main" } }}
+        >
+          <AddIcon sx={{ fontSize: 16 }} />
+        </IconButton>
+      </Tooltip>
+      <Line h={14} />
       <Menu anchorEl={anchor} open={!!anchor} onClose={() => setAnchor(null)}>
         {STEP_TYPES.map((t) => (
-          <MenuItem key={t.type} onClick={() => { onPick(t.type); setAnchor(null); }} sx={{ gap: 1.5, minWidth: 240 }}>
-            <Box sx={{ color: STEP_COLOR[t.type], display: "flex" }}>{t.icon}</Box>
+          <MenuItem key={t.type} onClick={() => { onPick(t.type); setAnchor(null); }} sx={{ gap: 1.5, minWidth: 250, py: 1 }}>
+            <Box sx={{ width: 28, height: 28, borderRadius: "6px", bgcolor: STEP_COLOR[t.type], color: "#fff", display: "grid", placeItems: "center", "& svg": { fontSize: 16 } }}>{t.icon}</Box>
             <Box>
               <Typography sx={{ fontSize: 14 }}>{t.label}</Typography>
               <Typography sx={{ fontSize: 12, color: "text.secondary" }}>{t.help}</Typography>
@@ -518,15 +924,14 @@ function AddButton({ onPick }: { onPick: (t: Step["type"]) => void }) {
   );
 }
 
-function StepList({ steps, path, sel, setSel, onAdd }: { steps: Step[]; path: string; sel: Selection; setSel: (s: Selection) => void; onAdd: (path: string, index: number, t: Step["type"]) => void }) {
-  // Side by side doesn't fit a phone: stack Yes above No there instead.
-  const narrow = useMediaQuery("(max-width:700px)");
+/** A column of steps. Between every pair (and at both ends) sits an add
+ *  button on the line, so a step can go anywhere. */
+function StepList({ steps, path, sel, setSel, onAdd, narrow }: { steps: Step[]; path: string; sel: Selection; setSel: (s: Selection) => void; onAdd: (path: string, index: number, t: Step["type"]) => void; narrow: boolean }) {
   return (
     <>
       <AddButton onPick={(t) => onAdd(path, 0, t)} />
       {steps.map((s, i) => (
         <Box key={s.id} sx={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-          <Connector />
           <Node
             color={STEP_COLOR[s.type]}
             icon={STEP_TYPES.find((x) => x.type === s.type)?.icon}
@@ -535,22 +940,69 @@ function StepList({ steps, path, sel, setSel, onAdd }: { steps: Step[]; path: st
             selected={sel?.kind === "step" && sel.id === s.id}
             onClick={() => setSel({ kind: "step", id: s.id })}
           />
-          {s.type === "branch" && (
-            <Box sx={{ display: "flex", flexDirection: narrow ? "column" : "row", gap: narrow ? 0 : 3, alignItems: narrow ? "center" : "flex-start", mt: 0 }}>
-              {(["yes", "no"] as const).map((side) => (
-                <Box key={side} sx={{ display: "flex", flexDirection: "column", alignItems: "center", minWidth: narrow ? 0 : 300, ...(narrow && { borderLeft: `3px solid ${side === "yes" ? "#2e7d32" : "#bdbdbd"}`, pl: 1.5, ml: 1.5 }) }}>
-                  <Connector />
-                  <Chip size="small" label={side === "yes" ? "Yes" : "No"} color={side === "yes" ? "success" : "default"} />
-                  <StepList steps={s[side]} path={`${s.id}:${side}`} sel={sel} setSel={setSel} onAdd={onAdd} />
-                  {!s[side].length && <Typography sx={{ fontSize: 12, color: "text.secondary", mt: 0.5 }}>Then carry on</Typography>}
-                </Box>
-              ))}
-            </Box>
-          )}
+          {s.type === "branch" && <Branch step={s} sel={sel} setSel={setSel} onAdd={onAdd} narrow={narrow} />}
           <AddButton onPick={(t) => onAdd(path, i + 1, t)} />
         </Box>
       ))}
     </>
+  );
+}
+
+/**
+ * The fork and the join. Each lane draws half of the horizontal rule at its
+ * top and bottom (the first lane its right half, the last its left), so the
+ * rules always meet at the lanes' centre lines whatever their widths. A
+ * stretching line at the foot of each lane carries the shorter one down to
+ * the join.
+ */
+function Branch({ step, sel, setSel, onAdd, narrow }: { step: Extract<Step, { type: "branch" }>; sel: Selection; setSel: (s: Selection) => void; onAdd: (path: string, index: number, t: Step["type"]) => void; narrow: boolean }) {
+  const lanes = (["yes", "no"] as const);
+  if (narrow) {
+    // Side by side doesn't fit a phone: stack Yes above No, each marked by a rail.
+    return (
+      <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+        {lanes.map((side) => (
+          <Box key={side} sx={{ display: "flex", flexDirection: "column", alignItems: "center", borderLeft: `3px solid ${side === "yes" ? "#2e7d32" : "#9e9e9e"}`, pl: 1.5, ml: 1.5, mt: 1 }}>
+            <LaneLabel side={side} />
+            <StepList steps={step[side]} path={`${step.id}:${side}`} sel={sel} setSel={setSel} onAdd={onAdd} narrow />
+          </Box>
+        ))}
+      </Box>
+    );
+  }
+  const rule = (i: number) => ({
+    content: '""', position: "absolute", height: 2, bgcolor: LINE,
+    left: i === 0 ? "50%" : 0, right: i === lanes.length - 1 ? "50%" : 0,
+  });
+  return (
+    <>
+      <Line h={20} />
+      <Box sx={{ display: "flex", alignItems: "stretch" }}>
+        {lanes.map((side, i) => (
+          <Box
+            key={side}
+            sx={{
+              position: "relative", display: "flex", flexDirection: "column", alignItems: "center", px: 2.5, minWidth: 300,
+              "&::before": { ...rule(i), top: 0 },
+              "&::after": { ...rule(i), bottom: 0 },
+            }}
+          >
+            <Line h={16} />
+            <LaneLabel side={side} />
+            <StepList steps={step[side]} path={`${step.id}:${side}`} sel={sel} setSel={setSel} onAdd={onAdd} narrow={false} />
+            <Box sx={{ flex: 1, width: 2, minHeight: 12, bgcolor: LINE }} />
+          </Box>
+        ))}
+      </Box>
+    </>
+  );
+}
+
+function LaneLabel({ side }: { side: "yes" | "no" }) {
+  return (
+    <Box sx={{ px: 1.25, py: 0.25, borderRadius: "999px", fontSize: 12, fontWeight: 600, flex: "none", bgcolor: side === "yes" ? "#e8f5e9" : "#eceff1", color: side === "yes" ? "#1b5e20" : "#455a64", border: `1px solid ${side === "yes" ? "#a5d6a7" : "#cfd8dc"}` }}>
+      {side === "yes" ? "Yes" : "No"}
+    </Box>
   );
 }
 
@@ -568,7 +1020,7 @@ function Timeline({ wf }: { wf: Workflow }) {
   }, [wf]);
   if (!rows.length) return null;
   return (
-    <Box sx={{ width: 420, maxWidth: "100%", mt: 4, bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "6px", p: 1.5 }}>
+    <Box sx={{ width: 420, maxWidth: "calc(100vw - 48px)", mt: 4, bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "8px", p: 1.5 }}>
       <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase", color: "text.secondary", mb: 1 }}>How this plays out for one lead</Typography>
       {rows.map((r, i) => (
         <Box key={i} sx={{ display: "grid", gridTemplateColumns: "96px 1fr", gap: 1, fontSize: 13, py: 0.5, borderTop: i ? `1px solid ${tokens.divider2}` : 0 }}>
@@ -576,7 +1028,158 @@ function Timeline({ wf }: { wf: Workflow }) {
           <Box sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.what}</Box>
         </Box>
       ))}
-      <Typography sx={{ fontSize: 12, color: "text.secondary", mt: 1 }}>Stops early if any "Stop early when" rule happens.</Typography>
+      <Typography sx={{ fontSize: 12, color: "text.secondary", mt: 1 }}>
+        {wf.settings.quietHours ? "Messages due between 20:00 and 08:00 wait until 08:00. " : ""}
+        {wf.exits.some((x) => x.on) ? "Ends early if a stop rule happens." : "Nothing ends it early."}
+      </Typography>
+    </Box>
+  );
+}
+
+// ── Settings / history tabs ──────────────────────────────────────────────
+
+function SettingRow({ title, help, children }: { title: string; help: string; children: React.ReactNode }) {
+  return (
+    <Box sx={{ display: "flex", alignItems: "center", gap: 2, py: 1.5, borderTop: `1px solid ${tokens.divider2}`, "&:first-of-type": { borderTop: 0 } }}>
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Typography sx={{ fontSize: 14, fontWeight: 500 }}>{title}</Typography>
+        <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>{help}</Typography>
+      </Box>
+      {children}
+    </Box>
+  );
+}
+
+function SettingsTab({ wf, onChange }: { wf: Workflow; onChange: (p: Partial<Workflow>, key?: string) => void }) {
+  const s = wf.settings;
+  const setS = (p: Partial<Settings>, key?: string) => onChange({ settings: { ...s, ...p } }, key);
+  return (
+    <Box sx={{ flex: 1, overflowY: "auto", p: 2 }}>
+      <Box sx={{ maxWidth: 720, mx: "auto", display: "flex", flexDirection: "column", gap: 2 }}>
+        <Box sx={{ bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "8px", p: 2 }}>
+          <Typography sx={{ fontWeight: 600, mb: 0.5 }}>Sending</Typography>
+          <SettingRow title="Quiet hours" help="Follow-ups due between 20:00 and 08:00 (SAST) wait until 08:00. New-lead alerts always go straight away.">
+            <Switch checked={s.quietHours} onChange={(e) => setS({ quietHours: e.target.checked })} />
+          </SettingRow>
+          <SettingRow title="Emails come from" help="The name leads see. Replies go to the agent's own email.">
+            <TextField size="small" value={s.senderName} onChange={(e) => setS({ senderName: e.target.value }, "sender")} sx={{ width: 200 }} />
+          </SettingRow>
+        </Box>
+        <Box sx={{ bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "8px", p: 2 }}>
+          <Typography sx={{ fontWeight: 600, mb: 0.5 }}>Who goes through it</Typography>
+          <SettingRow title="Allow the same lead in again" help="Off: a lead goes through this workflow once. On: every time the trigger happens.">
+            <Switch checked={s.reEnter} onChange={(e) => setS({ reEnter: e.target.checked })} />
+          </SettingRow>
+        </Box>
+        <Box sx={{ bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "8px", p: 2, display: "flex", flexDirection: "column", gap: 1 }}>
+          <Typography sx={{ fontWeight: 600 }}>Stop early when</Typography>
+          <ExitsEditor exits={wf.exits} onChange={(exits) => onChange({ exits })} />
+        </Box>
+      </Box>
+    </Box>
+  );
+}
+
+const SAMPLE_PEOPLE = ["Thandi Mokoena", "Pieter van der Merwe", "Lerato Khumalo", "Ahmed Suleman", "Jessica Botha"];
+
+function HistoryTab({ kind, wf }: { kind: "enrollments" | "logs"; wf: Workflow }) {
+  const [contact, setContact] = useState("");
+  const [status, setStatus] = useState("all");
+  const [action, setAction] = useState("all");
+  const isDesktop = useMediaQuery("(min-width:900px)");
+  const actions = useMemo(() => wf.steps.filter((s) => s.type !== "wait" && s.type !== "branch"), [wf.steps]);
+  const statuses = useMemo(() => (kind === "logs" ? ["Delivered", "Opened", "Skipped: quiet hours", "Failed"] : ["Active", "Finished", "Stopped early"]), [kind]);
+
+  // SAMPLE rows so the layout can be judged. The backend reads these from
+  // workflow runs (enrolments) and the per-step results (logs).
+  const rows = useMemo(() => {
+    const now = Date.now();
+    return SAMPLE_PEOPLE.flatMap((name, i) => {
+      const step = actions[i % Math.max(1, actions.length)];
+      return [{
+        name,
+        when: new Date(now - (i * 7 + 2) * 3600_000).toLocaleString("en-ZA", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }),
+        action: step ? stepTitle(step) : "—",
+        status: statuses[i % statuses.length],
+        next: kind === "enrollments" && i % 3 === 0 ? new Date(now + (i + 1) * 5 * 3600_000).toLocaleString("en-ZA", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—",
+        reason: triggerSummary(wf.trigger),
+      }];
+    });
+  }, [kind, wf.trigger, actions, statuses]);
+
+  const shown = rows.filter((r) =>
+    (!contact || r.name.toLowerCase().includes(contact.toLowerCase())) &&
+    (status === "all" || r.status === status) &&
+    (action === "all" || r.action === action));
+
+  return (
+    <Box sx={{ flex: 1, overflowY: "auto", p: 2 }}>
+      <Box sx={{ maxWidth: 1100, mx: "auto" }}>
+        <Typography sx={{ fontSize: 22, fontWeight: 500 }}>{kind === "logs" ? "Execution logs" : "Enrollment history"}</Typography>
+        <Typography component="div" sx={{ fontSize: 13.5, color: "text.secondary", mb: 2 }}>
+          {kind === "logs" ? "Every message and action this workflow performed, and how it went." : "Every lead that entered this workflow, and where they are now."}
+          <Chip size="small" label="Sample rows" color="warning" variant="outlined" sx={{ ml: 1, height: 20, fontSize: 11 }} />
+        </Typography>
+        <Box sx={{ display: "flex", gap: 1.5, mb: 2, flexWrap: "wrap", alignItems: "center", position: "sticky", top: -16, zIndex: 1, bgcolor: tokens.bg, py: 1 }}>
+          <TextField size="small" type="date" label="From" slotProps={{ inputLabel: { shrink: true } }} sx={{ width: 160, bgcolor: "background.paper" }} />
+          <TextField size="small" type="date" label="To" slotProps={{ inputLabel: { shrink: true } }} sx={{ width: 160, bgcolor: "background.paper" }} />
+          {kind === "logs" && (
+            <TextField select size="small" value={action} onChange={(e) => setAction(e.target.value)} sx={{ width: 190, bgcolor: "background.paper" }}>
+              <MenuItem value="all">All actions</MenuItem>
+              {Array.from(new Set(actions.map(stepTitle))).map((a) => <MenuItem key={a} value={a}>{a}</MenuItem>)}
+            </TextField>
+          )}
+          <TextField select size="small" value={status} onChange={(e) => setStatus(e.target.value)} sx={{ width: 190, bgcolor: "background.paper" }}>
+            <MenuItem value="all">All statuses</MenuItem>
+            {statuses.map((s) => <MenuItem key={s} value={s}>{s}</MenuItem>)}
+          </TextField>
+          <TextField size="small" placeholder="Search lead" value={contact} onChange={(e) => setContact(e.target.value)} sx={{ flex: 1, minWidth: 160, bgcolor: "background.paper" }} slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> } }} />
+          <Tooltip title="Refresh"><IconButton sx={{ border: `1px solid ${tokens.divider}`, bgcolor: "background.paper" }} aria-label="Refresh"><RefreshIcon fontSize="small" /></IconButton></Tooltip>
+        </Box>
+        <Box sx={{ border: `1px solid ${tokens.divider}`, borderRadius: "8px", bgcolor: "background.paper", overflowX: "auto" }}>
+          <Table size="small" stickyHeader>
+            <TableHead>
+              <TableRow sx={{ "& th": { color: "text.secondary", fontSize: 12.5, bgcolor: tokens.surface2, whiteSpace: "nowrap" } }}>
+                <TableCell>Lead</TableCell>
+                {kind === "enrollments" && isDesktop && <TableCell>Why they entered</TableCell>}
+                <TableCell>{kind === "logs" ? "Action" : "Current step"}</TableCell>
+                <TableCell>Status</TableCell>
+                <TableCell>{kind === "logs" ? "Ran at (SAST)" : "Entered (SAST)"}</TableCell>
+                {kind === "enrollments" && <TableCell>Next step at</TableCell>}
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {shown.map((r) => (
+                <TableRow key={r.name} hover>
+                  <TableCell sx={{ fontWeight: 500, fontSize: 13.5, whiteSpace: "nowrap" }}>{r.name}</TableCell>
+                  {kind === "enrollments" && isDesktop && <TableCell sx={{ fontSize: 13, color: "text.secondary" }}>{r.reason}</TableCell>}
+                  <TableCell sx={{ fontSize: 13 }}>{r.action}</TableCell>
+                  <TableCell>
+                    <Chip
+                      size="small"
+                      label={r.status}
+                      variant="outlined"
+                      color={/Delivered|Opened|Finished/.test(r.status) ? "success" : /Failed|Stopped/.test(r.status) ? "error" : r.status === "Active" ? "primary" : "default"}
+                      sx={{ height: 22, fontSize: 12 }}
+                    />
+                  </TableCell>
+                  <TableCell sx={{ fontSize: 13, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{r.when}</TableCell>
+                  {kind === "enrollments" && <TableCell sx={{ fontSize: 13, whiteSpace: "nowrap", color: "text.secondary" }}>{r.next}</TableCell>}
+                </TableRow>
+              ))}
+              {!shown.length && (
+                <TableRow>
+                  <TableCell colSpan={6} sx={{ textAlign: "center", py: 6 }}>
+                    <SearchIcon sx={{ color: "primary.main", bgcolor: tokens.primaryBg, borderRadius: "50%", p: 1, fontSize: 40 }} />
+                    <Typography sx={{ fontWeight: 500, mt: 1 }}>{kind === "logs" ? "No logs found" : "No enrollments found"}</Typography>
+                    <Typography sx={{ fontSize: 13, color: "text.secondary" }}>History is kept for the last 60 days.</Typography>
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </Box>
+      </Box>
     </Box>
   );
 }
@@ -609,43 +1212,30 @@ function TriggerEditor({ t, onChange }: { t: Trigger; onChange: (t: Trigger) => 
   );
 }
 
+const FILTER_OPTIONS: Record<FilterField, { v: string; l: string }[]> = {
+  has_email: [{ v: "yes", l: "Has an email" }, { v: "no", l: "No email" }],
+  stage: STAGES.map((s) => ({ v: s, l: s })),
+  pipeline: [{ v: "Sellers", l: "Sellers" }, { v: "Buyers", l: "Buyers" }],
+  source: [{ v: "Facebook form", l: "Facebook form" }, { v: "EstateKit page", l: "EstateKit page" }, { v: "Added by hand", l: "Added by hand" }],
+  confirmation_email: [{ v: "on", l: "Confirmation email is on" }],
+};
+
 function FiltersEditor({ filters, onChange }: { filters: Filter[]; onChange: (f: Filter[]) => void }) {
   return (
     <>
-      <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>Leads must match all of these. Leave empty to run for every lead.</Typography>
+      <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>Leads must match all of these. Leave it empty to run for every lead.</Typography>
       {filters.map((f, i) => (
         <Box key={i} sx={{ display: "flex", gap: 1, alignItems: "center" }}>
-          <TextField select size="small" value={f.field} onChange={(e) => onChange(filters.map((x, j) => (j === i ? { field: e.target.value as Filter["field"], value: e.target.value === "has_email" ? "yes" : "" } : x)))} sx={{ width: 140 }}>
-            <MenuItem value="pipeline">Pipeline</MenuItem>
-            <MenuItem value="source">Source</MenuItem>
-            <MenuItem value="stage">Stage</MenuItem>
-            <MenuItem value="has_email">Email</MenuItem>
+          <TextField select size="small" value={f.field} onChange={(e) => { const field = e.target.value as FilterField; onChange(filters.map((x, j) => (j === i ? { field, value: FILTER_OPTIONS[field][0].v } : x))); }} sx={{ width: 130, flex: "none" }}>
+            {(Object.keys(FILTER_LABEL) as FilterField[]).map((k) => <MenuItem key={k} value={k}>{FILTER_LABEL[k]}</MenuItem>)}
           </TextField>
-          {f.field === "has_email" ? (
-            <TextField select size="small" value={f.value} onChange={(e) => onChange(filters.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))} sx={{ flex: 1 }}>
-              <MenuItem value="yes">Has an email</MenuItem>
-              <MenuItem value="no">No email</MenuItem>
-            </TextField>
-          ) : f.field === "stage" ? (
-            <TextField select size="small" value={f.value} onChange={(e) => onChange(filters.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))} sx={{ flex: 1 }}>
-              {STAGES.map((s) => <MenuItem key={s} value={s}>{s}</MenuItem>)}
-            </TextField>
-          ) : f.field === "pipeline" ? (
-            <TextField select size="small" value={f.value} onChange={(e) => onChange(filters.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))} sx={{ flex: 1 }}>
-              <MenuItem value="Sellers">Sellers</MenuItem>
-              <MenuItem value="Buyers">Buyers</MenuItem>
-            </TextField>
-          ) : (
-            <TextField select size="small" value={f.value} onChange={(e) => onChange(filters.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))} sx={{ flex: 1 }}>
-              <MenuItem value="Facebook form">Facebook form</MenuItem>
-              <MenuItem value="EstateKit page">EstateKit page</MenuItem>
-              <MenuItem value="Added by hand">Added by hand</MenuItem>
-            </TextField>
-          )}
-          <IconButton size="small" onClick={() => onChange(filters.filter((_, j) => j !== i))} aria-label="Remove filter"><DeleteOutlineIcon fontSize="small" /></IconButton>
+          <TextField select size="small" value={f.value} onChange={(e) => onChange(filters.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))} sx={{ flex: 1, minWidth: 0 }}>
+            {FILTER_OPTIONS[f.field].map((o) => <MenuItem key={o.v} value={o.v}>{o.l}</MenuItem>)}
+          </TextField>
+          <IconButton size="small" onClick={() => onChange(filters.filter((_, j) => j !== i))} aria-label="Remove filter"><DeleteOutlinedIcon fontSize="small" /></IconButton>
         </Box>
       ))}
-      <Button size="small" startIcon={<AddIcon />} onClick={() => onChange([...filters, { field: "stage", value: "" }])} sx={{ alignSelf: "flex-start" }}>Add filter</Button>
+      <Button size="small" startIcon={<AddIcon />} onClick={() => onChange([...filters, { field: "stage", value: "New Lead" }])} sx={{ alignSelf: "flex-start" }}>Add filter</Button>
     </>
   );
 }
@@ -654,7 +1244,7 @@ function ExitsEditor({ exits, onChange }: { exits: Exit[]; onChange: (e: Exit[])
   return (
     <>
       <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
-        The lead leaves the workflow as soon as one of these happens, so nobody gets a "still interested?" email after they've booked.
+        The lead leaves the workflow as soon as one of these happens, so nobody gets a "still interested?" message after they've booked.
       </Typography>
       {exits.map((x, i) => (
         <Box key={x.kind} sx={{ display: "flex", alignItems: "center" }}>
@@ -668,87 +1258,109 @@ function ExitsEditor({ exits, onChange }: { exits: Exit[]; onChange: (e: Exit[])
 
 function MergeFields({ onInsert }: { onInsert: (f: string) => void }) {
   return (
-    <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap", mt: -1 }}>
-      {MERGE_FIELDS.map((f) => <Chip key={f} size="small" variant="outlined" label={f} onClick={() => onInsert(f)} sx={{ fontSize: 11, height: 22 }} />)}
+    <Box>
+      <Typography sx={{ fontSize: 12, color: "text.secondary", mb: 0.5 }}>Insert a field</Typography>
+      <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap" }}>
+        {MERGE_FIELDS.map((f) => <Chip key={f} size="small" variant="outlined" label={f} onClick={() => onInsert(f)} sx={{ fontSize: 11, height: 24 }} />)}
+      </Box>
     </Box>
   );
 }
 
-function StepEditor({ step, onChange, onDelete }: { step: Step; onChange: (p: Partial<Step>) => void; onDelete: () => void }) {
-  let body: React.ReactNode = null;
+const SAMPLE_FIELDS: Record<string, string> = {
+  first_name: "Thandi", name: "Thandi Mokoena", area: "Bryanston", address: "14 Oak Avenue, Bryanston", agent_name: "Megan Demo",
+  agent_phone: "083 555 0103", plan_link: "leads.estatekit.co/plan/…", count: "7", leads_word: "leads", stage: "No Answer",
+};
+const fill = (t: string) => t.replace(/\{\{(\w+)\}\}/g, (m, k: string) => SAMPLE_FIELDS[k] ?? (k === "action_link" ? "leads.estatekit.co/l/…" : m));
+
+/** How the email lands in the lead's inbox, filled in for a sample lead. */
+function EmailPreview({ subject, body }: { subject: string; body: string }) {
+  return (
+    <Box sx={{ border: `1px solid ${tokens.divider}`, borderRadius: "8px", overflow: "hidden", fontSize: 13 }}>
+      <Box sx={{ bgcolor: tokens.surface2, px: 1.5, py: 1, borderBottom: `1px solid ${tokens.divider}` }}>
+        <Box><Box component="span" sx={{ color: "text.secondary" }}>From:</Box> Megan Demo</Box>
+        <Box><Box component="span" sx={{ color: "text.secondary" }}>To:</Box> thandi@example.com</Box>
+        <Box sx={{ fontWeight: 600, mt: 0.5 }}>{fill(subject) || "(no subject)"}</Box>
+      </Box>
+      <Box sx={{ p: 1.5, whiteSpace: "pre-wrap", lineHeight: 1.55 }}>{fill(body) || <Box component="span" sx={{ color: "text.disabled" }}>Nothing written yet</Box>}</Box>
+    </Box>
+  );
+}
+
+function PreviewLabel() {
+  return <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase", color: "text.secondary", mb: -1 }}>Preview for a sample lead</Typography>;
+}
+
+function StepEditor({ step, onChange }: { step: Step; onChange: (p: Partial<Step>, key?: string) => void }) {
   switch (step.type) {
     case "wait":
-      body = (
+      return (
         <>
           <Box sx={{ display: "flex", gap: 1 }}>
-            <TextField size="small" type="number" label="Wait" value={step.amount} onChange={(e) => onChange({ amount: Math.max(0, Number(e.target.value)) })} sx={{ width: 110 }} />
+            <TextField size="small" type="number" label="Wait" value={step.amount} onChange={(e) => onChange({ amount: Math.max(0, Number(e.target.value)) }, "amount")} sx={{ width: 110 }} />
             <TextField select size="small" value={step.unit} onChange={(e) => onChange({ unit: e.target.value as Unit })} sx={{ flex: 1 }}>
               <MenuItem value="minutes">minutes</MenuItem>
               <MenuItem value="hours">hours</MenuItem>
               <MenuItem value="days">days</MenuItem>
             </TextField>
           </Box>
-          <Box sx={{ display: "flex", alignItems: "center" }}>
-            <Typography sx={{ flex: 1, fontSize: 14 }}>Only send between 08:00 and 20:00</Typography>
-            <Switch checked={step.workHoursOnly} onChange={(e) => onChange({ workHoursOnly: e.target.checked })} />
-          </Box>
+          <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>Counted from the step before. Quiet hours (Settings) can push a message to 08:00.</Typography>
         </>
       );
-      break;
     case "whatsapp":
-      body = (
+      return (
         <>
           <TextField select size="small" label="Send to" value={step.to} onChange={(e) => onChange({ to: e.target.value as "agent" | "lead" })}>
             <MenuItem value="agent">The agent (nudge about this lead)</MenuItem>
             <MenuItem value="lead">The lead</MenuItem>
           </TextField>
-          <TextField size="small" multiline minRows={4} label="Message" value={step.text} onChange={(e) => onChange({ text: e.target.value })} />
+          <TextField size="small" multiline minRows={4} label="Message" value={step.text} onChange={(e) => onChange({ text: e.target.value }, "text")} />
           <MergeFields onInsert={(f) => onChange({ text: step.text + f })} />
+          <PreviewLabel />
+          <WhatsAppPreview lead={SAMPLE_LEAD} text={step.text} sampleFields={SAMPLE_FIELDS} />
         </>
       );
-      break;
     case "email":
-      body = (
+      return (
         <>
           <TextField select size="small" label="Send to" value={step.to} onChange={(e) => onChange({ to: e.target.value as "agent" | "lead" })}>
             <MenuItem value="lead">The lead (from the agent's name)</MenuItem>
             <MenuItem value="agent">The agent</MenuItem>
           </TextField>
-          <TextField size="small" label="Subject" value={step.subject} onChange={(e) => onChange({ subject: e.target.value })} />
-          <TextField size="small" multiline minRows={7} label="Email" value={step.body} onChange={(e) => onChange({ body: e.target.value })} />
+          <TextField size="small" label="Subject" value={step.subject} onChange={(e) => onChange({ subject: e.target.value }, "subject")} />
+          <TextField size="small" multiline minRows={7} label="Email" value={step.body} onChange={(e) => onChange({ body: e.target.value }, "body")} />
           <MergeFields onInsert={(f) => onChange({ body: step.body + f })} />
+          <PreviewLabel />
+          <EmailPreview subject={step.subject} body={step.body} />
           <Typography sx={{ fontSize: 12, color: "text.secondary" }}>Skipped for leads without an email address. Opens and clicks are tracked.</Typography>
         </>
       );
-      break;
     case "notify":
-      body = (
+      return (
         <>
-          <TextField size="small" multiline minRows={3} label="Alert text" value={step.text} onChange={(e) => onChange({ text: e.target.value })} />
+          <TextField size="small" multiline minRows={3} label="Alert text" value={step.text} onChange={(e) => onChange({ text: e.target.value }, "text")} />
           <MergeFields onInsert={(f) => onChange({ text: step.text + f })} />
+          <PreviewLabel />
+          <WhatsAppPreview lead={SAMPLE_LEAD} text={step.text} sampleFields={SAMPLE_FIELDS} />
         </>
       );
-      break;
     case "set_stage":
-      body = (
+      return (
         <TextField select size="small" label="Move lead to" value={step.stage} onChange={(e) => onChange({ stage: e.target.value })}>
           {STAGES.map((s) => <MenuItem key={s} value={s}>{s}</MenuItem>)}
         </TextField>
       );
-      break;
     case "reminder":
-      body = (
+      return (
         <>
-          <TextField size="small" label="Reminder" value={step.label} onChange={(e) => onChange({ label: e.target.value })} helperText="Shows in the lead's Next column" />
-          <TextField size="small" type="number" label="Due in (days, 0 = today)" value={step.inDays} onChange={(e) => onChange({ inDays: Math.max(0, Number(e.target.value)) })} />
+          <TextField size="small" label="Reminder" value={step.label} onChange={(e) => onChange({ label: e.target.value }, "label")} helperText="Shows in the lead's Next column" />
+          <TextField size="small" type="number" label="Due in (days, 0 = today)" value={step.inDays} onChange={(e) => onChange({ inDays: Math.max(0, Number(e.target.value)) }, "days")} />
         </>
       );
-      break;
     case "tag":
-      body = <TextField size="small" label="Tag" value={step.tag} onChange={(e) => onChange({ tag: e.target.value })} placeholder="e.g. cold, nurture, investor" />;
-      break;
+      return <TextField size="small" label="Tag" value={step.tag} onChange={(e) => onChange({ tag: e.target.value }, "tag")} placeholder="e.g. cold, nurture, investor" />;
     case "branch":
-      body = (
+      return (
         <>
           <TextField select size="small" label="Check" value={step.check} onChange={(e) => onChange({ check: e.target.value as BranchCheck, value: "" })}>
             {(Object.keys(BRANCH_LABEL) as BranchCheck[]).map((k) => <MenuItem key={k} value={k}>{BRANCH_LABEL[k]}</MenuItem>)}
@@ -758,25 +1370,21 @@ function StepEditor({ step, onChange, onDelete }: { step: Step; onChange: (p: Pa
               {STAGES.map((s) => <MenuItem key={s} value={s}>{s}</MenuItem>)}
             </TextField>
           )}
+          {step.check === "pipeline_is" && (
+            <TextField select size="small" label="Pipeline" value={step.value} onChange={(e) => onChange({ value: e.target.value })}>
+              <MenuItem value="Sellers">Sellers</MenuItem>
+              <MenuItem value="Buyers">Buyers</MenuItem>
+            </TextField>
+          )}
           {step.check === "lead_source" && (
             <TextField select size="small" label="Source" value={step.value} onChange={(e) => onChange({ value: e.target.value })}>
               <MenuItem value="Facebook form">Facebook form</MenuItem>
               <MenuItem value="EstateKit page">EstateKit page</MenuItem>
             </TextField>
           )}
-          {step.check === "answer_contains" && <TextField size="small" label="Text" value={step.value} onChange={(e) => onChange({ value: e.target.value })} placeholder="e.g. As soon as possible" />}
-          <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>Add steps under Yes and No on the canvas. Both paths carry on to the steps below the split.</Typography>
+          {step.check === "answer_contains" && <TextField size="small" label="Text" value={step.value} onChange={(e) => onChange({ value: e.target.value }, "value")} placeholder="e.g. As soon as possible" />}
+          <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>Add steps under Yes and No on the canvas. Both paths join again and carry on to the steps below.</Typography>
         </>
       );
-      break;
   }
-  return (
-    <>
-      {body}
-      <Divider />
-      <Button color="error" startIcon={<DeleteOutlineIcon />} onClick={onDelete} sx={{ alignSelf: "flex-start" }}>
-        Delete step{step.type === "branch" ? " and its paths" : ""}
-      </Button>
-    </>
-  );
 }
