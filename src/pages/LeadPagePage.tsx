@@ -129,6 +129,15 @@ export default function LeadPagePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page?.id, formResetKey]);
 
+  // Same query key as CapiSettings, so the chip and the panel share one fetch.
+  const capiPixel = (form.fbPixelId || "").replace(/\D/g, "");
+  const { data: capiConfig, isSuccess: capiLoaded } = useQuery({
+    queryKey: ["capiConfig", capiPixel],
+    queryFn: () => getCapiConfig(capiPixel),
+    enabled: isOperator === true && !!capiPixel,
+  });
+  const capiOn = capiLoaded ? !!capiConfig?.enabled : undefined;
+
   const debouncedUpdate = useCallback(
     (patch: Partial<Omit<LeadPage, "id" | "pipelineId">>) => {
       clearTimeout(saveTimer.current);
@@ -499,14 +508,21 @@ export default function LeadPagePage() {
                 {/* Everything below is off by default and stays collapsed.
                     Nobody needs it to run a page, and a wall of tracking
                     options is how a simple screen turns confusing. */}
-                <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mt: 0.5 }}>
+                {/* A show/hide button, not a switch: a switch read as "CAPI off"
+                    after every reload. The chip is the real on/off state. */}
+                <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1, mt: 0.5 }}>
                   <Box>
-                    <Typography sx={{ fontSize: 13.5, fontWeight: 500 }}>Advanced tracking</Typography>
+                    <Typography sx={{ fontSize: 13.5, fontWeight: 500, display: "flex", alignItems: "center", gap: 1 }}>
+                      Advanced tracking
+                      {capiOn !== undefined && (
+                        <Chip size="small" label={capiOn ? "Conversions API: On" : "Conversions API: Off"} color={capiOn ? "success" : "default"} variant={capiOn ? "filled" : "outlined"} sx={{ height: 20, fontSize: 11 }} />
+                      )}
+                    </Typography>
                     <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
-                      Server-side conversions. Leave off unless you're setting it up.
+                      Server-side conversions. Only open this if you're setting it up.
                     </Typography>
                   </Box>
-                  <Switch size="small" checked={showAdvanced} onChange={(e) => setShowAdvanced(e.target.checked)} />
+                  <Button size="small" onClick={() => setShowAdvanced((v) => !v)}>{showAdvanced ? "Hide" : "Show"}</Button>
                 </Box>
 
                 {showAdvanced && <CapiSettings pixelId={form.fbPixelId} />}
