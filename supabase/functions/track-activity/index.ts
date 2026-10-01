@@ -23,7 +23,9 @@ type EventKey =
   | "email_sent" | "email_failed" | "email_bounced" | "email_complained" | "email_opened" | "email_whatsapp_tap" | "plan_opened"
   // Setup changes made in the app
   | "form_type_changed" | "email_switched" | "email_wording_changed" | "client_details_edited"
-  | "whatsapp_number_changed" | "page_link_changed";
+  | "whatsapp_number_changed" | "page_link_changed"
+  // Access and automation switches (audit log)
+  | "logout" | "account_switched" | "password_reset" | "automation_toggled" | "automations_stopped";
 
 const EVENTS: Record<EventKey, { emoji: string; label: string; color: number; cat: string }> = {
   login:              { emoji: "🔓", label: "Signed in",            color: 0x6366f1, cat: "Agent" },
@@ -54,7 +56,29 @@ const EVENTS: Record<EventKey, { emoji: string; label: string; color: number; ca
   client_details_edited: { emoji: "🗂️", label: "Client details edited", color: 0x8b5cf6, cat: "Setup" },
   whatsapp_number_changed: { emoji: "📱", label: "WhatsApp number changed", color: 0xf59e0b, cat: "Setup" },
   page_link_changed:  { emoji: "🔗", label: "Page link changed",     color: 0xf59e0b, cat: "Setup" },
+  logout:             { emoji: "🔒", label: "Signed out",            color: 0x6366f1, cat: "Agent" },
+  account_switched:   { emoji: "🔁", label: "Switched account",      color: 0x6366f1, cat: "Access" },
+  password_reset:     { emoji: "🔑", label: "Password reset",        color: 0xd93025, cat: "Access" },
+  automation_toggled: { emoji: "⚡", label: "Automation switched",   color: 0xf59e0b, cat: "Automations" },
+  automations_stopped:{ emoji: "🛑", label: "All automations stopped", color: 0xd93025, cat: "Automations" },
 };
+
+// What goes in the audit_log table (operators read it on Account → Audit log).
+// Lead and email events are left out: lead_events already records those.
+const AUDIT_CATEGORY: Partial<Record<EventKey, string>> = {
+  login: "login", logout: "login",
+  form_type_changed: "setup", email_switched: "setup", email_wording_changed: "setup", client_details_edited: "setup",
+  whatsapp_number_changed: "setup", page_link_changed: "setup",
+  lead_page_created: "setup", lead_page_deleted: "setup", sold_listing_added: "setup",
+  ad_paused: "ads", ad_resumed: "ads",
+  automation_toggled: "automations", automations_stopped: "automations",
+  account_switched: "account", password_reset: "account",
+};
+
+// Audit-only: too frequent or too routine to post to Discord.
+const NOT_TO_DISCORD = new Set<string>(["logout", "account_switched"]);
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
@@ -80,17 +104,30 @@ function flagOf(cc?: string): string {
   return String.fromCodePoint(...cc.toUpperCase().split("").map((c) => 127397 + c.charCodeAt(0)));
 }
 
-async function geoFor(ip: string): Promise<{ label: string; ip: string } | null> {
+async function geoFor(ip: string): Promise<{ label: string; ip: string; country: string; location: string } | null> {
   if (!ip) return null;
   try {
-    const r = await fetch(`https://ipapi.co/${ip}/json/`);
+    const r = await fetch(`https://ipapi.co/${ip}/json/`, { signal: AbortSignal.timeout(2500) });
     const d = await r.json();
     if (d && !d.error) {
-      const label = `${flagOf(d.country_code)} ${[d.city, d.region, d.country_name].filter(Boolean).join(", ")}`.trim();
-      return { label: label || "—", ip };
+      const location = [d.city, d.region, d.country_name].filter(Boolean).join(", ");
+      const label = `${flagOf(d.country_code)} ${location}`.trim();
+      return { label: label || "—", ip, country: String(d.country_code || "").toUpperCase(), location };
     }
   } catch { /* ignore */ }
-  return { label: "—", ip };
+  return { label: "—", ip, country: "", location: "" };
+}
+
+/** The signed-in user who sent this, from their own token. Never trusted from the body. */
+async function verifiedActor(req: Request): Promise<string | null> {
+  const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+  if (!token) return null;
+  try {
+    const { data } = await supabase.auth.getUser(token);
+    return data.user?.id ?? null;
+  } catch {
+    return null;
+  }
 }
 
 interface Field { name: string; value: string; inline?: boolean }
@@ -122,6 +159,40 @@ Deno.serve(async (req) => {
     const b = await req.json();
     const cfg = EVENTS[b.event as EventKey];
     if (!cfg) return json({ error: "unknown event" }, 400);
+
+    // Caller location, once (meaningful for browser-originated events).
+    const ip = (req.headers.get("x-forwarded-for") || "").split(",")[0].trim();
+    const geo = b.device && ip ? await geoFor(ip) : null;
+
+    // ── Audit log ───────────────────────────────────────────────────────
+    const auditCategory = AUDIT_CATEGORY[b.event as EventKey];
+    if (auditCategory) {
+      const actorId = await verifiedActor(req);
+      let actorName: string | null = null;
+      if (actorId) {
+        const { data: me } = await supabase.from("agent_profiles").select("display_name").eq("agent_id", actorId).maybeSingle();
+        actorName = me?.display_name ?? null;
+      }
+      const accountId = typeof b.agentId === "string" && UUID.test(b.agentId) ? b.agentId : actorId;
+      const detail = [b.detail, b.ad?.name && `Ad: ${b.ad.name}`, b.page?.name && `Page: ${b.page.name}`, b.sale?.address && `Sale: ${b.sale.address}`]
+        .filter(Boolean).join(" · ").slice(0, 1000) || null;
+      const { error } = await supabase.from("audit_log").insert({
+        event: b.event,
+        category: auditCategory,
+        actor_id: actorId,
+        actor_name: actorName,
+        account_id: accountId,
+        detail,
+        data: { page: b.page ?? null, ad: b.ad ?? null, sale: b.sale ?? null },
+        ip: ip || null,
+        country: geo?.country || null,
+        location: geo?.location || null,
+        device: typeof b.device === "string" ? b.device.slice(0, 300) : null,
+        session_id: typeof b.sessionId === "string" ? b.sessionId.slice(0, 100) : null,
+      });
+      if (error) console.error("audit_log insert failed", error.message);
+    }
+    if (NOT_TO_DISCORD.has(b.event)) return json({ ok: true });
 
     const webhook = await secret("DISCORD_ACTIVITY_WEBHOOK");
     if (!webhook) return json({ ok: true, skipped: "no webhook configured" });
@@ -180,12 +251,7 @@ Deno.serve(async (req) => {
 
     if (b.device) fields.push({ name: "Device", value: deviceLabel(b.device), inline: true });
 
-    // Geo from the caller IP (meaningful for browser-originated events).
-    const ip = (req.headers.get("x-forwarded-for") || "").split(",")[0].trim();
-    if (b.device && ip) {
-      const geo = await geoFor(ip);
-      if (geo) { fields.push({ name: "Location", value: geo.label, inline: true }); fields.push({ name: "IP", value: `\`${geo.ip}\``, inline: true }); }
-    }
+    if (geo) { fields.push({ name: "Location", value: geo.label, inline: true }); fields.push({ name: "IP", value: `\`${geo.ip}\``, inline: true }); }
 
     // Deep links: PostHog replay + open the lead + dashboard.
     const links: string[] = [];

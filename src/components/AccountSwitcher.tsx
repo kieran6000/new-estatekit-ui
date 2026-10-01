@@ -19,6 +19,7 @@ import UnfoldMoreIcon from "@mui/icons-material/UnfoldMore";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import { listAgentProfiles, setActiveAgent, getActiveAgentIdSync } from "../api/_client";
 import { useAuth } from "../hooks/useAuth";
+import { trackActivity } from "../lib/activity";
 
 /** Agents type a full patch of suburbs into "area" (e.g. "Fourways, Sandton,
  *  Johannesburg"). The switcher only needs the headline city, so show the first
@@ -53,6 +54,10 @@ export default function AccountSwitcher({ variant = "dark" }: { variant?: "dark"
   });
 
   function handleSelect(agentId: string) {
+    if (agentId !== active) {
+      const to = profiles.find((p) => p.agent_id === agentId)?.display_name || "an account";
+      trackActivity("account_switched", { agentId, detail: agentId === user?.id ? "Back to their own account" : `Switched into ${to}` });
+    }
     setActive(agentId);
     setActiveAgent(agentId === user?.id ? null : agentId);
     qc.invalidateQueries();

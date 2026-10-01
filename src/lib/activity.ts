@@ -6,7 +6,8 @@ type ActivityEvent =
   | "call_started" | "note_added" | "lead_page_created" | "lead_page_deleted" | "sold_listing_added"
   | "ad_paused" | "ad_resumed"
   | "form_type_changed" | "email_switched" | "email_wording_changed" | "client_details_edited"
-  | "whatsapp_number_changed" | "page_link_changed";
+  | "whatsapp_number_changed" | "page_link_changed"
+  | "logout" | "account_switched" | "password_reset" | "automation_toggled" | "automations_stopped";
 
 // Changes to an account's setup: the log also says who made them.
 const SETUP_EVENTS: ActivityEvent[] = [
@@ -32,6 +33,20 @@ interface PostHogLike { get_session_id?: () => string; get_distinct_id?: () => s
 let registeredPh: PostHogLike | null = null;
 export function registerActivityPostHog(ph: PostHogLike): void {
   registeredPh = ph;
+}
+
+/** Like trackActivity, but waits (up to 1.5s) for the send. Use it right
+ *  before signing out, while the sign-in token that identifies who did it
+ *  still exists. */
+export async function trackActivityNow(event: ActivityEvent, payload: ActivityPayload = {}): Promise<void> {
+  try {
+    const send = supabase.functions.invoke("track-activity", {
+      body: { event, agentId: payload.agentId ?? getActiveAgentIdSync() ?? undefined, detail: payload.detail, device: navigator.userAgent },
+    });
+    await Promise.race([send, new Promise((r) => setTimeout(r, 1500))]);
+  } catch {
+    /* never let tracking break anything */
+  }
 }
 
 /** Fire-and-forget world-class activity ping to the Discord webhook (via the

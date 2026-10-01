@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { supabase, restoreActiveAgent, clearActiveAgentFor, forgetActiveAgentInMemory } from "../api/_client";
 import * as authApi from "../api/auth";
 import * as tierApi from "../api/tier";
-import { trackActivity, registerActivityPostHog } from "../lib/activity";
+import { trackActivity, trackActivityNow, registerActivityPostHog } from "../lib/activity";
 import type { MockUser } from "../api/auth";
 
 interface AuthContextValue {
@@ -90,6 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function signOut() {
+    if (user) await trackActivityNow("logout", { agentId: user.id });
     if (user) clearActiveAgentFor(user.id);
     forgetActiveAgentInMemory();
     lastUserIdRef.current = null;

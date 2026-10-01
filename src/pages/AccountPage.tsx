@@ -62,6 +62,7 @@ export default function AccountPage() {
     setStopping(true);
     try {
       const { cancelled } = await panicStopAutomations();
+      trackActivity("automations_stopped", { detail: `Emergency stop: every automation off, ${cancelled} queued message${cancelled === 1 ? "" : "s"} cancelled` });
       showSnack(`Automations stopped — ${cancelled} queued message${cancelled === 1 ? "" : "s"} cancelled`);
     } catch (e) {
       console.error(e);

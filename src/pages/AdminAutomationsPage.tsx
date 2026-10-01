@@ -25,6 +25,7 @@ import {
 import { useLeads } from "../hooks/useLeads";
 import { useSnack } from "../hooks/useSnack";
 import ScheduledAutomations from "../components/ScheduledAutomations";
+import { trackActivity } from "../lib/activity";
 import WorkflowBuilder from "../components/WorkflowBuilder";
 import WhatsAppPreview from "../components/WhatsAppPreview";
 import type { AutomationRow, AutomationStepRow } from "../types/automations";
@@ -121,6 +122,7 @@ function AutomationsAdmin() {
             previewLead={previewLead}
             onToggle={(enabled) => {
               toggle.mutate({ id: a.id, enabled });
+              trackActivity("automation_toggled", { detail: `${a.name}: turned ${enabled ? "on" : "off"} for everyone` });
               posthog.capture("automation_toggled", { automation: a.name, enabled });
               showSnack(`${a.name} ${enabled ? "enabled" : "disabled"}`);
             }}
