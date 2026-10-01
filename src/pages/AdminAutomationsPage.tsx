@@ -257,7 +257,7 @@ function StepEditor({ step, hideDelay = false }: { step: AutomationStepRow; hide
           size="small"
           label={hideDelay
             ? "Message ({{first_name}}, {{count}}, {{leads_word}})"
-            : "Message ({{name}}, {{first_name}}, {{phone}}, {{stage}}, {{next_label}})"}
+            : "Message ({{name}}, {{first_name}}, {{stage}}, {{next_label}}, {{action_link}})"}
           value={templateText}
           onChange={(e) => setTemplateText(e.target.value)}
         />
