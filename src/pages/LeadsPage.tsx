@@ -35,6 +35,7 @@ import CallIcon from "@mui/icons-material/Call";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
 import RefreshIcon from "@mui/icons-material/Refresh";
+import SyncIcon from "@mui/icons-material/Sync";
 import CloseIcon from "@mui/icons-material/Close";
 import EditIcon from "@mui/icons-material/EditOutlined";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutlineOutlined";
@@ -44,7 +45,7 @@ import { usePostHog } from "@posthog/react";
 import { tokens } from "../theme";
 import { DEAD_STAGES, PIPELINE_KIND_LABEL, PIPELINE_STAGES, type LeadRow, type OutcomeStep, type Pipeline, type PipelineKind, type Stage } from "../types";
 import { stageLabel } from "../types";
-import { dueLeads, pipelineKindFor, sortLeadsForList, stepForStage, computeStagePatch, stageForKind } from "../lib/stageLogic";
+import { dueLeads, pipelineKindFor, sortLeadsForList, stepForStage, computeStagePatch, stageForKind, nextStepLabel } from "../lib/stageLogic";
 import { timeAgo } from "../lib/timeAgo";
 import { useLeads, useUpdateLeadStage } from "../hooks/useLeads";
 import { useAddPipeline, usePipelines, useSyncPipelineSheet } from "../hooks/usePipelines";
@@ -489,6 +490,22 @@ export default function LeadsPage() {
             ? "Creating…"
             : activePipeline.sheet_url ? (isMobile ? "Sheets" : "Open in Sheets") : (isMobile ? "Export" : "Export to Sheets")}
         </Button>
+        {/* The sheet is a copy, written when it's made. Without this it never
+            changes again: "Open in Sheets" only opened the old copy. */}
+        {activePipeline.sheet_url && (
+          <IconButton
+            onClick={() => syncSheet.mutate(activePipeline.id, {
+              onSuccess: () => showSnack("Sheet updated with your latest leads"),
+              onError: () => showSnack("Couldn't update the sheet"),
+            })}
+            disabled={syncSheet.isPending}
+            title="Update the sheet with your latest leads"
+            aria-label="Update Google Sheet"
+            sx={{ border: `1px solid ${tokens.divider}`, borderRadius: "4px", width: 34, height: 34 }}
+          >
+            {syncSheet.isPending ? <CircularProgress size={14} /> : <SyncIcon sx={{ fontSize: 18, color: "text.secondary" }} />}
+          </IconButton>
+        )}
         </Box>
       </Box>
 
@@ -1003,7 +1020,7 @@ function LeadsTable({
         <TableCell>
           <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, fontSize: 13, color: l.reminder_at ? "#e65100" : "text.secondary" }}>
             {l.reminder_at && <AccessTimeIcon sx={{ fontSize: 14 }} />}
-            {l.next_label}
+            {nextStepLabel(l)}
           </Box>
         </TableCell>
         <TableCell align="right">
@@ -1159,7 +1176,7 @@ function MobileLeadsList({
         </StageMenu>
         <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, fontSize: 13, color: l.reminder_at ? "#e65100" : "text.secondary" }}>
           {l.reminder_at && <AccessTimeIcon sx={{ fontSize: 14 }} />}
-          {l.next_label}
+          {nextStepLabel(l)}
         </Box>
       </Box>
       {!selectable && !DEAD_STAGES.includes(l.stage) && (

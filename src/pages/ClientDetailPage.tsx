@@ -112,6 +112,19 @@ export default function ClientDetailPage() {
           <Typography sx={{ fontSize: 18, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {data?.profile.display_name || "Account"}
           </Typography>
+          <Box sx={{ flex: 1 }} />
+          {agentId && (
+            <Button
+              component="a"
+              href={`/report/${agentId}`}
+              target="_blank"
+              rel="noopener"
+              size="small"
+              sx={{ color: "inherit", whiteSpace: "nowrap" }}
+            >
+              Weekly report
+            </Button>
+          )}
         </Toolbar>
       </AppBar>
 

@@ -155,3 +155,25 @@ export function computeStagePatch(
   }
   return {};
 }
+
+/**
+ * What the "Next" column shows. New leads are stored with the fixed label
+ * "Just came in", which stays put until someone acts on the lead, so a lead
+ * from five weeks ago still said "Just came in". For a lead nobody has
+ * touched, say how long it has been waiting instead. Display only: the stored
+ * next_label is unchanged.
+ */
+export function nextStepLabel(l: Pick<LeadRow, "stage" | "next_label" | "created_at">): string {
+  const untouched = l.stage === "New Lead" && (l.next_label === "Just came in" || l.next_label === "—" || !l.next_label);
+  if (!untouched) return l.next_label;
+  const mins = Math.max(0, Math.floor((Date.now() - new Date(l.created_at).getTime()) / 60000));
+  if (Number.isNaN(mins)) return l.next_label;
+  if (mins < 60) return `Call now · ${mins < 1 ? "just in" : `${mins} min`}`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `Call today · waiting ${hrs}h`;
+  const days = Math.floor(hrs / 24);
+  if (days < 14) return `Not called · ${days} day${days === 1 ? "" : "s"}`;
+  const weeks = Math.floor(days / 7);
+  if (weeks < 9) return `Not called · ${weeks} wks`;
+  return `Not called · ${Math.floor(days / 30)} months`;
+}

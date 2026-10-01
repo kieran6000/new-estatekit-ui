@@ -15,7 +15,7 @@ import { usePipelines } from "../hooks/usePipelines";
 import { getPipelinePublic } from "../api/pipelines";
 import { useSnack } from "../hooks/useSnack";
 import { PIPELINE_STAGES, stageLabel } from "../types";
-import { stageForKind, stepForStage } from "../lib/stageLogic";
+import { nextStepLabel, stageForKind, stepForStage } from "../lib/stageLogic";
 import { prettyAnswer, maskPhone } from "../lib/format";
 import { describeAttribution, type AdAttribution } from "../lib/adAttribution";
 import { timeAgo, whenLabel } from "../lib/timeAgo";
@@ -176,7 +176,7 @@ export default function LeadDetailPage() {
           <Row k="Email" v={lead.email || ""} />
           <Row k="Stage" v={stageLabel(lead.stage, pipelineKind)} />
           <Row k="Received" v={timeAgo(lead.created_at)} />
-          <Row k="Next" v={lead.next_label} />
+          <Row k="Next" v={nextStepLabel(lead)} />
         </Section>
 
         <Section title="From their form">

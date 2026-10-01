@@ -526,6 +526,22 @@ export default function AccountPage() {
             </Card>
 
             {isOperator && (
+              <Card variant="outlined" sx={{ mb: 3 }}>
+                <CardContent sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                    Audit log
+                  </Typography>
+                  <Typography sx={{ fontSize: 13, color: "text.secondary" }}>
+                    Every user, their full details, and everything they did: sign-ins, lead changes, setup edits, ads and automations. Filter by one user or several.
+                  </Typography>
+                  <Button component={RouterLink} to="/account/audit" variant="outlined" fullWidth>
+                    Open audit log
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+
+            {isOperator && (
               <Card variant="outlined" sx={{ mb: 3, borderColor: "#fca5a5" }}>
                 <CardContent sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
                   <Typography variant="subtitle1" sx={{ fontWeight: 600, color: "#b91c1c" }}>

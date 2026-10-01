@@ -25,6 +25,7 @@ import {
 import { useLeads } from "../hooks/useLeads";
 import { useSnack } from "../hooks/useSnack";
 import ScheduledAutomations from "../components/ScheduledAutomations";
+import WorkflowBuilder from "../components/WorkflowBuilder";
 import WhatsAppPreview from "../components/WhatsAppPreview";
 import type { AutomationRow, AutomationStepRow } from "../types/automations";
 import type { LeadRow } from "../types";
@@ -72,7 +73,7 @@ function AutomationsAdmin() {
   const showSnack = useSnack();
   const posthog = usePostHog();
   const previewLead = leads[0];
-  const [tab, setTab] = useState<"scheduled" | "setup">("scheduled");
+  const [tab, setTab] = useState<"scheduled" | "setup" | "workflows">("scheduled");
 
   return (
     <Box>
@@ -88,8 +89,15 @@ function AutomationsAdmin() {
       >
         <Tab label="Scheduled" value="scheduled" sx={{ minHeight: 44, textTransform: "none", fontWeight: 600 }} />
         <Tab label="Setup" value="setup" sx={{ minHeight: 44, textTransform: "none", fontWeight: 600 }} />
+        <Tab
+          value="workflows"
+          sx={{ minHeight: 44, textTransform: "none", fontWeight: 600 }}
+          label={<Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>Workflows <Chip size="small" label="Preview" color="warning" variant="outlined" sx={{ height: 18, fontSize: 10.5 }} /></Box>}
+        />
       </Tabs>
-      {tab === "scheduled" ? (
+      {tab === "workflows" ? (
+        <WorkflowBuilder />
+      ) : tab === "scheduled" ? (
         <Box sx={{ maxWidth: 820, mx: "auto" }}>
           <ScheduledAutomations />
         </Box>
