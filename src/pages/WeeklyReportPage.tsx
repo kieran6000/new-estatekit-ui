@@ -55,13 +55,11 @@ const SAMPLE: ReportData = {
   ],
 };
 
-/** "6 more than last week" / "3 fewer than last week" / "Same as last week". */
-function Change({ now, before, lessIsBetter = false, unit = "" }: { now: number; before: number; lessIsBetter?: boolean; unit?: string }) {
+/** "▲ Last week: 28": short enough never to wrap, and the arrow's colour says good or bad. */
+function Change({ now, before, lessIsBetter = false }: { now: number; before: number; lessIsBetter?: boolean }) {
   const d = now - before;
-  if (d === 0) return <span className="wr-change same">Same as last week</span>;
-  const good = lessIsBetter ? d < 0 : d > 0;
-  const word = unit ? (d > 0 ? "slower" : "faster") : d > 0 ? "more" : "fewer";
-  return <span className={`wr-change ${good ? "up" : "down"}`}>{good ? "▲" : "▼"} {Math.abs(d)}{unit} {word} than last week</span>;
+  const cls = d === 0 ? "same" : (lessIsBetter ? d < 0 : d > 0) ? "up" : "down";
+  return <span className={`wr-change ${cls}`}>{d > 0 ? "▲ " : d < 0 ? "▼ " : ""}Last week: {before}</span>;
 }
 
 function speedVerdict(mins: number): { cls: "great" | "ok" | "slow"; word: string } {
@@ -118,7 +116,7 @@ export default function WeeklyReportPage() {
           {p?.avatar_url ? <img className="wr-avatar" src={p.avatar_url} alt="" /> : <div className="wr-avatar">{initials}</div>}
           <div className="wr-head-text">
             <h1>Weekly report: {name}<span className="wr-sample">SAMPLE</span></h1>
-            <p>{period}</p>
+            <p>{period} · See every lead at leads.estatekit.co</p>
           </div>
           <img className="wr-logo" src={estateKitLogo} alt="EstateKit" />
         </header>
@@ -133,17 +131,17 @@ export default function WeeklyReportPage() {
                 <Change now={t.leads} before={l.leads} />
               </div>
               <div className="wr-tile">
-                <span className="wr-tile-name">Leads you called</span>
+                <span className="wr-tile-name">Leads called</span>
                 <span className="wr-tile-num">{t.called}</span>
-                <span className="wr-tile-sub">{t.called} of {t.leads} new leads</span>
+                <span className="wr-tile-sub">{t.called} of {t.leads} leads</span>
               </div>
               <div className="wr-tile">
-                <span className="wr-tile-name">Appointments booked</span>
+                <span className="wr-tile-name">Appointments</span>
                 <span className="wr-tile-num">{t.booked}</span>
                 <Change now={t.booked} before={l.booked} />
               </div>
               <div className="wr-tile">
-                <span className="wr-tile-name">Mandates signed</span>
+                <span className="wr-tile-name">Mandates</span>
                 <span className="wr-tile-num">{t.mandates}</span>
                 <Change now={t.mandates} before={l.mandates} />
               </div>
@@ -164,7 +162,7 @@ export default function WeeklyReportPage() {
                 <div>Too slow<br />over 30 min</div>
               </div>
               <p className="wr-note">
-                From the moment a lead comes in to your first call. Last week: {d.lastTypicalMins} min.
+                Last week: {d.lastTypicalMins} min.
               </p>
             </section>
 
@@ -173,11 +171,11 @@ export default function WeeklyReportPage() {
               <div className="wr-todo">
                 <div className={`wr-todo-row${d.notCalled ? " hot" : ""}`}>
                   <b>{d.notCalled}</b>
-                  <span>Leads not called yet<small>Open EstateKit and call these first</small></span>
+                  <span>Not called yet<small>Call these first</small></span>
                 </div>
                 <div className="wr-todo-row">
                   <b>{d.noAnswer}</b>
-                  <span>Leads that didn't answer<small>Try them again</small></span>
+                  <span>Didn't answer<small>Try them again</small></span>
                 </div>
               </div>
             </section>
@@ -185,8 +183,8 @@ export default function WeeklyReportPage() {
 
           <section className="wr-ek">
             <div className="wr-ek-main">
-              <b>Your leads come from your EstateKit campaign</b>
-              <span>We run your Facebook and Instagram ads and send every lead straight to you.</span>
+              <b>Leads from your EstateKit campaign</b>
+              <span>We run your Facebook and Instagram ads and send every lead to you.</span>
               <div className="wr-live" style={{ marginTop: 6 }}>{d.campaign.adsLive} ads running now</div>
             </div>
             <div className="wr-ek-stat"><b>{t.leads}</b><span>leads this week</span></div>
@@ -204,7 +202,7 @@ export default function WeeklyReportPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {([["New leads", "leads"], ["Leads you called", "called"], ["Appointments booked", "booked"], ["Mandates signed", "mandates"]] as const).map(([label, k]) => (
+                  {([["New leads", "leads"], ["Leads called", "called"], ["Appointments", "booked"], ["Mandates", "mandates"]] as const).map(([label, k]) => (
                     <tr key={k}>
                       <th scope="row" style={{ fontWeight: 400 }}>{label}</th>
                       {d.weeks.map((w, i) => <td key={w.label} className={i === d.weeks.length - 1 ? "now" : ""}>{w[k]}</td>)}
@@ -222,21 +220,15 @@ export default function WeeklyReportPage() {
             with get_agent_results and lead_events. */}
         <section className="wr-how">
           <h2 className="wr-label">How these numbers are counted</h2>
-          <p className="wr-how-intro">Every number comes from what you do in EstateKit: tapping Call and updating a lead's stage.</p>
           <dl className="wr-how-list">
-            <dt>New leads</dt><dd>Leads that arrived in your EstateKit leads list this week.</dd>
-            <dt>Leads you called</dt><dd>Leads where you tapped <b>Call</b> in EstateKit (in the app or from the WhatsApp alert), or changed their stage.</dd>
-            <dt>Appointments, mandates</dt><dd>Leads you moved to <b>Booked</b> or <b>Mandate Signed</b> this week.</dd>
-            <dt>How fast you call</dt><dd>Time from the lead arriving to your first Call tap or stage change.</dd>
-            <dt>Waiting for you</dt><dd>Leads still on <b>New Lead</b> or <b>No Answer</b> right now.</dd>
+            <dt>New leads</dt><dd>Leads that arrived in your EstateKit leads list.</dd>
+            <dt>Leads called</dt><dd>You tapped <b>Call</b> in EstateKit, or changed the lead's stage.</dd>
+            <dt>Appointments, Mandates</dt><dd>You moved the lead to <b>Booked</b> or <b>Mandate Signed</b>.</dd>
+            <dt>How fast you call</dt><dd>From a new lead arriving to your first Call tap or stage change.</dd>
           </dl>
-          <p className="wr-how-tip"><b>Called from your phone's contacts?</b> EstateKit can't see that call. Always tap Call in EstateKit, or update the lead's stage after the call, and it will count.</p>
+          <p className="wr-how-tip"><b>Called from your phone's contacts?</b> EstateKit can't see that. Tap Call in EstateKit, or update the lead's stage after the call.</p>
         </section>
 
-        <footer className="wr-foot">
-          <span>Every lead, live: leads.estatekit.co</span>
-          <span>Prepared by EstateKit for {name}</span>
-        </footer>
       </article>
     </div>
   );
