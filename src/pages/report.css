@@ -92,6 +92,15 @@
 .wr-table td.now, .wr-table th.now { font-weight: 700; background: var(--wr-blue-bg); }
 .wr-table tbody tr:last-child td, .wr-table tbody tr:last-child th { border-bottom: 0; }
 
+/* How it's counted */
+.wr-how { margin: 0 24px 18px; padding: 12px 14px; border: 1px solid var(--wr-line); border-radius: 4px; background: var(--wr-bg); }
+.wr-how-intro { margin: 0 0 8px; font-size: 13px; }
+.wr-how-list { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 4px 12px; margin: 0; font-size: 12.5px; }
+.wr-how-list dt { font-weight: 500; }
+.wr-how-list dd { margin: 0; color: var(--wr-ink2); }
+.wr-how-tip { margin: 10px 0 0; padding: 8px 10px; border-radius: 4px; background: var(--wr-warn-bg); font-size: 12.5px; }
+@media (max-width: 600px) { .wr-how { margin: 0 16px 16px; } .wr-how-list { grid-template-columns: minmax(0, 1fr); } .wr-how-list dd { margin-bottom: 6px; } }
+
 .wr-foot { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 12px 24px; border-top: 1px solid var(--wr-line); font-size: 12px; color: var(--wr-ink2); }
 
 /* Printed / saved as PDF: one page on A4 or Letter. Zero page margin stops
@@ -101,7 +110,7 @@
   html, body { background: #fff !important; }
   .wr-viewer { background: #fff; padding: 12mm 12mm 0; min-height: 0; }
   .wr-bar { display: none; }
-  .wr-page { margin: 0 auto; max-width: none; border: 0; zoom: .9; }
+  .wr-page { margin: 0 auto; max-width: none; border: 0; zoom: .8; }
   .wr-viewer * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .wr-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .wr-two { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }

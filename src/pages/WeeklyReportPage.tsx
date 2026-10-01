@@ -216,6 +216,23 @@ export default function WeeklyReportPage() {
           </section>
         </div>
 
+        {/* Agents push back when a number looks wrong ("I DID call them").
+            Say exactly what each number counts, and the one habit that makes
+            a call count, so the fix is theirs and obvious. Keep this in step
+            with get_agent_results and lead_events. */}
+        <section className="wr-how">
+          <h2 className="wr-label">How these numbers are counted</h2>
+          <p className="wr-how-intro">Every number comes from what you do in EstateKit: tapping Call and updating a lead's stage.</p>
+          <dl className="wr-how-list">
+            <dt>New leads</dt><dd>Leads that arrived in your EstateKit leads list this week.</dd>
+            <dt>Leads you called</dt><dd>Leads where you tapped <b>Call</b> in EstateKit (in the app or from the WhatsApp alert), or changed their stage.</dd>
+            <dt>Appointments, mandates</dt><dd>Leads you moved to <b>Booked</b> or <b>Mandate Signed</b> this week.</dd>
+            <dt>How fast you call</dt><dd>Time from the lead arriving to your first Call tap or stage change.</dd>
+            <dt>Waiting for you</dt><dd>Leads still on <b>New Lead</b> or <b>No Answer</b> right now.</dd>
+          </dl>
+          <p className="wr-how-tip"><b>Called from your phone's contacts?</b> EstateKit can't see that call. Always tap Call in EstateKit, or update the lead's stage after the call, and it will count.</p>
+        </section>
+
         <footer className="wr-foot">
           <span>Every lead, live: leads.estatekit.co</span>
           <span>Prepared by EstateKit for {name}</span>
