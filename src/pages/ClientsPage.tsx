@@ -11,12 +11,14 @@ import {
   InputAdornment,
   MenuItem,
   Skeleton,
+  Tab,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableRow,
   TableSortLabel,
+  Tabs,
   TextField,
   Toolbar,
   Tooltip,
@@ -169,7 +171,13 @@ export default function ClientsPage() {
 
   // One Meta read per ad account for spend (from the range's first day), and
   // one for how it pays. Both cached, so moving between ranges stays light.
-  const withAds = (clients ?? []).filter((c) => c.fb_ad_account_id);
+  // Deactivated accounts live on their own tab, out of the totals and the
+  // Meta lookups, so the working list only has clients we actually serve.
+  const [view, setView] = useState<"active" | "deactivated">("active");
+  const deactivatedCount = (clients ?? []).filter((c) => c.deactivated_at).length;
+  useEffect(() => { if (view === "deactivated" && deactivatedCount === 0) setView("active"); }, [view, deactivatedCount]);
+  const visible = (clients ?? []).filter((c) => (view === "deactivated") === !!c.deactivated_at);
+  const withAds = visible.filter((c) => c.fb_ad_account_id);
   const spendQueries = useQueries({
     queries: withAds.map((c) => ({
       queryKey: ["spendDaily", c.fb_ad_account_id, sinceDay],
@@ -191,7 +199,7 @@ export default function ClientsPage() {
   const metaKey = [...spendQueries, ...fundingQueries].map((q) => `${q.status}:${q.dataUpdatedAt}`).join("|");
 
   const rows: Row[] = useMemo(() => {
-    return (clients ?? []).map((c) => {
+    return visible.map((c) => {
       const leads = counts?.get(c.agent_id) ?? 0;
       const acct = c.fb_ad_account_id;
       const sq = acct ? spendBy.get(acct) : undefined;
@@ -228,7 +236,7 @@ export default function ClientsPage() {
     });
     // metaKey stands in for the Meta query results, which are new arrays each render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clients, counts, activity, metaKey, sinceDay, untilDay, rangeDays]);
+  }, [clients, view, counts, activity, metaKey, sinceDay, untilDay, rangeDays]);
 
   const shown = useMemo(() => {
     const list = rows.filter((r) => matches(r.c, search.trim()));
@@ -284,7 +292,7 @@ export default function ClientsPage() {
             <ArrowBackIcon />
           </IconButton>
           <Typography sx={{ fontSize: 18, fontWeight: 500 }}>Accounts</Typography>
-          {clients && <Typography sx={{ ml: 1, fontSize: 14, color: tokens.ink3 }}>{clients.length}</Typography>}
+          {clients && <Typography sx={{ ml: 1, fontSize: 14, color: tokens.ink3 }}>{clients.length - deactivatedCount}</Typography>}
           <Box sx={{ flex: 1 }} />
           <Button size="small" onClick={() => navigate("/admin/reports")} sx={{ color: "inherit" }}>Weekly reports</Button>
         </Toolbar>
@@ -315,6 +323,12 @@ export default function ClientsPage() {
           }}
         />
         <RangePicker value={range} onChange={setRange} />
+        {deactivatedCount > 0 && (
+          <Tabs value={view} onChange={(_, v) => setView(v)} sx={{ minHeight: 40, width: { xs: "100%", md: "auto" }, "& .MuiTab-root": { minHeight: 40, textTransform: "none", fontWeight: 600, px: 1.5, minWidth: 0 } }}>
+            <Tab value="active" label={`Active (${(clients?.length ?? 0) - deactivatedCount})`} />
+            <Tab value="deactivated" label={`Deactivated (${deactivatedCount})`} />
+          </Tabs>
+        )}
       </Box>
 
       <Box sx={{ p: { xs: 1.5, md: 2 }, display: "flex", flexDirection: "column", gap: 2 }}>

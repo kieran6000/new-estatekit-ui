@@ -79,9 +79,12 @@ export default function AccountSwitcher({ variant = "dark" }: { variant?: "dark"
   // a logo is a poor stand-in for a face in a list of people.
   const activePfp = activeProfile?.avatar_url || pageAvatar(activeProfile?.fb_page_id) || activeProfile?.sidebar_logo_url || null;
 
+  // Deactivated accounts stay out of the list (open them from Accounts →
+  // Deactivated), except the one you're in right now.
+  const listed = profiles.filter((p) => !p.deactivated_at || p.agent_id === active);
   const filtered = search
-    ? profiles.filter((p) => name(p).toLowerCase().includes(search.toLowerCase()))
-    : profiles;
+    ? listed.filter((p) => name(p).toLowerCase().includes(search.toLowerCase()))
+    : listed;
 
   return (
     <Box sx={{ mb: 0.5 }}>
