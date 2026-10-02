@@ -48,6 +48,12 @@ import { PlainHead, SortHead, headCellSx, sortRows, useTableSort, type Dir, type
 const LEAD_SORT_KEYS = ["name", "came", "stage", "next"] as const;
 type LeadSortKey = (typeof LEAD_SORT_KEYS)[number];
 
+/** "NEW" badge: still on New Lead and came in within the last 24 hours.
+ *  Older untouched leads say how long they've waited in the Next column. */
+function isFreshLead(l: LeadRow): boolean {
+  return l.stage === "New Lead" && Date.now() - Date.parse(l.created_at) < 86_400_000;
+}
+
 /** What each sortable leads column sorts by ("stage" groups instead). */
 function leadSortValue(l: LeadRow, k: LeadSortKey): string | number {
   if (k === "name") return l.name;
@@ -1077,7 +1083,7 @@ function LeadsTable({
         <TableCell sx={{ py: 1 }}>
           <Box component="span" onClick={selectable ? undefined : () => onOpen(l.id)} sx={{ fontWeight: 500, fontSize: 15, color: tokens.primaryDark, cursor: selectable ? "inherit" : "pointer" }}>
             {l.name}
-            {l.stage === "New Lead" && <Box component="span" sx={{ fontSize: 10, fontWeight: 700, color: tokens.green, ml: 0.75 }}>NEW</Box>}
+            {isFreshLead(l) && <Box component="span" sx={{ fontSize: 10, fontWeight: 700, color: tokens.green, ml: 0.75 }}>NEW</Box>}
             <LeadTags lead={l} sx={{ ml: 0.75 }} />
           </Box>
           <Typography sx={{ color: "text.secondary", fontSize: 13, display: "block" }}>
@@ -1239,7 +1245,7 @@ function MobileLeadsList({
       <Box sx={{ flex: 1, minWidth: 0 }}>
       <Box onClick={selectable ? undefined : () => onOpen(l.id)} sx={{ fontWeight: 500, fontSize: 15, color: tokens.primaryDark, cursor: selectable ? "inherit" : "pointer" }}>
         {l.name}
-        {l.stage === "New Lead" && <Box component="span" sx={{ fontSize: 10, fontWeight: 700, color: tokens.green, ml: 0.75 }}>NEW</Box>}
+        {isFreshLead(l) && <Box component="span" sx={{ fontSize: 10, fontWeight: 700, color: tokens.green, ml: 0.75 }}>NEW</Box>}
             <LeadTags lead={l} sx={{ ml: 0.75 }} />
       </Box>
       <Typography sx={{ color: "text.secondary", fontSize: 13 }}>
