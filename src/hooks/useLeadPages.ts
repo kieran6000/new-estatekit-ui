@@ -72,5 +72,6 @@ export function useSubmitMockLead() {
  *  Facebook" tag (lib/leadTags.ts). */
 export function useDatasetByPage(enabled = true): Map<string, string> | undefined {
   const { data } = useLeadPages({ enabled });
-  return useMemo(() => (data ? new Map(data.map((p) => [p.id, (p.fbPixelId || "").replace(/\D/g, "")])) : undefined), [data]);
+  // Only EstateKit web pages: an instant form has no Dataset ID by design.
+  return useMemo(() => (data ? new Map(data.filter((p) => p.sourceType !== "fb_form").map((p) => [p.id, (p.fbPixelId || "").replace(/\D/g, "")])) : undefined), [data]);
 }

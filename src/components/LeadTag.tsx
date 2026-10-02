@@ -3,6 +3,7 @@ import { useIsOperator } from "../hooks/useAutomations";
 import { REASON_HELP, leadTags, notSentReason } from "../lib/leadTags";
 import { useDatasetByPage } from "../hooks/useLeadPages";
 import LocalOfferIcon from "@mui/icons-material/LocalOffer";
+import FacebookIcon from "@mui/icons-material/Facebook";
 
 // The tag chip, used everywhere a tag shows (leads list, lead page, the
 // automation builder's previews). What the tags are: lib/leadTags.ts.
@@ -23,11 +24,20 @@ export default function LeadTag({ label, highlight = false, help }: { label: str
 
 /** A lead's tags, or nothing. Renders only for operators (it checks itself,
  *  so no page can forget to). */
-export function LeadTags({ lead, sx }: { lead: { quality?: string | null; source_page_id?: string | null }; sx?: SxProps<Theme> }) {
+export function LeadTags({ lead, sx }: { lead: { quality?: string | null; source_page_id?: string | null; fb_lead_id?: string | null }; sx?: SxProps<Theme> }) {
   const { data: isOperator } = useIsOperator();
   const datasets = useDatasetByPage(isOperator === true);
   const tags = leadTags(lead, datasets);
-  if (isOperator !== true || !tags.length) return null;
+  if (isOperator !== true) return null;
+  // Instant-form leads: just Facebook's logo, no tag. Facebook counts them itself.
+  if (lead.fb_lead_id) {
+    return (
+      <Tooltip title="Facebook instant form. Facebook counts this lead itself." enterTouchDelay={0}>
+        <FacebookIcon aria-label="Facebook instant form" sx={{ fontSize: 16, color: "#1877f2", verticalAlign: "-3px", ...sx }} />
+      </Tooltip>
+    );
+  }
+  if (!tags.length) return null;
   const reason = notSentReason(lead, datasets);
   return (
     <Box component="span" sx={{ display: "inline-flex", gap: 0.5, flexWrap: "wrap", verticalAlign: "middle", ...sx }}>
