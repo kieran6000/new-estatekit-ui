@@ -487,10 +487,14 @@ export default function LeadPagePage() {
             <ConfirmationEmailCard profile={profile} canSetUp={canSetUp} />
 
             {isOperator && (
-              <Section title="Tracking">
+              <Section title="Facebook tracking">
+                {/* Plain words on purpose, but Facebook's own names where you'll
+                    see them in Events Manager ("Dataset ID", "Conversions API"),
+                    so the two screens match. Meta renamed pixels to datasets;
+                    for a website it's the same number. */}
                 <TextField
-                  label="Facebook Pixel ID"
-                  placeholder="Paste pixel ID or the full code snippet from Facebook"
+                  label="Dataset ID"
+                  placeholder="e.g. 1234567890123456"
                   value={form.fbPixelId}
                   onChange={(e) => {
                     let val = e.target.value;
@@ -498,7 +502,7 @@ export default function LeadPagePage() {
                     if (match) val = match[1];
                     fieldChange("fbPixelId", val);
                   }}
-                  helperText="Paste just the ID (e.g. 1234567890123456) or the full pixel code — we'll extract the ID automatically"
+                  helperText="In Facebook Events Manager, under Data sources. It's the same number as the old Pixel ID. Pasting the whole pixel code works too."
                   fullWidth
                   multiline
                   minRows={1}
@@ -513,16 +517,16 @@ export default function LeadPagePage() {
                 <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1, mt: 0.5 }}>
                   <Box>
                     <Typography sx={{ fontSize: 13.5, fontWeight: 500, display: "flex", alignItems: "center", gap: 1 }}>
-                      Advanced tracking
+                      Backup tracking
                       {capiOn !== undefined && (
-                        <Chip size="small" label={capiOn ? "Conversions API: On" : "Conversions API: Off"} color={capiOn ? "success" : "default"} variant={capiOn ? "filled" : "outlined"} sx={{ height: 20, fontSize: 11 }} />
+                        <Chip size="small" label={capiOn ? "On" : "Off"} color={capiOn ? "success" : "default"} variant={capiOn ? "filled" : "outlined"} sx={{ height: 20, fontSize: 11 }} />
                       )}
                     </Typography>
                     <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
-                      Server-side conversions. Only open this if you're setting it up.
+                      Makes sure Facebook hears about every lead, even when a phone blocks tracking. Facebook calls it the Conversions API.
                     </Typography>
                   </Box>
-                  <Button size="small" onClick={() => setShowAdvanced((v) => !v)}>{showAdvanced ? "Hide" : "Show"}</Button>
+                  <Button size="small" onClick={() => setShowAdvanced((v) => !v)}>{showAdvanced ? "Hide" : capiOn ? "Change" : "Set up"}</Button>
                 </Box>
 
                 {showAdvanced && <CapiSettings pixelId={form.fbPixelId} />}
@@ -1416,7 +1420,7 @@ function CapiSettings({ pixelId }: { pixelId: string }) {
   if (!cleanPixel) {
     return (
       <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
-        Add a Pixel ID above first — conversions are reported against it.
+        Add the Dataset ID above first.
       </Typography>
     );
   }
@@ -1432,7 +1436,7 @@ function CapiSettings({ pixelId }: { pixelId: string }) {
       });
       setToken("");
       await qc.invalidateQueries({ queryKey: ["capiConfig", cleanPixel] });
-      showSnack(enabled ? "Conversions API is on" : "Conversions API is off");
+      showSnack(enabled ? "Backup tracking is on" : "Backup tracking is off");
     } catch (e) {
       console.error(e);
       showSnack("Couldn't save that. Try again.");
@@ -1444,40 +1448,36 @@ function CapiSettings({ pixelId }: { pixelId: string }) {
   return (
     <Box sx={{ bgcolor: tokens.surface2, border: `1px solid ${tokens.divider2}`, borderRadius: "6px", p: "12px", display: "flex", flexDirection: "column", gap: 1.25 }}>
       <Typography sx={{ fontSize: 12.5, color: "text.secondary", lineHeight: 1.5 }}>
-        Sends conversions to Facebook from our server as well as the browser. Ad blockers
-        and iPhones block a lot of browser events, so this recovers leads Facebook
-        otherwise never hears about. Both are sent with the same ID, so nothing is
-        double-counted.
+        Phones often block the normal tracking, so Facebook misses leads. With this on,
+        we also tell Facebook about each lead ourselves. Facebook counts each lead once,
+        so nothing is doubled.
       </Typography>
 
       <TextField
-        label={config?.hasToken ? "Replace access token" : "Conversions API access token"}
-        placeholder={config?.hasToken ? "Leave blank to keep the current one" : "Paste from Events Manager → Settings"}
+        label={config?.hasToken ? "New access token" : "Access token"}
+        placeholder={config?.hasToken ? "Leave empty to keep the saved one" : "Paste the token from Facebook"}
         value={token}
         onChange={(e) => setToken(e.target.value)}
         type="password"
         size="small"
         fullWidth
+        helperText={config?.hasToken
+          ? "One is saved. Only paste a new one if you made a new token in Facebook."
+          : "Events Manager → your dataset → Settings → Conversions API → Generate access token."}
       />
 
       <TextField
-        label="Test event code (optional)"
-        placeholder="TEST12345"
+        label="Test code (only while testing)"
+        placeholder="e.g. TEST12345"
         value={testCode}
         onChange={(e) => setTestCode(e.target.value)}
-        helperText="While this is set, events show in Facebook's Test Events tab and don't affect ad delivery. Clear it to go live."
+        helperText="From Events Manager → Test events. While it's filled in, leads only show up in Test events and don't help your ads. Delete it when you're done."
         size="small"
         fullWidth
       />
 
       <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
-        <Chip
-          size="small"
-          label={config?.enabled ? "On" : "Off"}
-          color={config?.enabled ? "success" : "default"}
-          variant="outlined"
-        />
-        {config?.testEventCode && <Chip size="small" label="Test mode" color="warning" variant="outlined" />}
+        {config?.testEventCode && <Chip size="small" label="Testing: delete the test code when you're done" color="warning" variant="outlined" />}
         <Box sx={{ flex: 1 }} />
         <Button
           size="small"
@@ -1489,7 +1489,7 @@ function CapiSettings({ pixelId }: { pixelId: string }) {
         </Button>
         {config?.enabled && (
           <Button size="small" disabled={saving} onClick={() => save(true)}>
-            Save
+            Save changes
           </Button>
         )}
       </Box>
@@ -1498,11 +1498,11 @@ function CapiSettings({ pixelId }: { pixelId: string }) {
       {events.length > 0 && (
         <Box sx={{ borderTop: `1px solid ${tokens.divider2}`, pt: 1 }}>
           <Typography sx={{ fontSize: 11.5, fontWeight: 600, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.05em", mb: 0.5 }}>
-            Last reported
+            Last leads sent to Facebook
           </Typography>
           {events.map((ev) => (
             <Typography key={ev.id} sx={{ fontSize: 12.5, color: ev.status === "sent" ? "text.secondary" : "error.main" }}>
-              {ev.event_name} · {ev.status} · {timeAgo(ev.created_at)}
+              {ev.status === "sent" ? "Sent" : "Didn't go through"} · {timeAgo(ev.created_at)}
             </Typography>
           ))}
         </Box>

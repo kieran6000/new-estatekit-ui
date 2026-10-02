@@ -30,6 +30,7 @@ import SearchIcon from "@mui/icons-material/Search";
 import CloseIcon from "@mui/icons-material/Close";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import { tokens } from "../theme";
+import SendOutlinedIcon from "@mui/icons-material/SendOutlined";
 import {
   adsManagerUrl,
   clientPicture,
@@ -294,7 +295,8 @@ export default function ClientsPage() {
           <Typography sx={{ fontSize: 18, fontWeight: 500 }}>Accounts</Typography>
           {clients && <Typography sx={{ ml: 1, fontSize: 14, color: tokens.ink3 }}>{clients.length - deactivatedCount}</Typography>}
           <Box sx={{ flex: 1 }} />
-          <Button size="small" onClick={() => navigate("/admin/reports")} sx={{ color: "inherit" }}>Weekly reports</Button>
+          {/* Weekly reports lives here, not in the menu: it's an Accounts job. */}
+          <Button size="small" variant="outlined" startIcon={<SendOutlinedIcon />} onClick={() => navigate("/admin/reports")}>Send weekly reports</Button>
         </Toolbar>
       </AppBar>
 

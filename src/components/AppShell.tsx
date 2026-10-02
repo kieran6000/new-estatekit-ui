@@ -18,8 +18,6 @@ import {
 } from "@mui/material";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import ContactsIcon from "@mui/icons-material/Contacts";
-import AssessmentIcon from "@mui/icons-material/Assessment";
-import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
 import ContactsOutlinedIcon from "@mui/icons-material/ContactsOutlined";
 import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
 import HomeIcon from "@mui/icons-material/Home";
@@ -56,7 +54,8 @@ function activeSection(pathname: string): string {
   if (pathname.startsWith("/home")) return "home";
   if (pathname.startsWith("/overview")) return "overview";
   if (pathname.startsWith("/admin/clients")) return "clients";
-  if (pathname.startsWith("/admin/reports")) return "reports";
+  // Weekly reports lives under Accounts, so Accounts stays lit there.
+  if (pathname.startsWith("/admin/reports")) return "clients";
   if (pathname.startsWith("/admin")) return "automations";
   if (pathname.startsWith("/account")) return "account";
   if (pathname.startsWith("/setup")) return "setup";
@@ -107,7 +106,6 @@ export default function AppShell() {
   const adminNav = [
     { key: "overview", label: "Overview", icon: <DashboardOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <DashboardIcon sx={{ fontSize: SZ }} />, to: "/overview" },
     { key: "clients", label: "Accounts", icon: <GroupsOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <GroupsIcon sx={{ fontSize: SZ }} />, to: "/admin/clients" },
-    { key: "reports", label: "Weekly reports", icon: <AssessmentOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <AssessmentIcon sx={{ fontSize: SZ }} />, to: "/admin/reports" },
     { key: "automations", label: "Automations", icon: <SettingsOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <SettingsIcon sx={{ fontSize: SZ }} />, to: "/admin/automations" },
   ];
 
