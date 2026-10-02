@@ -16,6 +16,11 @@ import {
   InputAdornment,
   MenuItem,
   Tab,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
   Tabs,
   TextField,
   Toolbar,
@@ -32,6 +37,10 @@ import { tokens } from "../theme";
 import { weekLabel, weekStartDate } from "../api/weeklyReport";
 import { listReportAgents, listReportSends, sendWeeklyReport, ReportsNotSetUp, type ReportAgent, type ReportSend } from "../api/weeklyReportSends";
 import { useSnack } from "../hooks/useSnack";
+import { PlainHead, SortHead, sortRows, useTableSort } from "../components/SortHead";
+
+const SORT_KEYS = ["agent", "sent", "opened"] as const;
+type SortKey = (typeof SORT_KEYS)[number];
 
 // Weekly reports, for the CSM: one row per client, one Send button each.
 // Send works out the report as it stands, saves that copy and WhatsApps the
@@ -133,12 +142,17 @@ export default function WeeklyReportsAdminPage() {
   };
   const notSentIds = rows.filter((r) => !sentOk(r) && hasWhatsApp(r.agent) && !pending[r.agent.agent_id]).map((r) => r.agent.agent_id);
 
-  const shown = rows.filter((r) => {
-    if (q.trim() && !(r.agent.display_name ?? "").toLowerCase().includes(q.trim().toLowerCase())) return false;
-    if (view === "not_sent") return !sentOk(r);
-    if (view === "not_opened") return sentOk(r) && !r.thisWeek?.first_opened_at;
-    return true;
-  });
+  const { sort, setSort, onSort } = useTableSort<SortKey>("estatekit_reports_sort", { k: "agent", dir: "asc" }, SORT_KEYS);
+  const shown = sortRows(
+    rows.filter((r) => {
+      if (q.trim() && !(r.agent.display_name ?? "").toLowerCase().includes(q.trim().toLowerCase())) return false;
+      if (view === "not_sent") return !sentOk(r);
+      if (view === "not_opened") return sentOk(r) && !r.thisWeek?.first_opened_at;
+      return true;
+    }),
+    (r) => (sort.k === "agent" ? r.agent.display_name : sort.k === "sent" ? (sentOk(r) ? r.thisWeek!.sent_at : null) : sentOk(r) ? r.thisWeek!.first_opened_at : null),
+    sort.dir,
+  );
 
   const onSend = (r: (typeof rows)[number]) => {
     if (sentOk(r)) {
@@ -219,28 +233,44 @@ export default function WeeklyReportsAdminPage() {
           />
         </Box>
 
+        {!isDesktop && (
+          <TextField
+            select
+            size="small"
+            label="Sort by"
+            value={`${sort.k}:${sort.dir}`}
+            onChange={(e) => { const [k, dir] = e.target.value.split(":") as [SortKey, "asc" | "desc"]; setSort({ k, dir }); }}
+            sx={{ mb: 1.5, minWidth: 220 }}
+          >
+            <MenuItem value="agent:asc">Name (A–Z)</MenuItem>
+            <MenuItem value="sent:desc">Sent most recently</MenuItem>
+            <MenuItem value="opened:desc">Opened most recently</MenuItem>
+          </TextField>
+        )}
         <Box sx={{ border: `1px solid ${tokens.divider}`, borderRadius: "8px", bgcolor: "background.paper", overflow: "hidden" }}>
-          {isDesktop && (
-            <Box sx={{ display: "grid", gridTemplateColumns: COLS, gap: 2, px: 2, py: 1, bgcolor: tokens.surface2, color: "text.secondary", fontSize: 12.5, fontWeight: 500 }}>
-              <span>Agent</span><span>This report</span><span>Opened</span><span />
-            </Box>
+          {loading ? (
+            <Box sx={{ display: "flex", justifyContent: "center", p: 4 }}><CircularProgress size={28} /></Box>
+          ) : isDesktop ? (
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <SortHead k="agent" label="Agent" sort={sort} onSort={onSort} />
+                  <SortHead k="sent" label="This report" sort={sort} onSort={onSort} firstDir="desc" />
+                  <SortHead k="opened" label="Opened" sort={sort} onSort={onSort} firstDir="desc" />
+                  <PlainHead />
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {shown.map((r) => (
+                  <Row key={r.agent.agent_id} desktop agent={r.agent} thisWeek={r.thisWeek} lastSent={r.lastSent} pending={pending[r.agent.agent_id]} error={errors[r.agent.agent_id]} disabled={notSetUp} weeksBack={weeksBack} onSend={() => onSend(r)} />
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            shown.map((r, i) => (
+              <Row key={r.agent.agent_id} first={i === 0} desktop={false} agent={r.agent} thisWeek={r.thisWeek} lastSent={r.lastSent} pending={pending[r.agent.agent_id]} error={errors[r.agent.agent_id]} disabled={notSetUp} weeksBack={weeksBack} onSend={() => onSend(r)} />
+            ))
           )}
-          {loading && <Box sx={{ display: "flex", justifyContent: "center", p: 4 }}><CircularProgress size={28} /></Box>}
-          {!loading && shown.map((r, i) => (
-            <Row
-              key={r.agent.agent_id}
-              first={i === 0}
-              desktop={isDesktop}
-              agent={r.agent}
-              thisWeek={r.thisWeek}
-              lastSent={r.lastSent}
-              pending={pending[r.agent.agent_id]}
-              error={errors[r.agent.agent_id]}
-              disabled={notSetUp}
-              weeksBack={weeksBack}
-              onSend={() => onSend(r)}
-            />
-          ))}
           {!loading && !shown.length && (
             <Typography sx={{ textAlign: "center", color: "text.secondary", py: 6 }}>
               {view === "not_sent" ? "Everyone has this week's report." : view === "not_opened" ? "Everyone who got it has opened it." : "No agents match."}
@@ -274,16 +304,14 @@ export default function WeeklyReportsAdminPage() {
   );
 }
 
-const COLS = "minmax(200px, 1.3fr) minmax(200px, 1.4fr) minmax(150px, 1fr) 210px";
-
 function hasWhatsApp(a: ReportAgent): boolean {
   return (a.whatsapp_number ?? "").replace(/\D/g, "").length >= 9;
 }
 
 function Row({
-  first, desktop, agent, thisWeek, lastSent, pending, error, disabled, weeksBack, onSend,
+  first = false, desktop, agent, thisWeek, lastSent, pending, error, disabled, weeksBack, onSend,
 }: {
-  first: boolean;
+  first?: boolean;
   desktop: boolean;
   agent: ReportAgent;
   thisWeek: ReportSend | null;
@@ -366,9 +394,12 @@ function Row({
 
   if (desktop) {
     return (
-      <Box sx={{ display: "grid", gridTemplateColumns: COLS, gap: 2, alignItems: "center", px: 2, py: 1.25, borderTop: first ? 0 : `1px solid ${tokens.divider2}` }}>
-        {who}{status}{opened}{actions}
-      </Box>
+      <TableRow hover sx={{ "&:last-child td": { borderBottom: 0 }, "& td": { py: 1.25 } }}>
+        <TableCell>{who}</TableCell>
+        <TableCell>{status}</TableCell>
+        <TableCell>{opened}</TableCell>
+        <TableCell align="right" sx={{ width: 220 }}>{actions}</TableCell>
+      </TableRow>
     );
   }
   return (

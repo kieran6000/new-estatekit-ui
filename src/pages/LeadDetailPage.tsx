@@ -9,7 +9,8 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import CallIcon from "@mui/icons-material/Call";
 import ArchiveOutlinedIcon from "@mui/icons-material/ArchiveOutlined";
 import { tokens } from "../theme";
-import { isNotReady } from "../components/NotReadyBadge";
+import { LeadTags } from "../components/LeadTag";
+import { leadTags } from "../lib/leadTags";
 import { getLeadSourceAd, moveLeadToPipeline, setLeadArchived, setCommissionReceived } from "../api/leads";
 import { useLead, useUpdateLeadNote, useUpdateLeadStage } from "../hooks/useLeads";
 import { usePipelines } from "../hooks/usePipelines";
@@ -178,7 +179,12 @@ export default function LeadDetailPage() {
           <Row k="Stage" v={stageLabel(lead.stage, pipelineKind)} />
           <Row k="Received" v={timeAgo(lead.created_at)} />
           <Row k="Next" v={nextStepLabel(lead)} />
-          {isNotReady(lead) && <Row k="Ready to sell?" v="Not ready yet, going by their answers. Still worth a call to stay top of mind." />}
+          {isOperator && leadTags(lead).length > 0 && (
+            <Box sx={{ display: "flex", p: "10px 16px", borderTop: `1px solid ${tokens.divider2}`, gap: 1.5, alignItems: "center" }}>
+              <Typography sx={{ color: "text.secondary", fontSize: 13, flex: "0 0 46%" }}>Tags</Typography>
+              <Box sx={{ flex: 1, display: "flex", gap: 0.5, flexWrap: "wrap" }}><LeadTags lead={lead} /></Box>
+            </Box>
+          )}
         </Section>
 
         <Section title="From their form">

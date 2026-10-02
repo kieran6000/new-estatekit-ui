@@ -43,7 +43,23 @@ import PhoneCallbackIcon from "@mui/icons-material/PhoneCallback";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePostHog } from "@posthog/react";
 import { tokens } from "../theme";
-import NotReadyBadge, { isNotReady } from "../components/NotReadyBadge";
+import { PlainHead, SortHead, headCellSx, sortRows, useTableSort, type Dir, type Sort } from "../components/SortHead";
+
+const LEAD_SORT_KEYS = ["name", "came", "stage", "next"] as const;
+type LeadSortKey = (typeof LEAD_SORT_KEYS)[number];
+
+/** What each sortable leads column sorts by ("stage" groups instead). */
+function leadSortValue(l: LeadRow, k: LeadSortKey): string | number {
+  if (k === "name") return l.name;
+  if (k === "came") return l.created_at;
+  // Next: most urgent first. Due before not due, then the earliest reminder
+  // (or, with no reminder, the longest-waiting lead); Lost/Invalid last.
+  const at = Date.parse(l.reminder_at ?? l.created_at);
+  return (DEAD_STAGES.includes(l.stage) ? 2e13 : l.due ? 0 : 1e13) + at;
+}
+import { LeadTags } from "../components/LeadTag";
+import { leadTags } from "../lib/leadTags";
+import LocalOfferIcon from "@mui/icons-material/LocalOffer";
 import { DEAD_STAGES, PIPELINE_KIND_LABEL, PIPELINE_STAGES, type LeadRow, type OutcomeStep, type Pipeline, type PipelineKind, type Stage } from "../types";
 import { stageLabel } from "../types";
 import { dueLeads, pipelineKindFor, sortLeadsForList, stepForStage, computeStagePatch, stageForKind, nextStepLabel } from "../lib/stageLogic";
@@ -111,8 +127,8 @@ export default function LeadsPage() {
   const [addPipelineOpen, setAddPipelineOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [filter, setFilter] = useState<"All" | Stage>("All");
-  // On top of the stage filter: only the leads labelled "Not ready yet".
-  const [notReadyOnly, setNotReadyOnly] = useState(false);
+  // On top of the stage filter: only leads with this tag (operators only).
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [outcomeLeadId, setOutcomeLeadId] = useState<string | null>(null);
   const [focusOpen, setFocusOpen] = useState(false);
   const [stageSheet, setStageSheet] = useState<{ leadId: string; step: OutcomeStep; stage: Stage } | null>(null);
@@ -204,9 +220,13 @@ export default function LeadsPage() {
   }, [leads, archivedLeads, showArchived, activePipeline]);
 
 
-  const notReadyCount = useMemo(() => pipelineLeads.filter(isNotReady).length, [pipelineLeads]);
-  // The chip disappears when no lead is "not ready", so don't leave its filter on.
-  useEffect(() => { if (notReadyCount === 0) setNotReadyOnly(false); }, [notReadyCount]);
+  const tagCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const l of pipelineLeads) for (const t of leadTags(l)) m.set(t, (m.get(t) ?? 0) + 1);
+    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  }, [pipelineLeads]);
+  // A tag's chip disappears when no lead has it; don't leave its filter on.
+  useEffect(() => { if (tagFilter && !tagCounts.some(([t]) => t === tagFilter)) setTagFilter(null); }, [tagCounts, tagFilter]);
 
   // Who's actually due a call right now, ignoring the stage filter — the
   // banner shouldn't vanish just because the agent narrowed the list.
@@ -216,20 +236,29 @@ export default function LeadsPage() {
     const query = q.toLowerCase().trim();
     return sortLeadsForList(pipelineLeads).filter((l) => {
       if (filter !== "All" && l.stage !== filter) return false;
-      if (notReadyOnly && !isNotReady(l)) return false;
+      if (tagFilter && !leadTags(l).includes(tagFilter)) return false;
       if (!query) return true;
       return l.name.toLowerCase().includes(query) || l.phone.replace(/\s/g, "").includes(query.replace(/\s/g, ""));
     });
-  }, [pipelineLeads, filter, notReadyOnly, q]);
+  }, [pipelineLeads, filter, tagFilter, q]);
+
+  // Column sorting on the desktop table (same behaviour as every table).
+  // "stage" is the usual view: grouped by stage, most urgent first in each.
+  const { sort: leadSort, onSort: onLeadSort } = useTableSort<LeadSortKey>("estatekit_leads_sort", { k: "stage", dir: "asc" }, LEAD_SORT_KEYS);
+  const tableLeads = useMemo(
+    () => (leadSort.k === "stage" ? filtered : sortRows(filtered, (l) => leadSortValue(l, leadSort.k), leadSort.dir)),
+    [filtered, leadSort],
+  );
+  const tableStages = useMemo(() => (leadSort.k === "stage" && leadSort.dir === "desc" ? [...stagesForPipeline].reverse() : stagesForPipeline), [leadSort, stagesForPipeline]);
 
   // Flat visual order of the rows currently on screen — drives shift+click
   // range selection (grouped view lays rows out stage-by-stage).
   const orderedVisibleIds = useMemo(() => {
-    if (filter === "All") {
-      return stagesForPipeline.flatMap((st) => filtered.filter((l) => l.stage === st).map((l) => l.id));
+    if (filter === "All" && leadSort.k === "stage") {
+      return tableStages.flatMap((st) => tableLeads.filter((l) => l.stage === st).map((l) => l.id));
     }
-    return filtered.map((l) => l.id);
-  }, [filtered, filter, stagesForPipeline]);
+    return tableLeads.map((l) => l.id);
+  }, [tableLeads, filter, leadSort.k, tableStages]);
 
   function handleRowSelect(id: string, shiftKey: boolean) {
     if (shiftKey && selectAnchor && orderedVisibleIds.includes(selectAnchor) && orderedVisibleIds.includes(id)) {
@@ -569,28 +598,32 @@ export default function LeadsPage() {
               </Box>
             );
           })}
-          {/* Only once there are some, so most agents never see an extra chip. */}
-          {notReadyCount > 0 && (
-            <Box
-              component="button"
-              onClick={() => setNotReadyOnly((v) => !v)}
-              aria-pressed={notReadyOnly}
-              title="Leads whose answers say they're not ready to sell yet"
-              sx={{
-                display: "flex", alignItems: "center", gap: 0.5,
-                border: `1px ${notReadyOnly ? "solid" : "dashed"} ${notReadyOnly ? tokens.ink2 : tokens.outline}`,
-                borderRadius: "6px",
-                bgcolor: notReadyOnly ? tokens.surface2 : tokens.surface,
-                color: notReadyOnly ? "text.primary" : "text.secondary",
-                fontWeight: notReadyOnly ? 600 : 400,
-                fontSize: 12.5, p: "5px 10px", cursor: "pointer", whiteSpace: "nowrap",
-                "&:hover": { borderColor: tokens.ink2 },
-              }}
-            >
-              Not ready yet
-              <Box component="span" sx={{ fontSize: 11, color: "text.disabled", fontWeight: 600 }}>{notReadyCount}</Box>
-            </Box>
-          )}
+          {/* Tag filters: staff only, and only for tags some lead has. */}
+          {isOperator && tagCounts.map(([tag, n]) => {
+            const on = tagFilter === tag;
+            return (
+              <Box
+                key={tag}
+                component="button"
+                onClick={() => setTagFilter(on ? null : tag)}
+                aria-pressed={on}
+                sx={{
+                  display: "flex", alignItems: "center", gap: 0.5,
+                  border: `1px solid ${on ? tokens.primary : tokens.divider}`,
+                  borderRadius: "6px",
+                  bgcolor: on ? tokens.primaryBg : tokens.surface,
+                  color: on ? tokens.primaryDark : "text.secondary",
+                  fontWeight: on ? 600 : 400,
+                  fontSize: 12.5, p: "5px 10px", cursor: "pointer", whiteSpace: "nowrap",
+                  "&:hover": { borderColor: tokens.primary, color: tokens.primaryDark },
+                }}
+              >
+                <LocalOfferIcon sx={{ fontSize: 13 }} />
+                {tag}
+                <Box component="span" sx={{ fontSize: 11, color: on ? tokens.primary : "text.disabled", fontWeight: 600 }}>{n}</Box>
+              </Box>
+            );
+          })}
         </Box>
       </Box>
 
@@ -626,10 +659,14 @@ export default function LeadsPage() {
 
       {!showGlobalSearch && (
       <LeadsTable
-        leads={filtered}
-        stages={stagesForPipeline}
+        leads={tableLeads}
+        mobileLeads={filtered}
+        stages={tableStages}
+        allStages={stagesForPipeline}
         kind={activePipeline.kind}
         filter={filter}
+        sort={leadSort}
+        onSort={onLeadSort}
         selectable={selectMode}
         selected={selected}
         onToggleSelect={toggleSelect}
@@ -970,9 +1007,13 @@ function AddPipelineDialog({ open, onClose, onCreated }: { open: boolean; onClos
 
 function LeadsTable({
   leads,
+  mobileLeads,
   stages,
+  allStages,
   kind,
   filter,
+  sort,
+  onSort,
   selectable,
   selected,
   onToggleSelect,
@@ -981,11 +1022,19 @@ function LeadsTable({
   onCall,
   onStagePick,
 }: {
+  /** In the table's sort order. */
   leads: LeadRow[];
+  /** The phone list keeps the usual order (it has no headings to sort by). */
+  mobileLeads: LeadRow[];
+  /** Stage groups in display order (reversed when sorting Stage Z–A). */
   stages: Stage[];
+  /** The pipeline's stages in their normal order, for the stage menu. */
+  allStages: Stage[];
   /** Only affects wording — a "general" pipeline shows neutral stage names. */
   kind: PipelineKind;
   filter: "All" | Stage;
+  sort: Sort<LeadSortKey>;
+  onSort: (k: LeadSortKey, firstDir: Dir) => void;
   selectable: boolean;
   selected: Set<string>;
   onToggleSelect: (id: string) => void;
@@ -997,14 +1046,14 @@ function LeadsTable({
   const isMobile = useMediaQuery("(max-width:639px)");
   const canSeeFullPhone = useCanSeeFullPhone();
   if (isMobile) {
-    return <MobileLeadsList leads={leads} stages={stages} kind={kind} filter={filter} selectable={selectable} selected={selected} onToggleSelect={onToggleSelect} onRowSelect={onRowSelect} onOpen={onOpen} onCall={onCall} onStagePick={onStagePick} />;
+    return <MobileLeadsList leads={mobileLeads} stages={allStages} kind={kind} filter={filter} selectable={selectable} selected={selected} onToggleSelect={onToggleSelect} onRowSelect={onRowSelect} onOpen={onOpen} onCall={onCall} onStagePick={onStagePick} />;
   }
 
   if (leads.length === 0) {
     return <EmptyLeadsState filter={filter} />;
   }
 
-  const grouped = filter === "All";
+  const grouped = filter === "All" && sort.k === "stage";
 
   const rows = (group: LeadRow[]) =>
     group.map((l) => (
@@ -1027,16 +1076,17 @@ function LeadsTable({
           <Box component="span" onClick={selectable ? undefined : () => onOpen(l.id)} sx={{ fontWeight: 500, fontSize: 15, color: tokens.primaryDark, cursor: selectable ? "inherit" : "pointer" }}>
             {l.name}
             {l.stage === "New Lead" && <Box component="span" sx={{ fontSize: 10, fontWeight: 700, color: tokens.green, ml: 0.75 }}>NEW</Box>}
-            {isNotReady(l) && <NotReadyBadge />}
+            <LeadTags lead={l} sx={{ ml: 0.75 }} />
           </Box>
           <Typography sx={{ color: "text.secondary", fontSize: 13, display: "block" }}>
             {canSeeFullPhone ? l.phone : maskPhone(l.phone)}
-            <Box component="span" sx={{ color: "text.disabled", mx: 0.75 }}>·</Box>
-            {timeAgo(l.created_at)}
           </Typography>
         </TableCell>
+        <TableCell sx={{ fontSize: 13, color: "text.secondary", whiteSpace: "nowrap" }} title={new Date(l.created_at).toLocaleString("en-ZA")}>
+          {timeAgo(l.created_at)}
+        </TableCell>
         <TableCell>
-          <StageMenu current={l.stage} stages={stages} kind={kind} onPick={(s) => onStagePick(l.id, s)}>
+          <StageMenu current={l.stage} stages={allStages} kind={kind} onPick={(s) => onStagePick(l.id, s)}>
             {(open) => (
               <Box
                 component="button"
@@ -1090,7 +1140,7 @@ function LeadsTable({
         <TableHead>
           <TableRow>
             {selectable && (
-              <TableCell padding="checkbox">
+              <TableCell padding="checkbox" sx={headCellSx}>
                 <Checkbox
                   size="small"
                   indeterminate={selected.size > 0 && selected.size < leads.length}
@@ -1103,10 +1153,11 @@ function LeadsTable({
                 />
               </TableCell>
             )}
-            <TableCell>Name</TableCell>
-            <TableCell>Stage</TableCell>
-            <TableCell>Next</TableCell>
-            <TableCell />
+            <SortHead k="name" label="Name" sort={sort} onSort={onSort} />
+            <SortHead k="came" label="Came in" sort={sort} onSort={onSort} firstDir="desc" />
+            <SortHead k="stage" label="Stage" sort={sort} onSort={onSort} />
+            <SortHead k="next" label="Next" sort={sort} onSort={onSort} />
+            <PlainHead />
           </TableRow>
         </TableHead>
         <TableBody>
@@ -1116,7 +1167,7 @@ function LeadsTable({
                 if (!g.length) return [];
                 return [
                   <TableRow key={"hd-" + st}>
-                    <TableCell colSpan={selectable ? 5 : 4} sx={{ bgcolor: tokens.surface2, fontSize: 12, fontWeight: 500, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.04em", height: 34 }}>
+                    <TableCell colSpan={selectable ? 6 : 5} sx={{ bgcolor: tokens.surface2, fontSize: 12, fontWeight: 500, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.04em", height: 34 }}>
                       {stageLabel(st, kind)} ({g.length})
                     </TableCell>
                   </TableRow>,
@@ -1187,7 +1238,7 @@ function MobileLeadsList({
       <Box onClick={selectable ? undefined : () => onOpen(l.id)} sx={{ fontWeight: 500, fontSize: 15, color: tokens.primaryDark, cursor: selectable ? "inherit" : "pointer" }}>
         {l.name}
         {l.stage === "New Lead" && <Box component="span" sx={{ fontSize: 10, fontWeight: 700, color: tokens.green, ml: 0.75 }}>NEW</Box>}
-            {isNotReady(l) && <NotReadyBadge />}
+            <LeadTags lead={l} sx={{ ml: 0.75 }} />
       </Box>
       <Typography sx={{ color: "text.secondary", fontSize: 13 }}>
         {canSeeFullPhone ? l.phone : maskPhone(l.phone)}
