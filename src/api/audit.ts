@@ -22,7 +22,7 @@ export interface AuditUser {
   company: string;
   area: string;
   plan: string;
-  status: "Active" | "Automations paused";
+  status: "Active" | "Automations paused" | "Deactivated";
   renewalDate: string | null;
   lastSeen: string | null;
   lastSignIn: string | null;
@@ -168,6 +168,8 @@ const AUDIT_ACTION: Record<string, string> = {
   automations_stopped: "Emergency stop: all automations off",
   account_switched: "Switched account",
   password_reset: "Reset a password",
+  account_deactivated: "Deactivated an account",
+  account_reactivated: "Reactivated an account",
 };
 
 interface AuditRow {
@@ -227,7 +229,7 @@ const EVENT_CAP = 5000;
 
 export async function getAuditData(sinceIso: string): Promise<AuditData> {
   const [profilesRes, activityRes, leadRows, pageRows, deviceRows, eventRows, auditInRange, auditLatest] = await Promise.all([
-    supabase.from("agent_profiles").select("agent_id, display_name, whatsapp_number, email, company, area, tier, is_operator, automations_paused, renewal_date"),
+    supabase.from("agent_profiles").select("agent_id, display_name, whatsapp_number, email, company, area, tier, is_operator, automations_paused, renewal_date, deactivated_at"),
     supabase.rpc("operator_last_activity"),
     fetchAll<{ agent_id: string }>((a, b) => supabase.from("leads").select("agent_id").eq("archived", false).range(a, b)),
     fetchAll<{ agent_id: string }>((a, b) => supabase.from("lead_pages").select("agent_id").range(a, b)),
@@ -269,7 +271,7 @@ export async function getAuditData(sinceIso: string): Promise<AuditData> {
       company: p.company ?? "",
       area: p.area ?? "",
       plan: p.tier === "paid" ? "Paid" : "Free",
-      status: p.automations_paused ? "Automations paused" : "Active",
+      status: p.deactivated_at ? "Deactivated" : p.automations_paused ? "Automations paused" : "Active",
       renewalDate: p.renewal_date,
       lastSeen: a?.last_seen ?? null,
       lastSignIn: a?.last_in_app ?? null,

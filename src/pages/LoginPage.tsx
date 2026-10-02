@@ -31,7 +31,12 @@ export default function LoginPage() {
     setBusy(true);
     const { error } = await signIn(normalizePhone(phone.trim()), password);
     setBusy(false);
-    if (error) setHint("That phone number or password isn't right. Try again.");
+    if (error) {
+      // A deactivated account is banned in Supabase Auth (account-status function).
+      setHint(/banned/i.test(error)
+        ? "This account is paused. Contact EstateKit on WhatsApp to turn it back on."
+        : "That phone number or password isn't right. Try again.");
+    }
   }
 
   return (

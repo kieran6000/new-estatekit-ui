@@ -214,3 +214,11 @@ export async function upsertProfile(
     .upsert(row, { onConflict: "agent_id" });
   if (error) throw new Error(error.message);
 }
+
+/** The signed-in user's own account status (not the account they're managing).
+ *  A deactivated client sees the "account paused" screen instead of the app. */
+export async function getMyAccountStatus(): Promise<{ deactivated: boolean; isOperator: boolean }> {
+  const uid = await getCurrentUserId();
+  const { data } = await supabase.from("agent_profiles").select("deactivated_at, is_operator").eq("agent_id", uid).maybeSingle();
+  return { deactivated: !!data?.deactivated_at, isOperator: !!data?.is_operator };
+}

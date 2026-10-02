@@ -3,7 +3,8 @@ import { Box, CircularProgress } from "@mui/material";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "./hooks/useAuth";
 import { useIsOperator } from "./hooks/useAutomations";
-import { amIOnboarded } from "./api/agentProfile";
+import { amIOnboarded, getMyAccountStatus } from "./api/agentProfile";
+import AccountPausedPage from "./pages/AccountPausedPage";
 import AppShell from "./components/AppShell";
 import LoginPage from "./pages/LoginPage";
 import WelcomePage from "./pages/WelcomePage";
@@ -63,6 +64,16 @@ function OnboardingGate({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   const { user, loading } = useAuth();
+  // A deactivated client still signed in gets the "account paused" screen.
+  // (New sign-ins are already blocked; this covers open sessions.)
+  const { data: myStatus } = useQuery({
+    queryKey: ["myAccountStatus", user?.id],
+    queryFn: getMyAccountStatus,
+    enabled: !!user,
+    staleTime: 60_000,
+    refetchOnWindowFocus: true,
+  });
+  const paused = !!user && !!myStatus?.deactivated && !myStatus.isOperator;
 
   if (loading) return <Splash />;
 
@@ -81,6 +92,8 @@ export default function App() {
 
       {!user ? (
         <Route path="*" element={<LoginPage />} />
+      ) : paused ? (
+        <Route path="*" element={<AccountPausedPage />} />
       ) : (
         <>
           <Route path="/login" element={<Navigate to="/leads" replace />} />

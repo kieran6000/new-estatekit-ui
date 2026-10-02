@@ -11,6 +11,7 @@ import ArchiveOutlinedIcon from "@mui/icons-material/ArchiveOutlined";
 import { tokens } from "../theme";
 import { LeadTags } from "../components/LeadTag";
 import { leadTags } from "../lib/leadTags";
+import { useDatasetByPage } from "../hooks/useLeadPages";
 import { getLeadSourceAd, moveLeadToPipeline, setLeadArchived, setCommissionReceived } from "../api/leads";
 import { useLead, useUpdateLeadNote, useUpdateLeadStage } from "../hooks/useLeads";
 import { usePipelines } from "../hooks/usePipelines";
@@ -35,6 +36,7 @@ export default function LeadDetailPage() {
   const lead = useLead(id);
   const { data: pipelines = [] } = usePipelines();
   const { data: isOperator } = useIsOperator();
+  const datasetByPage = useDatasetByPage(isOperator === true);
   const canSeeFullPhone = useCanSeeFullPhone();
   const updateNote = useUpdateLeadNote();
   const updateStage = useUpdateLeadStage();
@@ -179,7 +181,7 @@ export default function LeadDetailPage() {
           <Row k="Stage" v={stageLabel(lead.stage, pipelineKind)} />
           <Row k="Received" v={timeAgo(lead.created_at)} />
           <Row k="Next" v={nextStepLabel(lead)} />
-          {isOperator && leadTags(lead).length > 0 && (
+          {isOperator && leadTags(lead, datasetByPage).length > 0 && (
             <Box sx={{ display: "flex", p: "10px 16px", borderTop: `1px solid ${tokens.divider2}`, gap: 1.5, alignItems: "center" }}>
               <Typography sx={{ color: "text.secondary", fontSize: 13, flex: "0 0 46%" }}>Tags</Typography>
               <Box sx={{ flex: 1, display: "flex", gap: 0.5, flexWrap: "wrap" }}><LeadTags lead={lead} /></Box>

@@ -35,6 +35,7 @@ import VisibilityIcon from "@mui/icons-material/Visibility";
 import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import { tokens } from "../theme";
+import { AccountStatusSection, DeactivatedBanner } from "../components/AccountStatus";
 import TeamSection from "../components/TeamSection";
 import {
   adsManagerUrl,
@@ -146,6 +147,7 @@ export default function ClientDetailPage() {
       {data && (
         <>
           <Header data={data} />
+          <DeactivatedBanner profile={data.profile} />
           <Box sx={{ bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
             <Box sx={{ maxWidth: 1200, mx: "auto", px: { xs: 0.5, md: 2 } }}>
               <Tabs value={tab} onChange={(_e, v) => pick(v)} variant="scrollable" allowScrollButtonsMobile>
@@ -179,6 +181,7 @@ export default function ClientDetailPage() {
                   <FacebookSection data={data} />
                   <ContractSection data={data} />
                   <BillingSection data={data} />
+                  <AccountStatusSection profile={data.profile} />
                 </Box>
               </Cols>
             )}
@@ -290,7 +293,7 @@ function Header({ data }: { data: Data }) {
                 variant="outlined"
               />
               <Chip size="small" variant="outlined" label={p.lead_confirmation_email ? "Email to leads: on" : "Email to leads: off"} />
-              {p.automations_paused && <Chip size="small" color="warning" variant="outlined" label="Automations paused" />}
+              {p.deactivated_at ? <Chip size="small" color="warning" label="Deactivated" /> : p.automations_paused && <Chip size="small" color="warning" variant="outlined" label="Automations paused" />}
             </Box>
           </Box>
         </Box>

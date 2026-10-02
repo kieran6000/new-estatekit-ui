@@ -85,12 +85,13 @@ export interface ReportAgent {
   avatar_url: string | null;
 }
 
-/** Every client account (operators left out: they don't get reports). */
+/** Every active client account (no operators, no deactivated accounts). */
 export async function listReportAgents(): Promise<ReportAgent[]> {
   const { data, error } = await supabase
     .from("agent_profiles")
-    .select("agent_id, display_name, whatsapp_number, avatar_url, is_operator")
+    .select("agent_id, display_name, whatsapp_number, avatar_url, is_operator, deactivated_at")
     .order("display_name", { ascending: true });
   if (error) throw new Error(error.message);
-  return (data ?? []).filter((p) => !p.is_operator).map(({ is_operator: _op, ...p }) => p);
+  // Deactivated accounts don't get reports.
+  return (data ?? []).filter((p) => !p.is_operator && !p.deactivated_at).map(({ is_operator: _op, deactivated_at: _d, ...p }) => p);
 }

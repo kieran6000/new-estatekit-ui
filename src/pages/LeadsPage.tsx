@@ -59,6 +59,7 @@ function leadSortValue(l: LeadRow, k: LeadSortKey): string | number {
 }
 import { LeadTags } from "../components/LeadTag";
 import { leadTags } from "../lib/leadTags";
+import { useDatasetByPage } from "../hooks/useLeadPages";
 import LocalOfferIcon from "@mui/icons-material/LocalOffer";
 import { DEAD_STAGES, PIPELINE_KIND_LABEL, PIPELINE_STAGES, type LeadRow, type OutcomeStep, type Pipeline, type PipelineKind, type Stage } from "../types";
 import { stageLabel } from "../types";
@@ -129,6 +130,7 @@ export default function LeadsPage() {
   const [filter, setFilter] = useState<"All" | Stage>("All");
   // On top of the stage filter: only leads with this tag (operators only).
   const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const datasetByPage = useDatasetByPage(isOperator === true);
   const [outcomeLeadId, setOutcomeLeadId] = useState<string | null>(null);
   const [focusOpen, setFocusOpen] = useState(false);
   const [stageSheet, setStageSheet] = useState<{ leadId: string; step: OutcomeStep; stage: Stage } | null>(null);
@@ -222,7 +224,7 @@ export default function LeadsPage() {
 
   const tagCounts = useMemo(() => {
     const m = new Map<string, number>();
-    for (const l of pipelineLeads) for (const t of leadTags(l)) m.set(t, (m.get(t) ?? 0) + 1);
+    for (const l of pipelineLeads) for (const t of leadTags(l, datasetByPage)) m.set(t, (m.get(t) ?? 0) + 1);
     return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   }, [pipelineLeads]);
   // A tag's chip disappears when no lead has it; don't leave its filter on.
@@ -236,7 +238,7 @@ export default function LeadsPage() {
     const query = q.toLowerCase().trim();
     return sortLeadsForList(pipelineLeads).filter((l) => {
       if (filter !== "All" && l.stage !== filter) return false;
-      if (tagFilter && !leadTags(l).includes(tagFilter)) return false;
+      if (tagFilter && !leadTags(l, datasetByPage).includes(tagFilter)) return false;
       if (!query) return true;
       return l.name.toLowerCase().includes(query) || l.phone.replace(/\s/g, "").includes(query.replace(/\s/g, ""));
     });

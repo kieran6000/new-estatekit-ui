@@ -53,6 +53,10 @@ export interface ClientProfile {
   tier: string;
   renewal_date: string | null;
   contract_pdf_url: string | null;
+  /** Set while the account is deactivated: sign-in blocked, automations off. */
+  deactivated_at: string | null;
+  deactivated_reason: string | null;
+  deactivated_by_name: string | null;
 }
 
 export interface ClientCardRow extends ClientProfile {
@@ -62,7 +66,7 @@ export interface ClientCardRow extends ClientProfile {
 }
 
 const PROFILE_COLS =
-  "agent_id, display_name, whatsapp_number, email, area, company, avatar_url, sidebar_logo_url, sidebar_color, fb_page_id, fb_ad_account_id, is_operator, onboarded, automations_paused, lead_confirmation_email, tier, renewal_date, contract_pdf_url";
+  "agent_id, display_name, whatsapp_number, email, area, company, avatar_url, sidebar_logo_url, sidebar_color, fb_page_id, fb_ad_account_id, is_operator, onboarded, automations_paused, lead_confirmation_email, tier, renewal_date, contract_pdf_url, deactivated_at, deactivated_reason, deactivated_by_name";
 
 /** Everything the grid needs, in two small reads. */
 export async function listClients(): Promise<ClientCardRow[]> {
@@ -231,4 +235,18 @@ export function clientPicture(p: Pick<ClientProfile, "avatar_url" | "fb_page_id"
   if (p.avatar_url) return p.avatar_url;
   if (p.fb_page_id) return `https://graph.facebook.com/${p.fb_page_id}/picture?type=square&width=160&height=160`;
   return p.sidebar_logo_url || undefined;
+}
+
+export const DEACTIVATE_REASONS = ["Not paid", "Cancelled", "On hold", "Other"] as const;
+
+/** Deactivate (block sign-in, stop automations) or reactivate a client.
+ *  Done by the account-status edge function; see its header. */
+export async function setAccountStatus(agentId: string, action: "deactivate" | "reactivate", reason?: string): Promise<void> {
+  const { error } = await supabase.functions.invoke("account-status", { body: { action, agentId, reason } });
+  if (error) {
+    const ctx = (error as { context?: Response }).context;
+    let msg = error.message;
+    try { const b = await ctx?.json(); if (b?.error) msg = b.error; } catch { /* not JSON */ }
+    throw new Error(msg);
+  }
 }
