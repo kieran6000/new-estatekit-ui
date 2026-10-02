@@ -93,6 +93,9 @@ export interface LeadRow {
    *  (utm_*, fbclid, Meta's {{ad.id}} macros). Empty for leads with no
    *  captured source — see lib/adAttribution.ts. */
   attribution?: Record<string, string> | null;
+  /** From a lead page: "weak" when a form answer matched one of the page's
+   *  low-quality answers. Shown as "Not ready yet"; not reported to the pixel. */
+  quality?: "good" | "weak" | null;
 }
 
 export interface OverviewDailyRow {

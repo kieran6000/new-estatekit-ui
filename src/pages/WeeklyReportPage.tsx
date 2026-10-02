@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { listAgentProfiles } from "../api/_client";
-import { getWeeklyReport, weekLabel } from "../api/weeklyReport";
+import { getWeeklyReport, weekLabel, type WeeklyReport } from "../api/weeklyReport";
 import estateKitLogo from "../assets/blue logo full.png";
 import "./report.css";
 
@@ -51,11 +51,12 @@ function speedPos(mins: number): number {
 
 export default function WeeklyReportPage() {
   const { agentId = "" } = useParams();
-  const [weeksBack, setWeeksBack] = useState(0);
+  const [params] = useSearchParams();
+  // ?w=1 opens a past week (the Weekly reports page's preview links use it).
+  const [weeksBack, setWeeksBack] = useState(() => Math.min(7, Math.max(0, Number(params.get("w")) || 0)));
   const { data: profiles = [] } = useQuery({ queryKey: ["agentProfiles"], queryFn: listAgentProfiles });
   const p = profiles.find((x) => x.agent_id === agentId);
   const name = p?.display_name || "";
-  const initials = name.split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase();
   const period = weekLabel(weeksBack);
   const { data: d, isLoading, isError } = useQuery({
     queryKey: ["weeklyReport", agentId, weeksBack],
@@ -76,9 +77,6 @@ export default function WeeklyReportPage() {
       </div>
     );
   }
-  const t = d.thisWeek, l = d.lastWeek;
-  const v = d.typicalMins === null ? null : speedVerdict(d.typicalMins);
-
   return (
     <div className="wr-viewer">
       <div className="wr-bar">
@@ -88,10 +86,22 @@ export default function WeeklyReportPage() {
         </select>
         <button type="button" onClick={() => window.print()}>Save as PDF</button>
       </div>
+      <ReportArticle name={name} avatarUrl={p?.avatar_url ?? null} period={period} d={d} />
+    </div>
+  );
+}
 
+/** The one-page report itself. Used by the CSM's preview above and by the
+ *  agent's link (/r/<token>, SharedReportPage), so both always match. */
+export function ReportArticle({ name, avatarUrl, period, d }: { name: string; avatarUrl: string | null; period: string; d: WeeklyReport }) {
+  const initials = name.split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+  const t = d.thisWeek, l = d.lastWeek;
+  const v = d.typicalMins === null ? null : speedVerdict(d.typicalMins);
+
+  return (
       <article className="wr-page">
         <header className="wr-head">
-          {p?.avatar_url ? <img className="wr-avatar" src={p.avatar_url} alt="" /> : <div className="wr-avatar">{initials}</div>}
+          {avatarUrl ? <img className="wr-avatar" src={avatarUrl} alt="" /> : <div className="wr-avatar">{initials}</div>}
           <div className="wr-head-text">
             <h1>Weekly report: {name}</h1>
             <p>{period} · See every lead at leads.estatekit.co</p>
@@ -181,7 +191,7 @@ export default function WeeklyReportPage() {
                 <thead>
                   <tr>
                     <th scope="col">Week starting</th>
-                    {d.weeks.map((w, i) => <th key={w.label} scope="col" className={i === d.weeks.length - 1 ? "now" : ""}>{w.label}{i === d.weeks.length - 1 ? " (this report)" : ""}</th>)}
+                    {d.weeks.map((w, i) => <th key={w.label} scope="col" className={i === d.weeks.length - 1 ? "now" : ""}>{w.label}{i === d.weeks.length - 1 ? <span className="wr-hide-sm"> (this report)</span> : ""}</th>)}
                   </tr>
                 </thead>
                 <tbody>
@@ -213,6 +223,5 @@ export default function WeeklyReportPage() {
         </section>
 
       </article>
-    </div>
   );
 }

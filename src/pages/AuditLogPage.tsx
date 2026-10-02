@@ -52,6 +52,12 @@ import WebIcon from "@mui/icons-material/Web";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { tokens } from "../theme";
+import { PlainHead, SortHead, sortRows, useTableSort } from "../components/SortHead";
+
+const ACTIVITY_KEYS = ["when", "who", "account", "what", "device"] as const;
+type ActivityKey = (typeof ACTIVITY_KEYS)[number];
+const USER_KEYS = ["name", "contact", "company", "seen", "leads", "status"] as const;
+type UserKey = (typeof USER_KEYS)[number];
 import { timeAgo } from "../lib/timeAgo";
 import { getAuditData, type AuditCategory, type AuditEvent, type AuditUser } from "../api/audit";
 
@@ -248,7 +254,13 @@ function ActivityTab({ users, events, capped, selected, setSelected, range, setR
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [events, selected, categories, q, byId]);
 
-  const shown = rows.slice(0, 500);
+  const { sort, onSort } = useTableSort<ActivityKey>("estatekit_audit_activity_sort", { k: "when", dir: "desc" }, ACTIVITY_KEYS);
+  const shown = useMemo(() => {
+    const get = (e: AuditEvent): string | number | null =>
+      sort.k === "when" ? e.at : sort.k === "who" ? who(e) : sort.k === "account" ? (e.accountId ? byId.get(e.accountId)?.name ?? "" : "") : sort.k === "what" ? e.action : e.device;
+    return sortRows(rows, get, sort.dir).slice(0, 500);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, sort, byId]);
 
   function exportCsv() {
     download(
@@ -308,12 +320,12 @@ function ActivityTab({ users, events, capped, selected, setSelected, range, setR
         <Table size="small">
           <TableHead>
             <TableRow>
-              <TableCell>When</TableCell>
-              <TableCell>Who</TableCell>
-              {isDesktop && <TableCell>Account</TableCell>}
-              <TableCell>What</TableCell>
-              {isDesktop && <TableCell>Device</TableCell>}
-              <TableCell padding="checkbox" />
+              <SortHead k="when" label="When" sort={sort} onSort={onSort} firstDir="desc" />
+              <SortHead k="who" label="Who" sort={sort} onSort={onSort} />
+              {isDesktop && <SortHead k="account" label="Account" sort={sort} onSort={onSort} />}
+              <SortHead k="what" label="What" sort={sort} onSort={onSort} />
+              {isDesktop && <SortHead k="device" label="Device" sort={sort} onSort={onSort} />}
+              <PlainHead sx={{ width: 48 }} />
             </TableRow>
           </TableHead>
           <TableBody>
@@ -410,7 +422,12 @@ function UsersTab({ users, onShowActivity }: { users: AuditUser[]; onShowActivit
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<string | null>(null);
   const isDesktop = useMediaQuery("(min-width:900px)");
-  const rows = users.filter((u) => !q.trim() || [u.name, u.email, u.phone, u.company, u.area].join(" ").toLowerCase().includes(q.trim().toLowerCase()));
+  const { sort, onSort } = useTableSort<UserKey>("estatekit_audit_users_sort", { k: "seen", dir: "desc" }, USER_KEYS);
+  const rows = sortRows(
+    users.filter((u) => !q.trim() || [u.name, u.email, u.phone, u.company, u.area].join(" ").toLowerCase().includes(q.trim().toLowerCase())),
+    (u) => (sort.k === "name" ? u.name : sort.k === "contact" ? u.phone || u.email : sort.k === "company" ? u.company : sort.k === "seen" ? u.lastSeen : sort.k === "leads" ? u.leads : u.status),
+    sort.dir,
+  );
   const when = (iso: string | null) => (iso ? fullDate(iso) : "Never");
 
   function exportCsv() {
@@ -434,13 +451,13 @@ function UsersTab({ users, onShowActivity }: { users: AuditUser[]; onShowActivit
         <Table size="small">
           <TableHead>
             <TableRow>
-              <TableCell>User</TableCell>
-              {isDesktop && <TableCell>Contact</TableCell>}
-              {isDesktop && <TableCell>Company</TableCell>}
-              <TableCell>Last seen</TableCell>
-              {isDesktop && <TableCell align="right">Leads</TableCell>}
-              <TableCell>Status</TableCell>
-              <TableCell padding="checkbox" />
+              <SortHead k="name" label="User" sort={sort} onSort={onSort} />
+              {isDesktop && <SortHead k="contact" label="Contact" sort={sort} onSort={onSort} />}
+              {isDesktop && <SortHead k="company" label="Company" sort={sort} onSort={onSort} />}
+              <SortHead k="seen" label="Last seen" sort={sort} onSort={onSort} firstDir="desc" />
+              {isDesktop && <SortHead k="leads" label="Leads" sort={sort} onSort={onSort} num />}
+              <SortHead k="status" label="Status" sort={sort} onSort={onSort} />
+              <PlainHead sx={{ width: 48 }} />
             </TableRow>
           </TableHead>
           <TableBody>

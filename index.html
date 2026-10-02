@@ -11,7 +11,7 @@
     <script>
     (function(){try{var d=document.documentElement,p=localStorage.getItem('ek-theme')||'light';
     var s=p==='system'?(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):p;
-    if(/^\/(p|thank-you|privacy|start|sold|plan|report)(\/|$)/.test(location.pathname))s='light';
+    if(/^\/(p|r|thank-you|privacy|start|sold|plan|report)(\/|$)/.test(location.pathname))s='light';
     if(s!=='dark')s='light';d.setAttribute('data-theme',s);
     if(s==='dark')document.querySelector('meta[name="theme-color"]').setAttribute('content','#181c21');}catch(e){document.documentElement.setAttribute('data-theme','light');}})();
     </script>

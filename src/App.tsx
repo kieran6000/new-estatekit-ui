@@ -26,6 +26,8 @@ import SignupPage from "./pages/SignupPage";
 import SoldPage from "./pages/SoldPage";
 import PlanPage from "./pages/PlanPage";
 import WeeklyReportPage from "./pages/WeeklyReportPage";
+import SharedReportPage from "./pages/SharedReportPage";
+import WeeklyReportsAdminPage from "./pages/WeeklyReportsAdminPage";
 import AuditLogPage from "./pages/AuditLogPage";
 
 function Splash() {
@@ -75,6 +77,7 @@ export default function App() {
       <Route path="/sold/:agentId" element={<SoldPage />} />
       <Route path="/plan/sample/:agentId" element={<PlanPage />} />
       <Route path="/plan/:token" element={<PlanPage />} />
+      <Route path="/r/:token" element={<SharedReportPage />} />
 
       {!user ? (
         <Route path="*" element={<LoginPage />} />
@@ -97,6 +100,7 @@ export default function App() {
               element={<AdminAutomationsPage />}
             />
             <Route path="/admin/clients" element={<OperatorOnly><ClientsPage /></OperatorOnly>} />
+            <Route path="/admin/reports" element={<OperatorOnly><WeeklyReportsAdminPage /></OperatorOnly>} />
             <Route path="/admin/clients/:agentId" element={<OperatorOnly><ClientDetailPage /></OperatorOnly>} />
             <Route path="/account" element={<AccountPage />} />
             <Route path="/account/audit" element={<OperatorOnly><AuditLogPage /></OperatorOnly>} />

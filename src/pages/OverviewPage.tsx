@@ -24,6 +24,7 @@ import {
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { tokens } from "../theme";
+import { SortHead, sortRows, useTableSort } from "../components/SortHead";
 import { computeDerived, rangeFor, useOverview, type OverviewComputedRow, type OverviewPeriod } from "../hooks/useOverview";
 import { getMyProfile, getFbAdAccount } from "../api/agentProfile";
 import ActiveAds from "../components/ActiveAds";
@@ -104,7 +105,6 @@ export default function OverviewPage() {
   const showNumbers = !isNarrow || tab === "numbers";
   const showAds = !isNarrow || tab === "ads";
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
-  const [sort, setSort] = useState<{ k: ColKey; dir: 1 | -1 }>({ k: "date", dir: -1 });
   const todayStr = new Date().toISOString().slice(0, 10);
   const [fromDate, setFromDate] = useState(() => {
     try { return localStorage.getItem('estatekit_overview_from') || new Date(Date.now() - 29 * 864e5).toISOString().slice(0, 10); }
@@ -132,6 +132,7 @@ export default function OverviewPage() {
   const pipelineIdFilter = pipelineFilter === "all" ? null : pipelineFilter;
   const { data = [], isLoading } = useOverview(period, { from: fromDate, to: toDate }, pipelineIdFilter);
   const cols = mode === "simple" ? SIMPLE_COLS : ADVANCED_COLS;
+  const { sort, onSort } = useTableSort<ColKey>("estatekit_overview_sort", { k: "date", dir: "desc" }, ADVANCED_COLS.map((c) => c.k).concat(SIMPLE_COLS.map((c) => c.k)));
   // Ad KPIs report over exactly the window the table is showing.
   const adRange = rangeFor(period, { from: fromDate, to: toDate });
   // Which client's ads to preview — the currently active/managed agent.
@@ -174,17 +175,7 @@ export default function OverviewPage() {
     return { date: "TOTAL", ...computeDerived(raw) };
   }, [data]);
 
-  const sorted = useMemo(() => {
-    return [...data].sort((a, b) => {
-      const x = a[sort.k];
-      const y = b[sort.k];
-      return (x < y ? -1 : x > y ? 1 : 0) * sort.dir;
-    });
-  }, [data, sort]);
-
-  function toggleSort(k: ColKey) {
-    setSort((s) => (s.k === k ? { k, dir: (s.dir * -1) as 1 | -1 } : { k, dir: 1 }));
-  }
+  const sorted = useMemo(() => sortRows(data, (r) => r[sort.k] as string | number, sort.dir), [data, sort]);
 
   const cell = (c: Col, row: Record<string, number | string>) => {
     const v = row[c.k];
@@ -280,7 +271,6 @@ export default function OverviewPage() {
           </>
         )}
 
-        <Typography sx={{ ml: "auto", color: "text.disabled", fontSize: 12 }}>Tap a heading to sort</Typography>
       </Box>
 
       {/* On mobile the tabs stop the table being buried under ad previews. On a
@@ -328,18 +318,7 @@ export default function OverviewPage() {
           <TableHead>
             <TableRow>
               {cols.map((c) => (
-                <TableCell
-                  key={c.k}
-                  align={c.num ? "right" : "left"}
-                  onClick={() => toggleSort(c.k)}
-                  sx={{
-                    cursor: "pointer", fontSize: 12, fontWeight: 500,
-                    color: "text.secondary", whiteSpace: "nowrap",
-                    height: HEAD_H, bgcolor: "background.paper",
-                  }}
-                >
-                  {c.label} {sort.k === c.k ? (sort.dir > 0 ? "▲" : "▼") : ""}
-                </TableCell>
+                <SortHead key={c.k} k={c.k} label={c.label} sort={sort} onSort={onSort} num={c.num} firstDir="desc" sx={{ height: HEAD_H, py: 0 }} />
               ))}
             </TableRow>
           </TableHead>
