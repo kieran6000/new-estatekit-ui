@@ -508,7 +508,7 @@ function MiniStat({ label, value }: { label: string; value: ReactNode }) {
 
 function Kpi({ label, value, warn }: { label: string; value: ReactNode; warn?: boolean }) {
   return (
-    <Box sx={{ bgcolor: "background.paper", border: `1px solid ${warn ? "#ed6c02" : tokens.divider}`, borderRadius: "8px", px: 2, py: 1.5, minWidth: 0, height: "100%" }}>
+    <Box sx={{ bgcolor: "background.paper", border: `1px solid ${warn ? tokens.amberBorder : tokens.divider}`, borderRadius: "8px", px: 2, py: 1.5, minWidth: 0, height: "100%" }}>
       <Typography component="div" sx={{ fontSize: 22, fontWeight: 600, lineHeight: 1.2, fontVariantNumeric: "tabular-nums", color: warn ? "warning.dark" : undefined }}>{value}</Typography>
       <Typography sx={{ fontSize: 12.5, color: tokens.ink2, mt: 0.25, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</Typography>
     </Box>

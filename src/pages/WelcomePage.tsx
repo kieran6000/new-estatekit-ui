@@ -7,7 +7,7 @@ import { useAuth } from "../hooks/useAuth";
 import { getMyProfile, upsertProfile } from "../api/agentProfile";
 import { updatePassword } from "../api/auth";
 import { useSnack } from "../hooks/useSnack";
-import estateKitLogo from "../assets/blue logo full.png";
+import EstateKitLogo from "../components/EstateKitLogo";
 
 export default function WelcomePage() {
   const navigate = useNavigate();
@@ -75,7 +75,7 @@ export default function WelcomePage() {
         <Box sx={{ p: "24px" }}>
           {stepIdx === 0 && (
             <Box sx={{ textAlign: "center" }}>
-              <Box component="img" src={estateKitLogo} alt="EstateKit" sx={{ height: 30, mb: 2.5 }} />
+              <EstateKitLogo sx={{ height: 30, mb: 2.5 }} />
               <Typography variant="h6" sx={{ fontWeight: 600, mb: 1 }}>Welcome, {firstName} 👋</Typography>
               <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6, mb: 3 }}>
                 This is where every Facebook lead lands, ready for you to call. Let's take 30 seconds to set up your account.

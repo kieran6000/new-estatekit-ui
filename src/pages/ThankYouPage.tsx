@@ -11,7 +11,7 @@ import { listSoldListingsForAgent } from "../api/soldListings";
 import { HeaderBrand } from "../components/LeadCaptureForm";
 import { SoldList } from "../components/SoldListings";
 import PoweredByEstateKit from "../components/PoweredByEstateKit";
-import { initPixel, trackPixel } from "../lib/fbPixel";
+import { initPixel } from "../lib/fbPixel";
 import { fillMessage } from "../lib/format";
 import type { LeadPage } from "../types";
 
@@ -26,13 +26,12 @@ export default function ThankYouPage() {
     enabled: !!slug,
   });
 
-  // Fire the agent's pixel on the thank-you page too (covers direct hits and
-  // gives Meta a clean Lead event on the confirmation view).
+  // Load the agent's pixel here (PageView only). The Lead event is fired once,
+  // on submit, by the lead page: it carries the event id the Conversions API
+  // shares, and it is skipped for weak leads. Firing Lead here as well counted
+  // every lead twice and told Meta weak leads converted.
   useEffect(() => {
-    if (page?.fbPixelId) {
-      initPixel(page.fbPixelId);
-      trackPixel("Lead");
-    }
+    if (page?.fbPixelId) initPixel(page.fbPixelId);
   }, [page?.fbPixelId]);
 
   if (!slug) return <GenericThankYou />;

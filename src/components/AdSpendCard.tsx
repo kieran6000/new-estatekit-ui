@@ -75,7 +75,7 @@ export default function AdSpendCard({
       </Box>
 
       <Box sx={{ display: "flex", alignItems: "center", gap: 1, ml: "auto" }}>
-        {isCard ? <CreditCardIcon sx={{ fontSize: 18, color: tokens.primary }} /> : <AccountBalanceWalletIcon sx={{ fontSize: 18, color: "#e65100" }} />}
+        {isCard ? <CreditCardIcon sx={{ fontSize: 18, color: tokens.primary }} /> : <AccountBalanceWalletIcon sx={{ fontSize: 18, color: tokens.orange }} />}
         <Box>
           <Typography sx={{ fontSize: 12.5, fontWeight: 600 }}>
             {isCard ? (adAccount?.fundingLabel || "Card") : "Prepaid / added funds"}

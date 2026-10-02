@@ -175,7 +175,7 @@ const MERGE_FIELDS = ["{{first_name}}", "{{name}}", "{{area}}", "{{address}}", "
 
 const SAMPLE_LEAD = { id: "sample", name: "Thandi Mokoena", phone: "082 555 0199", stage: "No Answer", next_label: "Retry today" };
 
-const LINE = "#b6bec7";
+const LINE = tokens.line;
 
 let seq = 0;
 const nid = () => `n${Date.now().toString(36)}${(seq++).toString(36)}`;
@@ -481,7 +481,7 @@ function sendsLabel(steps: Step[]): { icon: React.ReactNode; text: string }[] {
   mapSteps(steps, (s) => {
     if (s.type === "whatsapp") seen.set(`wa-${s.to}`, { icon: <WhatsAppIcon sx={{ fontSize: 16, color: STEP_COLOR.whatsapp }} />, text: s.to === "agent" ? "WhatsApp to agent" : "WhatsApp to lead" });
     if (s.type === "notify") seen.set("wa-agent", { icon: <WhatsAppIcon sx={{ fontSize: 16, color: STEP_COLOR.whatsapp }} />, text: "WhatsApp to agent" });
-    if (s.type === "email") seen.set(`em-${s.to}`, { icon: <EmailIcon sx={{ fontSize: 16, color: STEP_COLOR.email }} />, text: s.to === "lead" ? "Email to lead" : "Email to agent" });
+    if (s.type === "email") seen.set(`em-${s.to}`, { icon: <EmailIcon sx={{ fontSize: 16, color: tokens.primary }} />, text: s.to === "lead" ? "Email to lead" : "Email to agent" });
     return s;
   });
   return [...seen.values()];
@@ -555,7 +555,7 @@ function WorkflowList({ workflows, onOpen, onCreate }: { workflows: Workflow[]; 
                 <TableRow key={w.id} hover onClick={() => onOpen(w.id)} sx={{ cursor: "pointer", "&:last-child td": { borderBottom: 0 }, "& td": { py: 1.25 } }}>
                   <TableCell sx={{ fontWeight: 500, fontSize: 14 }}>
                     {w.name}
-                    {w.note && <Tooltip title={w.note}><WarningAmberIcon sx={{ fontSize: 16, color: "#e65100", ml: 0.75, verticalAlign: "-3px" }} /></Tooltip>}
+                    {w.note && <Tooltip title={w.note}><WarningAmberIcon sx={{ fontSize: 16, color: tokens.orange, ml: 0.75, verticalAlign: "-3px" }} /></Tooltip>}
                   </TableCell>
                   <TableCell sx={{ fontSize: 13, color: "text.secondary" }}>{triggerSummary(w.trigger)}</TableCell>
                   <TableCell><Sends steps={w.steps} /></TableCell>
@@ -705,7 +705,7 @@ function Editor({ initial, onBack }: { initial: Workflow; onBack: (w: Workflow) 
           <span>
             <Button variant="contained" size="small" disabled sx={{ position: "relative", overflow: "visible" }}>
               Save
-              {dirty && <Box component="span" sx={{ position: "absolute", top: -4, right: -4, width: 10, height: 10, borderRadius: "50%", bgcolor: "#e53935", border: "2px solid #fff" }} aria-label="Unsaved changes" />}
+              {dirty && <Box component="span" sx={{ position: "absolute", top: -4, right: -4, width: 10, height: 10, borderRadius: "50%", bgcolor: tokens.red, border: `2px solid ${tokens.surface}` }} aria-label="Unsaved changes" />}
             </Button>
           </span>
         </Tooltip>
@@ -788,13 +788,13 @@ function Canvas({ wf, sel, setSel, onAdd }: { wf: Workflow; sel: Selection; setS
         sx={{
           position: "absolute", inset: 0, overflow: "auto",
           // Dot grid, the usual "this is a canvas" cue.
-          backgroundImage: "radial-gradient(circle, #d3d8de 1px, transparent 1px)",
+          backgroundImage: `radial-gradient(circle, ${tokens.line} 1px, transparent 1px)`,
           backgroundSize: `${20 * zoom}px ${20 * zoom}px`,
         }}
       >
         {wf.note && (
-          <Box sx={{ position: "sticky", top: 0, left: 0, zIndex: 2, display: "flex", gap: 1, alignItems: "flex-start", bgcolor: tokens.amberTint, borderBottom: `1px solid #f0d58a`, px: 2, py: 1 }}>
-            <WarningAmberIcon sx={{ fontSize: 18, color: "#b26a00", mt: "2px" }} />
+          <Box sx={{ position: "sticky", top: 0, left: 0, zIndex: 2, display: "flex", gap: 1, alignItems: "flex-start", bgcolor: tokens.amberTint, borderBottom: `1px solid ${tokens.amberBorder}`, px: 2, py: 1 }}>
+            <WarningAmberIcon sx={{ fontSize: 18, color: tokens.amber, mt: "2px" }} />
             <Typography sx={{ fontSize: 13 }}>{wf.note}</Typography>
           </Box>
         )}
@@ -827,7 +827,7 @@ function Canvas({ wf, sel, setSel, onAdd }: { wf: Workflow; sel: Selection; setS
         </Box>
       </Box>
 
-      <Box sx={{ position: "absolute", left: 12, bottom: 12, display: "flex", alignItems: "center", bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "6px", boxShadow: "0 1px 3px rgba(0,0,0,.08)" }}>
+      <Box sx={{ position: "absolute", left: 12, bottom: 12, display: "flex", alignItems: "center", bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "6px", boxShadow: `0 1px 3px ${tokens.shadow}` }}>
         <IconButton size="small" onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.1).toFixed(1)))} aria-label="Zoom out"><ZoomOutIcon fontSize="small" /></IconButton>
         <Typography sx={{ fontSize: 12, width: 40, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>{Math.round(zoom * 100)}%</Typography>
         <IconButton size="small" onClick={() => setZoom((z) => Math.min(1.5, +(z + 0.1).toFixed(1)))} aria-label="Zoom in"><ZoomInIcon fontSize="small" /></IconButton>
@@ -865,11 +865,11 @@ function Node({ color, icon, title, text, selected, onClick, dashed }: { color: 
       sx={{
         width: 300, maxWidth: "calc(100vw - 48px)", display: "flex", gap: 1.25, alignItems: "center", textAlign: "left", font: "inherit", color: "inherit",
         bgcolor: "background.paper", borderRadius: "8px", p: 1.25, cursor: "pointer", flex: "none",
-        border: `1px ${dashed ? "dashed" : "solid"} ${selected ? "#1976d2" : tokens.divider}`,
-        boxShadow: selected ? "0 0 0 3px rgba(25,118,210,.25)" : "0 1px 2px rgba(0,0,0,.06)",
+        border: `1px ${dashed ? "dashed" : "solid"} ${selected ? tokens.primary : tokens.divider}`,
+        boxShadow: selected ? `0 0 0 3px color-mix(in srgb, ${tokens.primary} 30%, transparent)` : `0 1px 2px ${tokens.shadow}`,
         transition: "box-shadow .12s, border-color .12s",
-        "&:hover": { borderColor: selected ? "#1976d2" : "#9aa5b1" },
-        "&:focus-visible": { outline: "none", boxShadow: "0 0 0 3px rgba(25,118,210,.4)" },
+        "&:hover": { borderColor: selected ? tokens.primary : tokens.ink3 },
+        "&:focus-visible": { outline: "none", boxShadow: `0 0 0 3px color-mix(in srgb, ${tokens.primary} 50%, transparent)` },
       }}
     >
       <Box sx={{ width: 32, height: 32, flex: "none", borderRadius: "6px", bgcolor: color, color: "#fff", display: "grid", placeItems: "center", "& svg": { fontSize: 18 } }}>{icon}</Box>
@@ -891,7 +891,7 @@ function AddButton({ onPick }: { onPick: (t: Step["type"]) => void }) {
           size="small"
           onClick={(e) => setAnchor(e.currentTarget)}
           aria-label="Add a step"
-          sx={{ width: 26, height: 26, flex: "none", border: `1px solid ${LINE}`, bgcolor: "background.paper", "&:hover": { bgcolor: "primary.main", color: "#fff", borderColor: "primary.main" } }}
+          sx={{ width: 26, height: 26, flex: "none", border: `1px solid ${LINE}`, bgcolor: "background.paper", "&:hover": { bgcolor: "primary.main", color: "primary.contrastText", borderColor: "primary.main" } }}
         >
           <AddIcon sx={{ fontSize: 16 }} />
         </IconButton>
@@ -950,7 +950,7 @@ function Branch({ step, sel, setSel, onAdd, narrow }: { step: Extract<Step, { ty
     return (
       <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
         {lanes.map((side) => (
-          <Box key={side} sx={{ display: "flex", flexDirection: "column", alignItems: "center", borderLeft: `3px solid ${side === "yes" ? "#2e7d32" : "#9e9e9e"}`, pl: 1.5, ml: 1.5, mt: 1 }}>
+          <Box key={side} sx={{ display: "flex", flexDirection: "column", alignItems: "center", borderLeft: `3px solid ${side === "yes" ? tokens.green : tokens.outline}`, pl: 1.5, ml: 1.5, mt: 1 }}>
             <LaneLabel side={side} />
             <StepList steps={step[side]} path={`${step.id}:${side}`} sel={sel} setSel={setSel} onAdd={onAdd} narrow />
           </Box>
@@ -988,7 +988,7 @@ function Branch({ step, sel, setSel, onAdd, narrow }: { step: Extract<Step, { ty
 
 function LaneLabel({ side }: { side: "yes" | "no" }) {
   return (
-    <Box sx={{ px: 1.25, py: 0.25, borderRadius: "999px", fontSize: 12, fontWeight: 600, flex: "none", bgcolor: side === "yes" ? "#e8f5e9" : "#eceff1", color: side === "yes" ? "#1b5e20" : "#455a64", border: `1px solid ${side === "yes" ? "#a5d6a7" : "#cfd8dc"}` }}>
+    <Box sx={{ px: 1.25, py: 0.25, borderRadius: "999px", fontSize: 12, fontWeight: 600, flex: "none", bgcolor: side === "yes" ? tokens.greenTint : tokens.surface2, color: side === "yes" ? tokens.greenDark : tokens.ink2, border: `1px solid ${side === "yes" ? tokens.greenBorder : tokens.divider}` }}>
       {side === "yes" ? "Yes" : "No"}
     </Box>
   );
@@ -1371,14 +1371,14 @@ function StepEditor({ step, onChange }: { step: Step; onChange: (p: Partial<Step
 // ── Previews: what each node actually does, on a sample lead ─────────────
 
 const STAGE_COLOR: Record<string, string> = {
-  "New Lead": "#1976d2", "No Answer": "#e65100", Contacted: "#6a1b9a", Booked: "#2e7d32", "Viewing Booked": "#2e7d32",
-  "Offer Made": "#00838f", "Mandate Signed": "#1b5e20", Bought: "#1b5e20", Lost: "#757575", "Invalid Number": "#757575",
+  "New Lead": tokens.primary, "No Answer": tokens.orange, Contacted: tokens.purple, Booked: tokens.green, "Viewing Booked": tokens.green,
+  "Offer Made": tokens.teal, "Mandate Signed": tokens.greenDark, Bought: tokens.greenDark, Lost: tokens.ink3, "Invalid Number": tokens.ink3,
 };
 
 function StageChip({ stage, glow }: { stage: string; glow?: boolean }) {
-  const c = STAGE_COLOR[stage] ?? "#546e7a";
+  const c = STAGE_COLOR[stage] ?? tokens.ink2;
   return (
-    <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, fontSize: 12.5, fontWeight: 500, px: 1, py: 0.25, borderRadius: "999px", color: c, bgcolor: `${c}14`, border: `1px solid ${c}55`, boxShadow: glow ? `0 0 0 3px ${c}33` : "none", whiteSpace: "nowrap" }}>
+    <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, fontSize: 12.5, fontWeight: 500, px: 1, py: 0.25, borderRadius: "999px", color: c, bgcolor: `color-mix(in srgb, ${c} 9%, transparent)`, border: `1px solid color-mix(in srgb, ${c} 35%, transparent)`, boxShadow: glow ? `0 0 0 3px color-mix(in srgb, ${c} 22%, transparent)` : "none", whiteSpace: "nowrap" }}>
       <Box component="span" sx={{ width: 7, height: 7, borderRadius: "50%", bgcolor: c }} />{stage || "…"}
     </Box>
   );
@@ -1386,7 +1386,7 @@ function StageChip({ stage, glow }: { stage: string; glow?: boolean }) {
 
 /** A lead as it appears in the agent's leads list, so the change is obvious. */
 function LeadRowMock({ stage, next, nextDue, tags = [], newTag, highlight }: { stage: string; next?: string; nextDue?: string; tags?: string[]; newTag?: string; highlight?: "stage" | "next" | "tag" }) {
-  const hl = (on: boolean) => (on ? { bgcolor: "#fff8e1", outline: "2px solid #ffb300", outlineOffset: 2, borderRadius: "4px" } : {});
+  const hl = (on: boolean) => (on ? { bgcolor: tokens.amberTint, outline: "2px solid #ffb300", outlineOffset: 2, borderRadius: "4px" } : {});
   return (
     <Box sx={{ border: `1px solid ${tokens.divider}`, borderRadius: "4px", bgcolor: "background.paper", p: 1.25, display: "grid", gap: 0.75 }}>
       <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
@@ -1398,7 +1398,7 @@ function LeadRowMock({ stage, next, nextDue, tags = [], newTag, highlight }: { s
         <Box sx={hl(highlight === "stage")}><StageChip stage={stage} glow={highlight === "stage"} /></Box>
       </Box>
       {(next || nextDue) && (
-        <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, fontSize: 13, color: nextDue ? "#e65100" : "text.secondary", ...hl(highlight === "next"), px: highlight === "next" ? 0.5 : 0 }}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, fontSize: 13, color: nextDue ? tokens.orange : "text.secondary", ...hl(highlight === "next"), px: highlight === "next" ? 0.5 : 0 }}>
           {nextDue && <AlarmIcon sx={{ fontSize: 15 }} />}
           <span>Next: {next}</span>
           {nextDue && <Box component="span" sx={{ color: "text.secondary" }}>· {nextDue}</Box>}
@@ -1439,7 +1439,7 @@ function NodePreview({ sel, wf, step }: { sel: Selection; wf: Workflow; step: St
               : <>{triggerSummary(t)}</>;
     body = (
       <>
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap", fontSize: 13.5 }}><BoltIcon sx={{ fontSize: 18, color: "#1976d2" }} />{event}</Box>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap", fontSize: 13.5 }}><BoltIcon sx={{ fontSize: 18, color: tokens.primary }} />{event}</Box>
         <Arrow label="This workflow starts for that lead" />
         {t.kind !== "daily_at" && <LeadRowMock stage={t.kind === "stage_changed" ? t.stage ?? "New Lead" : t.kind === "no_answer_times" ? "No Answer" : "New Lead"} highlight={t.kind === "stage_changed" ? "stage" : undefined} />}
       </>
@@ -1449,7 +1449,7 @@ function NodePreview({ sel, wf, step }: { sel: Selection; wf: Workflow; step: St
       <Box sx={{ display: "grid", gap: 0.75 }}>
         {wf.filters.map((f, i) => (
           <Box key={i} sx={{ display: "flex", alignItems: "center", gap: 1, fontSize: 13.5 }}>
-            <Box sx={{ width: 20, height: 20, borderRadius: "50%", bgcolor: "#e8f5e9", color: "#2e7d32", display: "grid", placeItems: "center", fontSize: 13, fontWeight: 700 }}>✓</Box>
+            <Box sx={{ width: 20, height: 20, borderRadius: "50%", bgcolor: tokens.greenTint, color: tokens.green, display: "grid", placeItems: "center", fontSize: 13, fontWeight: 700 }}>✓</Box>
             {filterSummary(f)}
           </Box>
         ))}
@@ -1464,7 +1464,7 @@ function NodePreview({ sel, wf, step }: { sel: Selection; wf: Workflow; step: St
         <Arrow label="She booked, so she leaves the workflow" />
         <Typography sx={{ fontSize: 13.5 }}>No more messages go to her or about her.</Typography>
       </>
-    ) : <Typography sx={{ fontSize: 13.5, color: "#b26a00" }}>Nothing stops it: every step runs, even after she books.</Typography>;
+    ) : <Typography sx={{ fontSize: 13.5, color: tokens.amber }}>Nothing stops it: every step runs, even after she books.</Typography>;
   } else if (step) {
     const start = new Date();
     start.setHours(10, 0, 0, 0);
@@ -1500,7 +1500,7 @@ function NodePreview({ sel, wf, step }: { sel: Selection; wf: Workflow; step: St
             <Box sx={{ display: "flex", gap: 1 }}><Box sx={{ color: "text.secondary", width: 96 }}>Step before</Box><b>{when(start)}</b></Box>
             <Arrow label={`waits ${unitLabel(step.amount, step.unit)}`} />
             <Box sx={{ display: "flex", gap: 1 }}><Box sx={{ color: "text.secondary", width: 96 }}>Next step</Box><b>{when(next)}</b></Box>
-            {deferred && <Typography sx={{ fontSize: 12.5, color: "#b26a00" }}>Pushed to 08:00 by quiet hours.</Typography>}
+            {deferred && <Typography sx={{ fontSize: 12.5, color: tokens.amber }}>Pushed to 08:00 by quiet hours.</Typography>}
           </Box>
         );
         break;
@@ -1539,8 +1539,8 @@ function NodePreview({ sel, wf, step }: { sel: Selection; wf: Workflow; step: St
           <>
             <Typography sx={{ fontSize: 13.5 }}>The workflow checks {SAMPLE_LEAD.name.split(" ")[0]}: <b>{stepSummary(step)}</b></Typography>
             <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1 }}>
-              <Box sx={{ border: "1px solid #a5d6a7", bgcolor: "#e8f5e9", borderRadius: "4px", p: 1, fontSize: 12.5 }}>
-                <b style={{ color: "#1b5e20" }}>Yes</b><br />{yesLabel} → follows the Yes path ({step.yes.length} step{step.yes.length === 1 ? "" : "s"})
+              <Box sx={{ border: `1px solid ${tokens.greenBorder}`, bgcolor: tokens.greenTint, borderRadius: "4px", p: 1, fontSize: 12.5 }}>
+                <b style={{ color: tokens.greenDark }}>Yes</b><br />{yesLabel} → follows the Yes path ({step.yes.length} step{step.yes.length === 1 ? "" : "s"})
               </Box>
               <Box sx={{ border: `1px solid ${tokens.divider}`, bgcolor: tokens.surface2, borderRadius: "4px", p: 1, fontSize: 12.5 }}>
                 <b>No</b><br />Otherwise → follows the No path ({step.no.length} step{step.no.length === 1 ? "" : "s"})

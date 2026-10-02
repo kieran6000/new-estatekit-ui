@@ -474,7 +474,7 @@ function Bars({ data }: { data: Record<string, number> }) {
             </Box>
           </Box>
           <Box sx={{ height: 6, bgcolor: tokens.surface2, borderRadius: 3, mt: 0.375, overflow: "hidden" }}>
-            <Box sx={{ height: "100%", width: `${Math.max(2, (n / total) * 100)}%`, bgcolor: "rgba(0,0,0,.45)", borderRadius: 3 }} />
+            <Box sx={{ height: "100%", width: `${Math.max(2, (n / total) * 100)}%`, bgcolor: tokens.ink3, borderRadius: 3 }} />
           </Box>
         </Box>
       ))}
@@ -495,7 +495,7 @@ function ExtLink({ href, children }: { href: string; children: ReactNode }) {
 
 function Tile({ label, value, tone }: { label: string; value: ReactNode; tone?: "warning" }) {
   return (
-    <Box sx={{ bgcolor: "background.paper", border: `1px solid ${tone === "warning" ? "#f0c36d" : tokens.divider}`, borderRadius: "8px", px: 2, py: 1.5, minWidth: 0 }}>
+    <Box sx={{ bgcolor: "background.paper", border: `1px solid ${tone === "warning" ? tokens.amberBorder : tokens.divider}`, borderRadius: "8px", px: 2, py: 1.5, minWidth: 0 }}>
       <Typography component="div" sx={{ fontSize: 24, fontWeight: 600, lineHeight: 1.2, fontVariantNumeric: "tabular-nums" }}>{value}</Typography>
       <Typography sx={{ fontSize: 12.5, color: tokens.ink2, mt: 0.25 }}>{label}</Typography>
     </Box>
@@ -543,7 +543,7 @@ function OverviewTab({ data }: { data: Data }) {
       </Box>
 
       {r && (r.waiting > 0 || r.no_answer > 0) && (
-        <Box sx={{ bgcolor: tokens.amberTint, border: "1px solid #f0c36d", borderRadius: "8px", px: 2, py: 1.5 }}>
+        <Box sx={{ bgcolor: tokens.amberTint, border: `1px solid ${tokens.amberBorder}`, borderRadius: "8px", px: 2, py: 1.5 }}>
           <Typography sx={{ fontSize: 14, fontWeight: 600 }}>Right now</Typography>
           <Typography sx={{ fontSize: 14 }}>
             {[

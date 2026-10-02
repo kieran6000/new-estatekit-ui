@@ -114,7 +114,7 @@ function SwitcherPreview({ leadName, lead, members }: { leadName: string; lead: 
           <Typography sx={{ fontSize: 13.5, flex: 1, minWidth: 0 }} noWrap>{leadName}</Typography>
           <UnfoldMoreIcon sx={{ fontSize: 18, color: tokens.railInk }} />
         </Box>
-        <Box sx={{ mt: 1, bgcolor: "background.paper", borderRadius: "6px", py: 0.5, boxShadow: "0 4px 14px rgba(0,0,0,.25)" }}>
+        <Box sx={{ mt: 1, bgcolor: "background.paper", borderRadius: "6px", py: 0.5, boxShadow: `0 4px 14px ${tokens.shadow}` }}>
           {rows.map((r, i) => (
             <Box key={r.id} sx={{ display: "flex", alignItems: "center", gap: 1, px: 1.25, py: 0.75, bgcolor: i === 0 ? tokens.primaryBg : "transparent" }}>
               <Avatar src={r.avatar ?? undefined} sx={{ width: 26, height: 26, fontSize: 11 }}>{initials(r.name)}</Avatar>

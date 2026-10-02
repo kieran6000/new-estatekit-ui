@@ -1,12 +1,13 @@
 /* The driver.js walkthrough, styled as a Material Design 2 dialog to match
-   the rest of the app (see theme.ts): flat white surface, 4px corners, the
+   the rest of the app (see theme.ts): flat surface (light or dark, from the --ek-* tokens), 4px corners, the
    standard 24dp dialog shadow, Roboto, uppercase text buttons in the primary
    colour. Scoped to .ek-tour so it never touches anything else. */
 
 .driver-popover.ek-tour {
   font-family: Roboto, -apple-system, "Segoe UI", Arial, sans-serif;
-  background: #fff;
-  color: rgba(0, 0, 0, 0.87);
+  background: var(--ek-raised);
+  color: var(--ek-ink);
+  border: 1px solid var(--ek-divider2);
   border-radius: 4px;
   padding: 20px 24px 8px;
   min-width: 280px;
@@ -36,21 +37,21 @@
   display: block;
   width: 24px;
   height: 24px;
-  fill: #1976d2;
+  fill: var(--ek-primary);
 }
 
 .driver-popover.ek-tour .driver-popover-description {
   font-size: 16px;
   line-height: 1.5;
   letter-spacing: 0.00938em;
-  color: rgba(0, 0, 0, 0.6);
+  color: var(--ek-ink2);
 }
 
 .driver-popover.ek-tour .ek-tour-hint {
   display: block;
   margin-top: 12px;
   font-size: 14px;
-  color: rgba(0, 0, 0, 0.6);
+  color: var(--ek-ink2);
 }
 
 .driver-popover.ek-tour .driver-popover-close-btn {
@@ -59,12 +60,12 @@
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  color: rgba(0, 0, 0, 0.54);
+  color: var(--ek-ink2);
   font-size: 22px;
 }
 .driver-popover.ek-tour .driver-popover-close-btn:hover {
-  background: rgba(0, 0, 0, 0.04);
-  color: rgba(0, 0, 0, 0.87);
+  background: var(--ek-hover);
+  color: var(--ek-ink);
 }
 
 /* Dialog actions row: progress on the left, text buttons on the right. */
@@ -77,7 +78,7 @@
 
 .driver-popover.ek-tour .driver-popover-progress-text {
   font-size: 12px;
-  color: rgba(0, 0, 0, 0.6);
+  color: var(--ek-ink2);
   letter-spacing: 0.03333em;
 }
 
@@ -105,25 +106,25 @@
 }
 
 .driver-popover.ek-tour .driver-popover-next-btn {
-  color: #1976d2;
+  color: var(--ek-primary);
 }
 .driver-popover.ek-tour .driver-popover-next-btn:hover,
 .driver-popover.ek-tour .driver-popover-next-btn:focus {
-  background: rgba(25, 118, 210, 0.04);
-  color: #1976d2;
+  background: var(--ek-primaryBg);
+  color: var(--ek-primary);
 }
 
 .driver-popover.ek-tour .driver-popover-prev-btn,
 .driver-popover.ek-tour .ek-tour-skip {
-  color: rgba(0, 0, 0, 0.6);
+  color: var(--ek-ink2);
 }
 .driver-popover.ek-tour .driver-popover-prev-btn:hover,
 .driver-popover.ek-tour .ek-tour-skip:hover {
-  background: rgba(0, 0, 0, 0.04);
-  color: rgba(0, 0, 0, 0.87);
+  background: var(--ek-hover);
+  color: var(--ek-ink);
 }
 
-.driver-popover.ek-tour .driver-popover-arrow-side-top.driver-popover-arrow { border-top-color: #fff; }
-.driver-popover.ek-tour .driver-popover-arrow-side-bottom.driver-popover-arrow { border-bottom-color: #fff; }
-.driver-popover.ek-tour .driver-popover-arrow-side-left.driver-popover-arrow { border-left-color: #fff; }
-.driver-popover.ek-tour .driver-popover-arrow-side-right.driver-popover-arrow { border-right-color: #fff; }
+.driver-popover.ek-tour .driver-popover-arrow-side-top.driver-popover-arrow { border-top-color: var(--ek-raised); }
+.driver-popover.ek-tour .driver-popover-arrow-side-bottom.driver-popover-arrow { border-bottom-color: var(--ek-raised); }
+.driver-popover.ek-tour .driver-popover-arrow-side-left.driver-popover-arrow { border-left-color: var(--ek-raised); }
+.driver-popover.ek-tour .driver-popover-arrow-side-right.driver-popover-arrow { border-right-color: var(--ek-raised); }

@@ -129,7 +129,7 @@ export default function FocusCallModal({
               component="button"
               onClick={onClose}
               sx={{
-                bgcolor: "#43a047",
+                bgcolor: "#2e7d32",
                 color: "#fff",
                 border: 0,
                 borderRadius: "6px",
@@ -208,7 +208,7 @@ export default function FocusCallModal({
                   alignItems: "center",
                   justifyContent: "center",
                   gap: 1.25,
-                  bgcolor: "#43a047",
+                  bgcolor: "#2e7d32",
                   color: "#fff",
                   borderRadius: "6px",
                   p: "16px",

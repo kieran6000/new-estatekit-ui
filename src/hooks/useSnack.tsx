@@ -35,7 +35,9 @@ export function SnackProvider({ children }: { children: ReactNode }) {
             <Button
               color="primary"
               size="small"
-              sx={{ color: "#82b1ff" }}
+              // Snackbars are inverted (dark on light pages, light on dark), so
+              // the action colour flips with them.
+              sx={{ color: "var(--ek-snackAction)" }}
               onClick={() => {
                 state.undo?.();
                 setOpen(false);
