@@ -3,7 +3,7 @@
 // builder included, so a tag always looks and reads the same.
 //
 // Today's only tag is worked out, not stored:
-//   "Not sent to Facebook"  a lead from an EstateKit lead page that Facebook
+//   "Not tracked"  a lead from an EstateKit lead page that Facebook
 //   was never told about, so it doesn't count as a lead in Ads Manager and
 //   the ads don't learn from it. Two ways that happens:
 //     - the page has no Dataset ID (pixel) set up, or
@@ -11,7 +11,7 @@
 //       (Forms → the page → a question → bad answers → "Don't count it").
 //   Instant-form leads are Facebook's own, so they never get it.
 
-export const NOT_SENT = "Not sent to Facebook";
+export const NOT_SENT = "Not tracked";
 
 export type NotSentReason = "weak_answers" | "no_dataset";
 

@@ -105,7 +105,7 @@ for (const n of wfNames) {
 }
 
 // Templates: each opens with nothing to fix (blank: 1)
-for (const t of ["No answer → email follow-up", "New lead: speed to lead", "Not sent to Facebook: stay in touch", "Blank workflow"]) {
+for (const t of ["No answer → email follow-up", "New lead: speed to lead", "Not tracked: stay in touch", "Blank workflow"]) {
   await p.getByRole("button", { name: "Create workflow" }).click();
   await p.getByText(t, { exact: true }).click();
   await p.waitForTimeout(400);

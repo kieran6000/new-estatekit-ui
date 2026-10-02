@@ -95,7 +95,7 @@ export interface LeadRow {
   attribution?: Record<string, string> | null;
   /** From a lead page: "weak" when a form answer matched one of the page's
    *  low-quality answers. Not reported to the pixel; shown to staff as the
-   *  "Not sent to Facebook" tag (lib/leadTags.ts). */
+   *  "Not tracked" tag (lib/leadTags.ts). */
   quality?: "good" | "weak" | null;
 }
 
