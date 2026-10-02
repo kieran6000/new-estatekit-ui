@@ -26,8 +26,21 @@
 .wr-logo { height: 26px; width: auto; display: block; }
 .wr-sample { margin-left: 8px; padding: 1px 6px; border-radius: 4px; background: var(--wr-warn-bg); color: var(--wr-warn); font-size: 11px; font-weight: 700; letter-spacing: .05em; vertical-align: 2px; }
 
-.wr-body { padding: 12px 24px 12px; display: grid; gap: 12px; }
-@media (max-width: 600px) { .wr-head, .wr-body { padding-left: 16px; padding-right: 16px; } }
+.wr-body { padding: 12px 24px 12px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+/* Grid items default to their content's width; without this the 4-week
+   table pushes the whole report wider than a phone screen. */
+.wr-body > * { min-width: 0; }
+@media (max-width: 600px) {
+  .wr-head, .wr-body { padding-left: 16px; padding-right: 16px; }
+  .wr-page { margin: 12px 8px 0; }
+  .wr-head h1 { font-size: 21px; }
+  .wr-head-text { min-width: 0; }
+  .wr-tile-num, .wr-speed b { font-size: 36px; }
+  .wr-ek-main { min-width: 0; flex-basis: 100%; }
+  /* Logo on its own line above the name, so the title gets the full width. */
+  .wr-logo { order: -1; flex-basis: 100%; width: auto; height: 22px; object-fit: contain; object-position: left; }
+  .wr-hide-sm { display: none; }
+}
 .wr-label { margin: 0 0 6px; font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--wr-ink2); }
 
 /* The 4 numbers */
@@ -101,6 +114,15 @@
 .wr-how-tip { margin: 6px 0 0; padding: 8px 10px; border-radius: 4px; background: var(--wr-warn-bg); font-size: 15px; }
 @media (max-width: 600px) { .wr-how { margin: 0 16px 16px; } .wr-how-list { grid-template-columns: minmax(0, 1fr); } .wr-how-list dd { margin-bottom: 6px; } }
 
+
+/* Phones: the 4-week table fits without sideways scrolling. After the
+   table rules above so it wins. */
+@media (max-width: 600px) {
+  .wr-table { font-size: 14px; }
+  .wr-table thead th { font-size: 12.5px; }
+  .wr-table th, .wr-table td { padding: 4px 4px; }
+  .wr-table th:first-child, .wr-table td:first-child { white-space: normal; }
+}
 
 /* Printed / saved as PDF: one page on A4 or Letter. Zero page margin stops
    the browser adding its own date, title and URL lines. */

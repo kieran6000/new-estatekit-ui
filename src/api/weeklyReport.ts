@@ -46,6 +46,11 @@ function weekStart(weeksBack: number): number {
 
 const fmt = (ms: number, opts: Intl.DateTimeFormatOptions) => new Date(ms + SAST).toLocaleDateString("en-ZA", { timeZone: "UTC", ...opts });
 
+/** "2026-09-22": the Monday (SAST) the week starts on, as a date. */
+export function weekStartDate(weeksBack: number): string {
+  return new Date(weekStart(weeksBack) + SAST).toISOString().slice(0, 10);
+}
+
 export function weekLabel(weeksBack: number): string {
   const s = weekStart(weeksBack);
   return `${fmt(s, { day: "numeric", month: "short" })} – ${fmt(s + 6 * DAY, { day: "numeric", month: "short", year: "numeric" })}`;

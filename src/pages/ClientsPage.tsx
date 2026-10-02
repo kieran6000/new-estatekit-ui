@@ -5,6 +5,7 @@ import {
   AppBar,
   Avatar,
   Box,
+  Button,
   ButtonBase,
   IconButton,
   InputAdornment,
@@ -284,6 +285,8 @@ export default function ClientsPage() {
           </IconButton>
           <Typography sx={{ fontSize: 18, fontWeight: 500 }}>Accounts</Typography>
           {clients && <Typography sx={{ ml: 1, fontSize: 14, color: tokens.ink3 }}>{clients.length}</Typography>}
+          <Box sx={{ flex: 1 }} />
+          <Button size="small" onClick={() => navigate("/admin/reports")} sx={{ color: "inherit" }}>Weekly reports</Button>
         </Toolbar>
       </AppBar>
 
