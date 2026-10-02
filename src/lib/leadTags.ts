@@ -19,16 +19,17 @@ export type NotSentReason = "weak_answers" | "no_dataset";
  *  a lead-page lead). `datasetByPage` maps a lead page id to its Dataset ID;
  *  without it only the answers reason can be worked out. */
 export function notSentReason(
-  l: { quality?: string | null; source_page_id?: string | null },
+  l: { quality?: string | null; source_page_id?: string | null; fb_lead_id?: string | null },
   datasetByPage?: Map<string, string>,
 ): NotSentReason | null {
-  if (!l.source_page_id) return null;
+  // Instant-form leads are Facebook's own: always counted, never tagged.
+  if (l.fb_lead_id || !l.source_page_id) return null;
   if (l.quality === "weak") return "weak_answers";
   if (datasetByPage?.has(l.source_page_id) && !datasetByPage.get(l.source_page_id)) return "no_dataset";
   return null;
 }
 
-export function leadTags(l: { quality?: string | null; source_page_id?: string | null }, datasetByPage?: Map<string, string>): string[] {
+export function leadTags(l: { quality?: string | null; source_page_id?: string | null; fb_lead_id?: string | null }, datasetByPage?: Map<string, string>): string[] {
   return notSentReason(l, datasetByPage) ? [NOT_SENT] : [];
 }
 

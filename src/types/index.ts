@@ -87,6 +87,8 @@ export interface LeadRow {
    * only expected — a signed mandate is permission to sell, not a sale. Only
    * leads with this set count toward earned commission on the Overview. */
   commission_received_at?: string | null;
+  /** Set for Facebook instant-form leads (Facebook's own lead id). */
+  fb_lead_id?: string | null;
   /** Facebook ad this lead came from, resolved lazily from fb_lead_id. */
   fb_ad_id?: string | null;
   /** Ad/traffic parameters captured on the landing page at first visit
