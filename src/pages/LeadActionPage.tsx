@@ -27,6 +27,7 @@ import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import ErrorOutlineIcon from "@mui/icons-material/ErrorOutlined";
 import EventAvailableIcon from "@mui/icons-material/EventAvailable";
 import { tokens } from "../theme";
+import NotReadyBadge, { isNotReady } from "../components/NotReadyBadge";
 import { useAuth } from "../hooks/useAuth";
 import { useLeadWithStatus, useUpdateLeadNote, useUpdateLeadStage } from "../hooks/useLeads";
 import { usePipelines } from "../hooks/usePipelines";
@@ -369,6 +370,7 @@ function LeadActionUI({
             </Box>
             <Box sx={{ mt: 0.75, display: "flex", alignItems: "center", gap: 0.75, flexWrap: "wrap" }}>
               <StageChip stage={lead.stage} />
+              {isNotReady(lead) && <NotReadyBadge size="medium" />}
             </Box>
 
             {/* What's already committed for this lead, stated up front. Without

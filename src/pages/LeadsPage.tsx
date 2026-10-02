@@ -43,6 +43,7 @@ import PhoneCallbackIcon from "@mui/icons-material/PhoneCallback";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePostHog } from "@posthog/react";
 import { tokens } from "../theme";
+import NotReadyBadge, { isNotReady } from "../components/NotReadyBadge";
 import { DEAD_STAGES, PIPELINE_KIND_LABEL, PIPELINE_STAGES, type LeadRow, type OutcomeStep, type Pipeline, type PipelineKind, type Stage } from "../types";
 import { stageLabel } from "../types";
 import { dueLeads, pipelineKindFor, sortLeadsForList, stepForStage, computeStagePatch, stageForKind, nextStepLabel } from "../lib/stageLogic";
@@ -110,6 +111,8 @@ export default function LeadsPage() {
   const [addPipelineOpen, setAddPipelineOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [filter, setFilter] = useState<"All" | Stage>("All");
+  // On top of the stage filter: only the leads labelled "Not ready yet".
+  const [notReadyOnly, setNotReadyOnly] = useState(false);
   const [outcomeLeadId, setOutcomeLeadId] = useState<string | null>(null);
   const [focusOpen, setFocusOpen] = useState(false);
   const [stageSheet, setStageSheet] = useState<{ leadId: string; step: OutcomeStep; stage: Stage } | null>(null);
@@ -201,6 +204,10 @@ export default function LeadsPage() {
   }, [leads, archivedLeads, showArchived, activePipeline]);
 
 
+  const notReadyCount = useMemo(() => pipelineLeads.filter(isNotReady).length, [pipelineLeads]);
+  // The chip disappears when no lead is "not ready", so don't leave its filter on.
+  useEffect(() => { if (notReadyCount === 0) setNotReadyOnly(false); }, [notReadyCount]);
+
   // Who's actually due a call right now, ignoring the stage filter — the
   // banner shouldn't vanish just because the agent narrowed the list.
   const callList = useMemo(() => dueLeads(pipelineLeads), [pipelineLeads]);
@@ -209,10 +216,11 @@ export default function LeadsPage() {
     const query = q.toLowerCase().trim();
     return sortLeadsForList(pipelineLeads).filter((l) => {
       if (filter !== "All" && l.stage !== filter) return false;
+      if (notReadyOnly && !isNotReady(l)) return false;
       if (!query) return true;
       return l.name.toLowerCase().includes(query) || l.phone.replace(/\s/g, "").includes(query.replace(/\s/g, ""));
     });
-  }, [pipelineLeads, filter, q]);
+  }, [pipelineLeads, filter, notReadyOnly, q]);
 
   // Flat visual order of the rows currently on screen — drives shift+click
   // range selection (grouped view lays rows out stage-by-stage).
@@ -561,6 +569,28 @@ export default function LeadsPage() {
               </Box>
             );
           })}
+          {/* Only once there are some, so most agents never see an extra chip. */}
+          {notReadyCount > 0 && (
+            <Box
+              component="button"
+              onClick={() => setNotReadyOnly((v) => !v)}
+              aria-pressed={notReadyOnly}
+              title="Leads whose answers say they're not ready to sell yet"
+              sx={{
+                display: "flex", alignItems: "center", gap: 0.5,
+                border: `1px ${notReadyOnly ? "solid" : "dashed"} ${notReadyOnly ? tokens.ink2 : tokens.outline}`,
+                borderRadius: "6px",
+                bgcolor: notReadyOnly ? tokens.surface2 : tokens.surface,
+                color: notReadyOnly ? "text.primary" : "text.secondary",
+                fontWeight: notReadyOnly ? 600 : 400,
+                fontSize: 12.5, p: "5px 10px", cursor: "pointer", whiteSpace: "nowrap",
+                "&:hover": { borderColor: tokens.ink2 },
+              }}
+            >
+              Not ready yet
+              <Box component="span" sx={{ fontSize: 11, color: "text.disabled", fontWeight: 600 }}>{notReadyCount}</Box>
+            </Box>
+          )}
         </Box>
       </Box>
 
@@ -997,6 +1027,7 @@ function LeadsTable({
           <Box component="span" onClick={selectable ? undefined : () => onOpen(l.id)} sx={{ fontWeight: 500, fontSize: 15, color: tokens.primaryDark, cursor: selectable ? "inherit" : "pointer" }}>
             {l.name}
             {l.stage === "New Lead" && <Box component="span" sx={{ fontSize: 10, fontWeight: 700, color: tokens.green, ml: 0.75 }}>NEW</Box>}
+            {isNotReady(l) && <NotReadyBadge />}
           </Box>
           <Typography sx={{ color: "text.secondary", fontSize: 13, display: "block" }}>
             {canSeeFullPhone ? l.phone : maskPhone(l.phone)}
@@ -1156,6 +1187,7 @@ function MobileLeadsList({
       <Box onClick={selectable ? undefined : () => onOpen(l.id)} sx={{ fontWeight: 500, fontSize: 15, color: tokens.primaryDark, cursor: selectable ? "inherit" : "pointer" }}>
         {l.name}
         {l.stage === "New Lead" && <Box component="span" sx={{ fontSize: 10, fontWeight: 700, color: tokens.green, ml: 0.75 }}>NEW</Box>}
+            {isNotReady(l) && <NotReadyBadge />}
       </Box>
       <Typography sx={{ color: "text.secondary", fontSize: 13 }}>
         {canSeeFullPhone ? l.phone : maskPhone(l.phone)}

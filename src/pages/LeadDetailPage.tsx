@@ -9,6 +9,7 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import CallIcon from "@mui/icons-material/Call";
 import ArchiveOutlinedIcon from "@mui/icons-material/ArchiveOutlined";
 import { tokens } from "../theme";
+import { isNotReady } from "../components/NotReadyBadge";
 import { getLeadSourceAd, moveLeadToPipeline, setLeadArchived, setCommissionReceived } from "../api/leads";
 import { useLead, useUpdateLeadNote, useUpdateLeadStage } from "../hooks/useLeads";
 import { usePipelines } from "../hooks/usePipelines";
@@ -177,6 +178,7 @@ export default function LeadDetailPage() {
           <Row k="Stage" v={stageLabel(lead.stage, pipelineKind)} />
           <Row k="Received" v={timeAgo(lead.created_at)} />
           <Row k="Next" v={nextStepLabel(lead)} />
+          {isNotReady(lead) && <Row k="Ready to sell?" v="Not ready yet, going by their answers. Still worth a call to stay top of mind." />}
         </Section>
 
         <Section title="From their form">
