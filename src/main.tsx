@@ -13,6 +13,7 @@ import { AuthProvider } from "./hooks/useAuth";
 import { SnackProvider } from "./hooks/useSnack";
 import { TierProvider } from "./hooks/useTier";
 import PreviewBanner from "./components/PreviewBanner";
+import { ThemeModeProvider } from "./lib/themeMode";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
@@ -35,15 +36,21 @@ createRoot(document.getElementById("root")!).render(
         },
       }}
     >
-      <ThemeProvider theme={theme} defaultMode="light">
-        <CssBaseline />
+      {/* Light/dark is owned by ThemeModeProvider (src/lib/themeMode.tsx),
+          which sets data-theme on <html>. MUI only supplies the CSS
+          variables for both schemes, so it must not store a mode or touch
+          the DOM itself: storageManager and colorSchemeNode are off. */}
+      <ThemeProvider theme={theme} storageManager={null} colorSchemeNode={null} disableTransitionOnChange>
+        <CssBaseline enableColorScheme />
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
             <TierProvider>
               <SnackProvider>
                 <BrowserRouter>
-                  <PreviewBanner />
-                  <App />
+                  <ThemeModeProvider>
+                    <PreviewBanner />
+                    <App />
+                  </ThemeModeProvider>
                 </BrowserRouter>
               </SnackProvider>
             </TierProvider>

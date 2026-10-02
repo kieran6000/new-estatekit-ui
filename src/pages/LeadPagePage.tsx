@@ -374,7 +374,7 @@ export default function LeadPagePage() {
                     </Box>
                     {page.logoDataUrl && (
                       <IconButton size="small" onClick={() => { update({ logoDataUrl: null }); showSnack("Logo removed"); }}
-                        sx={{ position: "absolute", top: -8, right: -8, width: 20, height: 20, bgcolor: "#e0e0e0", "&:hover": { bgcolor: "#bdbdbd" } }}>
+                        sx={{ position: "absolute", top: -8, right: -8, width: 20, height: 20, bgcolor: tokens.surface2, color: tokens.ink2, "&:hover": { bgcolor: tokens.outline } }}>
                         <CloseIcon sx={{ fontSize: 12 }} />
                       </IconButton>
                     )}
@@ -401,7 +401,7 @@ export default function LeadPagePage() {
                     </Box>
                     {page.profilePhotoDataUrl && (
                       <IconButton size="small" onClick={() => { update({ profilePhotoDataUrl: null }); showSnack("Photo removed"); }}
-                        sx={{ position: "absolute", top: -4, right: -4, width: 20, height: 20, bgcolor: "#e0e0e0", "&:hover": { bgcolor: "#bdbdbd" } }}>
+                        sx={{ position: "absolute", top: -4, right: -4, width: 20, height: 20, bgcolor: tokens.surface2, color: tokens.ink2, "&:hover": { bgcolor: tokens.outline } }}>
                         <CloseIcon sx={{ fontSize: 12 }} />
                       </IconButton>
                     )}
@@ -737,13 +737,16 @@ function PreviewAndSubmit({ page, pipelineKind }: { page: LeadPage; pipelineKind
   return (
     // Preview only: filling this in on the dashboard must never create a lead
     // or fire tracking — it's the agent checking their own form.
-    <LeadCaptureForm
-      page={page}
-      pipelineKind={pipelineKind}
-      customQuestions={customQuestions}
-      preview
-      onSubmit={() => showSnack("Preview only — nothing was saved")}
-    />
+    // Always light: it's the public page as visitors see it.
+    <Box data-theme="light">
+      <LeadCaptureForm
+        page={page}
+        pipelineKind={pipelineKind}
+        customQuestions={customQuestions}
+        preview
+        onSubmit={() => showSnack("Preview only — nothing was saved")}
+      />
+    </Box>
   );
 }
 

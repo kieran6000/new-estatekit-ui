@@ -62,12 +62,12 @@ export default function HomePage() {
       <AppBar position="sticky">
         <Toolbar sx={{ height: 56, minHeight: "56px !important" }}>
           <Typography sx={{ fontSize: 18, fontWeight: 500, flex: 1 }}>Home</Typography>
-          <Avatar sx={{ width: 32, height: 32, bgcolor: tokens.primary, fontSize: 14 }}>K</Avatar>
+          <Avatar sx={{ width: 32, height: 32, bgcolor: tokens.primary, color: tokens.onPrimary, fontSize: 14 }}>K</Avatar>
         </Toolbar>
       </AppBar>
 
       <Box sx={{ maxWidth: 680, mx: "auto", pb: 3 }}>
-      <Box sx={{ m: "12px 16px 0", border: `1px solid ${tokens.divider}`, borderRadius: "8px", bgcolor: "background.paper", p: "14px 16px", boxShadow: "0 1px 2px rgba(0,0,0,.14)" }}>
+      <Box sx={{ m: "12px 16px 0", border: `1px solid ${tokens.divider}`, borderRadius: "8px", bgcolor: "background.paper", p: "14px 16px", boxShadow: `0 1px 2px ${tokens.shadow}` }}>
         <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
           <Box sx={{ position: "relative", width: 40, height: 40, borderRadius: "8px", bgcolor: tokens.primaryBg, color: tokens.primary, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 auto" }}>
             <EventIcon />
@@ -100,7 +100,7 @@ export default function HomePage() {
             <Typography sx={{ fontSize: 15, fontWeight: 500 }}>Next group call — Thu 4 Sep, 3:00 PM</Typography>
             <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>Send a question now to get it answered live.</Typography>
           </Box>
-          <Box sx={{ bgcolor: "#e6f4ea", color: tokens.greenDark, fontSize: 12, fontWeight: 600, borderRadius: "12px", p: "4px 10px", whiteSpace: "nowrap" }}>
+          <Box sx={{ bgcolor: tokens.greenTint, color: tokens.greenDark, fontSize: 12, fontWeight: 600, borderRadius: "12px", p: "4px 10px", whiteSpace: "nowrap" }}>
             in 6 days
           </Box>
         </Box>
@@ -126,7 +126,7 @@ export default function HomePage() {
         <Box
           component="button"
           onClick={() => setTicketOpen(true)}
-          sx={{ flex: 1, bgcolor: "#fff", p: "14px", textAlign: "center", color: tokens.primary, fontWeight: 500, fontSize: 13, textTransform: "uppercase", display: "flex", alignItems: "center", justifyContent: "center", gap: 1, border: 0, cursor: "pointer", "&:hover": { bgcolor: tokens.primaryBg } }}
+          sx={{ flex: 1, bgcolor: tokens.surface, p: "14px", textAlign: "center", color: tokens.primary, fontWeight: 500, fontSize: 13, textTransform: "uppercase", display: "flex", alignItems: "center", justifyContent: "center", gap: 1, border: 0, cursor: "pointer", "&:hover": { bgcolor: tokens.primaryBg } }}
         >
           <MailOutlineIcon fontSize="small" /> Message us
         </Box>
@@ -135,7 +135,7 @@ export default function HomePage() {
           href="https://whop.com/estatekit-1a6c/estatekit-seller-attraction-system"
           target="_blank"
           rel="noopener"
-          sx={{ flex: 1, bgcolor: "#fff", p: "14px", textAlign: "center", color: tokens.primary, fontWeight: 500, fontSize: 13, textTransform: "uppercase", display: "flex", alignItems: "center", justifyContent: "center", gap: 1, textDecoration: "none", "&:hover": { bgcolor: tokens.primaryBg } }}
+          sx={{ flex: 1, bgcolor: tokens.surface, p: "14px", textAlign: "center", color: tokens.primary, fontWeight: 500, fontSize: 13, textTransform: "uppercase", display: "flex", alignItems: "center", justifyContent: "center", gap: 1, textDecoration: "none", "&:hover": { bgcolor: tokens.primaryBg } }}
         >
           <StorefrontIcon fontSize="small" /> Hire the agency
         </Box>
@@ -155,7 +155,7 @@ export default function HomePage() {
             borderRadius: "12px",
             overflow: "hidden",
             textDecoration: "none",
-            boxShadow: "0 1px 2px rgba(0,0,0,.14)",
+            boxShadow: `0 1px 2px ${tokens.shadow}`,
           }}
         >
           <Box sx={{ width: 108, flexShrink: 0, bgcolor: "#0d1b2e", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -189,7 +189,7 @@ export default function HomePage() {
               overflow: "hidden",
               textDecoration: "none",
               cursor: "pointer",
-              boxShadow: "0 1px 2px rgba(0,0,0,.14)",
+              boxShadow: `0 1px 2px ${tokens.shadow}`,
               bgcolor: "background.paper",
             }}
           >

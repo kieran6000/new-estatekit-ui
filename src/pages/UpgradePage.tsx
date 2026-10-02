@@ -66,7 +66,7 @@ export default function UpgradePage() {
             justifyContent: "center",
             gap: 1,
             bgcolor: tokens.primary,
-            color: "#fff",
+            color: tokens.onPrimary,
             borderRadius: "4px",
             p: "14px",
             fontWeight: 500,

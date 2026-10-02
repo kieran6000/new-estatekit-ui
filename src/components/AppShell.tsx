@@ -277,7 +277,7 @@ export default function AppShell() {
 
       <Box component="main" sx={{ flex: 1, minWidth: 0, pb: isDesktop ? 0 : "56px" }}>
         {!isDesktop && isOperator && (
-          <Box sx={{ px: 1.5, py: 1, bgcolor: isManagingOther ? "#fef3c7" : "background.paper", borderBottom: `1px solid ${isManagingOther ? "#f59e0b66" : tokens.divider}` }}>
+          <Box sx={{ px: 1.5, py: 1, bgcolor: isManagingOther ? tokens.amberTint : "background.paper", borderBottom: `1px solid ${isManagingOther ? tokens.amberBorder : tokens.divider}` }}>
             <AccountSwitcher variant="light" />
           </Box>
         )}

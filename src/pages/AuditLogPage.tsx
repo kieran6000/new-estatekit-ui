@@ -69,12 +69,12 @@ const CATEGORY_LABEL: Record<AuditCategory, string> = {
 };
 
 const CATEGORY_ICON: Record<AuditCategory, { icon: React.ReactNode; color: string }> = {
-  login: { icon: <LoginIcon />, color: "#1565c0" },
-  leads: { icon: <PersonOutlineIcon />, color: "#2e7d32" },
-  automations: { icon: <BoltIcon />, color: "#e65100" },
-  setup: { icon: <TuneIcon />, color: "#6a1b9a" },
-  ads: { icon: <CampaignOutlinedIcon />, color: "#0277bd" },
-  account: { icon: <KeyIcon />, color: "#c62828" },
+  login: { icon: <LoginIcon />, color: tokens.primary },
+  leads: { icon: <PersonOutlineIcon />, color: tokens.green },
+  automations: { icon: <BoltIcon />, color: tokens.orange },
+  setup: { icon: <TuneIcon />, color: tokens.purple },
+  ads: { icon: <CampaignOutlinedIcon />, color: tokens.teal },
+  account: { icon: <KeyIcon />, color: tokens.red },
 };
 
 /** A specific icon per action where one fits; otherwise its category's. */
@@ -106,7 +106,7 @@ function ActionIcon({ e }: { e: { action: string; category: AuditCategory } }) {
   const c = CATEGORY_ICON[e.category];
   const Icon = ACTION_ICON.find(([re]) => re.test(e.action))?.[1];
   return (
-    <Box sx={{ width: 30, height: 30, borderRadius: "8px", flex: "none", display: "grid", placeItems: "center", bgcolor: `${c.color}14`, color: c.color, "& svg": { fontSize: 17 } }}>
+    <Box sx={{ width: 30, height: 30, borderRadius: "8px", flex: "none", display: "grid", placeItems: "center", bgcolor: `color-mix(in srgb, ${c.color} 10%, transparent)`, color: c.color, "& svg": { fontSize: 17 } }}>
       {Icon ? <Icon /> : c.icon}
     </Box>
   );
@@ -131,7 +131,7 @@ function Flag({ code }: { code?: string }) {
       title={name}
       loading="lazy"
       onError={() => setFailed(true)}
-      sx={{ borderRadius: "2px", boxShadow: "0 0 0 1px rgba(0,0,0,.08)", flex: "none", verticalAlign: "-2px" }}
+      sx={{ borderRadius: "2px", boxShadow: `0 0 0 1px ${tokens.divider}`, flex: "none", verticalAlign: "-2px" }}
     />
   );
 }

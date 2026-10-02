@@ -33,6 +33,7 @@ import { useSnack } from "../hooks/useSnack";
 import { Link as RouterLink } from "react-router-dom";
 import { trackActivity } from "../lib/activity";
 import AccountSwitcher from "../components/AccountSwitcher";
+import AppearanceSetting from "../components/AppearanceSetting";
 import { tokens } from "../theme";
 import { MAX_IMAGE_BYTES, uploadImage } from "../lib/image";
 
@@ -321,6 +322,8 @@ export default function AccountPage() {
               </CardContent>
             </Card>
 
+            <AppearanceSetting />
+
             <Card variant="outlined" sx={{ mb: 3 }}>
               <CardContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
                 <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -411,7 +414,7 @@ export default function AccountPage() {
                         <IconButton
                           size="small"
                           onClick={onLogoRemove}
-                          sx={{ position: "absolute", top: -8, right: -8, width: 20, height: 20, bgcolor: "#e0e0e0", "&:hover": { bgcolor: "#bdbdbd" } }}
+                          sx={{ position: "absolute", top: -8, right: -8, width: 20, height: 20, bgcolor: tokens.surface2, color: tokens.ink2, "&:hover": { bgcolor: tokens.outline } }}
                         >
                           <CloseIcon sx={{ fontSize: 12 }} />
                         </IconButton>
@@ -461,7 +464,7 @@ export default function AccountPage() {
                         <IconButton
                           size="small"
                           onClick={onAvatarRemove}
-                          sx={{ position: "absolute", top: -4, right: -4, width: 20, height: 20, bgcolor: "#e0e0e0", "&:hover": { bgcolor: "#bdbdbd" } }}
+                          sx={{ position: "absolute", top: -4, right: -4, width: 20, height: 20, bgcolor: tokens.surface2, color: tokens.ink2, "&:hover": { bgcolor: tokens.outline } }}
                         >
                           <CloseIcon sx={{ fontSize: 12 }} />
                         </IconButton>
@@ -543,9 +546,9 @@ export default function AccountPage() {
             )}
 
             {isOperator && (
-              <Card variant="outlined" sx={{ mb: 3, borderColor: "#fca5a5" }}>
+              <Card variant="outlined" sx={{ mb: 3, borderColor: tokens.redBorder }}>
                 <CardContent sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 600, color: "#b91c1c" }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 600, color: tokens.red }}>
                     Emergency stop
                   </Typography>
                   <Typography sx={{ fontSize: 13, color: "text.secondary" }}>

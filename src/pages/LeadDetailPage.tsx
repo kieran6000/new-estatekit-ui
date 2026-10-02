@@ -151,7 +151,7 @@ export default function LeadDetailPage() {
             }}
             sx={{
               flex: 1,
-              bgcolor: tokens.green,
+              bgcolor: tokens.greenCall,
               color: "#fff",
               borderRadius: "4px",
               p: "14px",
@@ -164,7 +164,7 @@ export default function LeadDetailPage() {
               justifyContent: "center",
               gap: 1,
               textDecoration: "none",
-              "&:hover": { bgcolor: tokens.greenDark },
+              "&:hover": { bgcolor: tokens.greenCallHover },
             }}
           >
             <CallIcon fontSize="small" /> Call
@@ -334,7 +334,7 @@ function CommissionRow({ lead }: { lead: LeadRow }) {
         <Typography sx={{ fontSize: 20, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
           R{(lead.commission ?? 0).toLocaleString("en-ZA")}
         </Typography>
-        <Typography sx={{ fontSize: 13, color: received ? "#1b5e20" : "text.secondary" }}>
+        <Typography sx={{ fontSize: 13, color: received ? tokens.greenDark : "text.secondary" }}>
           {received
             ? `Received ${whenLabel(lead.commission_received_at).replace(/ at .*/, "")}`
             : "Expected — not received yet"}

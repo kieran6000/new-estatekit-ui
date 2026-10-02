@@ -145,7 +145,7 @@ function AdCard({
         {avatar ? (
           <Box component="img" src={avatar} alt="" sx={{ width: 36, height: 36, borderRadius: "50%", flex: "0 0 auto", objectFit: "cover" }} />
         ) : (
-          <Box sx={{ width: 36, height: 36, borderRadius: "50%", bgcolor: tokens.primary, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 15, flex: "0 0 auto" }}>
+          <Box sx={{ width: 36, height: 36, borderRadius: "50%", bgcolor: tokens.primary, color: tokens.onPrimary, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 15, flex: "0 0 auto" }}>
             {pageName.trim().charAt(0).toUpperCase() || "?"}
           </Box>
         )}
@@ -236,7 +236,7 @@ function AdCard({
           </Typography>
         </Box>
         {ad.cta && (
-          <Box sx={{ flex: "0 0 auto", bgcolor: "#e4e6eb", borderRadius: "6px", px: 1.5, py: 0.75, fontSize: 13, fontWeight: 600, whiteSpace: "nowrap" }}>
+          <Box sx={{ flex: "0 0 auto", bgcolor: tokens.surface2, borderRadius: "6px", px: 1.5, py: 0.75, fontSize: 13, fontWeight: 600, whiteSpace: "nowrap" }}>
             {CTA_LABEL[ad.cta] ?? "Learn more"}
           </Box>
         )}

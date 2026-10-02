@@ -20,6 +20,7 @@ import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import { listAgentProfiles, setActiveAgent, getActiveAgentIdSync } from "../api/_client";
 import { useAuth } from "../hooks/useAuth";
 import { trackActivity } from "../lib/activity";
+import { tokens } from "../theme";
 
 /** Agents type a full patch of suburbs into "area" (e.g. "Fourways, Sandton,
  *  Johannesburg"). The switcher only needs the headline city, so show the first
@@ -93,28 +94,28 @@ export default function AccountSwitcher({ variant = "dark" }: { variant?: "dark"
           gap: 1,
           width: "100%",
           p: "8px 10px",
-          bgcolor: variant === "dark" ? "#ffffff15" : "#ffffff15",
-          border: variant === "dark" ? "1px solid #fcfdff45" : "1px solid #d1d5db",
+          bgcolor: variant === "dark" ? "#ffffff15" : tokens.surface,
+          border: variant === "dark" ? "1px solid #fcfdff45" : `1px solid ${tokens.outline}`,
           borderRadius: "6px",
           cursor: "pointer",
           textAlign: "left",
-          "&:hover": { borderColor: variant === "dark" ? "#fcfdff8e" : "#fcfdff8e" },
+          "&:hover": { borderColor: variant === "dark" ? "#fcfdff8e" : tokens.ink3 },
         }}
       >
         <Avatar src={activePfp ?? undefined} sx={{ width: 30, height: 30, bgcolor: "#6366f1", fontSize: 13, fontWeight: 700 }}>
           {activeInitial}
         </Avatar>
         <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Typography sx={{ fontSize: 13, fontWeight: 600, color: variant === "dark" ? "#fff" : "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <Typography sx={{ fontSize: 13, fontWeight: 600, color: variant === "dark" ? "#fff" : tokens.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {activeName}
           </Typography>
           {activeArea && (
-            <Typography sx={{ fontSize: 11, color: variant === "dark" ? "rgba(255,255,255,.6)" : "#6b7280", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <Typography sx={{ fontSize: 11, color: variant === "dark" ? "rgba(255,255,255,.6)" : tokens.ink2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {activeArea}
             </Typography>
           )}
         </Box>
-        <UnfoldMoreIcon sx={{ color: "#6b7280", fontSize: 18 }} />
+        <UnfoldMoreIcon sx={{ color: variant === "dark" ? "rgba(255,255,255,.6)" : tokens.ink2, fontSize: 18 }} />
       </Box>
 
       <Popover
@@ -152,7 +153,7 @@ export default function AccountSwitcher({ variant = "dark" }: { variant?: "dark"
                 sx={{ py: 1, pl: 2, pr: 1 }}
               >
                 <ListItemAvatar sx={{ minWidth: 44 }}>
-                  <Avatar src={p.avatar_url || pageAvatar(p.fb_page_id) || p.sidebar_logo_url || undefined} sx={{ width: 34, height: 34, bgcolor: isActive ? "#6366f1" : "#e0e0e0", color: isActive ? "#fff" : "#666", fontSize: 14, fontWeight: 700 }}>
+                  <Avatar src={p.avatar_url || pageAvatar(p.fb_page_id) || p.sidebar_logo_url || undefined} sx={{ width: 34, height: 34, bgcolor: isActive ? "#6366f1" : tokens.surface2, color: isActive ? "#fff" : tokens.ink2, fontSize: 14, fontWeight: 700 }}>
                     {pName[0].toUpperCase()}
                   </Avatar>
                 </ListItemAvatar>

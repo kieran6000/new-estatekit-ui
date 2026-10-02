@@ -3,7 +3,7 @@ import { Box, Button, Paper, TextField, Typography } from "@mui/material";
 import WhatsAppIcon from "@mui/icons-material/WhatsApp";
 import { tokens } from "../theme";
 import { useAuth } from "../hooks/useAuth";
-import estateKitLogo from "../assets/blue logo full.png";
+import EstateKitLogo from "../components/EstateKitLogo";
 import { ADMIN_WHATSAPP } from "../lib/contact";
 
 const REQUEST_MESSAGE = "Hi, I'd like my EstateKit login details please.";
@@ -42,7 +42,7 @@ export default function LoginPage() {
         elevation={2}
         sx={{ width: "100%", maxWidth: 380, borderRadius: "8px", p: "28px 24px 24px", borderTop: `4px solid ${tokens.primary}` }}
       >
-        <Box component="img" src={estateKitLogo} alt="EstateKit" sx={{ height: 28, display: "block", mb: 0.5 }} />
+        <EstateKitLogo sx={{ height: 28, display: "block", mb: 0.5 }} />
 
         <Typography variant="h6" sx={{ fontWeight: 500, mt: 1.75, mb: 0.25 }}>
           Sign in
@@ -89,7 +89,7 @@ export default function LoginPage() {
             href={`https://wa.me/${ADMIN_WHATSAPP}?text=${encodeURIComponent(REQUEST_MESSAGE)}`}
             target="_blank"
             rel="noopener"
-            sx={{ color: "#128C7E", borderColor: "#cfe9e2", "&:hover": { borderColor: "#128C7E", bgcolor: "#f0fdf4" } }}
+            sx={{ color: tokens.teal, borderColor: tokens.greenBorder, "&:hover": { borderColor: tokens.teal, bgcolor: tokens.greenTint } }}
           >
             Request a login
           </Button>

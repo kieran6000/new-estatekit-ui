@@ -40,7 +40,7 @@ import { armPendingCall, clearPendingCall } from "../lib/pendingCall";
 import { getLeadByToken, logOutcomeByToken, saveNoteByToken } from "../api/leadActions";
 import { logCallByToken, logLeadCall } from "../api/leadEvents";
 import OutcomeSheet, { OUTCOME_ICONS, outcomeSnack } from "../components/OutcomeSheet";
-import estateKitLogo from "../assets/blue logo full.png";
+import EstateKitLogo from "../components/EstateKitLogo";
 import type { LeadRow, OutcomeStep, PipelineKind, Stage } from "../types";
 
 // Share tokens are 8 hex chars (links sent before 25 Sept 2026) or 32 (after).
@@ -336,7 +336,7 @@ function LeadActionUI({
       {/* Slim header: logo + a shortcut to the full leads list (also the sign-in
           funnel when opened from a WhatsApp link while logged out). */}
       <Box sx={{ flex: "0 0 auto", display: "flex", alignItems: "center", gap: 1, p: "6px 6px 6px 14px", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
-        <Box component="img" src={estateKitLogo} alt="EstateKit" sx={{ height: 20 }} />
+        <EstateKitLogo sx={{ height: 20 }} />
         <Box sx={{ flex: 1 }} />
         <IconButton component="a" href="/leads" size="small" aria-label="All my leads" sx={{ color: tokens.primaryDark }}>
           <ViewListIcon />
@@ -378,16 +378,16 @@ function LeadActionUI({
               <Box
                 sx={{
                   display: "flex", alignItems: "center", gap: 1, mt: 1,
-                  bgcolor: tokens.amberTint, border: "1px solid #f59e0b55",
+                  bgcolor: tokens.amberTint, border: `1px solid ${tokens.amberBorder}`,
                   borderRadius: "8px", p: "8px 10px",
                 }}
               >
-                <EventAvailableIcon sx={{ fontSize: 18, color: "#b45309", flex: "0 0 auto" }} />
+                <EventAvailableIcon sx={{ fontSize: 18, color: tokens.amber, flex: "0 0 auto" }} />
                 <Box sx={{ minWidth: 0 }}>
-                  <Typography sx={{ fontSize: 13.5, fontWeight: 700, color: "#92400e", lineHeight: 1.3 }}>
+                  <Typography sx={{ fontSize: 13.5, fontWeight: 700, color: tokens.amber, lineHeight: 1.3 }}>
                     {lead.next_label && lead.next_label !== "—" ? lead.next_label : "Follow up"}
                   </Typography>
-                  <Typography sx={{ fontSize: 12.5, color: "#92400e", lineHeight: 1.3 }}>
+                  <Typography sx={{ fontSize: 12.5, color: tokens.amber, lineHeight: 1.3 }}>
                     {whenLabel(lead.reminder_at)}
                   </Typography>
                 </Box>
@@ -423,7 +423,7 @@ function LeadActionUI({
                 variant="contained"
                 fullWidth
                 startIcon={<CallIcon />}
-                sx={{ bgcolor: tokens.green, "&:hover": { bgcolor: tokens.greenDark }, py: 1.25, fontSize: 15.5, fontWeight: 700 }}
+                sx={{ bgcolor: tokens.greenCall, color: "#fff", "&:hover": { bgcolor: tokens.greenCallHover }, py: 1.25, fontSize: 15.5, fontWeight: 700 }}
               >
                 Call {firstName}
               </Button>
@@ -683,8 +683,8 @@ function LoggedConfirmation({
   const failed = status === "failed";
   const saving = status === "saving";
   const tone = failed
-    ? { bg: "#fef2f2", border: "#fecaca", fg: "#991b1b" }
-    : { bg: "#e8f5e9", border: "#a5d6a7", fg: "#1b5e20" };
+    ? { bg: tokens.redTint, border: tokens.redBorder, fg: tokens.red }
+    : { bg: tokens.greenTint, border: tokens.greenBorder, fg: tokens.greenDark };
 
   return (
     <Box sx={{ bgcolor: tone.bg, border: `1px solid ${tone.border}`, borderRadius: "8px", p: "12px 14px" }}>
@@ -735,7 +735,7 @@ function LoggedConfirmation({
 function Step({ n, label, optional, children }: { n: number; label: string; optional?: boolean; children: React.ReactNode }) {
   return (
     <Box sx={{ display: "flex", gap: 1.25 }}>
-      <Avatar sx={{ width: 26, height: 26, fontSize: 13, fontWeight: 700, bgcolor: tokens.primary, flex: "0 0 auto", mt: 0.25 }}>{n}</Avatar>
+      <Avatar sx={{ width: 26, height: 26, fontSize: 13, fontWeight: 700, bgcolor: tokens.primary, color: tokens.onPrimary, flex: "0 0 auto", mt: 0.25 }}>{n}</Avatar>
       <Box sx={{ flex: 1, minWidth: 0 }}>
         <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "text.secondary", mb: 0.6 }}>
           Step {n} · {label}
@@ -763,20 +763,20 @@ function InfoLine({ icon, value, href, strong }: { icon: React.ReactNode; value:
 }
 
 const STAGE_CHIP: Record<string, { bg: string; fg: string }> = {
-  "New Lead": { bg: "#e6f4ea", fg: "#1e7e34" },
-  "No Answer": { bg: "#fef3c7", fg: "#92400e" },
-  "Contacted": { bg: "#e0f2fe", fg: "#075985" },
-  "Booked": { bg: "#ede9fe", fg: "#5b21b6" },
-  "Viewing Booked": { bg: "#ede9fe", fg: "#5b21b6" },
-  "Mandate Signed": { bg: "#dcfce7", fg: "#166534" },
-  "Offer Made": { bg: "#dcfce7", fg: "#166534" },
-  "Bought": { bg: "#dcfce7", fg: "#166534" },
-  "Lost": { bg: "#f3f4f6", fg: "#6b7280" },
-  "Invalid Number": { bg: "#f3f4f6", fg: "#6b7280" },
+  "New Lead": { bg: tokens.greenTint, fg: tokens.green },
+  "No Answer": { bg: tokens.amberTint, fg: tokens.amber },
+  "Contacted": { bg: tokens.primaryBg, fg: tokens.primary },
+  "Booked": { bg: tokens.purpleTint, fg: tokens.purple },
+  "Viewing Booked": { bg: tokens.purpleTint, fg: tokens.purple },
+  "Mandate Signed": { bg: tokens.greenTint, fg: tokens.greenDark },
+  "Offer Made": { bg: tokens.greenTint, fg: tokens.greenDark },
+  "Bought": { bg: tokens.greenTint, fg: tokens.greenDark },
+  "Lost": { bg: tokens.surface2, fg: tokens.ink2 },
+  "Invalid Number": { bg: tokens.surface2, fg: tokens.ink2 },
 };
 
 function StageChip({ stage }: { stage: string }) {
-  const c = STAGE_CHIP[stage] ?? { bg: "#f3f4f6", fg: "#374151" };
+  const c = STAGE_CHIP[stage] ?? { bg: tokens.surface2, fg: tokens.ink };
   return (
     <Box sx={{ display: "inline-flex", alignItems: "center", bgcolor: c.bg, color: c.fg, fontSize: 12, fontWeight: 700, borderRadius: "999px", px: 1.25, py: 0.35 }}>
       {stage}

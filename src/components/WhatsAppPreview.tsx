@@ -80,7 +80,7 @@ export default function WhatsAppPreview({
 
   return (
     <Box sx={{ borderRadius: "8px", overflow: "hidden", border: `1px solid ${tokens.divider}` }}>
-      <Box sx={{ bgcolor: "#075e54", color: "#fff", px: 1.5, py: 1, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <Box sx={{ bgcolor: "var(--wa-header)", color: "#fff", px: 1.5, py: 1, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <Typography sx={{ fontSize: 12.5, fontWeight: 500 }}>WhatsApp preview</Typography>
         {editable && (
           <Typography sx={{ fontSize: 11.5, opacity: 0.75 }}>{editing ? "Click away to save · Esc to cancel" : "Double-click to edit"}</Typography>
@@ -88,9 +88,10 @@ export default function WhatsAppPreview({
       </Box>
       <Box
         sx={{
-          bgcolor: "#e5ddd5",
+          // WhatsApp's own light or dark chat colours (index.css --wa-*).
+          bgcolor: "var(--wa-chat)",
           backgroundImage:
-            "radial-gradient(rgba(0,0,0,.035) 1px, transparent 1px), radial-gradient(rgba(0,0,0,.035) 1px, transparent 1px)",
+            "radial-gradient(var(--wa-dots) 1px, transparent 1px), radial-gradient(var(--wa-dots) 1px, transparent 1px)",
           backgroundSize: "18px 18px",
           backgroundPosition: "0 0, 9px 9px",
           p: "14px 12px",
@@ -103,7 +104,7 @@ export default function WhatsAppPreview({
           sx={{
             maxWidth: "80%",
             width: editing ? "80%" : "auto",
-            bgcolor: "#dcf8c6",
+            bgcolor: "var(--wa-out)",
             borderRadius: "8px",
             borderTopRightRadius: 0,
             p: "7px 9px 6px",
@@ -125,15 +126,15 @@ export default function WhatsAppPreview({
                   (e.target as HTMLElement).blur();
                 }
               }}
-              sx={{ fontSize: 13.5, color: "#111", lineHeight: 1.35, p: 0 }}
+              sx={{ fontSize: 13.5, color: "var(--wa-ink)", lineHeight: 1.35, p: 0 }}
             />
           ) : (
-            <Typography sx={{ fontSize: 13.5, color: "#111", whiteSpace: "pre-wrap", lineHeight: 1.35, wordBreak: "break-word" }}>
+            <Typography sx={{ fontSize: 13.5, color: "var(--wa-ink)", whiteSpace: "pre-wrap", lineHeight: 1.35, wordBreak: "break-word" }}>
               {parts.map((part, i) => (
                 <span key={i}>
                   {part}
                   {i < parts.length - 1 && (
-                    <Box component="a" href={`/l/${lead.id}`} target="_blank" rel="noopener" sx={{ color: "#0b57d0" }}>
+                    <Box component="a" href={`/l/${lead.id}`} target="_blank" rel="noopener" sx={{ color: "var(--wa-link)" }}>
                       {link}
                     </Box>
                   )}
@@ -142,7 +143,7 @@ export default function WhatsAppPreview({
             </Typography>
           )}
           <Box sx={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 0.4, mt: 0.5 }}>
-            <Typography sx={{ fontSize: 10.5, color: "rgba(0,0,0,.45)" }}>
+            <Typography sx={{ fontSize: 10.5, color: "var(--wa-meta)" }}>
               {(time ?? new Date()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
             </Typography>
             <DoneAllIcon sx={{ fontSize: 14, color: "#53bdeb" }} />

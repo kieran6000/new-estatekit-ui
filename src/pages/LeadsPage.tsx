@@ -348,13 +348,13 @@ export default function LeadsPage() {
           <IconButton onClick={() => setSearchOpen((v) => !v)}>
             <SearchIcon />
           </IconButton>
-          <Avatar sx={{ width: 32, height: 32, bgcolor: tokens.primary, fontSize: 14, ml: 0.5 }}>K</Avatar>
+          <Avatar sx={{ width: 32, height: 32, bgcolor: tokens.primary, color: tokens.onPrimary, fontSize: 14, ml: 0.5 }}>K</Avatar>
         </Toolbar>
       </AppBar>
 
       {pendingLead && (
         <Box sx={{ display: "flex", alignItems: "center", gap: 1.25, p: "12px 12px 12px 16px", bgcolor: tokens.amberTint, borderBottom: `1px solid ${tokens.divider}` }}>
-          <PhoneCallbackIcon sx={{ color: "#e65100" }} />
+          <PhoneCallbackIcon sx={{ color: tokens.orange }} />
           <Box sx={{ flex: 1, minWidth: 0, cursor: "pointer" }} onClick={() => setOutcomeLeadId(pendingLead.id)}>
             <Typography sx={{ fontWeight: 600, fontSize: 14, lineHeight: 1.3 }}>
               How did your call with {pendingLead.name.split(" ")[0]} go?
@@ -520,13 +520,13 @@ export default function LeadsPage() {
               onClick={() => setShowArchived((v) => !v)}
               sx={{
                 display: "flex", alignItems: "center", gap: 0.5,
-                border: `1px solid ${showArchived ? "#92400e" : tokens.divider}`,
+                border: `1px solid ${showArchived ? tokens.amber : tokens.divider}`,
                 borderRadius: "6px",
-                bgcolor: showArchived ? "#fef3c7" : "#fff",
-                color: showArchived ? "#92400e" : "text.secondary",
+                bgcolor: showArchived ? tokens.amberTint : tokens.surface,
+                color: showArchived ? tokens.amber : "text.secondary",
                 fontWeight: showArchived ? 600 : 400,
                 fontSize: 12.5, p: "5px 10px", cursor: "pointer", whiteSpace: "nowrap",
-                "&:hover": { borderColor: "#92400e" },
+                "&:hover": { borderColor: tokens.amber },
               }}
             >
               {showArchived ? "Viewing archived" : "Archived"}
@@ -544,7 +544,7 @@ export default function LeadsPage() {
                   display: "flex", alignItems: "center", gap: 0.5,
                   border: `1px solid ${active ? tokens.primary : tokens.divider}`,
                   borderRadius: "6px",
-                  bgcolor: active ? tokens.primaryBg : "#fff",
+                  bgcolor: active ? tokens.primaryBg : tokens.surface,
                   color: active ? tokens.primaryDark : "text.secondary",
                   fontWeight: active ? 600 : 400,
                   fontSize: 12.5,
@@ -587,7 +587,7 @@ export default function LeadsPage() {
             onClick={() => setFocusOpen(true)}
             variant="contained"
             startIcon={<CallIcon />}
-            sx={{ bgcolor: tokens.green, whiteSpace: "nowrap", "&:hover": { bgcolor: tokens.greenDark } }}
+            sx={{ bgcolor: tokens.greenCall, color: "#fff", whiteSpace: "nowrap", "&:hover": { bgcolor: tokens.greenCallHover } }}
           >
             Start calling
           </Button>
@@ -1018,7 +1018,7 @@ function LeadsTable({
           </StageMenu>
         </TableCell>
         <TableCell>
-          <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, fontSize: 13, color: l.reminder_at ? "#e65100" : "text.secondary" }}>
+          <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, fontSize: 13, color: l.reminder_at ? tokens.orange : "text.secondary" }}>
             {l.reminder_at && <AccessTimeIcon sx={{ fontSize: 14 }} />}
             {nextStepLabel(l)}
           </Box>
@@ -1035,7 +1035,7 @@ function LeadsTable({
                 display: "inline-flex",
                 alignItems: "center",
                 gap: 1,
-                bgcolor: tokens.green,
+                bgcolor: tokens.greenCall,
                 color: "#fff",
                 borderRadius: "4px",
                 p: "8px 14px",
@@ -1043,7 +1043,7 @@ function LeadsTable({
                 fontSize: 13,
                 textTransform: "uppercase",
                 textDecoration: "none",
-                "&:hover": { bgcolor: tokens.greenDark },
+                "&:hover": { bgcolor: tokens.greenCallHover },
               }}
             >
               <CallIcon fontSize="small" /> Call
@@ -1174,7 +1174,7 @@ function MobileLeadsList({
             </Box>
           )}
         </StageMenu>
-        <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, fontSize: 13, color: l.reminder_at ? "#e65100" : "text.secondary" }}>
+        <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, fontSize: 13, color: l.reminder_at ? tokens.orange : "text.secondary" }}>
           {l.reminder_at && <AccessTimeIcon sx={{ fontSize: 14 }} />}
           {nextStepLabel(l)}
         </Box>
@@ -1190,7 +1190,7 @@ function MobileLeadsList({
             alignItems: "center",
             justifyContent: "center",
             gap: 1,
-            bgcolor: tokens.green,
+            bgcolor: tokens.greenCall,
             color: "#fff",
             borderRadius: "4px",
             p: "13px",
@@ -1199,7 +1199,7 @@ function MobileLeadsList({
             textTransform: "uppercase",
             textDecoration: "none",
             mt: 1.25,
-            "&:hover": { bgcolor: tokens.greenDark },
+            "&:hover": { bgcolor: tokens.greenCallHover },
           }}
         >
           <CallIcon fontSize="small" /> Call

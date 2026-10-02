@@ -87,8 +87,10 @@ export default function FbFormPreview({
         <Chip label="Connected" color="success" size="small" />
       </Box>
 
-      {/* Phone frame */}
+      {/* Phone frame. Facebook's own light look whatever the dashboard's
+          mode, so the preview matches what people see on Facebook. */}
       <Box
+        data-theme="light"
         sx={{
           width: "100%",
           maxWidth: 340,

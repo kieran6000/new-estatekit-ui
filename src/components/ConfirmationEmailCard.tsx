@@ -188,7 +188,8 @@ export default function ConfirmationEmailCard({
           <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
             From: <b>{fullName}</b> · Subject: Your home evaluation for {SAMPLE.address}
           </Typography>
-          <Box sx={{ mt: 1.5, bgcolor: "background.paper", borderRadius: "4px", p: 1.5, fontSize: 14, lineHeight: 1.55, color: "#222" }}>
+          {/* The email as the lead receives it: always light. */}
+          <Box data-theme="light" sx={{ mt: 1.5, bgcolor: "background.paper", borderRadius: "4px", p: 1.5, fontSize: 14, lineHeight: 1.55, color: "#222" }}>
             <Typography sx={{ fontSize: 14, mb: 1.25 }}>Hi {SAMPLE.name},</Typography>
             {paragraphs.map((t, i) => (
               <Box key={i}>
