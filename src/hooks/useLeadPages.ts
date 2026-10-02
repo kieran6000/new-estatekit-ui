@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as leadPagesApi from "../api/leadPages";
 import { trackActivity } from "../lib/activity";
@@ -65,4 +66,11 @@ export function useSubmitMockLead() {
       email?: string | null;
     }) => leadPagesApi.submitMockLead(pageId, name, phone, formAnswers, email ?? null),
   });
+}
+
+/** Lead page id → its Dataset ID ("" when none), for the "Not sent to
+ *  Facebook" tag (lib/leadTags.ts). */
+export function useDatasetByPage(enabled = true): Map<string, string> | undefined {
+  const { data } = useLeadPages({ enabled });
+  return useMemo(() => (data ? new Map(data.map((p) => [p.id, (p.fbPixelId || "").replace(/\D/g, "")])) : undefined), [data]);
 }

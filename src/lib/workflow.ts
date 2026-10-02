@@ -59,9 +59,10 @@ export interface Workflow {
 export const STAGES = ["New Lead", "No Answer", "Contacted", "Booked", "Viewing Booked", "Offer Made", "Mandate Signed", "Bought", "Lost", "Invalid Number"];
 export const PIPELINES = ["Sellers", "Buyers"];
 export const SOURCES = ["Facebook form", "EstateKit page", "Added by hand"];
-/** Tags a workflow can check for or filter on. "Not ready" is set by lead
- *  pages (lib/leadTags.ts); others come from "Add tag" steps. */
-export const KNOWN_TAGS = ["Not ready"];
+/** Tags a workflow can check for or filter on. "Not sent to Facebook" is
+ *  worked out from the lead page (lib/leadTags.ts); others come from "Add
+ *  tag" steps. */
+export const KNOWN_TAGS = ["Not sent to Facebook"];
 
 export const TRIGGERS: { kind: TriggerKind; label: string; help: string }[] = [
   { kind: "lead_created", label: "New lead comes in", help: "From a Facebook form or an EstateKit page." },
@@ -535,11 +536,11 @@ export const TEMPLATES: { name: string; blurb: string; make: () => Workflow }[] 
     }),
   },
   {
-    name: "Not ready: stay in touch",
-    blurb: "Leads tagged Not ready get a friendly email after 2 weeks and a reminder for the agent.",
+    name: "Not sent to Facebook: stay in touch",
+    blurb: "Leads Facebook didn't count (usually not ready to sell yet) get a friendly email after 2 weeks and a reminder for the agent.",
     make: () => ({
-      ...blankWorkflow(), name: "Not ready: stay in touch",
-      filters: [{ field: "has_tag", value: "Not ready" }, { field: "has_email", value: "yes" }],
+      ...blankWorkflow(), name: "Not sent to Facebook: stay in touch",
+      filters: [{ field: "has_tag", value: "Not sent to Facebook" }, { field: "has_email", value: "yes" }],
       steps: [
         { id: newId(), type: "wait", amount: 14, unit: "days" },
         { id: newId(), type: "email_lead", subject: "Still thinking about selling, {{first_name}}?", body: "Hi {{first_name}},\n\nJust checking in. Whenever you're ready, I'm happy to give you an up-to-date valuation for your home in {{area}}.\n\n{{agent_name}}\n{{agent_phone}}" },
