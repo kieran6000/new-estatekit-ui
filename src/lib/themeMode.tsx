@@ -21,7 +21,7 @@ export type ColorScheme = "light" | "dark";
 export const THEME_STORAGE_KEY = "ek-theme";
 
 /** Paths that always render light. Mirrored in index.html's inline script. */
-export const ALWAYS_LIGHT = /^\/(p|r|thank-you|privacy|start|sold|plan|report)(\/|$)/;
+export const ALWAYS_LIGHT = /^\/(p|r|thank-you|privacy|start|sold|plan|report|unsubscribe)(\/|$)/;
 
 // The browser bar colour on phones, matching the top of the app.
 const THEME_COLOR: Record<ColorScheme, string> = { light: "#1976d2", dark: "#181c21" };

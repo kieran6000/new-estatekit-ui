@@ -24,24 +24,24 @@ export default function LeadTag({ label, highlight = false, help }: { label: str
 
 /** A lead's tags, or nothing. Renders only for operators (it checks itself,
  *  so no page can forget to). */
-export function LeadTags({ lead, sx }: { lead: { quality?: string | null; source_page_id?: string | null; fb_lead_id?: string | null }; sx?: SxProps<Theme> }) {
+export function LeadTags({ lead, sx }: { lead: { quality?: string | null; source_page_id?: string | null; fb_lead_id?: string | null; tags?: string[] | null }; sx?: SxProps<Theme> }) {
   const { data: isOperator } = useIsOperator();
   const datasets = useDatasetByPage(isOperator === true);
-  const tags = leadTags(lead, datasets);
+  // Worked-out tags, then the ones workflows added.
+  const tags = [...leadTags(lead, datasets), ...(lead.tags ?? [])];
   if (isOperator !== true) return null;
-  // Instant-form leads: just Facebook's logo, no tag. Facebook counts them itself.
-  if (lead.fb_lead_id) {
-    return (
-      <Tooltip title="Facebook instant form. Facebook counts this lead itself." enterTouchDelay={0}>
-        <FacebookIcon aria-label="Facebook instant form" sx={{ fontSize: 16, color: "#1877f2", verticalAlign: "-3px", ...sx }} />
-      </Tooltip>
-    );
-  }
-  if (!tags.length) return null;
   const reason = notSentReason(lead, datasets);
+  // Instant-form leads: Facebook's logo, not a tag. Facebook counts them itself.
+  const fb = lead.fb_lead_id ? (
+    <Tooltip title="Facebook instant form. Facebook counts this lead itself." enterTouchDelay={0}>
+      <FacebookIcon aria-label="Facebook instant form" sx={{ fontSize: 16, color: "#1877f2", verticalAlign: "-3px", ...(tags.length ? {} : sx) }} />
+    </Tooltip>
+  ) : null;
+  if (!tags.length) return fb;
   return (
-    <Box component="span" sx={{ display: "inline-flex", gap: 0.5, flexWrap: "wrap", verticalAlign: "middle", ...sx }}>
-      {tags.map((t) => <LeadTag key={t} label={t} help={reason ? REASON_HELP[reason] : undefined} />)}
+    <Box component="span" sx={{ display: "inline-flex", gap: 0.5, flexWrap: "wrap", alignItems: "center", verticalAlign: "middle", ...sx }}>
+      {fb}
+      {tags.map((t) => <LeadTag key={t} label={t} help={t === "Not tracked" && reason ? REASON_HELP[reason] : undefined} />)}
     </Box>
   );
 }

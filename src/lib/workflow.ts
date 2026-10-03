@@ -5,8 +5,8 @@
 // calls these.
 //
 // Kept to the 80/20 on purpose. Every trigger, step, check and stop rule
-// below is one the engine (run-automations) can actually do or will do with
-// the planned add-only backend; nothing is here "because GHL has it".
+// below is one the engine (supabase/functions/run-automations/workflows.ts)
+// runs; nothing is here "because GHL has it". Change both together.
 
 // ── Shape ────────────────────────────────────────────────────────────────
 
@@ -60,9 +60,22 @@ export const STAGES = ["New Lead", "No Answer", "Contacted", "Booked", "Viewing 
 export const PIPELINES = ["Sellers", "Buyers"];
 export const SOURCES = ["Facebook form", "EstateKit page", "Added by hand"];
 /** Tags a workflow can check for or filter on. "Not tracked" is
- *  worked out from the lead page (lib/leadTags.ts); others come from "Add
- *  tag" steps. */
-export const KNOWN_TAGS = ["Not tracked"];
+ *  worked out from the lead page (lib/leadTags.ts); the rest are the ones
+ *  "Add tag" steps add (rememberTags fills them in as workflows load). */
+export const KNOWN_TAGS: string[] = ["Not tracked"];
+
+/** Every tag the "Add tag" steps in this tree add. */
+export function tagsIn(steps: Step[]): string[] {
+  const out: string[] = [];
+  const walk = (l: Step[]) => l.forEach((s) => { if (s.type === "tag" && s.tag.trim()) out.push(s.tag.trim()); if (s.type === "branch") { walk(s.yes); walk(s.no); } });
+  walk(steps);
+  return out;
+}
+
+/** Adds tags to the pick lists (case-insensitive, no duplicates). */
+export function rememberTags(tags: string[]): void {
+  for (const t of tags) if (!KNOWN_TAGS.some((k) => k.toLowerCase() === t.toLowerCase())) KNOWN_TAGS.push(t);
+}
 
 export const TRIGGERS: { kind: TriggerKind; label: string; help: string }[] = [
   { kind: "lead_created", label: "New lead comes in", help: "From a Facebook form or an EstateKit page." },
@@ -70,7 +83,7 @@ export const TRIGGERS: { kind: TriggerKind; label: string; help: string }[] = [
   { kind: "no_answer_times", label: "No answer, a number of times", help: "After the agent logs \"No answer\" this many times." },
   { kind: "not_contacted_for", label: "Lead goes quiet", help: "No call or stage change for this many days." },
   { kind: "reminder_due", label: "A follow-up reminder is due", help: "When a reminder's time arrives." },
-  { kind: "plan_opened", label: "Lead opens their Marketing Plan", help: "The plan link in the confirmation email." },
+  { kind: "plan_opened", label: "Lead opens their Marketing Plan", help: "From the email or the thank-you page. Once for each." },
   { kind: "daily_at", label: "Every weekday at a set time", help: "Once per agent, not per lead: for a daily summary on WhatsApp." },
 ];
 

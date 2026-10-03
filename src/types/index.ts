@@ -99,6 +99,10 @@ export interface LeadRow {
    *  low-quality answers. Not reported to the pixel; shown to staff as the
    *  "Not tracked" tag (lib/leadTags.ts). */
   quality?: "good" | "weak" | null;
+  /** Labels "Add tag" workflow steps put on the lead (staff see them). */
+  tags?: string[] | null;
+  /** Unsubscribed from workflow emails. */
+  email_opt_out?: boolean;
 }
 
 export interface OverviewDailyRow {

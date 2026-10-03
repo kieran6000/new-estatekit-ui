@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { runWorkflows } from "./workflows.ts";
 
 const BATCH_SIZE = 200;
 const TEXTMEBOT_URL = "https://api.textmebot.com/send.php";
@@ -175,9 +176,14 @@ async function processRun(supabase: SupabaseClient, run: RunRow, budget: { sends
   // Account paused from the dashboard: hold the run instead of sending.
   const { data: owner } = await supabase
     .from("agent_profiles")
-    .select("automations_paused")
+    .select("automations_paused, uses_workflows")
     .eq("agent_id", lead.agent_id)
     .maybeSingle();
+  // Switched to workflows: the old shared automations no longer run for it.
+  if (owner?.uses_workflows) {
+    await supabase.from("automation_runs").update({ status: "cancelled" }).eq("id", run.id);
+    return;
+  }
   if (owner?.automations_paused) {
     await supabase.from("automation_runs").update({ status: "paused" }).eq("id", run.id);
     return;
@@ -345,5 +351,20 @@ Deno.serve(async (_req: Request) => {
     processed++;
   }
 
-  return new Response(JSON.stringify({ processed }), { headers: { "Content-Type": "application/json" } });
+  // The new workflows, sharing this minute's send budget and the send gap.
+  let workflows = 0;
+  try {
+    workflows = await runWorkflows(supabase, {
+      sendWhatsApp,
+      actionLink: (leadId, agentId, linkType) => generateActionLink(supabase, leadId, agentId, linkType),
+      linkTypeFor: inferLinkType,
+      quietDeferUntil: quietHoursDeferUntil,
+      budget,
+      maxSends: MAX_SENDS_PER_INVOCATION,
+    });
+  } catch (e) {
+    console.error("workflows failed", e);
+  }
+
+  return new Response(JSON.stringify({ processed, workflows }), { headers: { "Content-Type": "application/json" } });
 });

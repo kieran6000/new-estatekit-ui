@@ -90,11 +90,7 @@ function AutomationsAdmin() {
       >
         <Tab label="Scheduled" value="scheduled" sx={{ minHeight: 44, textTransform: "none", fontWeight: 600 }} />
         <Tab label="Setup" value="setup" sx={{ minHeight: 44, textTransform: "none", fontWeight: 600 }} />
-        <Tab
-          value="workflows"
-          sx={{ minHeight: 44, textTransform: "none", fontWeight: 600 }}
-          label={<Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>Workflows <Chip size="small" label="Preview" color="warning" variant="outlined" sx={{ height: 18, fontSize: 10.5 }} /></Box>}
-        />
+        <Tab label="Workflows" value="workflows" sx={{ minHeight: 44, textTransform: "none", fontWeight: 600 }} />
       </Tabs>
       {tab === "workflows" ? (
         <WorkflowBuilder />

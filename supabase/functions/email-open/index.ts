@@ -1,5 +1,7 @@
 // The confirmation email's open pixel:
 //   leads.estatekit.co/o/<lead id>  (Vercel rewrite)  →  here  →  1x1 GIF
+// and each workflow email's:
+//   leads.estatekit.co/oe/<workflow email id>  →  here (?e=)  →  1x1 GIF
 //
 // Records the first open in the lead's history (email_opened). Always answers
 // with the image, whatever happens, so the email never shows a broken image.
@@ -21,8 +23,33 @@ const pixel = () =>
 
 const SCANNER_WINDOW_MS = 10_000;
 
+/** A workflow email (leads.estatekit.co/oe/<workflow email id>): marks it
+ *  opened, for "Opened the last email" checks, and notes the first open of
+ *  each email in the lead's history. */
+async function workflowEmailOpened(emailId: string) {
+  const { data: em } = await supabase.from("workflow_emails").select("id, lead_id, agent_id, subject, sent_at, opened_at").eq("id", emailId).maybeSingle();
+  if (!em || em.opened_at) return;
+  if (Date.now() - new Date(em.sent_at).getTime() < SCANNER_WINDOW_MS) return;
+  const { data: claimed } = await supabase.from("workflow_emails").update({ opened_at: new Date().toISOString() }).eq("id", em.id).is("opened_at", null).select("id").maybeSingle();
+  if (!claimed || !em.lead_id) return;
+  const { error } = await supabase.from("lead_events").insert({
+    lead_id: em.lead_id,
+    agent_id: em.agent_id,
+    event_type: "workflow_email_opened",
+    to_value: em.subject ?? "",
+    source: "automation",
+  });
+  if (error) console.error("workflow open log failed", error);
+}
+
 Deno.serve(async (req) => {
-  const id = new URL(req.url).searchParams.get("l") || "";
+  const params = new URL(req.url).searchParams;
+  const emailId = params.get("e") || "";
+  if (/^[0-9a-f-]{36}$/i.test(emailId)) {
+    try { await workflowEmailOpened(emailId); } catch (e) { console.error("workflow open pixel failed", e); }
+    return pixel();
+  }
+  const id = params.get("l") || "";
   if (!/^[0-9a-f-]{36}$/i.test(id)) return pixel();
 
   try {

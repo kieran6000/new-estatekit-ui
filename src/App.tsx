@@ -22,6 +22,7 @@ import SetupPage from "./pages/SetupPage";
 import LeadActionPage from "./pages/LeadActionPage";
 import LeadPagePreviewPage from "./pages/LeadPagePreviewPage";
 import ThankYouPage from "./pages/ThankYouPage";
+import UnsubscribePage from "./pages/UnsubscribePage";
 import PrivacyPolicyPage from "./pages/PrivacyPolicyPage";
 import SignupPage from "./pages/SignupPage";
 import SoldPage from "./pages/SoldPage";
@@ -83,6 +84,7 @@ export default function App() {
       <Route path="/l/:leadId" element={<LeadActionPage />} />
       <Route path="/p/:slug" element={<LeadPagePreviewPage />} />
       <Route path="/thank-you" element={<ThankYouPage />} />
+      <Route path="/unsubscribe/:leadId/:sig" element={<UnsubscribePage />} />
       <Route path="/privacy" element={<PrivacyPolicyPage />} />
       <Route path="/start" element={<SignupPage />} />
       <Route path="/sold/:agentId" element={<SoldPage />} />

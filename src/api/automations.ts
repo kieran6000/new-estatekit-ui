@@ -105,6 +105,14 @@ export async function setAccountAutomationsPaused(agentId: string, paused: boole
   const { error } = await supabase.from("agent_profiles").update({ automations_paused: paused }).eq("agent_id", agentId);
   if (error) throw new Error(error.message);
 
+  // Workflow runs are held (or released) the same way.
+  const { error: wfError } = await supabase
+    .from("workflow_runs")
+    .update({ status: paused ? "paused" : "pending", updated_at: new Date().toISOString() })
+    .eq("agent_id", agentId)
+    .eq("status", paused ? "pending" : "paused");
+  if (wfError) throw new Error(wfError.message);
+
   const runs = await listScheduledRuns(agentId);
   const ids = runs.filter((r) => r.status === (paused ? "pending" : "paused")).map((r) => r.id);
   if (!ids.length) return;

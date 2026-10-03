@@ -12,7 +12,11 @@ export type LeadEventType =
   | "email_opened"
   | "email_clicked"
   | "plan_opened"
-  | "plan_pdf_opened";
+  | "plan_pdf_opened"
+  | "workflow_email"
+  | "workflow_email_opened"
+  | "tagged"
+  | "email_unsubscribed";
 
 export type LeadEventSource =
   | "dashboard" | "action_link" | "automation" | "facebook" | "website" | "system" | "backfill";
