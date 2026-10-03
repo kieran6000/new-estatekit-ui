@@ -38,6 +38,7 @@ import { prettyAnswer } from "../lib/format";
 import { timeAgo, whenLabel, isUpcoming } from "../lib/timeAgo";
 import { trackActivity } from "../lib/activity";
 import { armPendingCall, clearPendingCall } from "../lib/pendingCall";
+import { useFollowLeadAccount } from "../hooks/useFollowLeadAccount";
 import { getLeadByToken, logOutcomeByToken, saveNoteByToken } from "../api/leadActions";
 import { logCallByToken, logLeadCall } from "../api/leadEvents";
 import OutcomeSheet, { OUTCOME_ICONS, outcomeSnack } from "../components/OutcomeSheet";
@@ -48,8 +49,10 @@ import type { LeadRow, OutcomeStep, PipelineKind, Stage } from "../types";
 // Lead ids are UUIDs with dashes, so they never match either. This must be
 // live before the edge functions that mint 32-char tokens are deployed, or
 // new WhatsApp links open as an unknown lead id.
+// Short links (12 letters/digits, no look-alikes) are the current format;
+// the 8- and 32-char hex ones still work so old WhatsApp links keep opening.
 function isTokenFormat(s: string): boolean {
-  return /^[a-f0-9]{8}$|^[a-f0-9]{32}$/.test(s);
+  return /^[a-f0-9]{8}$|^[a-f0-9]{32}$|^[a-z0-9]{12}$/.test(s);
 }
 
 export default function LeadActionPage() {
@@ -112,6 +115,9 @@ function LeadActionUI({
    *  loaded (signed-out token view). */
   kindHint?: PipelineKind;
 }) {
+  // Staff opening another agent's link land in that agent's account, so
+  // "View all my leads" shows the right list.
+  useFollowLeadAccount(lead);
   const { data: pipelines = [] } = usePipelines({ enabled: canEdit });
   const updateNote = useUpdateLeadNote();
   const updateStage = useUpdateLeadStage();
