@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "../api/_client";
 import "./plan.css";
@@ -35,6 +35,9 @@ interface Plan {
   accent: string;
   page_slug: string | null;
   sales: { address: string; price: number | null; status: string; image_url: string | null }[];
+  /** The agent's own branded plan, when an operator has uploaded one. */
+  pdf_url?: string | null;
+  pdf_name?: string | null;
 }
 
 type TimeKey = "asap" | "1-3" | "3-6" | "6-12" | "notsure";
@@ -87,10 +90,22 @@ const prettyPhone = (s: string) => {
   return d.length === 11 && d.startsWith("27") ? `0${d.slice(2, 4)} ${d.slice(4, 7)} ${d.slice(7)}` : s;
 };
 
-async function getPlan(token: string): Promise<Plan | null> {
-  const { data, error } = await supabase.rpc("get_selling_plan", { p_token: token });
+/** `from` = where the link was opened ("thanks" = the thank-you page; none =
+ *  the email), so the lead's history says which. */
+async function getPlan(token: string, from: string | null): Promise<Plan | null> {
+  const { data, error } = await supabase.rpc("open_selling_plan", { p_token: token, p_from: from });
   if (error) throw new Error(error.message);
   return (data as Plan) ?? null;
+}
+
+/** From the thank-you page the plan can be opened a moment before the lead
+ *  has finished saving, so wait a few seconds for it before giving up. */
+async function getPlanPatiently(token: string, from: string | null): Promise<Plan | null> {
+  for (let i = 0; ; i++) {
+    const plan = await getPlan(token, from);
+    if (plan || from !== "thanks" || i >= 6) return plan;
+    await new Promise((r) => setTimeout(r, 1000));
+  }
 }
 
 async function getSamplePlan(agentId: string): Promise<Plan | null> {
@@ -101,12 +116,14 @@ async function getSamplePlan(agentId: string): Promise<Plan | null> {
 
 export default function PlanPage() {
   const { token = "", agentId = "" } = useParams();
+  const [params] = useSearchParams();
+  const from = params.get("from") === "thanks" ? "thanks" : null;
   const sample = !!agentId;
   const valid = sample ? /^[0-9a-f-]{36}$/i.test(agentId) : /^[a-f0-9]{32}$/.test(token);
   // Read once: every load would otherwise count as another open.
   const { data: plan, isLoading, isError } = useQuery({
     queryKey: sample ? ["samplePlan", agentId] : ["plan", token],
-    queryFn: () => (sample ? getSamplePlan(agentId) : getPlan(token)),
+    queryFn: () => (sample ? getSamplePlan(agentId) : getPlanPatiently(token, from)),
     enabled: valid,
     staleTime: Infinity,
     retry: 1,
@@ -225,6 +242,22 @@ export default function PlanPage() {
               ))}
             </ul>
           </>
+        )}
+
+        {plan.pdf_url && /^https:\/\//.test(plan.pdf_url) && (
+          <a
+            className="plan-pdf"
+            href={plan.pdf_url}
+            target="_blank"
+            rel="noopener"
+            onClick={() => { if (!sample) void supabase.rpc("plan_pdf_opened", { p_token: token }); }}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zm-1 7V3.5L18.5 9zM8 13h8v2H8zm0 4h8v2H8z"/></svg>
+            <span>
+              <b>{agentFirst}'s full marketing plan</b>
+              <span>{plan.pdf_name?.trim() || "PDF"} · opens in a new tab</span>
+            </span>
+          </a>
         )}
 
         <section className="plan-next">

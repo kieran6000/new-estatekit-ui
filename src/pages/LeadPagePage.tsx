@@ -67,6 +67,7 @@ import { timeAgo } from "../lib/timeAgo";
 import FormPresetPicker from "../components/FormPresetPicker";
 import InfoTip from "../components/InfoTip";
 import ConfirmationEmailCard from "../components/ConfirmationEmailCard";
+import MarketingPlanPdfCard from "../components/MarketingPlanPdfCard";
 import OptionsEditor from "../components/OptionsEditor";
 import { cleanOptions } from "../lib/options";
 import { applyFormPreset, FORM_PRESET_VERSION, presetByKey } from "../lib/formPresets";
@@ -305,8 +306,9 @@ export default function LeadPagePage() {
         />
       ) : null}
       {page.sourceType === "fb_form" && (
-        <Box sx={{ maxWidth: 1000, mx: "auto", px: 2, pb: 3 }}>
+        <Box sx={{ maxWidth: 1000, mx: "auto", px: 2, pb: 3, display: "flex", flexDirection: "column", gap: 2 }}>
           <ConfirmationEmailCard profile={profile} canSetUp={canSetUp} />
+          {pipeline.kind === "seller" && <MarketingPlanPdfCard profile={profile} canSetUp={canSetUp} />}
         </Box>
       )}
       {page.sourceType === "fb_form" ? null : (
@@ -485,6 +487,7 @@ export default function LeadPagePage() {
             )}
 
             <ConfirmationEmailCard profile={profile} canSetUp={canSetUp} />
+            {pipeline.kind === "seller" && <MarketingPlanPdfCard profile={profile} canSetUp={canSetUp} />}
 
             {isOperator && (
               <Section title="Facebook tracking">

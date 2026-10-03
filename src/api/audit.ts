@@ -140,7 +140,9 @@ function toEvent(r: EventRow): AuditEvent {
     case "whatsapp_sent":
       return { ...base, ...person("Automation"), category: "automations", action: "WhatsApp nudge sent to agent", after: r.to_value ?? undefined };
     case "plan_opened":
-      return { ...base, actorLabel: "The lead", actorId: null, category: "automations", action: "Lead opened their Marketing Plan" };
+      return { ...base, actorLabel: "The lead", actorId: null, category: "automations", action: r.from_value === "thank_you" ? "Lead opened their Marketing Plan on the thank-you page" : "Lead opened their Marketing Plan" };
+    case "plan_pdf_opened":
+      return { ...base, actorLabel: "The lead", actorId: null, category: "automations", action: "Lead opened the full Marketing Plan (PDF)" };
     default:
       if (r.event_type.startsWith("email_")) {
         const byLead = r.event_type === "email_opened" || r.event_type === "email_clicked" || r.event_type === "email_complained";

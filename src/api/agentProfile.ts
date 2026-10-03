@@ -104,6 +104,10 @@ export interface AgentProfile {
   leadConfirmationEmail: boolean;
   /** This agent's own wording for the email's main text; null = the standard. */
   leadEmailBody: string | null;
+  /** The agent's own branded marketing plan (a PDF operators upload). The
+   *  plan page offers it as a download. */
+  planPdfUrl: string | null;
+  planPdfName: string | null;
 }
 
 interface ProfileRow {
@@ -126,6 +130,8 @@ interface ProfileRow {
   onboarded: boolean;
   lead_confirmation_email: boolean | null;
   lead_email_body: string | null;
+  plan_pdf_url?: string | null;
+  plan_pdf_name?: string | null;
 }
 
 function rowToProfile(r: ProfileRow): AgentProfile {
@@ -149,6 +155,8 @@ function rowToProfile(r: ProfileRow): AgentProfile {
     onboarded: r.onboarded,
     leadConfirmationEmail: r.lead_confirmation_email === true,
     leadEmailBody: r.lead_email_body ?? null,
+    planPdfUrl: r.plan_pdf_url ?? null,
+    planPdfName: r.plan_pdf_name ?? null,
   };
 }
 
@@ -208,6 +216,8 @@ export async function upsertProfile(
   if (patch.onboarded !== undefined) row.onboarded = patch.onboarded;
   if (patch.leadConfirmationEmail !== undefined) row.lead_confirmation_email = patch.leadConfirmationEmail;
   if (patch.leadEmailBody !== undefined) row.lead_email_body = patch.leadEmailBody;
+  if (patch.planPdfUrl !== undefined) row.plan_pdf_url = patch.planPdfUrl;
+  if (patch.planPdfName !== undefined) row.plan_pdf_name = patch.planPdfName;
 
   const { error } = await supabase
     .from("agent_profiles")
@@ -221,4 +231,23 @@ export async function getMyAccountStatus(): Promise<{ deactivated: boolean; isOp
   const uid = await getCurrentUserId();
   const { data } = await supabase.from("agent_profiles").select("deactivated_at, is_operator").eq("agent_id", uid).maybeSingle();
   return { deactivated: !!data?.deactivated_at, isOperator: !!data?.is_operator };
+}
+
+/** Uploads an agent's branded marketing plan PDF and returns its public link.
+ *  Operators only (the bucket's rules). A new file name every time, so a
+ *  replaced PDF is never served from an old cached copy. */
+export async function uploadPlanPdf(agentId: string, file: File): Promise<string> {
+  const path = `${agentId}/${crypto.randomUUID()}.pdf`;
+  const { error } = await supabase.storage.from("plan-pdfs").upload(path, file, { contentType: "application/pdf", upsert: false });
+  if (error) throw new Error(error.message);
+  return supabase.storage.from("plan-pdfs").getPublicUrl(path).data.publicUrl;
+}
+
+/** Removes an uploaded plan PDF by its public link. Best effort: the profile
+ *  stops pointing at it either way. */
+export async function removePlanPdf(url: string): Promise<void> {
+  const marker = "/object/public/plan-pdfs/";
+  const i = url.indexOf(marker);
+  if (i < 0) return;
+  await supabase.storage.from("plan-pdfs").remove([decodeURIComponent(url.slice(i + marker.length))]);
 }

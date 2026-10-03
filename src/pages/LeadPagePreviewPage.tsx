@@ -14,6 +14,7 @@ import { captureAttribution, readAttribution } from "../lib/adAttribution";
 import { listSoldListingsForAgent } from "../api/soldListings";
 import { SoldStrip } from "../components/SoldListings";
 import PoweredByEstateKit from "../components/PoweredByEstateKit";
+import { newPlanToken, rememberPlanToken } from "../lib/planToken";
 
 export default function LeadPagePreviewPage() {
   const { slug } = useParams<{ slug: string }>();
@@ -106,8 +107,12 @@ export default function LeadPagePreviewPage() {
                   // the insert. Both sides must quote the same id or Meta counts
                   // one conversion twice.
                   const eventId = crypto.randomUUID();
+                  // Seller leads get a marketing plan; its link goes on the
+                  // thank-you page, so the code is made here, before sending.
+                  const planToken = pipeline.kind === "seller" ? newPlanToken() : null;
+                  rememberPlanToken(page.slug, planToken);
 
-                  void submitMockLead(page.id, name, phone, answers, email, attribution, quality)
+                  void submitMockLead(page.id, name, phone, answers, email, attribution, quality, planToken)
                     .then((res) => {
                       if (res?.id && quality === "good" && page.fbPixelId) {
                         void reportCapiLead({
@@ -125,7 +130,7 @@ export default function LeadPagePreviewPage() {
                   // goes looking for more of exactly the lead they don't want.
                   if (quality === "good") trackPixel("Lead", eventId);
                   posthog.capture("lead_page_form_submitted", { pipeline: pipeline.kind, quality, form_preset: page.preset ?? "custom" });
-                  navigate(`/thank-you?p=${page.slug}&n=${encodeURIComponent(name.split(" ")[0] || "there")}`);
+                  navigate(`/thank-you?p=${page.slug}&n=${encodeURIComponent(name.split(" ")[0] || "there")}`, { state: { planToken } });
                 }}
               />
 

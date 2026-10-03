@@ -38,6 +38,9 @@ Deno.serve(async (req: Request) => {
     formAnswers?: { q: string; a: string }[];
     attribution?: Record<string, unknown>;
     quality?: string;
+    /** Seller leads: the marketing plan's code, made by the lead page so the
+     *  thank-you page can link to the plan before this finishes. */
+    planToken?: string | null;
   };
   try {
     body = await req.json();
@@ -53,7 +56,7 @@ Deno.serve(async (req: Request) => {
 
   const { data: page, error: pageErr } = await supabase
     .from("lead_pages")
-    .select("id, agent_id, pipeline_id, agent_name")
+    .select("id, agent_id, pipeline_id, agent_name, pipelines(kind)")
     .eq("id", body.pageId)
     .maybeSingle();
 
@@ -75,33 +78,45 @@ Deno.serve(async (req: Request) => {
     if (typeof value === "string" && value.trim()) attribution[key] = value.slice(0, 200);
   }
 
-  const { data: lead, error } = await supabase
+  // Only seller leads have a plan, and only a code in the plan's format is kept.
+  const kind = (page as { pipelines?: { kind?: string } | null }).pipelines?.kind;
+  const planToken = kind === "seller" && typeof body.planToken === "string" && /^[a-f0-9]{32}$/.test(body.planToken)
+    ? body.planToken
+    : null;
+
+  const row = {
+    agent_id: page.agent_id,
+    pipeline_id: page.pipeline_id,
+    source_page_id: page.id,
+    name: body.name,
+    phone: body.phone,
+    email: body.email ?? null,
+    form_answers: body.formAnswers ?? [],
+    attribution,
+    // Only ever "good" or "weak" — anything else is treated as good rather
+    // than trusted, since this arrives from the public page.
+    quality: body.quality === "weak" ? "weak" : "good",
+    // Meta's {{ad.id}} macro on the landing-page URL is the only way a
+    // website lead can name the ad that produced it.
+    fb_ad_id: attribution.ad_id ?? null,
+    stage: "New Lead",
+    next_label: "Just came in",
+    due: true,
+  };
+  let { data: lead, error } = await supabase
     .from("leads")
-    .insert({
-      agent_id: page.agent_id,
-      pipeline_id: page.pipeline_id,
-      source_page_id: page.id,
-      name: body.name,
-      phone: body.phone,
-      email: body.email ?? null,
-      form_answers: body.formAnswers ?? [],
-      attribution,
-      // Only ever "good" or "weak" — anything else is treated as good rather
-      // than trusted, since this arrives from the public page.
-      quality: body.quality === "weak" ? "weak" : "good",
-      // Meta's {{ad.id}} macro on the landing-page URL is the only way a
-      // website lead can name the ad that produced it.
-      fb_ad_id: attribution.ad_id ?? null,
-      stage: "New Lead",
-      next_label: "Just came in",
-      due: true,
-    })
+    .insert({ ...row, plan_token: planToken })
     .select("id")
     .single();
+  // The code is already taken (only if it was sent twice): save the lead
+  // without it. The confirmation email then makes the plan its own code.
+  if (error?.code === "23505" && planToken) {
+    ({ data: lead, error } = await supabase.from("leads").insert(row).select("id").single());
+  }
 
-  if (error) {
+  if (error || !lead) {
     console.error(error);
-    return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: CORS });
+    return new Response(JSON.stringify({ error: error?.message ?? "insert failed" }), { status: 500, headers: CORS });
   }
 
   // 32 hex chars (122 random bits). Was 8 (32 bits): once tokens stop being
