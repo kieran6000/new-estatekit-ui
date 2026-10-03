@@ -382,10 +382,12 @@ export async function submitMockLead(
   email: string | null = null,
   attribution: Record<string, string | undefined> = {},
   quality: "good" | "weak" = "good",
+  /** Seller leads: the marketing plan's code, made by the page (see lib/planToken). */
+  planToken: string | null = null,
 ): Promise<{ id: string } | null> {
   const { data, error } = await supabase.functions.invoke(
     "public-submit-lead",
-    { body: { pageId, name, phone, formAnswers, email, attribution, quality } },
+    { body: { pageId, name, phone, formAnswers, email, attribution, quality, planToken } },
   );
   if (error) throw new Error(error.message);
   return data as { id: string } | null;

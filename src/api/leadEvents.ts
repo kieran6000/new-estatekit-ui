@@ -11,7 +11,8 @@ export type LeadEventType =
   | "email_complained"
   | "email_opened"
   | "email_clicked"
-  | "plan_opened";
+  | "plan_opened"
+  | "plan_pdf_opened";
 
 export type LeadEventSource =
   | "dashboard" | "action_link" | "automation" | "facebook" | "website" | "system" | "backfill";
@@ -84,7 +85,7 @@ export async function getEmailStats(agentId: string, days = 30, range?: { since:
   const since = (range?.since ?? new Date(Date.now() - days * 864e5)).toISOString();
   let q = supabase
     .from("lead_events")
-    .select("lead_id, event_type")
+    .select("lead_id, event_type, from_value")
     .eq("agent_id", agentId)
     .or("event_type.like.email_%,event_type.eq.plan_opened")
     .gte("created_at", since);
@@ -100,6 +101,7 @@ export async function getEmailStats(agentId: string, days = 30, range?: { since:
     bounced: leads("email_bounced"),
     failed: leads("email_failed"),
     spam: leads("email_complained"),
-    planOpened: leads("plan_opened"),
+    // From the email only: an open on the thank-you page isn't an email result.
+    planOpened: new Set((data ?? []).filter((r) => r.event_type === "plan_opened" && r.from_value !== "thank_you").map((r) => r.lead_id)).size,
   };
 }

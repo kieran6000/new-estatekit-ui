@@ -80,3 +80,11 @@
   .plan-qr img { width: 104px; height: 104px; }
   .plan-next { padding-right: 140px; }
 }
+
+/* The agent's own branded plan (an uploaded PDF), when there is one. */
+.plan-pdf { display: flex; align-items: center; gap: 12px; margin-top: 22px; padding: 12px 14px; border: 1px solid #c9d7ea; border-radius: 6px; background: #f5f8fc; color: #111; text-decoration: none; }
+.plan-pdf:hover { background: #eaf1fa; }
+.plan-pdf svg { width: 28px; height: 28px; flex: none; color: #c62828; }
+.plan-pdf > span { display: flex; flex-direction: column; gap: 2px; }
+.plan-pdf > span > span { font-size: .85em; color: #555; }
+@media print { .plan-pdf { display: none; } }

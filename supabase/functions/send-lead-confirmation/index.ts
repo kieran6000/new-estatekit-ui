@@ -150,7 +150,7 @@ Deno.serve(async (req) => {
     .is("confirmation_sent_at", null)
     .gt("created_at", new Date(Date.now() - 15 * 60_000).toISOString())
     .not("email", "is", null)
-    .select("name, email, agent_id, pipeline_id, source_page_id, form_answers");
+    .select("name, email, agent_id, pipeline_id, source_page_id, form_answers, plan_token");
   if (error) {
     console.error("claim failed", error);
     return json({ error: "claim failed" }, 500);
@@ -201,12 +201,18 @@ Deno.serve(async (req) => {
   const waUrl = waNumber ? `${APP}/w/${id}` : "";
   // Seller leads get a marketing plan (/plan/<token>), with their
   // timing tip and the agent's recent sales. The token is random
-  // because the plan shows their name and address.
+  // because the plan shows their name and address. Leads from a lead page
+  // already have one (the thank-you page links to it too), so the email uses
+  // the same plan; other leads (Facebook forms) get one made here.
   let planUrl = "";
   if (kind === "seller") {
-    const token = crypto.randomUUID().replace(/-/g, "");
-    const { error: tokErr } = await supabase.from("leads").update({ plan_token: token }).eq("id", id);
-    if (!tokErr) planUrl = `${APP}/plan/${token}`;
+    if (lead.plan_token) {
+      planUrl = `${APP}/plan/${lead.plan_token}`;
+    } else {
+      const token = crypto.randomUUID().replace(/-/g, "");
+      const { error: tokErr } = await supabase.from("leads").update({ plan_token: token }).eq("id", id);
+      if (!tokErr) planUrl = `${APP}/plan/${token}`;
+    }
   }
   // Other leads (no plan) still get the recent-sales page when there is one.
   const salesUrl = !planUrl && kind === "seller" && (salesCount ?? 0) > 0 ? `${APP}/sold/${lead.agent_id}` : "";
