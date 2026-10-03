@@ -161,7 +161,7 @@ Deno.serve(async (req) => {
 
   const { data: profiles } = await supabase
     .from("agent_profiles")
-    .select("agent_id, display_name, whatsapp_number, automations_paused")
+    .select("agent_id, display_name, whatsapp_number, automations_paused, uses_workflows")
     .in("agent_id", [...counts.keys()]);
 
   const results: { agent: string; count: number; status: string }[] = [];
@@ -174,6 +174,11 @@ Deno.serve(async (req) => {
 
     if (profile.automations_paused) {
       results.push({ agent: name, count, status: "skipped — account paused" });
+      continue;
+    }
+    // Switched to its own workflows: a weekday-summary workflow does this now.
+    if (profile.uses_workflows) {
+      results.push({ agent: name, count, status: "skipped — uses workflows" });
       continue;
     }
     if (!profile.whatsapp_number) {

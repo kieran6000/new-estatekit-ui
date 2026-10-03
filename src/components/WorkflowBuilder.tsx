@@ -55,15 +55,22 @@ import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import ErrorOutlineIcon from "@mui/icons-material/ErrorOutlined";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import { tokens } from "../theme";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAutomations, useAutomationSteps } from "../hooks/useAutomations";
+import { useAuth } from "../hooks/useAuth";
+import { getActiveAgentIdSync } from "../api/_client";
+import {
+  deleteWorkflow, getUsesWorkflows, isSaved, listAccountWorkflows, listTemplateWorkflows, listWorkflowLog, saveWorkflow, setUsesWorkflows,
+} from "../api/workflows";
+import { trackActivity } from "../lib/activity";
 import { useSnack } from "../hooks/useSnack";
 import WhatsAppPreview from "./WhatsAppPreview";
 import LeadTag from "./LeadTag";
 import { PlainHead, SortHead, sortRows, useTableSort } from "./SortHead";
 import {
   BRANCH_CHECKS, EXITS, FILTER_FIELDS, KNOWN_TAGS, PIPELINES, SOURCES, STAGES, STEP_TYPES, TEMPLATES, TRIGGERS,
-  allowedSteps, branchLabel, confirmationEmail, countSteps, defaultBranchValue, fieldsFor, filterSummary, findStep, fromAutomation,
-  insertStep, locate, moveStep, newStep, ordinal, problemCount, removeStep, stepSummary, stepTitle, timeLabel, timeline,
+  allowedSteps, branchLabel, cloneSteps, countSteps, defaultBranchValue, fieldsFor, filterSummary, findStep, fromAutomation,
+  insertStep, locate, moveStep, newId, newStep, ordinal, rememberTags, tagsIn, problemCount, removeStep, stepSummary, stepTitle, timeLabel, timeline,
   triggerOfKind, triggerSummary, unitLabel, updateStep, validate, waitMinutes,
   type BranchCheck, type Exit, type Filter, type Path, type Problems, type Settings, type Step, type StepType, type Trigger,
   type Unit, type Workflow,
@@ -73,11 +80,8 @@ import {
 // paths) → stop early when. The model, every edit and every check live in
 // lib/workflow.ts (unit-tested); this file only draws it and calls those.
 //
-// UI ONLY FOR NOW. Today's real automations and the lead confirmation email
-// are shown here as workflows; edits stay on this screen and Save is off.
-// Backend plan (add-only): `workflows` + `workflow_steps` (parent_id,
-// branch, order, type, config); run-automations grows a step-type switch,
-// branch walking and the stop-early checks.
+// Saved per account (api/workflows.ts), plus a shared template library. The
+// engine that runs them is supabase/functions/run-automations/workflows.ts.
 
 const STEP_ICON: Record<StepType, React.ReactNode> = {
   wait: <ScheduleIcon />, whatsapp_agent: <WhatsAppIcon />, email_lead: <EmailIcon />, branch: <CallSplitIcon />,
@@ -100,34 +104,70 @@ const fill = (t: string) => t.replace(/\{\{\s*(\w+)\s*\}\}/g, (m, k: string) => 
 
 // ── Root: list ↔ editor ──────────────────────────────────────────────────
 
+type Scope = "account" | "templates";
+
 export default function WorkflowBuilder() {
-  const { data: automations, isLoading: l1 } = useAutomations();
-  const { data: steps, isLoading: l2 } = useAutomationSteps();
-  // Built once: later refetches mustn't wipe edits made on this screen.
-  const initial = useMemo(() => {
-    if (l1 || l2) return null;
-    return [
-      ...(automations ?? []).map((a) => fromAutomation(a, (steps ?? []).filter((s) => s.automation_id === a.id))),
-      confirmationEmail(),
-    ];
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [l1 || l2]);
-  if (!initial) return <Box sx={{ display: "flex", justifyContent: "center", p: 6 }}><CircularProgress /></Box>;
-  return <Workflows initial={initial} />;
-}
-
-function Workflows({ initial }: { initial: Workflow[] }) {
-  const [workflows, setWorkflows] = useState(initial);
+  const { user } = useAuth();
+  const qc = useQueryClient();
+  const showSnack = useSnack();
+  // The account in the switcher; your own when you aren't managing anyone.
+  const agentId = getActiveAgentIdSync() ?? user?.id ?? "";
+  const [scope, setScope] = useState<Scope>("account");
   const [openId, setOpenId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<Workflow | null>(null);
   const [picker, setPicker] = useState(false);
-  const open = workflows.find((w) => w.id === openId);
 
-  const create = (t: (typeof TEMPLATES)[number]) => {
-    const w = t.make();
-    setWorkflows((all) => [...all, w]);
+  const accountKey = ["workflows", agentId];
+  const { data: accountWfs, isLoading: l1, isError: e1 } = useQuery({ queryKey: accountKey, queryFn: () => listAccountWorkflows(agentId), enabled: !!agentId });
+  const { data: templates, isLoading: l2, isError: e2 } = useQuery({ queryKey: ["workflowTemplates"], queryFn: listTemplateWorkflows });
+  const list = (scope === "account" ? accountWfs : templates) ?? [];
+
+  // Tags added by any workflow can be checked for in the others.
+  useEffect(() => { rememberTags([...(accountWfs ?? []), ...(templates ?? [])].flatMap((w) => tagsIn(w.steps))); }, [accountWfs, templates]);
+
+  const open = draft ?? list.find((w) => w.id === openId) ?? null;
+
+  const create = (w: Workflow) => {
+    setDraft({ ...w, published: false });
     setOpenId(w.id);
     setPicker(false);
   };
+
+  async function save(w: Workflow): Promise<Workflow> {
+    const saved = await saveWorkflow(w, scope === "account" ? agentId : null);
+    trackActivity("automation_toggled", { agentId: scope === "account" ? agentId : undefined, detail: `${scope === "templates" ? "Template" : "Workflow"} saved: ${saved.name} (${saved.published ? "on" : "off"})` });
+    await qc.invalidateQueries({ queryKey: scope === "account" ? accountKey : ["workflowTemplates"] });
+    setDraft(null);
+    setOpenId(saved.id);
+    return saved;
+  }
+
+  async function remove(w: Workflow) {
+    try {
+      await deleteWorkflow(w.id);
+      await qc.invalidateQueries({ queryKey: scope === "account" ? accountKey : ["workflowTemplates"] });
+      showSnack(`Deleted "${w.name}"`);
+    } catch (e) {
+      console.error(e);
+      showSnack("Couldn't delete it. Try again.");
+    }
+    setDraft(null);
+    setOpenId(null);
+  }
+
+  async function copyToTemplates(w: Workflow) {
+    try {
+      await saveWorkflow({ ...w, id: newId(), published: false }, null);
+      await qc.invalidateQueries({ queryKey: ["workflowTemplates"] });
+      showSnack(`Saved a copy to Templates`);
+    } catch (e) {
+      console.error(e);
+      showSnack("Couldn't save the template. Try again.");
+    }
+  }
+
+  if (!agentId || l1 || l2) return <Box sx={{ display: "flex", justifyContent: "center", p: 6 }}><CircularProgress /></Box>;
+  if (e1 || e2) return <Alert severity="error" sx={{ m: 2 }}>Couldn't load workflows. Refresh to try again.</Alert>;
 
   return (
     <>
@@ -135,30 +175,135 @@ function Workflows({ initial }: { initial: Workflow[] }) {
         <Editor
           key={open.id}
           initial={open}
-          onBack={(w) => { setWorkflows((all) => all.map((x) => (x.id === w.id ? w : x))); setOpenId(null); }}
-          onDelete={() => { setWorkflows((all) => all.filter((x) => x.id !== open.id)); setOpenId(null); }}
+          isTemplate={scope === "templates"}
+          onSave={save}
+          onCopyToTemplates={scope === "account" ? copyToTemplates : undefined}
+          onBack={() => { setDraft(null); setOpenId(null); }}
+          onDelete={() => void remove(open)}
         />
       ) : (
-        <WorkflowList workflows={workflows} onOpen={setOpenId} onCreate={() => setPicker(true)} />
+        <WorkflowList
+          workflows={list}
+          scope={scope}
+          onScope={setScope}
+          onOpen={setOpenId}
+          onCreate={() => setPicker(true)}
+          header={scope === "account" ? <CutoverBar agentId={agentId} workflows={accountWfs ?? []} /> : null}
+        />
       )}
       <Dialog open={picker} onClose={() => setPicker(false)} fullWidth maxWidth="sm">
-        <DialogTitle>Start from a template</DialogTitle>
+        <DialogTitle>{scope === "templates" ? "New template" : "Start from a template"}</DialogTitle>
         <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-          {TEMPLATES.map((t) => (
-            <Box
-              key={t.name}
-              component="button"
-              type="button"
-              onClick={() => create(t)}
-              sx={{ textAlign: "left", font: "inherit", color: "inherit", bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "6px", p: 1.5, cursor: "pointer", "&:hover, &:focus-visible": { borderColor: "primary.main", bgcolor: tokens.hover, outline: "none" } }}
-            >
-              <Typography sx={{ fontWeight: 600, fontSize: 14.5 }}>{t.name}</Typography>
-              <Typography sx={{ fontSize: 13, color: "text.secondary" }}>{t.blurb}</Typography>
-            </Box>
+          {(templates ?? []).length > 0 && scope === "account" && (
+            <Typography sx={{ fontSize: 12, fontWeight: 600, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.06em", mt: 0.5 }}>Your templates</Typography>
+          )}
+          {scope === "account" && (templates ?? []).map((t) => (
+            <TemplateButton key={t.id} name={t.name} blurb={triggerSummary(t.trigger)} onClick={() => create({ ...t, id: newId(), steps: cloneSteps(t.steps) })} />
           ))}
+          {scope === "account" && (templates ?? []).length > 0 && (
+            <Typography sx={{ fontSize: 12, fontWeight: 600, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.06em", mt: 1 }}>Starters</Typography>
+          )}
+          {TEMPLATES.map((t) => <TemplateButton key={t.name} name={t.name} blurb={t.blurb} onClick={() => create(t.make())} />)}
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+function TemplateButton({ name, blurb, onClick }: { name: string; blurb: string; onClick: () => void }) {
+  return (
+    <Box
+      component="button"
+      type="button"
+      onClick={onClick}
+      sx={{ textAlign: "left", font: "inherit", color: "inherit", bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "6px", p: 1.5, cursor: "pointer", "&:hover, &:focus-visible": { borderColor: "primary.main", bgcolor: tokens.hover, outline: "none" } }}
+    >
+      <Typography sx={{ fontWeight: 600, fontSize: 14.5 }}>{name}</Typography>
+      <Typography sx={{ fontSize: 13, color: "text.secondary" }}>{blurb}</Typography>
+    </Box>
+  );
+}
+
+/** Where this account is in the move from the shared Setup automations to its
+ *  own workflows. Both run side by side until "Use only workflows". */
+function CutoverBar({ agentId, workflows }: { agentId: string; workflows: Workflow[] }) {
+  const qc = useQueryClient();
+  const showSnack = useSnack();
+  const { data: automations } = useAutomations();
+  const { data: steps } = useAutomationSteps();
+  const { data: uses, isLoading } = useQuery({ queryKey: ["usesWorkflows", agentId], queryFn: () => getUsesWorkflows(agentId) });
+  const [busy, setBusy] = useState(false);
+  const [confirm, setConfirm] = useState<"on" | "off" | null>(null);
+  const onCount = workflows.filter((w) => w.published).length;
+
+  async function copySetup() {
+    setBusy(true);
+    try {
+      for (const a of automations ?? []) {
+        const w = fromAutomation(a, (steps ?? []).filter((s) => s.automation_id === a.id));
+        // Copies start off: switch each on once it's checked.
+        await saveWorkflow({ ...w, id: newId(), published: false, note: undefined }, agentId);
+      }
+      await qc.invalidateQueries({ queryKey: ["workflows", agentId] });
+      showSnack("Today's setup copied here. They're off until you switch them on.");
+    } catch (e) {
+      console.error(e);
+      showSnack("Couldn't copy everything. Check the list and try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function setUses(on: boolean) {
+    setConfirm(null);
+    setBusy(true);
+    try {
+      await setUsesWorkflows(agentId, on);
+      trackActivity("automation_toggled", { agentId, detail: on ? "Switched to workflows only (Setup automations off for this account)" : "Back on the Setup automations" });
+      await qc.invalidateQueries({ queryKey: ["usesWorkflows", agentId] });
+      showSnack(on ? "This account now runs on its workflows only" : "This account is back on the Setup automations");
+    } catch (e) {
+      console.error(e);
+      showSnack("Couldn't change that. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (isLoading) return null;
+  return (
+    <Alert
+      severity={uses ? "success" : "info"}
+      sx={{ mb: 2, alignItems: "center", "& .MuiAlert-message": { flex: 1 } }}
+      action={
+        <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          {!uses && !workflows.length && <Button size="small" disabled={busy} onClick={copySetup}>Copy today's setup here</Button>}
+          {uses
+            ? <Button size="small" disabled={busy} onClick={() => setConfirm("off")}>Go back to Setup</Button>
+            : <Button size="small" variant="contained" disabled={busy || !onCount} onClick={() => setConfirm("on")}>Use only workflows</Button>}
+        </Box>
+      }
+    >
+      {uses
+        ? "This account runs on the workflows below. The shared Setup automations are off for it."
+        : onCount
+          ? `Side by side: the shared Setup automations still run for this account, and so do the ${onCount} workflow${onCount === 1 ? "" : "s"} switched on below. When they match, use only workflows.`
+          : "This account runs on the shared Setup automations. Copy them here (or build your own), check them, then switch over."}
+      <Dialog open={!!confirm} onClose={() => setConfirm(null)}>
+        <DialogTitle>{confirm === "on" ? "Use only workflows for this account?" : "Go back to the Setup automations?"}</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ fontSize: 14 }}>
+            {confirm === "on"
+              ? "The shared Setup automations stop for this account, including the daily summary, and anything they had queued is cancelled. Only the workflows switched on here will run. Other accounts aren't affected."
+              : "The shared Setup automations start running for this account again. Workflows switched on here keep running too, so switch off any that do the same job."}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirm(null)}>Cancel</Button>
+          <Button variant="contained" onClick={() => void setUses(confirm === "on")}>{confirm === "on" ? "Use only workflows" : "Go back"}</Button>
+        </DialogActions>
+      </Dialog>
+    </Alert>
   );
 }
 
@@ -185,7 +330,10 @@ function OnOffChip({ on }: { on: boolean }) {
 const LIST_KEYS = ["name", "trigger", "steps", "status"] as const;
 type ListKey = (typeof LIST_KEYS)[number];
 
-function WorkflowList({ workflows, onOpen, onCreate }: { workflows: Workflow[]; onOpen: (id: string) => void; onCreate: () => void }) {
+function WorkflowList({ workflows, scope, onScope, onOpen, onCreate, header }: {
+  workflows: Workflow[]; scope: Scope; onScope: (s: Scope) => void; onOpen: (id: string) => void; onCreate: () => void; header: React.ReactNode;
+}) {
+  const templates = scope === "templates";
   const isDesktop = useMediaQuery("(min-width:900px)");
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<"all" | "on" | "off">("all");
@@ -193,7 +341,7 @@ function WorkflowList({ workflows, onOpen, onCreate }: { workflows: Workflow[]; 
   const count = (on: boolean) => workflows.filter((w) => w.published === on).length;
   const needle = q.trim().toLowerCase();
   const shown = sortRows(
-    workflows.filter((w) => (filter === "all" || (filter === "on") === w.published) && (!needle || `${w.name} ${triggerSummary(w.trigger)}`.toLowerCase().includes(needle))),
+    workflows.filter((w) => (templates || filter === "all" || (filter === "on") === w.published) && (!needle || `${w.name} ${triggerSummary(w.trigger)}`.toLowerCase().includes(needle))),
     (w) => (sort.k === "name" ? w.name : sort.k === "trigger" ? triggerSummary(w.trigger) : sort.k === "steps" ? countSteps(w.steps) : Number(w.published)),
     sort.dir,
   );
@@ -202,17 +350,28 @@ function WorkflowList({ workflows, onOpen, onCreate }: { workflows: Workflow[]; 
     <Box sx={{ maxWidth: 1100, mx: "auto", p: 2, pb: 6 }}>
       <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, mb: 2, flexWrap: "wrap" }}>
         <Box sx={{ flex: 1, minWidth: 200 }}>
-          <Typography sx={{ fontSize: 20, fontWeight: 500 }}>Workflows</Typography>
-          <Typography sx={{ fontSize: 13, color: "text.secondary" }}>Each workflow sends messages or updates a lead for you when something happens.</Typography>
+          <Typography sx={{ fontSize: 20, fontWeight: 500 }}>{templates ? "Templates" : "Workflows"}</Typography>
+          <Typography sx={{ fontSize: 13, color: "text.secondary" }}>
+            {templates
+              ? "Shared starting points. Any account can copy one and change its copy; the template stays as it is."
+              : "This account's own workflows. Each one sends messages or updates a lead when something happens."}
+          </Typography>
         </Box>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={onCreate}>Create workflow</Button>
+        <Button variant="contained" startIcon={<AddIcon />} onClick={onCreate}>{templates ? "Create template" : "Create workflow"}</Button>
       </Box>
+      <Tabs value={scope} onChange={(_, v) => onScope(v)} sx={{ mb: 2, minHeight: 40, borderBottom: `1px solid ${tokens.divider}`, "& .MuiTab-root": { minHeight: 40, textTransform: "none", fontWeight: 600, px: 1.5, minWidth: 0 } }}>
+        <Tab value="account" label="This account" />
+        <Tab value="templates" label="Templates" />
+      </Tabs>
+      {header}
       <Box sx={{ display: "flex", gap: 1.5, mb: 2, flexWrap: "wrap", alignItems: "center" }}>
-        <Tabs value={filter} onChange={(_, v) => setFilter(v)} sx={{ minHeight: 40, "& .MuiTab-root": { minHeight: 40, textTransform: "none", fontWeight: 600, px: 1.5, minWidth: 0 } }}>
-          <Tab value="all" label={`All (${workflows.length})`} />
-          <Tab value="on" label={`On (${count(true)})`} />
-          <Tab value="off" label={`Off (${count(false)})`} />
-        </Tabs>
+        {!templates && (
+          <Tabs value={filter} onChange={(_, v) => setFilter(v)} sx={{ minHeight: 40, "& .MuiTab-root": { minHeight: 40, textTransform: "none", fontWeight: 600, px: 1.5, minWidth: 0 } }}>
+            <Tab value="all" label={`All (${workflows.length})`} />
+            <Tab value="on" label={`On (${count(true)})`} />
+            <Tab value="off" label={`Off (${count(false)})`} />
+          </Tabs>
+        )}
         <Box sx={{ flex: 1 }} />
         <TextField
           size="small"
@@ -233,7 +392,7 @@ function WorkflowList({ workflows, onOpen, onCreate }: { workflows: Workflow[]; 
                 <SortHead k="trigger" label="Starts when" sort={sort} onSort={onSort} />
                 <PlainHead>Sends</PlainHead>
                 <SortHead k="steps" label="Steps" sort={sort} onSort={onSort} num />
-                <SortHead k="status" label="Status" sort={sort} onSort={onSort} firstDir="desc" />
+                {!templates && <SortHead k="status" label="Status" sort={sort} onSort={onSort} firstDir="desc" />}
                 <PlainHead sx={{ width: 48 }} />
               </TableRow>
             </TableHead>
@@ -247,7 +406,7 @@ function WorkflowList({ workflows, onOpen, onCreate }: { workflows: Workflow[]; 
                   <TableCell sx={{ fontSize: 13, color: "text.secondary" }}>{triggerSummary(w.trigger)}</TableCell>
                   <TableCell><Sends steps={w.steps} /></TableCell>
                   <TableCell align="right" sx={{ fontSize: 13 }}>{countSteps(w.steps)}</TableCell>
-                  <TableCell><OnOffChip on={w.published} /></TableCell>
+                  {!templates && <TableCell><OnOffChip on={w.published} /></TableCell>}
                   <TableCell padding="checkbox"><ChevronRightIcon fontSize="small" sx={{ color: "text.disabled" }} /></TableCell>
                 </TableRow>
               ))}
@@ -267,11 +426,15 @@ function WorkflowList({ workflows, onOpen, onCreate }: { workflows: Workflow[]; 
                 <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>{triggerSummary(w.trigger)}</Typography>
                 <Box sx={{ mt: 0.5 }}><Sends steps={w.steps} /></Box>
               </Box>
-              <OnOffChip on={w.published} />
+              {!templates && <OnOffChip on={w.published} />}
             </Box>
           ))
         )}
-        {!shown.length && <Typography sx={{ color: "text.secondary", textAlign: "center", py: 6 }}>No workflows match.</Typography>}
+        {!shown.length && (
+          <Typography sx={{ color: "text.secondary", textAlign: "center", py: 6, px: 2 }}>
+            {workflows.length ? "Nothing matches." : templates ? "No templates yet. Create one, or save a copy of a workflow from its editor." : "No workflows on this account yet."}
+          </Typography>
+        )}
       </Box>
     </Box>
   );
@@ -317,10 +480,28 @@ function useHistory(initial: Workflow) {
   return { wf: state.present, set, undo, redo, canUndo: state.past.length > 0, canRedo: state.future.length > 0, dirty: state.past.length > 0 };
 }
 
-function Editor({ initial, onBack, onDelete }: { initial: Workflow; onBack: (w: Workflow) => void; onDelete: () => void }) {
+/** What Save stores: anything else (ids aside) is screen state. */
+const snapshot = (w: Workflow) => JSON.stringify({ n: w.name, p: w.published, t: w.trigger, f: w.filters, s: w.steps, e: w.exits, o: w.settings });
+
+function Editor({ initial, isTemplate, onSave, onCopyToTemplates, onBack, onDelete }: {
+  initial: Workflow;
+  isTemplate: boolean;
+  onSave: (w: Workflow) => Promise<Workflow>;
+  onCopyToTemplates?: (w: Workflow) => Promise<void>;
+  onBack: () => void;
+  onDelete: () => void;
+}) {
   const isDesktop = useMediaQuery("(min-width:1000px)");
   const showSnack = useSnack();
-  const { wf, set, undo, redo, canUndo, canRedo, dirty } = useHistory(initial);
+  const { wf, set, undo, redo, canUndo, canRedo } = useHistory(initial);
+  // Changed since it was opened or last saved. A new workflow can be saved as
+  // it is, but leaving it untouched just drops it, no questions.
+  const [savedSnap, setSavedSnap] = useState(() => snapshot(initial));
+  const dirty = snapshot(wf) !== savedSnap;
+  const canSave = dirty || !isSaved(initial.id);
+  const [saving, setSaving] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  useEffect(() => rememberTags(tagsIn(wf.steps)), [wf.steps]);
   const [tab, setTab] = useState<EditorTab>("builder");
   const [sel, setSel] = useState<Selection>(null);
   const [editingName, setEditingName] = useState(false);
@@ -345,7 +526,29 @@ function Editor({ initial, onBack, onDelete }: { initial: Workflow; onBack: (w: 
       return;
     }
     update({ published: on });
+    showSnack(on ? "Save to switch it on" : "Save to switch it off");
   };
+
+  async function save() {
+    if (wf.published && nProblems) {
+      showSnack(`Fix ${nProblems} thing${nProblems === 1 ? "" : "s"} first, or switch it off`);
+      goToFirstProblem();
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave(wf);
+      setSavedSnap(snapshot(wf));
+      showSnack(isTemplate ? "Template saved" : wf.published ? "Saved. It's on: new leads go through it from now." : "Saved. It's off.");
+    } catch (e) {
+      console.error(e);
+      showSnack("Couldn't save. Try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const back = () => (dirty ? setLeaving(true) : onBack());
 
   function goToFirstProblem() {
     setTab("builder");
@@ -409,8 +612,8 @@ function Editor({ initial, onBack, onDelete }: { initial: Workflow; onBack: (w: 
     // canvas and the details panel each scroll on their own.
     <Box sx={{ height: "calc(100dvh - 100px)", display: "flex", flexDirection: "column", minHeight: 420 }}>
       <Box sx={{ display: "flex", alignItems: "center", gap: 1, px: 1.5, height: 56, flex: "none", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
-        <Button startIcon={<ArrowBackIcon />} onClick={() => onBack(wf)} sx={{ textTransform: "none", color: "text.primary", flex: "none" }} aria-label="Back to workflows">
-          {isDesktop ? "Workflows" : ""}
+        <Button startIcon={<ArrowBackIcon />} onClick={back} sx={{ textTransform: "none", color: "text.primary", flex: "none" }} aria-label={isTemplate ? "Back to templates" : "Back to workflows"}>
+          {isDesktop ? (isTemplate ? "Templates" : "Workflows") : ""}
         </Button>
         <Box sx={{ flex: 1, minWidth: 0, display: "flex", justifyContent: "center", alignItems: "center", gap: 0.5 }}>
           {editingName ? (
@@ -445,17 +648,19 @@ function Editor({ initial, onBack, onDelete }: { initial: Workflow; onBack: (w: 
         )}
         <Tooltip title="Undo (Ctrl+Z)"><span><IconButton onClick={undo} disabled={!canUndo} aria-label="Undo"><UndoIcon fontSize="small" /></IconButton></span></Tooltip>
         {isDesktop && <Tooltip title="Redo (Ctrl+Shift+Z)"><span><IconButton onClick={redo} disabled={!canRedo} aria-label="Redo"><RedoIcon fontSize="small" /></IconButton></span></Tooltip>}
-        <Tooltip title={wf.published ? "On: running for leads" : nProblems ? "Fix the problems to turn it on" : "Off: not running"}>
-          <Box sx={{ display: "flex", alignItems: "center", flex: "none" }}>
-            {isDesktop && <Typography sx={{ fontSize: 13, color: "text.secondary" }}>{wf.published ? "On" : "Off"}</Typography>}
-            <Switch checked={wf.published} onChange={(e) => setOn(e.target.checked)} slotProps={{ input: { "aria-label": "Workflow on" } }} />
-          </Box>
-        </Tooltip>
-        <Tooltip title="Preview only: saving comes with the backend">
+        {!isTemplate && (
+          <Tooltip title={wf.published ? "On: running for leads" : nProblems ? "Fix the problems to turn it on" : "Off: not running"}>
+            <Box sx={{ display: "flex", alignItems: "center", flex: "none" }}>
+              {isDesktop && <Typography sx={{ fontSize: 13, color: "text.secondary" }}>{wf.published ? "On" : "Off"}</Typography>}
+              <Switch checked={wf.published} onChange={(e) => setOn(e.target.checked)} slotProps={{ input: { "aria-label": "Workflow on" } }} />
+            </Box>
+          </Tooltip>
+        )}
+        <Tooltip title={canSave ? "Save changes" : "Saved"}>
           <span>
-            <Button variant="contained" size="small" disabled sx={{ position: "relative", overflow: "visible" }}>
-              Save
-              {dirty && <Box component="span" sx={{ position: "absolute", top: -4, right: -4, width: 10, height: 10, borderRadius: "50%", bgcolor: tokens.red, border: `2px solid ${tokens.surface}` }} aria-label="Unsaved changes" />}
+            <Button variant="contained" size="small" disabled={!canSave || saving} onClick={() => void save()} sx={{ position: "relative", overflow: "visible" }}>
+              {saving ? "Saving…" : "Save"}
+              {canSave && !saving && <Box component="span" sx={{ position: "absolute", top: -4, right: -4, width: 10, height: 10, borderRadius: "50%", bgcolor: tokens.red, border: `2px solid ${tokens.surface}` }} aria-label="Unsaved changes" />}
             </Button>
           </span>
         </Tooltip>
@@ -486,9 +691,17 @@ function Editor({ initial, onBack, onDelete }: { initial: Workflow; onBack: (w: 
             )}
           </>
         )}
-        {tab === "settings" && <SettingsTab wf={wf} onChange={update} onDelete={onDelete} />}
+        {tab === "settings" && <SettingsTab wf={wf} onChange={update} onDelete={onDelete} onCopyToTemplates={onCopyToTemplates ? () => void onCopyToTemplates(wf) : undefined} />}
         {tab === "history" && <HistoryTab wf={wf} />}
       </Box>
+      <Dialog open={leaving} onClose={() => setLeaving(false)}>
+        <DialogTitle>Leave without saving?</DialogTitle>
+        <DialogContent><Typography sx={{ fontSize: 14 }}>Your changes to "{wf.name}" will be lost.</Typography></DialogContent>
+        <DialogActions>
+          <Button onClick={() => setLeaving(false)}>Keep editing</Button>
+          <Button color="error" onClick={() => { setLeaving(false); onBack(); }}>Leave</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }
@@ -810,7 +1023,7 @@ function SettingRow({ title, help, children }: { title: string; help: string; ch
   );
 }
 
-function SettingsTab({ wf, onChange, onDelete }: { wf: Workflow; onChange: (p: Partial<Workflow>, key?: string) => void; onDelete: () => void }) {
+function SettingsTab({ wf, onChange, onDelete, onCopyToTemplates }: { wf: Workflow; onChange: (p: Partial<Workflow>, key?: string) => void; onDelete: () => void; onCopyToTemplates?: () => void }) {
   const s = wf.settings;
   const setS = (p: Partial<Settings>) => onChange({ settings: { ...s, ...p } });
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -831,6 +1044,15 @@ function SettingsTab({ wf, onChange, onDelete }: { wf: Workflow; onChange: (p: P
           <Typography sx={{ fontWeight: 600 }}>Stop early when</Typography>
           <ExitsEditor exits={wf.exits} onChange={(exits) => onChange({ exits })} />
         </Box>
+        {onCopyToTemplates && (
+          <Box sx={{ ...card, display: "flex", alignItems: "center", gap: 2, flexWrap: "wrap" }}>
+            <Box sx={{ flex: 1, minWidth: 200 }}>
+              <Typography sx={{ fontWeight: 600 }}>Save a copy to Templates</Typography>
+              <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>So other accounts can start from it. This workflow isn't changed.</Typography>
+            </Box>
+            <Button variant="outlined" onClick={onCopyToTemplates}>Copy to Templates</Button>
+          </Box>
+        )}
         <Box sx={{ ...card, borderColor: tokens.redBorder, display: "flex", alignItems: "center", gap: 2, flexWrap: "wrap" }}>
           <Box sx={{ flex: 1, minWidth: 200 }}>
             <Typography sx={{ fontWeight: 600 }}>Delete this workflow</Typography>
@@ -851,48 +1073,43 @@ function SettingsTab({ wf, onChange, onDelete }: { wf: Workflow; onChange: (p: P
   );
 }
 
-const SAMPLE_PEOPLE = ["Thandi Mokoena", "Pieter van der Merwe", "Lerato Khumalo", "Ahmed Suleman", "Jessica Botha", "Sipho Nkosi"];
-const HISTORY_STATUSES = ["Sent", "Opened", "Waiting", "Stopped early", "Failed"] as const;
 const HISTORY_KEYS = ["lead", "step", "status", "when"] as const;
 type HistoryKey = (typeof HISTORY_KEYS)[number];
 
-/** One table: each lead that went through, the step it's on or last ran,
- *  and how that went. SAMPLE rows until the backend records real runs. */
+/** One table: everything this workflow did, for which lead, newest first. */
 function HistoryTab({ wf }: { wf: Workflow }) {
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("all");
   const { sort, onSort } = useTableSort<HistoryKey>("estatekit_workflow_history_sort", { k: "when", dir: "desc" }, HISTORY_KEYS);
-  const rows = useMemo(() => {
-    const actions: Step[] = [];
-    const walk = (l: Step[]) => l.forEach((s) => { if (s.type === "branch") { walk(s.yes); walk(s.no); } else if (s.type !== "wait") actions.push(s); });
-    walk(wf.steps);
-    const now = Date.now();
-    return SAMPLE_PEOPLE.map((name, i) => ({
-      id: name,
-      lead: name,
-      step: actions.length ? stepTitle(actions[i % actions.length]) : "—",
-      status: HISTORY_STATUSES[i % HISTORY_STATUSES.length] as string,
-      when: new Date(now - (i * 7 + 2) * 3600_000).toISOString(),
-    }));
-  }, [wf.steps]);
+  const saved = isSaved(wf.id);
+  const { data: log = [], isLoading } = useQuery({ queryKey: ["workflowLog", wf.id], queryFn: () => listWorkflowLog(wf.id), enabled: saved, refetchInterval: 30_000 });
+  const rows = useMemo(() => log.map((r) => ({
+    id: r.id,
+    leadId: r.lead_id,
+    lead: r.lead?.name ?? (r.lead_id ? "Deleted lead" : "Whole account"),
+    step: r.detail ? `${r.what}: ${r.detail}` : r.what,
+    status: r.status,
+    when: r.at,
+  })), [log]);
+  const statuses = useMemo(() => [...new Set(rows.map((r) => r.status))].sort(), [rows]);
   const needle = q.trim().toLowerCase();
   const shown = sortRows(
-    rows.filter((r) => (!needle || r.lead.toLowerCase().includes(needle)) && (status === "all" || r.status === status)),
+    rows.filter((r) => (!needle || `${r.lead} ${r.step}`.toLowerCase().includes(needle)) && (status === "all" || r.status === status)),
     (r) => r[sort.k],
     sort.dir,
   );
+  const color = (st: string) => (st === "Sent" || st === "Done" || st === "Yes" ? "success" : st === "Failed" ? "error" : st === "Stopped" || st === "Skipped" ? "warning" : "default") as "success" | "error" | "warning" | "default";
   return (
     <Box sx={{ flex: 1, overflowY: "auto", p: 2 }}>
       <Box sx={{ maxWidth: 1000, mx: "auto" }}>
         <Typography component="div" sx={{ fontSize: 13.5, color: "text.secondary", mb: 2 }}>
-          Every lead that went through this workflow, and the last thing it did for them.
-          <Chip size="small" label="Sample rows" color="warning" variant="outlined" sx={{ ml: 1, height: 20, fontSize: 11 }} />
+          Every step this workflow ran, for which lead, newest first.
         </Typography>
         <Box sx={{ display: "flex", gap: 1.5, mb: 2, flexWrap: "wrap", alignItems: "center" }}>
-          <TextField size="small" placeholder="Find a lead" value={q} onChange={(e) => setQ(e.target.value)} sx={{ flex: 1, minWidth: 180 }} slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> } }} />
+          <TextField size="small" placeholder="Find a lead or step" value={q} onChange={(e) => setQ(e.target.value)} sx={{ flex: 1, minWidth: 180 }} slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> } }} />
           <TextField select size="small" value={status} onChange={(e) => setStatus(e.target.value)} sx={{ width: 190 }} aria-label="Status">
             <MenuItem value="all">All statuses</MenuItem>
-            {HISTORY_STATUSES.map((s) => <MenuItem key={s} value={s}>{s}</MenuItem>)}
+            {statuses.map((st) => <MenuItem key={st} value={st}>{st}</MenuItem>)}
           </TextField>
         </Box>
         <Box sx={{ border: `1px solid ${tokens.divider}`, borderRadius: "8px", bgcolor: "background.paper", overflowX: "auto" }}>
@@ -908,18 +1125,22 @@ function HistoryTab({ wf }: { wf: Workflow }) {
             <TableBody>
               {shown.map((r) => (
                 <TableRow key={r.id} hover>
-                  <TableCell sx={{ fontWeight: 500, fontSize: 13.5, whiteSpace: "nowrap" }}>{r.lead}</TableCell>
-                  <TableCell sx={{ fontSize: 13 }}>{r.step}</TableCell>
-                  <TableCell>
-                    <Chip size="small" label={r.status} variant="outlined" color={r.status === "Sent" || r.status === "Opened" ? "success" : r.status === "Failed" ? "error" : r.status === "Waiting" ? "primary" : "default"} sx={{ height: 22, fontSize: 12 }} />
+                  <TableCell sx={{ fontWeight: 500, fontSize: 13.5, whiteSpace: "nowrap" }}>
+                    {r.leadId && r.lead !== "Deleted lead" ? <Box component="a" href={`/leads/${r.leadId}`} sx={{ color: "inherit" }}>{r.lead}</Box> : r.lead}
                   </TableCell>
+                  <TableCell sx={{ fontSize: 13, maxWidth: 420 }}>{r.step}</TableCell>
+                  <TableCell><Chip size="small" label={r.status} variant="outlined" color={color(r.status)} sx={{ height: 22, fontSize: 12 }} /></TableCell>
                   <TableCell sx={{ fontSize: 13, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
                     {new Date(r.when).toLocaleString("en-ZA", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
                   </TableCell>
                 </TableRow>
               ))}
               {!shown.length && (
-                <TableRow><TableCell colSpan={4} sx={{ textAlign: "center", py: 6, color: "text.secondary" }}>No leads match.</TableCell></TableRow>
+                <TableRow>
+                  <TableCell colSpan={4} sx={{ textAlign: "center", py: 6, color: "text.secondary" }}>
+                    {!saved ? "Save the workflow first." : isLoading ? "Loading…" : rows.length ? "Nothing matches." : "Nothing has run yet."}
+                  </TableCell>
+                </TableRow>
               )}
             </TableBody>
           </Table>

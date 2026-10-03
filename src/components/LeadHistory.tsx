@@ -87,6 +87,14 @@ function describe(e: LeadEvent): string {
         : "Opened their marketing plan";
     case "plan_pdf_opened":
       return "Opened the full marketing plan (PDF)";
+    case "workflow_email":
+      return `Email sent: ${e.to_value ?? ""}`;
+    case "workflow_email_opened":
+      return `Opened the email: ${e.to_value ?? ""}`;
+    case "tagged":
+      return `Tagged ${e.to_value ?? ""}`;
+    case "email_unsubscribed":
+      return "Unsubscribed from emails";
     default:
       return e.event_type;
   }
@@ -155,10 +163,12 @@ export default function LeadHistory({ leadId }: { leadId: string }) {
         // Backfilled rows carry a stand-in timestamp, so don't show a time for them.
         const when = e.source === "backfill" ? "" : timeAgo(e.created_at);
         const isPlan = e.event_type === "plan_opened" || e.event_type === "plan_pdf_opened";
-        const isEmail = e.event_type.startsWith("email_") || (e.event_type === "plan_opened" && e.from_value !== "thank_you");
+        const isWorkflow = e.event_type === "workflow_email" || e.event_type === "workflow_email_opened" || e.event_type === "tagged";
+        const isEmail = e.event_type.startsWith("email_") || e.event_type.startsWith("workflow_email") || (e.event_type === "plan_opened" && e.from_value !== "thank_you");
         // For sends, the detail line says what was sent / to whom, not "Automation".
         // Plan opens already say everything in the title.
-        const via = isPlan ? "" : e.event_type === "whatsapp_sent" || isEmail ? e.to_value ?? "" : SOURCE_LABEL[e.source] ?? "";
+        // Workflow rows name the workflow; the title already says what happened.
+        const via = isWorkflow ? (e.event_type === "workflow_email_opened" ? "" : e.from_value ?? "") : isPlan ? "" : e.event_type === "whatsapp_sent" || isEmail ? e.to_value ?? "" : SOURCE_LABEL[e.source] ?? "";
         const SourceIcon = e.event_type === "whatsapp_sent" ? WhatsAppIcon : isEmail ? MailOutlineIcon : isPlan ? LanguageIcon : SOURCE_ICON[e.source] ?? HistoryIcon;
 
         return (
