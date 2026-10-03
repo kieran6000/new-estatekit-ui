@@ -13,7 +13,8 @@ import { LeadTags } from "../components/LeadTag";
 import { leadTags } from "../lib/leadTags";
 import { useDatasetByPage } from "../hooks/useLeadPages";
 import { getLeadSourceAd, moveLeadToPipeline, setLeadArchived, setCommissionReceived } from "../api/leads";
-import { useLead, useUpdateLeadNote, useUpdateLeadStage } from "../hooks/useLeads";
+import { useLeadWithStatus, useUpdateLeadNote, useUpdateLeadStage } from "../hooks/useLeads";
+import { useFollowLeadAccount } from "../hooks/useFollowLeadAccount";
 import { usePipelines } from "../hooks/usePipelines";
 import { getPipelinePublic } from "../api/pipelines";
 import { useSnack } from "../hooks/useSnack";
@@ -33,7 +34,10 @@ import type { LeadRow, OutcomeStep, Stage } from "../types";
 export default function LeadDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const lead = useLead(id);
+  // Loads the lead by id when it isn't in the open account (staff opening
+  // another agent's link), then switches to that agent's account.
+  const { lead, isLoading: leadLoading } = useLeadWithStatus(id);
+  useFollowLeadAccount(lead);
   const { data: pipelines = [] } = usePipelines();
   const { data: isOperator } = useIsOperator();
   const datasetByPage = useDatasetByPage(isOperator === true);
@@ -63,6 +67,15 @@ export default function LeadDetailPage() {
   useEffect(() => setNote(lead?.note ?? ""), [lead?.id]);
 
   if (!lead) {
+    if (leadLoading) {
+      return (
+        <Box sx={{ p: 4 }}>
+          <Skeleton width="40%" height={32} />
+          <Skeleton width="60%" />
+          <Skeleton variant="rounded" height={160} sx={{ mt: 2 }} />
+        </Box>
+      );
+    }
     return (
       <Box sx={{ p: 4 }}>
         <Typography color="text.secondary">Lead not found.</Typography>
@@ -287,11 +300,9 @@ export default function LeadDetailPage() {
           </Section>
         )}
 
-        {isOperator && (
-          <Section title="History">
-            <LeadHistory leadId={lead.id} />
-          </Section>
-        )}
+        <Section title="History">
+          <LeadHistory leadId={lead.id} />
+        </Section>
       </Box>
 
       <OutcomeSheet lead={lead} pipelineKind={pipelineKind} open={outcomeOpen} onClose={() => setOutcomeOpen(false)} onSnack={showSnack} />
@@ -371,8 +382,11 @@ function CommissionRow({ lead }: { lead: LeadRow }) {
 function SourceFallback({ lead }: { lead: LeadRow }) {
   const a = (lead.attribution ?? {}) as AdAttribution;
   const label = describeAttribution(a);
-  const campaign = a.campaign_name || a.utm_campaign;
-  const adName = a.ad_name || a.utm_content;
+  // Ads Manager links carry numeric ids in the utm fields; those mean nothing
+  // to an agent, so only real names are shown.
+  const named = (v?: string | null) => (v && !/^\d+$/.test(v.trim()) ? v : "");
+  const campaign = named(a.campaign_name) || named(a.utm_campaign);
+  const adName = named(a.ad_name) || named(a.utm_content);
   const hasAnything = Object.keys(a).length > 0;
   if (!hasAnything && !lead.source_page_id) return null;
 

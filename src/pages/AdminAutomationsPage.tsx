@@ -99,9 +99,7 @@ function AutomationsAdmin() {
       {tab === "workflows" ? (
         <WorkflowBuilder />
       ) : tab === "scheduled" ? (
-        <Box sx={{ maxWidth: 820, mx: "auto" }}>
-          <ScheduledAutomations />
-        </Box>
+        <ScheduledAutomations />
       ) : (
       <Box sx={{ maxWidth: 820, mx: "auto", pb: 4 }}>
       <Typography variant="body2" color="text.secondary" sx={{ p: "16px 16px 0" }}>

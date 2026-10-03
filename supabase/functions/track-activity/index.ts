@@ -132,13 +132,21 @@ async function verifiedActor(req: Request): Promise<string | null> {
 
 interface Field { name: string; value: string; inline?: boolean }
 
+/** 12 letters/digits with no look-alikes (no 0/o, 1/l): 60 random bits.
+ *  Short enough to read in a WhatsApp message, far too many to guess, and
+ *  the link expires.
+ *  Old 8/32-char links keep working. */
+function shortToken(): string {
+  const abc = "abcdefghijkmnpqrstuvwxyz23456789";
+  const bytes = crypto.getRandomValues(new Uint8Array(12));
+  return Array.from(bytes, (b) => abc[b % abc.length]).join("");
+}
+
 /** The same kind of link an agent gets on WhatsApp (/l/{token}, no sign-in
  *  needed) — not the internal /leads/{id} dashboard route, which only works
  *  if you're already signed in as that specific agent. */
 async function leadShareLink(leadId: string, agentId: string): Promise<string | null> {
-  // 32 hex chars (122 random bits). Was 8 (32 bits): once tokens stop being
-  // publicly listable, 8 chars is short enough to guess by brute force.
-  const token = crypto.randomUUID().replace(/-/g, "");
+  const token = shortToken();
   const { error } = await supabase.from("lead_share_tokens").insert({
     lead_id: leadId,
     agent_id: agentId,

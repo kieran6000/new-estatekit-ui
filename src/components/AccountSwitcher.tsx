@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Avatar,
@@ -17,7 +17,7 @@ import {
 } from "@mui/material";
 import UnfoldMoreIcon from "@mui/icons-material/UnfoldMore";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
-import { listAgentProfiles, setActiveAgent, getActiveAgentIdSync } from "../api/_client";
+import { listAgentProfiles, setActiveAgent, getActiveAgentIdSync, ACTIVE_AGENT_EVENT } from "../api/_client";
 import { useAuth } from "../hooks/useAuth";
 import { trackActivity } from "../lib/activity";
 import { tokens } from "../theme";
@@ -48,6 +48,11 @@ export default function AccountSwitcher({ variant = "dark" }: { variant?: "dark"
   const [active, setActive] = useState(getActiveAgentIdSync() || user?.id || "");
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [search, setSearch] = useState("");
+  useEffect(() => {
+    const sync = () => setActive(getActiveAgentIdSync() || user?.id || "");
+    window.addEventListener(ACTIVE_AGENT_EVENT, sync);
+    return () => window.removeEventListener(ACTIVE_AGENT_EVENT, sync);
+  }, [user?.id]);
 
   const { data: profiles = [] } = useQuery({
     queryKey: ["agentProfiles"],

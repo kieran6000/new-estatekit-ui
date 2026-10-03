@@ -36,8 +36,13 @@ function activeAgentKey(realUserId: string): string {
   return `estatekit_active_agent_for_${realUserId}`;
 }
 
+/** Fired on window whenever the managed account changes, so the switcher
+ *  stays in step when something other than it switches accounts. */
+export const ACTIVE_AGENT_EVENT = "ek:active-agent";
+
 export function setActiveAgent(id: string | null): void {
   _activeAgentId = id;
+  try { window.dispatchEvent(new Event(ACTIVE_AGENT_EVENT)); } catch { /* no window */ }
   getCurrentUserId().then((realId) => {
     if (!realId || realId === ANON_USER_ID) return;
     try {

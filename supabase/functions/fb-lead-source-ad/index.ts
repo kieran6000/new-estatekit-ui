@@ -5,7 +5,9 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 // that ad's creative, so the lead page can show the ad the person clicked.
 //
 // Facebook lead objects carry ad_id, so an existing lead can be resolved from
-// its fb_lead_id retroactively. The result is cached back onto the lead.
+// its fb_lead_id retroactively. Landing-page leads from an ad carry the ad id
+// in the link instead: ad_id, or utm_content (our ads' URL parameters put
+// {{ad.id}} there). The result is cached back onto the lead.
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -33,13 +35,18 @@ Deno.serve(async (req) => {
 
     const { data: lead } = await supabase
       .from("leads")
-      .select("id, fb_lead_id, fb_ad_id")
+      .select("id, fb_lead_id, fb_ad_id, attribution")
       .eq("id", leadId)
       .maybeSingle();
     if (!lead) return json({ error: "Lead not found" }, 404);
 
-    // Website leads have no Facebook ad behind them.
-    if (!lead.fb_lead_id && !lead.fb_ad_id) return json({ ad: null, reason: "not_from_fb" });
+    // A landing-page lead's ad id, from the link it arrived on.
+    const a = (lead.attribution ?? {}) as Record<string, string>;
+    const fromLink = [a.ad_id, /^(fb|facebook|ig|instagram)$/i.test(a.utm_source ?? "") ? a.utm_content : ""]
+      .find((v) => typeof v === "string" && /^\d{6,25}$/.test(v)) ?? null;
+
+    // Website leads that didn't come from an ad have nothing to show.
+    if (!lead.fb_lead_id && !lead.fb_ad_id && !fromLink) return json({ ad: null, reason: "not_from_fb" });
 
     const tokens: string[] = [];
     for (const name of TOKEN_NAMES) {
@@ -48,7 +55,7 @@ Deno.serve(async (req) => {
     }
     if (tokens.length === 0) return json({ ad: null, reason: "no_token" });
 
-    let adId: string | null = lead.fb_ad_id ?? null;
+    let adId: string | null = lead.fb_ad_id ?? fromLink;
 
     // Resolve ad_id from the Facebook lead object if we haven't already.
     if (!adId && lead.fb_lead_id) {
@@ -73,6 +80,8 @@ Deno.serve(async (req) => {
       const r = await fetch(`${GRAPH}/${adId}?fields=${encodeURIComponent(fields)}&access_token=${token}`);
       const d = await r.json();
       if (!r.ok || d.error) continue;
+      // Remember a link-found ad id once it's proven to be a real ad.
+      if (!lead.fb_ad_id) await supabase.from("leads").update({ fb_ad_id: adId }).eq("id", lead.id);
 
       const c = d.creative ?? {};
       const storyId: string = c.effective_object_story_id ?? "";

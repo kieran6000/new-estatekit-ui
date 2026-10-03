@@ -18,7 +18,9 @@ import { listAgentProfiles } from "../api/_client";
 import { listLeadEvents, type LeadEvent } from "../api/leadEvents";
 import { timeAgo } from "../lib/timeAgo";
 
-// Admin-only "what happened" log for one lead. Each row: who did it (their
+// The "what happened" log for one lead, for agents and staff. Agents can't
+// look up staff profiles, so anything EstateKit staff did reads "EstateKit
+// team" for them. Each row: who did it (their
 // photo/initials, or an icon when it was the system), what happened, and
 // where from — including the device when we know it.
 
@@ -142,7 +144,7 @@ export default function LeadHistory({ leadId }: { leadId: string }) {
     <Box sx={{ pb: 0.5 }}>
       {visible.map((e) => {
         const actor = e.actor_id ? profiles.find((p) => p.agent_id === e.actor_id) : undefined;
-        const who = actor?.display_name ?? "";
+        const who = actor?.display_name ?? (e.actor_id ? "EstateKit team" : "");
         const device = deviceOf(e.device);
         // Backfilled rows carry a stand-in timestamp, so don't show a time for them.
         const when = e.source === "backfill" ? "" : timeAgo(e.created_at);
