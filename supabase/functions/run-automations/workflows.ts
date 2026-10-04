@@ -473,6 +473,42 @@ class Context {
     return (fresh ?? 0) + (dueNow ?? 0);
   }
 
+  /** The end-of-day report fields: what came in and what the agent did
+   *  today, where the pipeline stands, and leads never called. null when
+   *  the account has no open leads and nothing happened today. */
+  private async dailyReport(): Promise<{ today: string; pipeline: string; not_called: string } | null> {
+    const sastToday = new Date(Date.now() + 2 * 3600_000).toISOString().slice(0, 10);
+    const dayStart = new Date(`${sastToday}T00:00:00+02:00`).toISOString();
+    const [{ data: leads }, { data: touched }] = await Promise.all([
+      this.supabase.from("leads").select("stage, created_at").eq("agent_id", this.run.agent_id).eq("archived", false).limit(5000),
+      this.supabase.from("lead_events").select("lead_id").eq("agent_id", this.run.agent_id).gte("created_at", dayStart)
+        .not("actor_id", "is", null).in("event_type", ["stage_changed", "call", "note_changed"]).limit(5000),
+    ]);
+    const rows = (leads ?? []) as { stage: string; created_at: string }[];
+    const newToday = rows.filter((r) => r.created_at >= dayStart).length;
+    const updatedToday = new Set((touched ?? []).map((t: { lead_id: string }) => t.lead_id)).size;
+    const open = rows.filter((r) => !LOST.includes(r.stage));
+    if (!open.length && !newToday && !updatedToday) return null;
+    const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
+    const order = ["New Lead", "No Answer", "Contacted", "Booked", "Viewing Booked", "Offer Made", "Mandate Signed", "Bought"];
+    const byStage = new Map<string, number>();
+    for (const r of open) byStage.set(r.stage, (byStage.get(r.stage) ?? 0) + 1);
+    const rank = (st: string) => (order.includes(st) ? order.indexOf(st) : order.length);
+    const stages = [...byStage.keys()].sort((a, b) => rank(a) - rank(b));
+    // Never called: still "New Lead" an hour after it came in.
+    const hourAgo = new Date(Date.now() - 3600_000).toISOString();
+    const waiting = open.filter((r) => r.stage === "New Lead" && r.created_at < hourAgo);
+    const oldest = waiting.reduce((m, r) => (r.created_at < m ? r.created_at : m), new Date().toISOString());
+    const days = Math.floor((Date.now() - Date.parse(oldest)) / 86_400_000);
+    return {
+      today: `Today: ${plural(newToday, "new lead")} came in and you updated ${plural(updatedToday, "lead")}.`,
+      pipeline: stages.map((st) => `• ${st}: ${byStage.get(st)}`).join("\n") || "• Nothing open",
+      not_called: waiting.length
+        ? `${waiting.length === 1 ? "1 lead hasn't" : `${waiting.length} leads haven't`} been called yet${days >= 1 ? ` (the oldest came in ${days === 1 ? "yesterday" : `${days} days ago`})` : ""}. Call them first tomorrow.`
+        : "Every new lead has been called. Nice work.",
+    };
+  }
+
   private async whatsApp(step: Extract<Step, { type: "whatsapp_agent" }>): Promise<Outcome> {
     const l = this.lead;
     // New-lead alerts are time-critical; everything else respects quiet hours.
@@ -488,12 +524,23 @@ class Context {
 
     let text: string;
     if (!l) {
-      const count = await this.dailyCount();
-      if (count === 0) {
-        await log(this.supabase, this.run, step.id, "WhatsApp the agent", "Skipped", "Nothing to update today");
-        return { kind: "done" };
+      const agentFirst = first(this.profile?.display_name) || "there";
+      if (/\{\{\s*(today|pipeline|not_called)\s*\}\}/.test(step.text)) {
+        // End-of-day report: sent whenever there's a pipeline to report on.
+        const report = await this.dailyReport();
+        if (!report) {
+          await log(this.supabase, this.run, step.id, "WhatsApp the agent", "Skipped", "No open leads and nothing happened today");
+          return { kind: "done" };
+        }
+        text = fill(step.text, { first_name: agentFirst, ...report });
+      } else {
+        const count = await this.dailyCount();
+        if (count === 0) {
+          await log(this.supabase, this.run, step.id, "WhatsApp the agent", "Skipped", "Nothing to update today");
+          return { kind: "done" };
+        }
+        text = fill(step.text, { first_name: agentFirst, count: String(count), leads_word: count === 1 ? "lead" : "leads" });
       }
-      text = fill(step.text, { first_name: first(this.profile?.display_name) || "there", count: String(count), leads_word: count === 1 ? "lead" : "leads" });
     } else {
       const answers = Array.isArray(l.form_answers) ? (l.form_answers as { q?: string; a?: string }[]) : [];
       const fields: Record<string, string> = {

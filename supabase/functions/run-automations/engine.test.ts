@@ -587,6 +587,35 @@ describe("the weekday summary", () => {
     expect(sent).toHaveLength(0);
   });
 
+  it("the end-of-day report: today, the pipeline by stage, and leads never called", async () => {
+    const wf = workflow([wa("Hi {{first_name}}\n{{today}}\n{{pipeline}}\n{{not_called}}")], { trigger: { kind: "daily_at", time: "17:00" } });
+    const old = new Date(Date.now() - 3 * 86_400_000).toISOString();
+    lead({ stage: "New Lead", created_at: today() });
+    lead({ stage: "New Lead", created_at: old });
+    const called = lead({ stage: "No Answer", created_at: old });
+    lead({ stage: "Booked", created_at: old });
+    lead({ stage: "Lost", created_at: old }); // closed off: not in the pipeline
+    db.tables.lead_events = [{ id: "e1", lead_id: called.id, agent_id: AGENT, actor_id: AGENT, event_type: "call", created_at: today() }];
+    enroll(wf, null);
+    await tick();
+    expect(sent.map((s) => s.text)).toEqual([
+      "Hi Megan\nToday: 1 new lead came in and you updated 1 lead.\n• New Lead: 2\n• No Answer: 1\n• Booked: 1\n1 lead hasn't been called yet (the oldest came in 3 days ago). Call them first tomorrow.",
+    ]);
+  });
+
+  it("the end-of-day report says so when every lead has been called, and skips an empty account", async () => {
+    const wf = workflow([wa("{{not_called}}")], { trigger: { kind: "daily_at", time: "17:00" } });
+    const r1 = enroll(wf, null);
+    await tick();
+    expect(sent).toHaveLength(0);
+    expect(logOf(r1)).toEqual(["WhatsApp the agent: Skipped"]);
+    lead({ stage: "Contacted", created_at: new Date(Date.now() - 86_400_000).toISOString() });
+    const wf2 = workflow([wa("{{not_called}}")], { trigger: { kind: "daily_at", time: "17:00" } });
+    enroll(wf2, null);
+    await tick();
+    expect(sent.map((s) => s.text)).toEqual(["Every new lead has been called. Nice work."]);
+  });
+
   it("sends nothing when there's nothing to update", async () => {
     const wf = workflow([wa("Hi {{first_name}}")], { trigger: { kind: "daily_at", time: "16:00" } });
     const r = enroll(wf, null);

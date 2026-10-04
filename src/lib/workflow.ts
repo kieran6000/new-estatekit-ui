@@ -134,7 +134,7 @@ export const EXITS: { kind: ExitKind; label: string }[] = [
  *  In a daily summary there's no lead: {{first_name}} is the agent's. */
 export const FIELDS = {
   whatsapp_agent: ["first_name", "name", "phone", "email", "address", "form", "answers", "appointment", "stage", "next_label", "action_link"],
-  daily: ["first_name", "count", "leads_word"],
+  daily: ["first_name", "count", "leads_word", "today", "pipeline", "not_called"],
   email_lead: ["first_name", "area", "address", "appointment", "lead_magnet", "recent_sales", "whatsapp_link", "agent_name", "agent_phone", "plan_link"],
 } as const;
 export type FieldSet = keyof typeof FIELDS;
@@ -388,7 +388,7 @@ function fieldProblems(text: string, kind: "whatsapp_agent" | "email_lead", t: T
   for (const [, f] of text.matchAll(FIELD_RE)) {
     if (allowed.includes(f)) continue;
     if (f === "action_link" && kind === "email_lead") out.push("{{action_link}} is the agent's call link. Don't send it to the lead.");
-    else if (t.kind === "daily_at" && kind === "whatsapp_agent") out.push(`{{${f}}} doesn't work in a daily summary: it isn't about one lead. Use {{first_name}}, {{count}} or {{leads_word}}.`);
+    else if (t.kind === "daily_at" && kind === "whatsapp_agent") out.push(`{{${f}}} doesn't work in a daily summary: it isn't about one lead. Use {{first_name}}, {{count}}, {{leads_word}}, {{today}}, {{pipeline}} or {{not_called}}.`);
     else out.push(`{{${f}}} isn't a field. Use the field buttons below the box.`);
   }
   return [...new Set(out)];
