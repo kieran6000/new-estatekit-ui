@@ -195,8 +195,16 @@ ok((await nodes("If / else")) === 1, "added an If / else");
 await addAt(1, "WhatsApp the agent");
 await p.getByRole("textbox", { name: "Message to the agent" }).fill("Call {{first_name}} now: ");
 await p.getByRole("button", { name: "Add Call-and-log link" }).click();
-const msg = await p.getByRole("textbox", { name: "Message to the agent" }).inputValue();
+const msg = await p.getByRole("textbox", { name: "Message to the agent" }).getAttribute("data-value");
 ok(msg === "Call {{first_name}} now: {{action_link}}", `field button inserts at the cursor (${msg})`);
+// Fields show as pills in the box, not {{codes}}.
+const pills = await p.getByRole("textbox", { name: "Message to the agent" }).locator(".ek-pill").allInnerTexts();
+ok(pills.join("|") === "Call-and-log link", `the added field shows as a pill (${pills.join("|")})`);
+await p.getByRole("textbox", { name: "Message to the agent" }).press("End");
+await p.getByRole("textbox", { name: "Message to the agent" }).press("Backspace");
+const afterDel = await p.getByRole("textbox", { name: "Message to the agent" }).getAttribute("data-value");
+ok(afterDel === "Call {{first_name}} now: ", `Backspace removes a pill whole (${afterDel})`);
+await p.getByRole("button", { name: "Add Call-and-log link" }).click();
 await done();
 // [root0, yes0, yes1, no0, root1]
 await addAt(3, "Email the lead");
@@ -406,7 +414,9 @@ ok(await p.getByText(/Thandi Mokoena\s*is here/).isVisible(), "…showing where 
 await p.getByRole("button", { name: "Back to scheduled" }).click(); await p.waitForTimeout(800);
 ok(path().startsWith("/admin/automations/scheduled"), "Back returns to Scheduled");
 await p.locator("tbody tr", { hasText: "Thandi" }).getByRole("link", { name: "Thandi Mokoena" }).click(); await p.waitForTimeout(800);
-ok(path() === `/leads/${leads[0].id}`, "the lead's name opens the lead");
+// The mock user is an operator in their own account, which is staff-only:
+// lead pages send them to Accounts. (In a client's account the link opens the lead.)
+ok(path() === `/leads/${leads[0].id}` || path() === "/admin/clients", `the lead's name opens the lead, or Accounts for staff in their own account (${path()})`);
 
 // A new workflow gets its address when saved; an unsaved one doesn't survive a refresh
 await p.goto(`${BASE}/admin/automations/workflows`); await p.waitForTimeout(1500);

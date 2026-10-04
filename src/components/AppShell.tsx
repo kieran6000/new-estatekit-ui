@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   Avatar,
   Box,
@@ -80,6 +80,10 @@ export default function AppShell() {
   const setup = profile && sales ? setupProgress({ ...profile, salesCount: sales.length }) : null;
   const showSetup = (!!setup && !setup.complete) || pathname.startsWith("/setup");
   const initial = useMemo(() => (user?.phone || "?")[0].toUpperCase(), [user]);
+  // Staff (admins, media buyers) work in clients' accounts: in their own they
+  // only need the admin tabs. Switched into an account (a client's, or the
+  // demo account for testing), they get that account's tabs.
+  const staffMode = !!isOperator && !isManagingOther;
 
 
   const sidebarBg = profile?.sidebarColor || "#111827";
@@ -94,7 +98,7 @@ export default function AppShell() {
   const logoSrc = profile?.sidebarLogoUrl || estateKitLogoWhite;
 
   const SZ = 20;
-  const agentNav = [
+  const agentNav = staffMode ? [] : [
     ...(showSetup
       ? [{ key: "setup", label: setup ? `Get set up · ${setup.done}/${setup.total}` : "Get set up", icon: <ChecklistOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <ChecklistIcon sx={{ fontSize: SZ }} />, to: "/setup" }]
       : []),
@@ -104,7 +108,7 @@ export default function AppShell() {
   ];
 
   const adminNav = [
-    { key: "overview", label: "Overview", icon: <DashboardOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <DashboardIcon sx={{ fontSize: SZ }} />, to: "/overview" },
+    ...(staffMode ? [] : [{ key: "overview", label: "Overview", icon: <DashboardOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <DashboardIcon sx={{ fontSize: SZ }} />, to: "/overview" }]),
     { key: "clients", label: "Accounts", icon: <GroupsOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <GroupsIcon sx={{ fontSize: SZ }} />, to: "/admin/clients" },
     { key: "automations", label: "Automations", icon: <SettingsOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <SettingsIcon sx={{ fontSize: SZ }} />, to: "/admin/automations" },
   ];
@@ -119,7 +123,11 @@ export default function AppShell() {
     "&:hover": { bgcolor: hoverBg, color: textColor },
   });
 
-  const mobileNav = [
+  const mobileNav = staffMode ? [
+    { key: "clients", label: "Accounts", icon: <GroupsOutlinedIcon />, activeIcon: <GroupsIcon />, to: "/admin/clients" },
+    { key: "automations", label: "Automations", icon: <SettingsOutlinedIcon />, activeIcon: <SettingsIcon />, to: "/admin/automations" },
+    { key: "account", label: "Account", icon: <AccountCircleOutlinedIcon />, activeIcon: <AccountCircleIcon />, to: "/account" },
+  ] : [
     ...(showSetup && !isOperator ? [{ key: "setup", label: "Set up", icon: <ChecklistOutlinedIcon />, activeIcon: <ChecklistIcon />, to: "/setup" }] : []),
     { key: "leads", label: "Leads", icon: <ContactsOutlinedIcon />, activeIcon: <ContactsIcon />, to: "/leads" },
     { key: "mypage", label: "Forms", icon: <WebOutlinedIcon />, activeIcon: <WebIcon />, to: "/lead-page" },
@@ -131,6 +139,8 @@ export default function AppShell() {
       : []),
     { key: "account", label: "Account", icon: <AccountCircleOutlinedIcon />, activeIcon: <AccountCircleIcon />, to: "/account" },
   ];
+
+  if (staffMode && ["leads", "mypage", "overview", "home", "setup"].includes(section)) return <Navigate to="/admin/clients" replace />;
 
   return (
     <Box sx={{ display: "flex", minHeight: "100vh", bgcolor: "background.default" }}>
@@ -205,7 +215,7 @@ export default function AppShell() {
             </Box>
           )}
 
-          <Divider sx={{ borderColor: dividerColor, mx: 1.25, my: 0.75 }} />
+          {agentNav.length > 0 && <Divider sx={{ borderColor: dividerColor, mx: 1.25, my: 0.75 }} />}
 
           <List disablePadding sx={{ px: 1.25 }}>
             {agentNav.map((item) => {
