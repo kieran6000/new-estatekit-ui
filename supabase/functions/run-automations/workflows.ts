@@ -120,6 +120,27 @@ export function appointmentLabel(iso: string | null | undefined): string {
   const part = (o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Johannesburg", ...o }).format(d);
   return `${part({ weekday: "short" })} ${part({ day: "numeric" })} ${part({ month: "short" })} at ${part({ hour: "2-digit", minute: "2-digit", hour12: false })}`;
 }
+/** A form's lead magnet, as the thank-you page and emails show it.
+ *  KEEP IN STEP with src/lib/leadMagnet.ts (MAGNET_PRESETS and resolveMagnet). */
+interface Magnet { title: string; text: string; button: string }
+const MAGNET_DEFAULTS: Record<"plan" | "pdf", Magnet> = {
+  plan: { title: "Your marketing plan is ready", text: "How to sell your home without losing money or time. A 2-minute read.", button: "Open my marketing plan" },
+  pdf: { title: "Your free guide", text: "", button: "Open it" },
+};
+interface PageRow {
+  name: string | null; suburb: string | null; fb_pixel_id: string | null; phone: string | null;
+  magnet_kind: string | null; magnet_title: string | null; magnet_text: string | null; magnet_button: string | null; magnet_pdf_url: string | null;
+}
+export function resolveMagnet(page: PageRow | null, pipelineKind: string | null): (Magnet & { kind: "plan" | "pdf" }) | null {
+  let kind = page?.magnet_kind ?? (pipelineKind === "seller" ? "plan" : "none");
+  if (kind === "pdf" && !page?.magnet_pdf_url) kind = "none";
+  if (kind !== "plan" && kind !== "pdf") return null;
+  const d = MAGNET_DEFAULTS[kind];
+  return { kind, title: page?.magnet_title?.trim() || d.title, text: page?.magnet_text?.trim() || d.text, button: page?.magnet_button?.trim() || d.button };
+}
+/** Where {{lead_magnet}} sits in an email body until it's drawn as a box. */
+const MAGNET_MARK = "\u0000MAGNET\u0000";
+const rand = (n: number) => `R${String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, " ")}`;
 const fill = (t: string, v: Record<string, string>) => t.replace(/\{\{\s*(\w+)\s*\}\}/g, (m, k: string) => (k in v ? v[k] : m));
 
 /** The step at `pos`, or undefined when the position is past the end of its list. */
@@ -301,7 +322,7 @@ async function processRun(supabase: SupabaseClient, deps: EngineDeps, run: Run) 
 type Outcome = { kind: "done" } | { kind: "goto"; pos: (number | string)[] } | { kind: "wait"; until: Date } | { kind: "hold"; until: Date };
 
 class Context {
-  private pageCache: { name: string | null; suburb: string | null; fb_pixel_id: string | null; phone: string | null; magnet_kind: string | null } | null | undefined;
+  private pageCache: PageRow | null | undefined;
   private kindCache: string | null | undefined;
 
   constructor(
@@ -318,7 +339,7 @@ class Context {
     if (this.pageCache === undefined) {
       this.pageCache = null;
       if (this.lead?.source_page_id) {
-        const { data } = await this.supabase.from("lead_pages").select("name, suburb, fb_pixel_id, phone, magnet_kind").eq("id", this.lead.source_page_id).maybeSingle();
+        const { data } = await this.supabase.from("lead_pages").select("name, suburb, fb_pixel_id, phone, magnet_kind, magnet_title, magnet_text, magnet_button, magnet_pdf_url").eq("id", this.lead.source_page_id).maybeSingle();
         this.pageCache = data;
       }
     }
@@ -521,6 +542,16 @@ class Context {
     return `${APP}/plan/${token}`;
   }
 
+  /** The agent's latest sales, for {{recent_sales}}: a short list and a link
+   *  to them all, or nothing when there are none (the paragraph is dropped). */
+  private async recentSales(l: Lead): Promise<string> {
+    const { data } = await this.supabase.from("sold_listings").select("address, price, status").eq("agent_id", l.agent_id).order("sort_order").limit(3);
+    const rows = (data ?? []) as { address: string | null; price: number | null; status: string | null }[];
+    if (!rows.length) return "";
+    const lines = rows.map((r) => `- ${(r.address || "A home nearby").trim()}${r.price ? `: ${r.status === "listed" ? "listed at" : "sold for"} ${rand(r.price)}` : ""}`);
+    return `Here's what's moved near you recently:\n${lines.join("\n")}\n\nSee them all: ${APP}/sold/${l.agent_id}`;
+  }
+
   private async email(step: Extract<Step, { type: "email_lead" }>): Promise<Outcome> {
     const l = this.lead;
     if (!l) return { kind: "done" };
@@ -552,10 +583,21 @@ class Context {
       agent_name: agentName,
       agent_phone: prettyPhone(page?.phone || this.profile?.whatsapp_number || ""),
       appointment: appointmentLabel(l.appointment_at),
+      whatsapp_link: `${APP}/w/${l.id}`,
     };
-    if (/\{\{\s*plan_link\s*\}\}/.test(step.body)) fields.plan_link = await this.planLink(l);
-    const subject = fill(step.subject, fields).replace(/\s+/g, " ").trim().slice(0, 200);
-    const body = fill(step.body, fields);
+    const uses = (f: string) => new RegExp(`\\{\\{\\s*${f}\\s*\\}\\}`).test(`${step.subject}\n${step.body}`);
+    if (uses("plan_link")) fields.plan_link = await this.planLink(l);
+    if (uses("recent_sales")) fields.recent_sales = await this.recentSales(l);
+    // The form's lead magnet, drawn as a box below. None for this form: nothing.
+    let magnet: (Magnet & { url: string }) | null = null;
+    if (uses("lead_magnet")) {
+      const m = resolveMagnet(page, await this.pipelineKind());
+      if (m) magnet = { ...m, url: await this.planLink(l) };
+      fields.lead_magnet = magnet ? MAGNET_MARK : "";
+    }
+    const subject = fill(step.subject, { ...fields, lead_magnet: magnet?.title ?? "" }).replace(/\s+/g, " ").trim().slice(0, 200);
+    // Paragraphs left empty by a field with nothing to show are dropped.
+    const paras = fill(step.body, fields).split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
 
     const { data: rec, error: recErr } = await this.supabase
       .from("workflow_emails")
@@ -566,10 +608,19 @@ class Context {
 
     const unsub = await unsubscribeUrl(l.id);
     const linkify = (t: string) => esc(t).replace(/https?:\/\/[^\s<]+/g, (u) => `<a href="${u}" style="color:#1a73e8">${u}</a>`);
-    const paras = body.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+    const magnetText = magnet ? [magnet.title.toUpperCase(), ...(magnet.text ? [magnet.text] : []), `${magnet.button}: ${magnet.url}`].join("\n") : "";
+    const magnetHtml = magnet
+      ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:100%;margin:4px 0 18px;border-collapse:collapse"><tr><td style="border-left:4px solid #1565c0;background:#eef4fc;padding:14px 16px">
+<p style="margin:0 0 6px;font-size:16px;font-weight:bold;color:#111111;line-height:1.35">${esc(magnet.title)}</p>
+${magnet.text ? `<p style="margin:0 0 8px">${esc(magnet.text)}</p>` : ""}
+<p style="margin:10px 0 0"><a href="${esc(magnet.url)}" style="color:#1565c0;font-weight:bold;font-size:16px">${esc(magnet.button)} &rarr;</a></p>
+</td></tr></table>`
+      : "";
+    const htmlPara = (p: string) => (p === MAGNET_MARK ? magnetHtml : `<p style="margin:0 0 14px">${linkify(p.split(MAGNET_MARK).join(magnetText)).replace(/\n/g, "<br>")}</p>`);
+    const body = paras.map((p) => p.split(MAGNET_MARK).join(magnetText)).join("\n\n");
     const html = `<!doctype html><html><body style="margin:0;padding:16px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.55;color:#222222">
 <div style="max-width:560px">
-${paras.map((p) => `<p style="margin:0 0 14px">${linkify(p).replace(/\n/g, "<br>")}</p>`).join("\n")}
+${paras.map(htmlPara).join("\n")}
 <p style="margin:28px 0 0;font-size:11px;color:#999999;line-height:1.5">
 You're getting this because you asked ${esc(agentName)} about your property. <a href="${unsub}" style="color:#999999">Unsubscribe</a>
 </p>
@@ -598,6 +649,11 @@ You're getting this because you asked ${esc(agentName)} about your property. <a 
       await log(this.supabase, this.run, step.id, "Email the lead", "Failed", `The email service said ${res.status}`);
       return { kind: "done" };
     }
+    try {
+      const resendId = (JSON.parse(await res.text()) as { id?: string }).id;
+      // Delivery reports (delivered, bounced, spam) match on this.
+      if (resendId) await this.supabase.from("workflow_emails").update({ resend_id: resendId }).eq("id", rec.id);
+    } catch { /* sent anyway; only its later reports won't match */ }
     this.run.last_email_id = rec.id;
     await save(this.supabase, this.run, { last_email_id: rec.id });
     await log(this.supabase, this.run, step.id, "Email the lead", "Sent", subject);

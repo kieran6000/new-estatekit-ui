@@ -54,13 +54,18 @@ import FitScreenIcon from "@mui/icons-material/FitScreen";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import ErrorOutlineIcon from "@mui/icons-material/ErrorOutlined";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
+import PersonIcon from "@mui/icons-material/Person";
+import { Link as RouterLink, Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { tokens } from "../theme";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../hooks/useAuth";
-import { getActiveAgentIdSync } from "../api/_client";
+import { ACTIVE_AGENT_EVENT, getActiveAgentIdSync } from "../api/_client";
 import {
-  addStandardWorkflows, deleteWorkflow, isSaved, listAccountWorkflows, listTemplateWorkflows, listWorkflowLog, saveWorkflow,
+  addStandardWorkflows, countLeadsInWorkflows, deleteWorkflow, getWorkflow, isSaved, listAccountWorkflows, listTemplateWorkflows, listWorkflowLog,
+  listWorkflowRuns, saveWorkflow, type LeadInWorkflow, type OpenedWorkflow,
 } from "../api/workflows";
+import { useFollowAccount } from "../hooks/useFollowLeadAccount";
+import { listPath, workflowPath, type BackTo, type Scope } from "../lib/automationsPaths";
 import { trackActivity } from "../lib/activity";
 import { useSnack } from "../hooks/useSnack";
 import WhatsAppPreview from "./WhatsAppPreview";
@@ -69,7 +74,7 @@ import { PlainHead, SortHead, sortRows, useTableSort } from "./SortHead";
 import {
   BRANCH_CHECKS, EXITS, FILTER_FIELDS, KNOWN_TAGS, PIPELINES, SOURCES, STAGES, STEP_TYPES, TEMPLATES, TRIGGERS,
   allowedSteps, branchLabel, cloneSteps, countSteps, defaultBranchValue, fieldsFor, filterSummary, findStep,
-  insertStep, locate, moveStep, newId, newStep, ordinal, rememberTags, tagsIn, problemCount, removeStep, stepSummary, stepTitle, timeLabel, timeline,
+  insertStep, locate, moveStep, newId, newStep, ordinal, stepAtPos, rememberTags, tagsIn, problemCount, removeStep, stepSummary, stepTitle, timeLabel, timeline,
   triggerOfKind, triggerSummary, unitLabel, updateStep, validate, waitMinutes,
   type BranchCheck, type Exit, type Filter, type Path, type Problems, type Settings, type Step, type StepType, type Trigger,
   type Unit, type Workflow,
@@ -100,60 +105,152 @@ const SAMPLE_FIELDS: Record<string, string> = {
   count: "7", leads_word: "leads", phone: "082 555 0199", email: "thandi@example.com", form: "Home Value page",
   answers: "When are you selling?: In 3 months\nProperty address: 14 Oak Avenue, Bryanston",
   appointment: "Tue 7 Oct at 10:00",
+  lead_magnet: "YOUR MARKETING PLAN IS READY\nHow to sell your home without losing money or time.\nOpen my marketing plan: leads.estatekit.co/plan/…",
+  whatsapp_link: "leads.estatekit.co/w/…",
+  recent_sales: "Here's what's moved near you recently:\n- 12 Elm Road: sold for R2 150 000\nSee them all: leads.estatekit.co/sold/…",
 };
 const fill = (t: string) => t.replace(/\{\{\s*(\w+)\s*\}\}/g, (m, k: string) => SAMPLE_FIELDS[k] ?? (k === "action_link" ? "leads.estatekit.co/l/…" : m));
 
-// ── Root: list ↔ editor ──────────────────────────────────────────────────
+// ── Pages: list and editor, each at its own address (lib/automationsPaths) ──
 
-type Scope = "account" | "templates";
-
-export default function WorkflowBuilder() {
+/** The account in the switcher; your own when you aren't managing anyone.
+ *  Re-renders when something switches accounts. */
+function useAgentId(): string {
   const { user } = useAuth();
-  const qc = useQueryClient();
-  const showSnack = useSnack();
-  // The account in the switcher; your own when you aren't managing anyone.
-  const agentId = getActiveAgentIdSync() ?? user?.id ?? "";
-  const [scope, setScope] = useState<Scope>("account");
-  const [openId, setOpenId] = useState<string | null>(null);
-  const [draft, setDraft] = useState<Workflow | null>(null);
-  const [picker, setPicker] = useState(false);
+  const [id, setId] = useState(() => getActiveAgentIdSync() ?? user?.id ?? "");
+  useEffect(() => {
+    const sync = () => setId(getActiveAgentIdSync() ?? user?.id ?? "");
+    sync();
+    window.addEventListener(ACTIVE_AGENT_EVENT, sync);
+    return () => window.removeEventListener(ACTIVE_AGENT_EVENT, sync);
+  }, [user?.id]);
+  return id;
+}
 
-  const accountKey = ["workflows", agentId];
-  const { data: accountWfs, isLoading: l1, isError: e1 } = useQuery({ queryKey: accountKey, queryFn: () => listAccountWorkflows(agentId), enabled: !!agentId });
-  const { data: templates, isLoading: l2, isError: e2 } = useQuery({ queryKey: ["workflowTemplates"], queryFn: listTemplateWorkflows });
-  const list = (scope === "account" ? accountWfs : templates) ?? [];
-
-  // Tags added by any workflow can be checked for in the others.
+/** Tags added by any workflow can be checked for in the others. */
+function useKnownTags(agentId: string) {
+  const { data: accountWfs } = useQuery({ queryKey: ["workflows", agentId], queryFn: () => listAccountWorkflows(agentId), enabled: !!agentId });
+  const { data: templates } = useQuery({ queryKey: ["workflowTemplates"], queryFn: listTemplateWorkflows });
   useEffect(() => { rememberTags([...(accountWfs ?? []), ...(templates ?? [])].flatMap((w) => tagsIn(w.steps))); }, [accountWfs, templates]);
+}
 
-  const open = draft ?? list.find((w) => w.id === openId) ?? null;
+const Loading = () => <Box sx={{ display: "flex", justifyContent: "center", p: 6 }}><CircularProgress /></Box>;
+
+export function WorkflowListPage({ scope }: { scope: Scope }) {
+  const agentId = useAgentId();
+  const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
+  const [picker, setPicker] = useState(false);
+  useKnownTags(agentId);
+
+  // ?account=<id> (from a client's page): switch to that account first.
+  const wanted = params.get("account");
+  useFollowAccount(wanted ? { agent_id: wanted } : null, "account");
+  useEffect(() => {
+    if (wanted && wanted === agentId) setParams((p) => { p.delete("account"); return p; }, { replace: true });
+  }, [wanted, agentId, setParams]);
+
+  const { data: accountWfs, isLoading: l1, isError: e1 } = useQuery({ queryKey: ["workflows", agentId], queryFn: () => listAccountWorkflows(agentId), enabled: !!agentId && scope === "account" });
+  const { data: templates, isLoading: l2, isError: e2 } = useQuery({ queryKey: ["workflowTemplates"], queryFn: listTemplateWorkflows });
+  const { data: counts = {} } = useQuery({ queryKey: ["workflowLeadCounts", agentId], queryFn: () => countLeadsInWorkflows(agentId), enabled: !!agentId && scope === "account", refetchInterval: 60_000 });
 
   const create = (w: Workflow) => {
-    setDraft({ ...w, published: false });
-    setOpenId(w.id);
     setPicker(false);
+    navigate(`${listPath(scope)}/new`, { state: { draft: { ...w, published: false } } });
   };
 
+  if (!agentId || (scope === "account" && l1) || l2) return <Loading />;
+  if (e1 || e2) return <Alert severity="error" sx={{ m: 2 }}>Couldn't load workflows. Refresh to try again.</Alert>;
+
+  return (
+    <>
+      <WorkflowList
+        workflows={(scope === "account" ? accountWfs : templates) ?? []}
+        scope={scope}
+        counts={scope === "account" ? counts : undefined}
+        onCreate={() => setPicker(true)}
+        header={scope === "account" ? <StandardSetBar agentId={agentId} workflows={accountWfs ?? []} /> : null}
+      />
+      <Dialog open={picker} onClose={() => setPicker(false)} fullWidth maxWidth="sm">
+        <DialogTitle>{scope === "templates" ? "New template" : "Start from a template"}</DialogTitle>
+        <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+          {(templates ?? []).length > 0 && scope === "account" && (
+            <Typography sx={{ fontSize: 12, fontWeight: 600, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.06em", mt: 0.5 }}>Your templates</Typography>
+          )}
+          {scope === "account" && (templates ?? []).map((t) => (
+            <TemplateButton key={t.id} name={t.name} blurb={triggerSummary(t.trigger)} onClick={() => create({ ...t, id: newId(), steps: cloneSteps(t.steps), standard: undefined })} />
+          ))}
+          {scope === "account" && (templates ?? []).length > 0 && (
+            <Typography sx={{ fontSize: 12, fontWeight: 600, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.06em", mt: 1 }}>Starters</Typography>
+          )}
+          {TEMPLATES.map((t) => <TemplateButton key={t.name} name={t.name} blurb={t.blurb} onClick={() => create(t.make())} />)}
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+export function WorkflowEditorPage({ scope }: { scope: Scope }) {
+  const { id = "" } = useParams();
+  const agentId = useAgentId();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const qc = useQueryClient();
+  const showSnack = useSnack();
+  useKnownTags(agentId);
+  const isNew = id === "new";
+  const draft = (location.state as { draft?: Workflow } | null)?.draft;
+  const backTo: BackTo = (location.state as { back?: BackTo } | null)?.back ?? { to: listPath(scope), label: scope === "templates" ? "Templates" : "Workflows" };
+
+  const { data: opened, isLoading, isError } = useQuery({ queryKey: ["workflow", id], queryFn: () => getWorkflow(id), enabled: !isNew });
+  // A workflow from another account (a link from Scheduled → All accounts,
+  // or from a client's page): switch to that account, like opening a lead.
+  useFollowAccount(opened?.agentId ? { agent_id: opened.agentId } : null, "workflow");
+
+  if (isNew) {
+    // A refresh loses the unsaved draft: back to the list rather than a blank page.
+    if (!draft) return <Navigate to={listPath(scope)} replace />;
+  } else {
+    if (isLoading) return <Loading />;
+    if (isError) return <Alert severity="error" sx={{ m: 2 }}>Couldn't load this workflow. Refresh to try again.</Alert>;
+    if (!opened) {
+      return (
+        <Box sx={{ p: 4, textAlign: "center" }}>
+          <Typography sx={{ fontSize: 18, fontWeight: 500 }}>This workflow doesn't exist any more</Typography>
+          <Button component={RouterLink} to={listPath(scope)} sx={{ mt: 2 }}>Back to {scope === "templates" ? "templates" : "workflows"}</Button>
+        </Box>
+      );
+    }
+    // A template's address under /workflows (or the other way round): fix it.
+    const actual: Scope = opened.agentId ? "account" : "templates";
+    if (actual !== scope) return <Navigate to={`${workflowPath(id, actual)}${location.search}`} replace state={location.state} />;
+  }
+
+  const workflow = isNew ? draft! : opened!.workflow;
+  const owner = isNew ? (scope === "account" ? agentId : null) : opened!.agentId;
+  const isTemplate = scope === "templates";
+
   async function save(w: Workflow): Promise<Workflow> {
-    const saved = await saveWorkflow(w, scope === "account" ? agentId : null);
-    trackActivity("automation_toggled", { agentId: scope === "account" ? agentId : undefined, detail: `${scope === "templates" ? "Template" : "Workflow"} saved: ${saved.name} (${saved.published ? "on" : "off"})` });
-    await qc.invalidateQueries({ queryKey: scope === "account" ? accountKey : ["workflowTemplates"] });
-    setDraft(null);
-    setOpenId(saved.id);
+    const saved = await saveWorkflow(w, owner);
+    trackActivity("automation_toggled", { agentId: owner ?? undefined, detail: `${isTemplate ? "Template" : "Workflow"} saved: ${saved.name} (${saved.published ? "on" : "off"})` });
+    qc.setQueryData(["workflow", saved.id], { workflow: saved, agentId: owner } satisfies OpenedWorkflow);
+    void qc.invalidateQueries({ queryKey: isTemplate ? ["workflowTemplates"] : ["workflows", owner] });
+    // A new one gets its real address now, so a refresh keeps it.
+    if (isNew) navigate(`${workflowPath(saved.id, scope)}${location.search}`, { replace: true, state: { back: backTo } });
     return saved;
   }
 
-  async function remove(w: Workflow) {
+  async function remove() {
     try {
-      await deleteWorkflow(w.id);
-      await qc.invalidateQueries({ queryKey: scope === "account" ? accountKey : ["workflowTemplates"] });
-      showSnack(`Deleted "${w.name}"`);
+      await deleteWorkflow(workflow.id);
+      await qc.invalidateQueries({ queryKey: isTemplate ? ["workflowTemplates"] : ["workflows", owner] });
+      qc.removeQueries({ queryKey: ["workflow", workflow.id] });
+      showSnack(`Deleted "${workflow.name}"`);
+      navigate(listPath(scope));
     } catch (e) {
       console.error(e);
       showSnack("Couldn't delete it. Try again.");
     }
-    setDraft(null);
-    setOpenId(null);
   }
 
   async function copyToTemplates(w: Workflow) {
@@ -167,47 +264,17 @@ export default function WorkflowBuilder() {
     }
   }
 
-  if (!agentId || l1 || l2) return <Box sx={{ display: "flex", justifyContent: "center", p: 6 }}><CircularProgress /></Box>;
-  if (e1 || e2) return <Alert severity="error" sx={{ m: 2 }}>Couldn't load workflows. Refresh to try again.</Alert>;
-
   return (
-    <>
-      {open ? (
-        <Editor
-          key={open.id}
-          initial={open}
-          isTemplate={scope === "templates"}
-          onSave={save}
-          onCopyToTemplates={scope === "account" ? copyToTemplates : undefined}
-          onBack={() => { setDraft(null); setOpenId(null); }}
-          onDelete={() => void remove(open)}
-        />
-      ) : (
-        <WorkflowList
-          workflows={list}
-          scope={scope}
-          onScope={setScope}
-          onOpen={setOpenId}
-          onCreate={() => setPicker(true)}
-          header={scope === "account" ? <StandardSetBar agentId={agentId} workflows={accountWfs ?? []} /> : null}
-        />
-      )}
-      <Dialog open={picker} onClose={() => setPicker(false)} fullWidth maxWidth="sm">
-        <DialogTitle>{scope === "templates" ? "New template" : "Start from a template"}</DialogTitle>
-        <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-          {(templates ?? []).length > 0 && scope === "account" && (
-            <Typography sx={{ fontSize: 12, fontWeight: 600, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.06em", mt: 0.5 }}>Your templates</Typography>
-          )}
-          {scope === "account" && (templates ?? []).map((t) => (
-            <TemplateButton key={t.id} name={t.name} blurb={triggerSummary(t.trigger)} onClick={() => create({ ...t, id: newId(), steps: cloneSteps(t.steps) })} />
-          ))}
-          {scope === "account" && (templates ?? []).length > 0 && (
-            <Typography sx={{ fontSize: 12, fontWeight: 600, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.06em", mt: 1 }}>Starters</Typography>
-          )}
-          {TEMPLATES.map((t) => <TemplateButton key={t.name} name={t.name} blurb={t.blurb} onClick={() => create(t.make())} />)}
-        </DialogContent>
-      </Dialog>
-    </>
+    <Editor
+      key={isNew ? "new" : workflow.id}
+      initial={workflow}
+      isTemplate={isTemplate}
+      backTo={backTo}
+      onSave={save}
+      onCopyToTemplates={isTemplate ? undefined : copyToTemplates}
+      onBack={() => navigate(backTo.to)}
+      onDelete={() => void remove()}
+    />
   );
 }
 
@@ -276,13 +343,16 @@ function OnOffChip({ on }: { on: boolean }) {
   return <Chip size="small" label={on ? "On" : "Off"} color={on ? "success" : "default"} variant={on ? "filled" : "outlined"} sx={{ height: 22, fontSize: 12, fontWeight: 600, minWidth: 44 }} />;
 }
 
-const LIST_KEYS = ["name", "trigger", "steps", "status"] as const;
+const LIST_KEYS = ["name", "trigger", "steps", "leads", "status"] as const;
 type ListKey = (typeof LIST_KEYS)[number];
 
-function WorkflowList({ workflows, scope, onScope, onOpen, onCreate, header }: {
-  workflows: Workflow[]; scope: Scope; onScope: (s: Scope) => void; onOpen: (id: string) => void; onCreate: () => void; header: React.ReactNode;
+function WorkflowList({ workflows, scope, counts, onCreate, header }: {
+  workflows: Workflow[]; scope: Scope; counts?: Record<string, number>; onCreate: () => void; header: React.ReactNode;
 }) {
   const templates = scope === "templates";
+  const navigate = useNavigate();
+  const onOpen = (id: string) => navigate(workflowPath(id, scope));
+  const inIt = (w: Workflow) => counts?.[w.id] ?? 0;
   const isDesktop = useMediaQuery("(min-width:900px)");
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<"all" | "on" | "off">("all");
@@ -291,7 +361,7 @@ function WorkflowList({ workflows, scope, onScope, onOpen, onCreate, header }: {
   const needle = q.trim().toLowerCase();
   const shown = sortRows(
     workflows.filter((w) => (templates || filter === "all" || (filter === "on") === w.published) && (!needle || `${w.name} ${triggerSummary(w.trigger)}`.toLowerCase().includes(needle))),
-    (w) => (sort.k === "name" ? w.name : sort.k === "trigger" ? triggerSummary(w.trigger) : sort.k === "steps" ? countSteps(w.steps) : Number(w.published)),
+    (w) => (sort.k === "name" ? w.name : sort.k === "trigger" ? triggerSummary(w.trigger) : sort.k === "steps" ? countSteps(w.steps) : sort.k === "leads" ? inIt(w) : Number(w.published)),
     sort.dir,
   );
 
@@ -308,10 +378,6 @@ function WorkflowList({ workflows, scope, onScope, onOpen, onCreate, header }: {
         </Box>
         <Button variant="contained" startIcon={<AddIcon />} onClick={onCreate}>{templates ? "Create template" : "Create workflow"}</Button>
       </Box>
-      <Tabs value={scope} onChange={(_, v) => onScope(v)} sx={{ mb: 2, minHeight: 40, borderBottom: `1px solid ${tokens.divider}`, "& .MuiTab-root": { minHeight: 40, textTransform: "none", fontWeight: 600, px: 1.5, minWidth: 0 } }}>
-        <Tab value="account" label="This account" />
-        <Tab value="templates" label="Templates" />
-      </Tabs>
       {header}
       <Box sx={{ display: "flex", gap: 1.5, mb: 2, flexWrap: "wrap", alignItems: "center" }}>
         {!templates && (
@@ -341,6 +407,7 @@ function WorkflowList({ workflows, scope, onScope, onOpen, onCreate, header }: {
                 <SortHead k="trigger" label="Starts when" sort={sort} onSort={onSort} />
                 <PlainHead>Sends</PlainHead>
                 <SortHead k="steps" label="Steps" sort={sort} onSort={onSort} num />
+                {counts && <SortHead k="leads" label="Leads in it" sort={sort} onSort={onSort} num firstDir="desc" />}
                 {!templates && <SortHead k="status" label="Status" sort={sort} onSort={onSort} firstDir="desc" />}
                 <PlainHead sx={{ width: 48 }} />
               </TableRow>
@@ -355,6 +422,7 @@ function WorkflowList({ workflows, scope, onScope, onOpen, onCreate, header }: {
                   <TableCell sx={{ fontSize: 13, color: "text.secondary" }}>{triggerSummary(w.trigger)}</TableCell>
                   <TableCell><Sends steps={w.steps} /></TableCell>
                   <TableCell align="right" sx={{ fontSize: 13 }}>{countSteps(w.steps)}</TableCell>
+                  {counts && <TableCell align="right" sx={{ fontSize: 13, color: inIt(w) ? "text.primary" : "text.secondary" }}>{inIt(w)}</TableCell>}
                   {!templates && <TableCell><OnOffChip on={w.published} /></TableCell>}
                   <TableCell padding="checkbox"><ChevronRightIcon fontSize="small" sx={{ color: "text.disabled" }} /></TableCell>
                 </TableRow>
@@ -374,6 +442,7 @@ function WorkflowList({ workflows, scope, onScope, onOpen, onCreate, header }: {
                 <Typography sx={{ fontWeight: 500, fontSize: 14.5 }}>{w.name}<ListFlags w={w} /></Typography>
                 <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>{triggerSummary(w.trigger)}</Typography>
                 <Box sx={{ mt: 0.5 }}><Sends steps={w.steps} /></Box>
+                {inIt(w) > 0 && <Typography sx={{ fontSize: 12.5, color: "text.secondary", mt: 0.25 }}>{inIt(w)} lead{inIt(w) === 1 ? "" : "s"} in it</Typography>}
               </Box>
               {!templates && <OnOffChip on={w.published} />}
             </Box>
@@ -403,7 +472,8 @@ function ListFlags({ w }: { w: Workflow }) {
 // ── Editor ───────────────────────────────────────────────────────────────
 
 type Selection = { kind: "trigger" } | { kind: "filters" } | { kind: "exits" } | { kind: "step"; id: string } | null;
-type EditorTab = "builder" | "settings" | "history";
+type EditorTab = "builder" | "leads" | "history" | "settings";
+const EDITOR_TABS: EditorTab[] = ["builder", "leads", "history", "settings"];
 
 const selKey = (s: Selection) => (!s ? "" : s.kind === "step" ? s.id : s.kind);
 
@@ -432,15 +502,18 @@ function useHistory(initial: Workflow) {
 /** What Save stores: anything else (ids aside) is screen state. */
 const snapshot = (w: Workflow) => JSON.stringify({ n: w.name, p: w.published, t: w.trigger, f: w.filters, s: w.steps, e: w.exits, o: w.settings, d: w.standard });
 
-function Editor({ initial, isTemplate, onSave, onCopyToTemplates, onBack, onDelete }: {
+function Editor({ initial, isTemplate, backTo, onSave, onCopyToTemplates, onBack, onDelete }: {
   initial: Workflow;
   isTemplate: boolean;
+  backTo: BackTo;
   onSave: (w: Workflow) => Promise<Workflow>;
   onCopyToTemplates?: (w: Workflow) => Promise<void>;
   onBack: () => void;
   onDelete: () => void;
 }) {
   const isDesktop = useMediaQuery("(min-width:1000px)");
+  // The app's bottom bar shows below 900px (see AppShell).
+  const hasBottomNav = !useMediaQuery("(min-width:900px)");
   const showSnack = useSnack();
   const { wf, set, undo, redo, canUndo, canRedo } = useHistory(initial);
   // Changed since it was opened or last saved. A new workflow can be saved as
@@ -451,7 +524,53 @@ function Editor({ initial, isTemplate, onSave, onCopyToTemplates, onBack, onDele
   const [saving, setSaving] = useState(false);
   const [leaving, setLeaving] = useState(false);
   useEffect(() => rememberTags(tagsIn(wf.steps)), [wf.steps]);
-  const [tab, setTab] = useState<EditorTab>("builder");
+  // Refreshing or closing the tab with unsaved changes asks first.
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+
+  // The tab, the lead being shown (?run=) and the step the Leads tab is
+  // narrowed to (?step=) live in the address, so a refresh or a shared
+  // link opens the same view. Tab switches replace the entry: Back leaves
+  // the workflow rather than stepping through its tabs.
+  const [params, setParams] = useSearchParams();
+  // Keeps the history state (a new workflow's draft, where Back goes).
+  const navState = useLocation().state as unknown;
+  const asked = params.get("tab") as EditorTab | null;
+  const tab: EditorTab = asked && EDITOR_TABS.includes(asked) && !(isTemplate && asked === "leads") ? asked : "builder";
+  const runId = params.get("run");
+  const stepFilter = params.get("step");
+  const setView = useCallback((v: { tab?: EditorTab; run?: string | null; step?: string | null }) => {
+    setParams((p) => {
+      const n = new URLSearchParams(p);
+      if (v.tab) { if (v.tab === "builder") n.delete("tab"); else n.set("tab", v.tab); }
+      if (v.run !== undefined) { if (v.run) n.set("run", v.run); else n.delete("run"); }
+      if (v.step !== undefined) { if (v.step) n.set("step", v.step); else n.delete("step"); }
+      return n;
+    }, { replace: true, state: navState });
+  }, [setParams, navState]);
+  const setTab = (t: EditorTab) => setView({ tab: t });
+
+  // Leads in this workflow now, and the step each is at. Positions refer to
+  // the workflow as saved, so they're read against the saved steps.
+  const [savedSteps, setSavedSteps] = useState(initial.steps);
+  const { data: runs = [], isLoading: runsLoading } = useQuery({
+    queryKey: ["workflowRuns", initial.id],
+    queryFn: () => listWorkflowRuns(initial.id),
+    enabled: !isTemplate && isSaved(initial.id),
+    refetchInterval: 30_000,
+  });
+  const runStep = useCallback((r: LeadInWorkflow) => stepAtPos(savedSteps, r.pos), [savedSteps]);
+  const here = useMemo(() => {
+    const n: Record<string, number> = {};
+    for (const r of runs) { const st = runStep(r); if (st) n[st.id] = (n[st.id] ?? 0) + 1; }
+    return n;
+  }, [runs, runStep]);
+  const focusRun = runId ? runs.find((r) => r.id === runId) : undefined;
+  const focusStep = focusRun ? runStep(focusRun) : undefined;
   const [sel, setSel] = useState<Selection>(null);
   const [editingName, setEditingName] = useState(false);
   const problems = useMemo(() => validate(wf), [wf]);
@@ -488,6 +607,7 @@ function Editor({ initial, isTemplate, onSave, onCopyToTemplates, onBack, onDele
     try {
       await onSave(wf);
       setSavedSnap(snapshot(wf));
+      setSavedSteps(wf.steps);
       showSnack(isTemplate ? "Template saved" : wf.published ? "Saved. It's on: new leads go through it from now." : "Saved. It's off.");
     } catch (e) {
       console.error(e);
@@ -559,10 +679,10 @@ function Editor({ initial, isTemplate, onSave, onCopyToTemplates, onBack, onDele
   return (
     // A fixed-height frame: the header and tabs never scroll away, and the
     // canvas and the details panel each scroll on their own.
-    <Box sx={{ height: "calc(100dvh - 100px)", display: "flex", flexDirection: "column", minHeight: 420 }}>
+    <Box sx={{ height: hasBottomNav ? "calc(100dvh - 56px)" : "100dvh", display: "flex", flexDirection: "column", minHeight: 420 }}>
       <Box sx={{ display: "flex", alignItems: "center", gap: 1, px: 1.5, height: 56, flex: "none", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
-        <Button startIcon={<ArrowBackIcon />} onClick={back} sx={{ textTransform: "none", color: "text.primary", flex: "none" }} aria-label={isTemplate ? "Back to templates" : "Back to workflows"}>
-          {isDesktop ? (isTemplate ? "Templates" : "Workflows") : ""}
+        <Button startIcon={<ArrowBackIcon />} onClick={back} sx={{ textTransform: "none", color: "text.primary", flex: "none" }} aria-label={`Back to ${backTo.label.toLowerCase()}`}>
+          {isDesktop ? backTo.label : ""}
         </Button>
         <Box sx={{ flex: 1, minWidth: 0, display: "flex", justifyContent: "center", alignItems: "center", gap: 0.5 }}>
           {editingName ? (
@@ -622,15 +742,35 @@ function Editor({ initial, isTemplate, onSave, onCopyToTemplates, onBack, onDele
         allowScrollButtonsMobile
         sx={{ flex: "none", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}`, minHeight: 44, "& .MuiTabs-flexContainer": { justifyContent: { md: "center" } } }}
       >
-        {([["builder", "Builder"], ["settings", "Settings"], ["history", "History"]] as const).map(([v, l]) => (
-          <Tab key={v} value={v} label={l} sx={{ minHeight: 44, textTransform: "none", fontWeight: 600 }} />
-        ))}
+        {([["builder", "Builder"], ["leads", runs.length ? `Leads (${runs.length})` : "Leads"], ["history", "History"], ["settings", "Settings"]] as const)
+          .filter(([v]) => !(isTemplate && v === "leads"))
+          .map(([v, l]) => (
+            <Tab key={v} value={v} label={l} sx={{ minHeight: 44, textTransform: "none", fontWeight: 600 }} />
+          ))}
       </Tabs>
 
       <Box sx={{ flex: 1, minHeight: 0, display: "flex" }}>
         {tab === "builder" && (
           <>
-            <Canvas wf={wf} sel={sel} setSel={setSel} onAdd={addStep} problems={problems} />
+            <Canvas
+              wf={wf}
+              sel={sel}
+              setSel={setSel}
+              onAdd={addStep}
+              problems={problems}
+              here={here}
+              onHere={(stepId) => setView({ tab: "leads", step: stepId, run: null })}
+              highlight={focusStep?.id ?? null}
+              banner={runId ? (
+                <LeadBanner
+                  run={focusRun}
+                  step={focusStep}
+                  loading={runsLoading}
+                  onClose={() => setView({ run: null })}
+                  onHistory={() => setView({ tab: "history", run: null })}
+                />
+              ) : null}
+            />
             {isDesktop ? (
               panelOpen && <Box sx={{ width: 380, flex: "none", borderLeft: `1px solid ${tokens.divider}`, bgcolor: "background.paper", minHeight: 0 }}>{panel}</Box>
             ) : (
@@ -641,6 +781,18 @@ function Editor({ initial, isTemplate, onSave, onCopyToTemplates, onBack, onDele
           </>
         )}
         {tab === "settings" && <SettingsTab wf={wf} isTemplate={isTemplate} onChange={update} onDelete={onDelete} onCopyToTemplates={onCopyToTemplates ? () => void onCopyToTemplates(wf) : undefined} />}
+        {tab === "leads" && (
+          <LeadsTab
+            runs={runs}
+            loading={runsLoading}
+            saved={isSaved(initial.id)}
+            published={initial.published}
+            stepOf={runStep}
+            stepFilter={stepFilter ? findStep(savedSteps, stepFilter) ?? null : null}
+            onClearStep={() => setView({ step: null })}
+            onShow={(id) => setView({ tab: "builder", run: id, step: null })}
+          />
+        )}
         {tab === "history" && <HistoryTab wf={wf} />}
       </Box>
       <Dialog open={leaving} onClose={() => setLeaving(false)}>
@@ -702,13 +854,26 @@ function DetailsPanel({ title, problems, onClose, onDelete, deleteLabel, onMove,
 
 // ── Canvas ───────────────────────────────────────────────────────────────
 
-function Canvas({ wf, sel, setSel, onAdd, problems }: { wf: Workflow; sel: Selection; setSel: (s: Selection) => void; onAdd: (path: Path, index: number, t: StepType) => void; problems: Problems }) {
+function Canvas({ wf, sel, setSel, onAdd, problems, here, onHere, highlight, banner }: {
+  wf: Workflow; sel: Selection; setSel: (s: Selection) => void; onAdd: (path: Path, index: number, t: StepType) => void; problems: Problems;
+  /** Leads waiting at each step (by step id), and what clicking the count does. */
+  here: Record<string, number>; onHere: (stepId: string) => void;
+  /** The step of the lead being shown (?run=), and the strip saying so. */
+  highlight: string | null; banner: React.ReactNode;
+}) {
   const narrow = useMediaQuery("(max-width:700px)");
   const [zoom, setZoom] = useState(1);
   const scroller = useRef<HTMLDivElement>(null);
   const exitsOn = wf.exits.filter((x) => x.on);
   const allowed = allowedSteps(wf.trigger);
-  const ctx: StepCtx = { sel, setSel, onAdd, narrow, problems, allowed };
+  const ctx: StepCtx = { sel, setSel, onAdd, narrow, problems, allowed, here, onHere, highlight };
+
+  // Bring the shown lead's step into view.
+  useEffect(() => {
+    if (!highlight) return;
+    const el = scroller.current?.querySelector(`[data-step="${CSS.escape(highlight)}"]`);
+    el?.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
+  }, [highlight]);
 
   return (
     <Box sx={{ flex: 1, minWidth: 0, position: "relative", bgcolor: tokens.bg }}>
@@ -721,6 +886,7 @@ function Canvas({ wf, sel, setSel, onAdd, problems }: { wf: Workflow; sel: Selec
           backgroundSize: `${20 * zoom}px ${20 * zoom}px`,
         }}
       >
+        {banner}
         {wf.note && (
           <Box sx={{ position: "sticky", top: 0, left: 0, zIndex: 2, display: "flex", gap: 1, alignItems: "flex-start", bgcolor: tokens.amberTint, borderBottom: `1px solid ${tokens.amberBorder}`, px: 2, py: 1 }}>
             <WarningAmberIcon sx={{ fontSize: 18, color: tokens.amber, mt: "2px" }} />
@@ -789,15 +955,24 @@ interface StepCtx {
   narrow: boolean;
   problems: Problems;
   allowed: StepType[];
+  here: Record<string, number>;
+  onHere: (stepId: string) => void;
+  highlight: string | null;
 }
 
 function Line({ h = 24 }: { h?: number }) {
   return <Box sx={{ width: 2, height: h, bgcolor: tokens.line, flex: "none" }} />;
 }
 
-function Node({ color, icon, title, text, selected, onClick, dashed, error }: { color: string; icon: React.ReactNode; title: string; text: string; selected: boolean; onClick: () => void; dashed?: boolean; error?: boolean }) {
-  const edge = error ? tokens.red : selected ? tokens.primary : tokens.divider;
+function Node({ color, icon, title, text, selected, onClick, dashed, error, stepId, count = 0, onCount, highlight }: {
+  color: string; icon: React.ReactNode; title: string; text: string; selected: boolean; onClick: () => void; dashed?: boolean; error?: boolean;
+  /** Steps only: leads waiting here, and the lead being shown is here. */
+  stepId?: string; count?: number; onCount?: () => void; highlight?: boolean;
+}) {
+  const edge = error ? tokens.red : highlight ? tokens.amber : selected ? tokens.primary : tokens.divider;
+  const ring = highlight ? tokens.amber : error ? tokens.red : tokens.primary;
   return (
+    <Box data-step={stepId} sx={{ position: "relative", flex: "none" }}>
     <Box
       component="button"
       type="button"
@@ -806,8 +981,8 @@ function Node({ color, icon, title, text, selected, onClick, dashed, error }: { 
       sx={{
         width: 300, maxWidth: "calc(100vw - 48px)", display: "flex", gap: 1.25, alignItems: "center", textAlign: "left", font: "inherit", color: "inherit",
         bgcolor: "background.paper", borderRadius: "8px", p: 1.25, cursor: "pointer", flex: "none", position: "relative",
-        border: `1px ${dashed && !error ? "dashed" : "solid"} ${edge}`,
-        boxShadow: selected ? `0 0 0 3px color-mix(in srgb, ${error ? tokens.red : tokens.primary} 30%, transparent)` : `0 1px 2px ${tokens.shadow}`,
+        border: `${highlight ? 2 : 1}px ${dashed && !error ? "dashed" : "solid"} ${edge}`,
+        boxShadow: selected || highlight ? `0 0 0 3px color-mix(in srgb, ${ring} 30%, transparent)` : `0 1px 2px ${tokens.shadow}`,
         transition: "box-shadow .12s, border-color .12s",
         "&:hover": { borderColor: error ? tokens.red : selected ? tokens.primary : tokens.ink3 },
         "&:focus-visible": { outline: "none", boxShadow: `0 0 0 3px color-mix(in srgb, ${tokens.primary} 50%, transparent)` },
@@ -819,6 +994,24 @@ function Node({ color, icon, title, text, selected, onClick, dashed, error }: { 
         <Typography sx={{ fontSize: 13.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{text}</Typography>
       </Box>
       {error && <ErrorOutlineIcon sx={{ fontSize: 18, color: tokens.red, flex: "none" }} />}
+    </Box>
+    {count > 0 && (
+      <Tooltip title={`${count} lead${count === 1 ? "" : "s"} waiting for this step. Show them`}>
+        <Box
+          component="button"
+          type="button"
+          onClick={onCount}
+          aria-label={`${count} lead${count === 1 ? "" : "s"} waiting for this step`}
+          sx={{
+            position: "absolute", top: -9, right: -9, minWidth: 22, height: 22, px: 0.75, borderRadius: "11px", border: `2px solid ${tokens.bg}`,
+            bgcolor: "primary.main", color: "primary.contrastText", font: "inherit", fontSize: 11.5, fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 0.25,
+            "&:hover, &:focus-visible": { outline: "none", filter: "brightness(1.1)" },
+          }}
+        >
+          <PersonIcon sx={{ fontSize: 13 }} />{count}
+        </Box>
+      </Tooltip>
+    )}
     </Box>
   );
 }
@@ -870,6 +1063,10 @@ function StepList({ steps, path, ctx }: { steps: Step[]; path: Path; ctx: StepCt
             selected={ctx.sel?.kind === "step" && ctx.sel.id === s.id}
             error={!!ctx.problems[s.id]}
             onClick={() => ctx.setSel({ kind: "step", id: s.id })}
+            stepId={s.id}
+            count={ctx.here[s.id]}
+            onCount={() => ctx.onHere(s.id)}
+            highlight={ctx.highlight === s.id}
           />
           {s.type === "branch" && <BranchPaths step={s} ctx={ctx} />}
           <AddButton onPick={(t) => ctx.onAdd(path, i + 1, t)} allowed={ctx.allowed} />
@@ -954,6 +1151,132 @@ function Timeline({ wf }: { wf: Workflow }) {
         {wf.settings.quietHours ? "Messages due between 20:00 and 08:00 wait until 08:00. " : ""}
         {wf.exits.some((x) => x.on) ? "Ends early if a stop rule happens." : "Nothing ends it early."}
       </Typography>
+    </Box>
+  );
+}
+
+// ── Leads in the workflow ────────────────────────────────────────────────
+
+/** When a lead's next step happens, in words: "In 2 days · Tue 7 Oct, 10:00". */
+function nextLabel(r: LeadInWorkflow): { rel: string; at: string } {
+  if (r.status === "paused") return { rel: "Paused", at: "" };
+  if (r.status === "processing") return { rel: "Happening now", at: "" };
+  const t = Date.parse(r.run_at);
+  const mins = Math.round((t - Date.now()) / 60_000);
+  const rel = mins <= 1 ? "Within a minute" : mins < 60 ? `In ${mins} min` : mins < 48 * 60 ? `In ${Math.round(mins / 60)}h` : `In ${Math.round(mins / 1440)} days`;
+  return { rel, at: when(new Date(t)) };
+}
+
+function stepLine(step: Step | undefined): string {
+  return step ? `${stepTitle(step)}: ${stepSummary(step)}` : "Finishing";
+}
+
+/** The strip over the canvas when a lead is being shown (?run=). */
+function LeadBanner({ run, step, loading, onClose, onHistory }: { run: LeadInWorkflow | undefined; step: Step | undefined; loading: boolean; onClose: () => void; onHistory: () => void }) {
+  const next = run ? nextLabel(run) : null;
+  return (
+    <Box sx={{ position: "sticky", top: 0, left: 0, zIndex: 3, display: "flex", gap: 1.25, alignItems: "center", bgcolor: tokens.amberTint, borderBottom: `1px solid ${tokens.amberBorder}`, px: 2, py: 1 }}>
+      <PersonIcon sx={{ fontSize: 20, color: tokens.amber, flex: "none" }} />
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        {loading ? (
+          <Typography sx={{ fontSize: 13.5 }}>Finding this lead…</Typography>
+        ) : run ? (
+          <>
+            <Typography sx={{ fontSize: 13.5 }}>
+              <b>{run.lead?.name ?? "Daily summary"}</b> is here. Next: <b>{step ? stepTitle(step) : "the end"}</b>
+              {next && <> · {next.rel}{next.at ? ` (${next.at})` : ""}</>}
+            </Typography>
+            <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>Highlighted below. Steps above it are done.</Typography>
+          </>
+        ) : (
+          <Typography sx={{ fontSize: 13.5 }}>
+            This lead isn't in the workflow any more (it finished or was stopped).{" "}
+            <Box component="button" type="button" onClick={onHistory} sx={{ font: "inherit", color: "primary.main", bgcolor: "transparent", border: 0, p: 0, cursor: "pointer", textDecoration: "underline" }}>See what happened</Box>
+          </Typography>
+        )}
+      </Box>
+      {run?.lead && <Button size="small" component={RouterLink} to={`/leads/${run.lead.id}`} sx={{ flex: "none" }}>Open lead</Button>}
+      <IconButton size="small" onClick={onClose} aria-label="Stop showing this lead"><CloseIcon fontSize="small" /></IconButton>
+    </Box>
+  );
+}
+
+const LEADS_KEYS = ["lead", "step", "next"] as const;
+type LeadsKey = (typeof LEADS_KEYS)[number];
+
+/** Who is in this workflow right now and where: one row per lead. Click a
+ *  row to see their place on the canvas. */
+function LeadsTab({ runs, loading, saved, published, stepOf, stepFilter, onClearStep, onShow }: {
+  runs: LeadInWorkflow[]; loading: boolean; saved: boolean; published: boolean;
+  stepOf: (r: LeadInWorkflow) => Step | undefined; stepFilter: Step | null; onClearStep: () => void; onShow: (runId: string) => void;
+}) {
+  const isDesktop = useMediaQuery("(min-width:900px)");
+  const [q, setQ] = useState("");
+  const { sort, onSort } = useTableSort<LeadsKey>("estatekit_workflow_leads_sort", { k: "next", dir: "asc" }, LEADS_KEYS);
+  const rows = runs.map((r) => {
+    const step = stepOf(r);
+    return { r, step, lead: r.lead?.name ?? "Daily summary", where: stepLine(step), next: nextLabel(r) };
+  });
+  const needle = q.trim().toLowerCase();
+  const shown = sortRows(
+    rows.filter((x) => (!stepFilter || x.step?.id === stepFilter.id) && (!needle || `${x.lead} ${x.where}`.toLowerCase().includes(needle))),
+    (x) => (sort.k === "lead" ? x.lead : sort.k === "step" ? x.where : x.r.status === "paused" ? Infinity : Date.parse(x.r.run_at)),
+    sort.dir,
+  );
+  const empty = !saved ? "Save the workflow first." : loading ? "Loading…" : rows.length ? "Nothing matches." : published ? "No leads in it right now. New ones join when the trigger happens." : "No leads in it. It's off, so nobody new joins.";
+  return (
+    <Box sx={{ flex: 1, overflowY: "auto", p: 2 }}>
+      <Box sx={{ maxWidth: 1000, mx: "auto" }}>
+        <Typography component="div" sx={{ fontSize: 13.5, color: "text.secondary", mb: 2 }}>
+          Leads going through this workflow now and the step each one does next. Click one to see it on the workflow. Finished leads are in History.
+        </Typography>
+        <Box sx={{ display: "flex", gap: 1.5, mb: 2, flexWrap: "wrap", alignItems: "center" }}>
+          <TextField size="small" placeholder="Find a lead" value={q} onChange={(e) => setQ(e.target.value)} sx={{ flex: 1, minWidth: 180 }} slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> } }} />
+          {stepFilter && <Chip label={`Waiting for: ${stepTitle(stepFilter)}`} onDelete={onClearStep} />}
+        </Box>
+        <Box sx={{ border: `1px solid ${tokens.divider}`, borderRadius: "8px", bgcolor: "background.paper", overflow: "hidden" }}>
+          {isDesktop ? (
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <SortHead k="lead" label="Lead" sort={sort} onSort={onSort} />
+                  <SortHead k="step" label="Next step" sort={sort} onSort={onSort} />
+                  <SortHead k="next" label="When (SAST)" sort={sort} onSort={onSort} />
+                  <PlainHead sx={{ width: 48 }} />
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {shown.map((x) => (
+                  <TableRow key={x.r.id} hover onClick={() => onShow(x.r.id)} sx={{ cursor: "pointer", "&:last-child td": { borderBottom: 0 }, "& td": { py: 1.25 } }}>
+                    <TableCell sx={{ fontWeight: 500, fontSize: 14 }}>{x.lead}</TableCell>
+                    <TableCell sx={{ fontSize: 13, maxWidth: 420, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.where}</TableCell>
+                    <TableCell sx={{ fontSize: 13 }}>
+                      <Box sx={{ fontWeight: 500, color: x.r.status === "paused" ? "text.secondary" : "primary.main" }}>{x.next.rel}</Box>
+                      {x.next.at && <Box sx={{ fontSize: 12, color: "text.secondary" }}>{x.next.at}</Box>}
+                    </TableCell>
+                    <TableCell padding="checkbox"><ChevronRightIcon fontSize="small" sx={{ color: "text.disabled" }} /></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            shown.map((x, i) => (
+              <Box
+                key={x.r.id}
+                component="button"
+                type="button"
+                onClick={() => onShow(x.r.id)}
+                sx={{ display: "block", width: "100%", textAlign: "left", font: "inherit", color: "inherit", bgcolor: "transparent", border: 0, borderTop: i ? `1px solid ${tokens.divider}` : 0, p: "12px 14px", cursor: "pointer" }}
+              >
+                <Typography sx={{ fontWeight: 500, fontSize: 14.5 }}>{x.lead}</Typography>
+                <Typography sx={{ fontSize: 12.5 }}>{x.where}</Typography>
+                <Typography sx={{ fontSize: 12.5, color: x.r.status === "paused" ? "text.secondary" : "primary.main" }}>{x.next.rel}{x.next.at ? ` · ${x.next.at}` : ""}</Typography>
+              </Box>
+            ))
+          )}
+          {!shown.length && <Typography sx={{ color: "text.secondary", textAlign: "center", py: 6, px: 2 }}>{empty}</Typography>}
+        </Box>
+      </Box>
     </Box>
   );
 }

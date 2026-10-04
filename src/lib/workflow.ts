@@ -126,13 +126,16 @@ export const EXITS: { kind: ExitKind; label: string }[] = [
 
 /** Merge fields per message, exactly the ones the engine fills in
  *  (run-automations/workflows.ts). {{answers}} is every question and answer
- *  from the lead's form, one per line, so it fits any form.
+ *  from the lead's form, one per line, so it fits any form. In emails,
+ *  {{lead_magnet}} is the form's lead magnet as a box (Forms → Lead magnet),
+ *  {{recent_sales}} the agent's latest sales, and a paragraph left empty by
+ *  either (nothing to show) is left out.
  *  {{action_link}} is the agent's call link: never in an email to the lead.
  *  In a daily summary there's no lead: {{first_name}} is the agent's. */
 export const FIELDS = {
   whatsapp_agent: ["first_name", "name", "phone", "email", "address", "form", "answers", "appointment", "stage", "next_label", "action_link"],
   daily: ["first_name", "count", "leads_word"],
-  email_lead: ["first_name", "area", "address", "appointment", "agent_name", "agent_phone", "plan_link"],
+  email_lead: ["first_name", "area", "address", "appointment", "lead_magnet", "recent_sales", "whatsapp_link", "agent_name", "agent_phone", "plan_link"],
 } as const;
 export type FieldSet = keyof typeof FIELDS;
 
@@ -272,6 +275,29 @@ export function locate(steps: Step[], id: string, path: Path = "root"): { path: 
     if (f) return f;
   }
   return null;
+}
+
+/** The step a lead in a workflow does next, from its saved position
+ *  (workflow_runs.pos: [i] or [i, "yes"|"no", j, …]). Mirrors the engine's
+ *  stepAt + settle: past the end of a path carries on after its check.
+ *  undefined when there's nothing left (the workflow is finishing). */
+export function stepAtPos(steps: Step[], pos: readonly (number | string)[] | null | undefined): Step | undefined {
+  const at = (p: (number | string)[]) => {
+    let s: Step | undefined = steps[Number(p[0])];
+    for (let k = 1; k < p.length; k += 2) {
+      if (!s || s.type !== "branch") return undefined;
+      s = (p[k] === "yes" ? s.yes : s.no)[Number(p[k + 1])];
+    }
+    return s;
+  };
+  let p = [...(pos?.length ? pos : [0])];
+  for (;;) {
+    const s = at(p);
+    if (s) return s;
+    if (p.length <= 1) return undefined;
+    p = p.slice(0, -2);
+    p[p.length - 1] = Number(p[p.length - 1]) + 1;
+  }
 }
 
 export function countSteps(steps: Step[]): number {
@@ -451,76 +477,6 @@ export function validate(wf: Workflow): Problems {
 
 export const problemCount = (p: Problems) => Object.values(p).reduce((n, l) => n + l.length, 0);
 
-// ── Today's automations, drawn as workflows ─────────────────────────────
-
-export interface AutomationLike { id: string; name: string; enabled: boolean; trigger_type: string; trigger_stage: string | null; created_at: string }
-export interface AutomationStepLike { step_order: number; delay_minutes: number; action_type: string; template_text: string | null; payload: Record<string, unknown> | null }
-
-/** Minutes → the friendliest whole unit ("2 days", not "2880 minutes"). */
-export function waitFrom(minutes: number): Step {
-  if (minutes % 1440 === 0) return { id: newId(), type: "wait", amount: minutes / 1440, unit: "days" };
-  if (minutes % 60 === 0) return { id: newId(), type: "wait", amount: minutes / 60, unit: "hours" };
-  return { id: newId(), type: "wait", amount: minutes, unit: "minutes" };
-}
-
-export function fromAutomation(a: AutomationLike, steps: AutomationStepLike[]): Workflow {
-  const out: Step[] = [];
-  for (const s of [...steps].sort((x, y) => x.step_order - y.step_order)) {
-    if (s.delay_minutes > 0 && a.trigger_type !== "daily_digest") out.push(waitFrom(s.delay_minutes));
-    if (s.action_type === "send_whatsapp") out.push({ id: newId(), type: "whatsapp_agent", text: s.template_text ?? "" });
-    else if (s.action_type === "set_stage") out.push({ id: newId(), type: "set_stage", stage: String(s.payload?.stage ?? "") });
-    else if (s.action_type === "set_reminder") {
-      const p = (s.payload ?? {}) as { label?: string; offset_minutes?: number };
-      out.push({ id: newId(), type: "reminder", label: p.label ?? "Follow up", inDays: Math.round((p.offset_minutes ?? 0) / 1440) });
-    }
-  }
-  const trigger: Trigger =
-    a.trigger_type === "stage_changed" ? { kind: "stage_changed", stage: a.trigger_stage ?? undefined }
-      : a.trigger_type === "daily_digest" ? { kind: "daily_at", time: "16:00" }
-        : a.trigger_type === "reminder_due" ? { kind: "reminder_due" }
-          : { kind: "lead_created" };
-  const multiStep = out.filter((s) => s.type !== "wait").length > 1 || out[0]?.type === "wait";
-  return {
-    id: a.id,
-    name: a.name.replace(/â€”/g, "—"),
-    published: a.enabled,
-    trigger,
-    filters: [],
-    steps: out,
-    // The engine today never ends a run early (run-automations has no stage
-    // check), so converted workflows start with every stop rule off.
-    exits: allExits(false),
-    settings: { ...defaultSettings(), quietHours: a.trigger_type !== "lead_created" },
-    updatedAt: a.created_at,
-    note: multiStep && trigger.kind === "stage_changed"
-      ? "Today nothing stops this early: a lead who books after this starts still gets the later nudges. Turn on the stop rules to fix that."
-      : undefined,
-  };
-}
-
-/** send-lead-confirmation, drawn as a workflow: one email per pipeline. */
-export function confirmationEmail(): Workflow {
-  const sign = "\n\n{{agent_name}}\n{{agent_phone}}";
-  return {
-    id: "confirmation-email",
-    name: "Lead confirmation email",
-    published: true,
-    trigger: { kind: "lead_created" },
-    filters: [{ field: "has_email", value: "yes" }],
-    exits: allExits(false),
-    settings: { ...defaultSettings(), quietHours: false },
-    updatedAt: "2026-09-27T10:00:00Z",
-    note: "Only for lead pages with the confirmation email switched on (Forms → the page → Email).",
-    steps: [
-      {
-        id: newId(), type: "branch", check: "pipeline_is", value: "Sellers",
-        yes: [{ id: newId(), type: "email_lead", subject: "Your {{area}} home evaluation request", body: "Hi {{first_name}},\n\nThanks for requesting a free home evaluation for {{address}}.\n\nI'm having a look at what's sold near you recently. I'll be in touch shortly to go through what your home could be worth, and whether I have buyers looking in the area.\n\nWhile you wait, here's how I'd sell your home: {{plan_link}}" + sign }],
-        no: [{ id: newId(), type: "email_lead", subject: "We've received your details", body: "Hi {{first_name}},\n\nThanks for getting in touch.\n\nI've received your details and I'll be in touch shortly." + sign }],
-      },
-    ],
-  };
-}
-
 // ── Templates ────────────────────────────────────────────────────────────
 
 export const TEMPLATES: { name: string; blurb: string; make: () => Workflow }[] = [
@@ -568,6 +524,26 @@ export const TEMPLATES: { name: string; blurb: string; make: () => Workflow }[] 
         { id: newId(), type: "wait", amount: 14, unit: "days" },
         { id: newId(), type: "email_lead", subject: "Still thinking about selling, {{first_name}}?", body: "Hi {{first_name}},\n\nJust checking in. Whenever you're ready, I'm happy to give you an up-to-date valuation for your home in {{area}}.\n\n{{agent_name}}\n{{agent_phone}}" },
         { id: newId(), type: "reminder", label: "Check in with {{first_name}}", inDays: 3 },
+      ],
+    }),
+  },
+  {
+    name: "Not ready yet: stay in touch",
+    blurb: "A lead marked Lost (not selling yet) gets a market update email every couple of months, and the agent a reminder to call every 3 months. Stops if they come back.",
+    make: () => ({
+      ...blankWorkflow(), name: "Not ready yet: stay in touch",
+      trigger: { kind: "stage_changed", stage: "Lost" },
+      filters: [{ field: "has_email", value: "yes" }],
+      exits: [{ kind: "booked", on: true }, { kind: "lost", on: false }, { kind: "any_stage_change", on: true }],
+      steps: [
+        { id: newId(), type: "wait", amount: 30, unit: "days" },
+        { id: newId(), type: "email_lead", subject: "What's selling near you, {{first_name}}", body: "Hi {{first_name}},\n\nI know you're not looking to sell right now, so no pressure at all. I just thought you'd like to see what's happening near you.\n\n{{recent_sales}}\n\nIf you'd ever like to know what your home is worth today, just reply to this email.\n\n{{agent_name}}\n{{agent_phone}}" },
+        { id: newId(), type: "wait", amount: 60, unit: "days" },
+        { id: newId(), type: "whatsapp_agent", text: "It's been 3 months since {{name}} said not now. A quick check-in call could catch them early: {{action_link}}" },
+        { id: newId(), type: "email_lead", subject: "Your home's value, {{first_name}}", body: "Hi {{first_name}},\n\nPrices near you have kept moving. If you're curious what {{address}} could sell for today, I'm happy to do a free, no-obligation valuation.\n\n{{recent_sales}}\n\n{{agent_name}}\n{{agent_phone}}" },
+        { id: newId(), type: "wait", amount: 90, unit: "days" },
+        { id: newId(), type: "whatsapp_agent", text: "6 months since {{name}} said not now. Time for another check-in: {{action_link}}" },
+        { id: newId(), type: "email_lead", subject: "Still thinking about selling, {{first_name}}?", body: "Hi {{first_name}},\n\nJust checking in. Whenever you're ready to talk about selling, even if it's just to know your options, I'm here.\n\n{{agent_name}}\n{{agent_phone}}" },
       ],
     }),
   },

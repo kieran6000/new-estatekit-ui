@@ -13,6 +13,12 @@ import { useSnack } from "./useSnack";
  * Agents are never switched: they only ever see their own leads.
  */
 export function useFollowLeadAccount(lead: { agent_id: string } | null | undefined) {
+  useFollowAccount(lead, "lead");
+}
+
+/** The same for anything that belongs to one account (a workflow, a link
+ *  with ?account=): staff are switched into the account it belongs to. */
+export function useFollowAccount(item: { agent_id: string } | null | undefined, what: "lead" | "workflow" | "account") {
   const { user } = useAuth();
   const { data: isOperator } = useIsOperator();
   const qc = useQueryClient();
@@ -20,16 +26,16 @@ export function useFollowLeadAccount(lead: { agent_id: string } | null | undefin
   const done = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!user || isOperator !== true || !lead?.agent_id) return;
+    if (!user || isOperator !== true || !item?.agent_id) return;
     const current = getActiveAgentIdSync() ?? user.id;
-    if (lead.agent_id === current || done.current === lead.agent_id) return;
-    done.current = lead.agent_id;
-    setActiveAgent(lead.agent_id === user.id ? null : lead.agent_id);
+    if (item.agent_id === current || done.current === item.agent_id) return;
+    done.current = item.agent_id;
+    setActiveAgent(item.agent_id === user.id ? null : item.agent_id);
     void qc.invalidateQueries();
-    const to = lead.agent_id;
+    const to = item.agent_id;
     qc.fetchQuery({ queryKey: ["agentProfiles"], queryFn: listAgentProfiles, staleTime: 5 * 60_000 })
       .then((profiles) => profiles.find((p) => p.agent_id === to)?.display_name)
       .catch(() => null)
-      .then((name) => showSnack(name ? `Switched to ${name}'s account` : "Switched to this lead's account"));
-  }, [user, isOperator, lead?.agent_id, qc, showSnack]);
+      .then((name) => showSnack(name ? `Switched to ${name}'s account` : what === "account" ? "Switched account" : `Switched to this ${what}'s account`));
+  }, [user, isOperator, item?.agent_id, qc, showSnack, what]);
 }

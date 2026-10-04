@@ -47,6 +47,24 @@ export async function listAccountWorkflows(agentId: string): Promise<Workflow[]>
   return (data as WorkflowRowDb[]).map(fromRow);
 }
 
+export interface OpenedWorkflow {
+  workflow: Workflow;
+  /** The account it belongs to; null for a template. */
+  agentId: string | null;
+}
+
+/** One workflow or template by id, whichever account it's on (an address
+ *  like /admin/automations/workflows/<id> must open the same thing for
+ *  anyone, after a refresh too). null when it doesn't exist. */
+export async function getWorkflow(id: string): Promise<OpenedWorkflow | null> {
+  if (!isSaved(id)) return null;
+  const { data, error } = await supabase.from("workflows").select(COLS).eq("id", id).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+  const r = data as WorkflowRowDb;
+  return { workflow: fromRow(r), agentId: r.is_template ? null : r.agent_id };
+}
+
 export async function listTemplateWorkflows(): Promise<Workflow[]> {
   const { data, error } = await supabase.from("workflows").select(COLS).eq("is_template", true).order("name");
   if (error) throw new Error(error.message);
@@ -130,6 +148,43 @@ export async function listScheduledWorkflowRuns(agentId: string | null): Promise
   const { data, error } = await q.order("run_at", { ascending: true }).limit(200);
   if (error) throw new Error(error.message);
   return data as unknown as WorkflowRunRow[];
+}
+
+export interface LeadInWorkflow {
+  id: string;
+  run_at: string;
+  status: "pending" | "processing" | "paused";
+  pos: (number | string)[];
+  started: boolean;
+  lead: { id: string; name: string; stage: string | null } | null;
+}
+
+/** The leads in a workflow right now (waiting for their next step, or
+ *  paused), soonest first. Finished ones are in its history. */
+export async function listWorkflowRuns(workflowId: string): Promise<LeadInWorkflow[]> {
+  const { data, error } = await supabase
+    .from("workflow_runs")
+    .select("id, run_at, status, pos, started, lead:leads(id, name, stage)")
+    .eq("workflow_id", workflowId)
+    .in("status", ["pending", "processing", "paused"])
+    .order("run_at", { ascending: true })
+    .limit(1000);
+  if (error) throw new Error(error.message);
+  return data as unknown as LeadInWorkflow[];
+}
+
+/** How many leads are in each of an account's workflows right now. */
+export async function countLeadsInWorkflows(agentId: string): Promise<Record<string, number>> {
+  const { data, error } = await supabase
+    .from("workflow_runs")
+    .select("workflow_id")
+    .eq("agent_id", agentId)
+    .in("status", ["pending", "processing", "paused"])
+    .limit(10000);
+  if (error) throw new Error(error.message);
+  const out: Record<string, number> = {};
+  for (const r of data as { workflow_id: string }[]) out[r.workflow_id] = (out[r.workflow_id] ?? 0) + 1;
+  return out;
 }
 
 export async function updateWorkflowRun(id: string, patch: { status?: "pending" | "paused" | "cancelled"; run_at?: string }): Promise<void> {

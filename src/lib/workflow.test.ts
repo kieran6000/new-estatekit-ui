@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
+import standard from "../../scripts/e2e-standard-workflows.json";
 import {
   TEMPLATES, TRIGGERS, STEP_TYPES, BRANCH_CHECKS, FILTER_FIELDS,
-  allowedSteps, blankWorkflow, cloneSteps, confirmationEmail, countSteps, defaultBranchValue, findStep,
-  fromAutomation, insertStep, locate, moveStep, newStep, ordinal, problemCount, removeStep, stepSummary,
+  allowedSteps, blankWorkflow, cloneSteps, countSteps, defaultBranchValue, findStep,
+  insertStep, locate, moveStep, newStep, ordinal, problemCount, removeStep, stepAtPos, stepSummary,
   timeLabel, timeline, triggerOfKind, triggerSummary, unitLabel, updateStep, validate,
   type Branch, type Path, type Step, type Workflow,
 } from "./workflow";
@@ -140,9 +141,10 @@ describe("checks", () => {
     expect(p.workflow?.[0]).toMatch(/does something/);
   });
 
-  it("every template, the confirmation email and a simple workflow are clean", () => {
+  it("every template, every standard workflow and a simple workflow are clean", () => {
     for (const t of TEMPLATES.filter((t) => t.name !== "Blank workflow")) expect(validate(t.make()), t.name).toEqual({});
-    expect(validate(confirmationEmail())).toEqual({});
+    // The real standard set every account has (scripts/e2e-standard-workflows.json mirrors the database).
+    for (const t of standard) expect(validate({ ...blankWorkflow(), name: t.name, ...t.definition } as Workflow), t.name).toEqual({});
     expect(validate(wf([wa()]))).toEqual({});
   });
 
@@ -237,37 +239,7 @@ describe("checks", () => {
   });
 });
 
-describe("today's automations", () => {
-  it("converts the real automation shapes into clean workflows", () => {
-    const base = { id: "a", name: "x", enabled: true, trigger_stage: null, created_at: "2026-01-01" };
-    // Every live automation's real step text (Oct 2026) must convert clean.
-    const live: [string, string | null, number, string][] = [
-      ["lead_created", null, 0, "New lead: {{name}}. Tap to contact: {{action_link}}"],
-      ["stage_changed", "No Answer", 240, "Still need to retry {{first_name}}? {{action_link}}"],
-      ["stage_changed", "Booked", 1440, "Appointment with {{first_name}} coming up — confirm details. {{action_link}}"],
-      ["stage_changed", "Contacted", 2880, "Following up with {{first_name}} yet? {{action_link}}"],
-      ["stage_changed", "Mandate Signed", 0, "Congrats! {{first_name}} is signed up. Update: {{action_link}}"],
-      ["stage_changed", "Offer Made", 0, "{{first_name}} made an offer! Keep the momentum going. {{action_link}}"],
-    ];
-    for (const [tt, st, delay, text] of live) {
-      const w = fromAutomation({ ...base, trigger_type: tt, trigger_stage: st }, [{ step_order: 0, delay_minutes: delay, action_type: "send_whatsapp", template_text: text, payload: {} }]);
-      expect(validate(w), text).toEqual({});
-    }
-    const alert = fromAutomation({ ...base, trigger_type: "lead_created" }, [{ step_order: 1, delay_minutes: 0, action_type: "send_whatsapp", template_text: "New lead: {{name}}. Tap to contact: {{action_link}}", payload: null }]);
-    expect(validate(alert)).toEqual({});
-    const nudges = fromAutomation({ ...base, trigger_type: "stage_changed", trigger_stage: "Contacted" }, [
-      { step_order: 1, delay_minutes: 2880, action_type: "send_whatsapp", template_text: "Follow up with {{name}}: {{action_link}}", payload: null },
-      { step_order: 2, delay_minutes: 1440 * 5, action_type: "set_reminder", template_text: null, payload: { label: "Call again", offset_minutes: 0 } },
-    ]);
-    expect(nudges.steps.map((s) => s.type)).toEqual(["wait", "whatsapp_agent", "wait", "reminder"]);
-    expect(nudges.note).toMatch(/nothing stops/i);
-    expect(validate(nudges)).toEqual({});
-    const digest = fromAutomation({ ...base, trigger_type: "daily_digest" }, [{ step_order: 1, delay_minutes: 960, action_type: "send_whatsapp", template_text: "Hi {{first_name}}, you have {{count}} {{leads_word}} to update.", payload: null }]);
-    expect(digest.trigger).toEqual({ kind: "daily_at", time: "16:00" });
-    expect(digest.steps.map((s) => s.type)).toEqual(["whatsapp_agent"]);
-    expect(validate(digest)).toEqual({});
-  });
-
+describe("daily summary", () => {
   it("the real daily summary's fields pass, and lead fields in it don't", () => {
     const text = "Hi {{first_name}}, hope you're well.\n\nYou have {{count}} {{leads_word}} that still need updating.\n\nTap here to update them: https://leads.estatekit.co/leads";
     expect(validate(wf([wa(text)], { trigger: { kind: "daily_at", time: "16:00" } }))).toEqual({});
@@ -309,5 +281,24 @@ describe("appointment trigger", () => {
   });
   it("the appointment templates are valid as they come", () => {
     for (const t of TEMPLATES.filter((x) => /ppointment/.test(x.name))) expect(validate(t.make())).toEqual({});
+  });
+});
+
+describe("where a lead is (stepAtPos)", () => {
+  const a = wa(), b = email(), c = wa(), d = email();
+  const br = branch([b], [c]);
+  const steps = [a, br, d];
+  it("reads top-level and branch positions", () => {
+    expect(stepAtPos(steps, [0])?.id).toBe(a.id);
+    expect(stepAtPos(steps, [1, "yes", 0])?.id).toBe(b.id);
+    expect(stepAtPos(steps, [1, "no", 0])?.id).toBe(c.id);
+  });
+  it("past the end of a path carries on after the check, like the engine", () => {
+    expect(stepAtPos(steps, [1, "yes", 1])?.id).toBe(d.id);
+    expect(stepAtPos(steps, [3])).toBeUndefined();
+  });
+  it("an empty or missing position is the first step", () => {
+    expect(stepAtPos(steps, [])?.id).toBe(a.id);
+    expect(stepAtPos(steps, null)?.id).toBe(a.id);
   });
 });
