@@ -110,6 +110,9 @@ const darkPalette = {
   },
 };
 
+/** Touch screens (phones, tablets): tap targets grow to finger size. */
+const COARSE = "@media (pointer: coarse)";
+
 export const theme = createTheme({
   cssVariables: { colorSchemeSelector: '[data-theme="%s"]' },
   colorSchemes: {
@@ -127,9 +130,9 @@ export const theme = createTheme({
     // medium) felt thin, especially on phones.
     MuiButton: {
       styleOverrides: {
-        root: { borderRadius: 4, boxShadow: "none", minHeight: 40, padding: "8px 16px" },
+        root: { borderRadius: 4, boxShadow: "none", minHeight: 40, padding: "8px 16px", [COARSE]: { minHeight: 44 } },
         text: { padding: "8px 12px" },
-        sizeSmall: { minHeight: 36, padding: "6px 14px", "&.MuiButton-text": { padding: "6px 10px" } },
+        sizeSmall: { minHeight: 36, padding: "6px 14px", "&.MuiButton-text": { padding: "6px 10px" }, [COARSE]: { minHeight: 40 } },
         sizeLarge: { minHeight: 48, padding: "10px 22px" },
         contained: { boxShadow: "none", "&:hover": { boxShadow: "none" } },
       },
@@ -137,7 +140,9 @@ export const theme = createTheme({
     },
     MuiIconButton: {
       styleOverrides: {
-        sizeSmall: { padding: 8 },
+        // Fingers, not cursors: 44px on touch screens (Apple's minimum), 40 for small ones.
+        root: { [COARSE]: { minWidth: 44, minHeight: 44 } },
+        sizeSmall: { padding: 8, [COARSE]: { minWidth: 40, minHeight: 40 } },
       },
     },
     MuiToggleButton: {

@@ -7,6 +7,15 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Height of the phone bottom bar (AppShell), home-indicator gap included.
+   Anything fixed to the bottom of the screen sits above it with
+   bottom: var(--ek-nav-h). 0 on desktop, where there's a sidebar instead.
+   Keep the breakpoint in step with AppShell's isDesktop (900px). */
+:root { --ek-nav-h: 0px; }
+@media (max-width: 899.98px) {
+  :root { --ek-nav-h: calc(64px + env(safe-area-inset-bottom, 0px)); }
+}
+
 /* EstateKit design tokens, light and dark. The mode is the data-theme
    attribute on <html>, set before first paint by the script in index.html
    and kept in step by src/lib/themeMode.tsx. Keep these in step with the

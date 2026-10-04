@@ -277,7 +277,7 @@ export default function AppShell() {
         </Drawer>
       )}
 
-      <Box component="main" sx={{ flex: 1, minWidth: 0, pb: isDesktop ? 0 : "56px" }}>
+      <Box component="main" sx={{ flex: 1, minWidth: 0, pb: "var(--ek-nav-h)" }}>
         {!isDesktop && isOperator && (
           <Box sx={{ px: 1.5, py: 1, bgcolor: isManagingOther ? tokens.amberTint : "background.paper", borderBottom: `1px solid ${isManagingOther ? tokens.amberBorder : tokens.divider}` }}>
             <AccountSwitcher variant="light" />
@@ -287,7 +287,13 @@ export default function AppShell() {
       </Box>
 
       {!isDesktop && (
-        <Paper elevation={0} sx={{ position: "fixed", bottom: 0, left: 0, right: 0, borderTop: `1px solid ${tokens.divider}`, zIndex: 9 }}>
+        // Phone bottom bar: 64px tall plus the iPhone home-indicator gap, big
+        // icons and labels, and a pill behind the current section's icon.
+        <Paper
+          component="nav"
+          elevation={0}
+          sx={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 9, borderTop: `1px solid ${tokens.divider}`, pb: "env(safe-area-inset-bottom, 0px)" }}
+        >
           <BottomNavigation
             showLabels
             value={section}
@@ -295,14 +301,22 @@ export default function AppShell() {
               const item = mobileNav.find((n) => n.key === v);
               if (item) navigate(item.to);
             }}
-            sx={{ height: 56 }}
+            sx={{ height: 64, bgcolor: "transparent" }}
           >
             {mobileNav.map((item) => (
               <BottomNavigationAction
                 key={item.key}
                 label={item.label}
                 value={item.key}
-                icon={section === item.key ? item.activeIcon : item.icon}
+                icon={<Box className="ek-nav-pill">{section === item.key ? item.activeIcon : item.icon}</Box>}
+                sx={{
+                  minWidth: 0, px: 0.5, py: 0.75, gap: 0.25,
+                  "& .ek-nav-pill": { width: 56, height: 30, borderRadius: "15px", display: "grid", placeItems: "center", transition: "background-color .15s" },
+                  "& .ek-nav-pill svg": { fontSize: "24px !important" },
+                  "&.Mui-selected .ek-nav-pill": { bgcolor: tokens.primaryBg },
+                  "& .MuiBottomNavigationAction-label": { fontSize: 12, fontWeight: 500, lineHeight: 1.2, whiteSpace: "nowrap" },
+                  "& .MuiBottomNavigationAction-label.Mui-selected": { fontSize: 12, fontWeight: 700 },
+                }}
               />
             ))}
           </BottomNavigation>

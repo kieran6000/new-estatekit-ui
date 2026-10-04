@@ -54,6 +54,9 @@ interface Col {
   fmt?: (v: number) => string;
 }
 
+/** Keeps the date column in view while the numbers scroll sideways. */
+const pinFirst = (z: number) => ({ position: "sticky", left: 0, zIndex: z, bgcolor: "background.paper", boxShadow: `1px 0 0 ${tokens.divider}` }) as const;
+
 const SIMPLE_COLS: Col[] = [
   { k: "date", label: "Date" },
   { k: "spend", label: "Ad spend", num: true, fmt: money },
@@ -307,6 +310,19 @@ export default function OverviewPage() {
           <StageDonut counts={stageCounts} />
         </Box>
       )}
+      {/* Phones: the totals as tiles, so the numbers that matter don't hide
+          off the right of the table. The table below scrolls sideways with
+          the date column pinned. */}
+      {showNumbers && isNarrow && !isLoading && (
+        <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1, p: "12px 16px" }}>
+          {cols.filter((c) => c.k !== "date").map((c) => (
+            <Box key={c.k} sx={{ bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "8px", p: "10px 12px" }}>
+              <Typography sx={{ fontSize: 18, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{cell(c, totals as unknown as Record<string, number | string>)}</Typography>
+              <Typography sx={{ fontSize: 12, color: "text.secondary" }}>{c.label}</Typography>
+            </Box>
+          ))}
+        </Box>
+      )}
       {showNumbers && (
       <Box sx={{
         overflow: "auto", flex: isNarrow ? "none" : 1, minHeight: 0,
@@ -318,7 +334,7 @@ export default function OverviewPage() {
           <TableHead>
             <TableRow>
               {cols.map((c) => (
-                <SortHead key={c.k} k={c.k} label={c.label} sort={sort} onSort={onSort} num={c.num} firstDir="desc" sx={{ height: HEAD_H, py: 0 }} />
+                <SortHead key={c.k} k={c.k} label={c.label} sort={sort} onSort={onSort} num={c.num} firstDir="desc" sx={{ height: HEAD_H, py: 0, ...(c.k === "date" ? pinFirst(3) : {}) }} />
               ))}
             </TableRow>
           </TableHead>
@@ -347,6 +363,7 @@ export default function OverviewPage() {
                         borderBottom: `2px solid ${tokens.divider}`,
                         position: "sticky", top: HEAD_H, zIndex: 2,
                         bgcolor: tokens.surface2,
+                        ...(c.k === "date" ? { left: 0, zIndex: 3 } : {}),
                       }}
                     >
                       {cell(c, totals as unknown as Record<string, number | string>)}
@@ -356,7 +373,7 @@ export default function OverviewPage() {
                 {sorted.map((r, i) => (
                   <TableRow key={r.date} sx={i % 2 === 1 ? { bgcolor: tokens.hover } : undefined}>
                     {cols.map((c) => (
-                      <TableCell key={c.k} align={c.num ? "right" : "left"} sx={{ whiteSpace: "nowrap" }}>
+                      <TableCell key={c.k} align={c.num ? "right" : "left"} sx={{ whiteSpace: "nowrap", ...(c.k === "date" ? pinFirst(1) : {}) }}>
                         {cell(c, r as unknown as Record<string, number | string>)}
                       </TableCell>
                     ))}
