@@ -10,7 +10,10 @@
 // template "new accounts get this" setting, then builds a workflow with every step type on the
 // main path and inside both branch paths, and exercises move, delete (with
 // its confirm), undo/redo, the on-switch block, the daily-summary limits,
-// the name, deleting a workflow, and History search. Exits 1 on any failure.
+// the name, deleting a workflow, and History search. Then the addresses:
+// every list, workflow and tab survives a refresh, a new workflow gets its
+// own address once saved, the Leads tab and canvas show where each lead is,
+// and Scheduled opens the workflow at that lead. Exits 1 on any failure.
 const BASE = process.env.BASE || "http://localhost:5173";
 // Screenshots of signed-in pages against a mocked backend (no real data).
 import { chromium } from "playwright";
@@ -41,6 +44,9 @@ const logRows = [
   { id: 1, at: iso(30), what: "WhatsApp the agent", status: "Sent", detail: "Call Thandi now", lead_id: leads[0].id, lead: { name: "Thandi Mokoena" } },
   { id: 2, at: iso(90), what: "Email the lead", status: "Skipped", detail: "No email address", lead_id: leads[1].id, lead: { name: "Pieter van Wyk" } },
 ];
+// Leads part-way through workflows (filled in once the account has its
+// standard workflows; see the add_standard_workflows mock).
+const runTable = [];
 const pipeline = { id: PID, agent_id: UID, name: "Sellers", kind: "seller", created_at: iso(10000), sheet_url: null };
 
 const b = await chromium.launch(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {});
@@ -58,6 +64,12 @@ await ctx.route(/supabase\.co/, async (route) => {
       const agent = JSON.parse(req.postData() || "{}").p_agent;
       const add = wfTable.filter((t) => t.is_template && t.standard && !wfTable.some((w) => w.agent_id === agent && w.from_template === t.id));
       for (const t of add) wfTable.push({ id: wfId(), agent_id: agent, is_template: false, name: t.name, published: t.standard_on, definition: t.definition, from_template: t.id, standard: false, standard_on: false, updated_at: new Date().toISOString(), created_at: new Date().toISOString() });
+      // Two leads in the first multi-step workflow: one at its 2nd step, one at its 1st.
+      const multi = wfTable.find((w) => w.agent_id === agent && w.definition.steps.length >= 2);
+      if (multi && !runTable.length) {
+        runTable.push({ id: "00000000-0000-4000-a000-000000000001", workflow_id: multi.id, agent_id: agent, lead_id: leads[0].id, status: "pending", run_at: new Date(now + 3 * 3600000).toISOString(), pos: [1], started: true });
+        runTable.push({ id: "00000000-0000-4000-a000-000000000002", workflow_id: multi.id, agent_id: agent, lead_id: leads[1].id, status: "paused", run_at: new Date(now + 3600000).toISOString(), pos: [0], started: false });
+      }
       return json(add.length);
     }
     return json([]);
@@ -71,7 +83,10 @@ await ctx.route(/supabase\.co/, async (route) => {
   if (table === "automation_steps") return json(stepRows);
   if (table === "workflows") {
     const m = req.method(), eq = (k) => (url.searchParams.get(k) || "").replace(/^eq\./, "");
-    if (m === "GET") return json(wfTable.filter((w) => (eq("agent_id") ? w.agent_id === eq("agent_id") : true) && (eq("is_template") ? String(w.is_template) === eq("is_template") : true)));
+    if (m === "GET") {
+      const rows = wfTable.filter((w) => (eq("id") ? w.id === eq("id") : true) && (eq("agent_id") ? w.agent_id === eq("agent_id") : true) && (eq("is_template") ? String(w.is_template) === eq("is_template") : true));
+      return json(single ? rows[0] ?? null : rows);
+    }
     if (m === "POST") {
       const body = JSON.parse(req.postData() || "{}");
       const row = { standard: false, standard_on: false, ...body, id: wfId(), created_at: new Date().toISOString() };
@@ -82,6 +97,15 @@ await ctx.route(/supabase\.co/, async (route) => {
     if (m === "DELETE") { const i = wfTable.findIndex((w) => w.id === eq("id")); if (i >= 0) wfTable.splice(i, 1); return json([]); }
   }
   if (table === "workflow_log") return json(logRows);
+  if (table === "workflow_runs") {
+    const eq = (k) => (url.searchParams.get(k) || "").replace(/^eq\./, "");
+    if (req.method() === "PATCH") { const row = runTable.find((r) => r.id === eq("id")); Object.assign(row, JSON.parse(req.postData() || "{}")); return json([row]); }
+    const rows = runTable.filter((r) => (eq("workflow_id") ? r.workflow_id === eq("workflow_id") : true) && (eq("agent_id") ? r.agent_id === eq("agent_id") : true) && ["pending", "processing", "paused"].includes(r.status));
+    return json(rows.map((r) => {
+      const w = wfTable.find((x) => x.id === r.workflow_id), l = leads.find((x) => x.id === r.lead_id);
+      return { ...r, workflow: { id: w.id, name: w.name, definition: w.definition }, lead: { id: l.id, name: l.name, stage: l.stage, agent_id: l.agent_id } };
+    }));
+  }
   if (table === "pipelines") return json(single ? pipeline : [pipeline]);
   if (path.includes("/functions/v1/weekly-report")) { const b = JSON.parse(req.postData() || "{}"); if (b.action === "view") return b.token === "0".repeat(32) ? json({ error: "not_found" }, 404) : json({ period: "22 Sep – 28 Sep 2026", data: report, name: "Agent One", avatarUrl: null }); console.log("SEND", b.agentId, b.weekStart, b.period, Object.keys(b.data || {}).length, new Date().toISOString().slice(11, 19)); sendsRows.unshift({ id: "x" + Date.now(), agent_id: b.agentId, week_start: b.weekStart, period: b.period, status: "sent", error: null, sent_by_name: "Demo Agent", sent_at: new Date().toISOString(), first_opened_at: null, last_opened_at: null, open_count: 0 }); return json({ ok: true }); }
   if (path.includes("/functions/")) return json({});
@@ -148,7 +172,7 @@ for (const n of wfNames) {
 }
 
 // Templates: each opens with nothing to fix (blank: 1)
-for (const t of ["No answer → email follow-up", "New lead: speed to lead", "Not tracked: stay in touch", "Appointment: day-before reminder", "Appointment: 1 hour before", "After the appointment: log it", "Blank workflow"]) {
+for (const t of ["No answer → email follow-up", "New lead: speed to lead", "Not tracked: stay in touch", "Not ready yet: stay in touch", "Appointment: day-before reminder", "Appointment: 1 hour before", "After the appointment: log it", "Blank workflow"]) {
   await p.getByRole("button", { name: "Create workflow" }).click();
   await p.getByText(t, { exact: true }).click();
   await p.waitForTimeout(400);
@@ -331,6 +355,74 @@ await p.getByRole("button", { name: /^Save/ }).click();
 await p.waitForTimeout(800);
 const offer = wfTable.find((w) => w.is_template && w.name === "Offer Made — follow-up");
 ok(offer.standard === true && offer.standard_on === true, "…and saving it switches it on for new accounts");
+
+// ── Addresses: every screen survives a refresh ──
+const path = () => new URL(p.url()).pathname + new URL(p.url()).search;
+await p.goto(`${BASE}/admin/automations`);
+await p.waitForTimeout(1500);
+ok(path() === "/admin/automations/workflows", `/admin/automations opens Workflows (${path()})`);
+await p.getByRole("tab", { name: "Scheduled" }).click(); await p.waitForTimeout(600);
+ok(path().startsWith("/admin/automations/scheduled"), "the Scheduled tab has its own address");
+await p.reload(); await p.waitForTimeout(1500);
+ok(await p.getByRole("tab", { name: "Scheduled", selected: true }).count() === 1, "…and a refresh stays on Scheduled");
+await p.getByRole("tab", { name: "Templates" }).click(); await p.waitForTimeout(600);
+ok(path() === "/admin/automations/templates", "Templates has its own address");
+await p.getByRole("tab", { name: "Workflows" }).click(); await p.waitForTimeout(600);
+
+const multi = wfTable.find((w) => w.id === runTable[0].workflow_id);
+const row = p.locator("tbody tr", { hasText: multi.name }).first();
+ok((await row.innerText()).includes("2"), "the list shows how many leads are in a workflow");
+await row.click(); await p.waitForTimeout(800);
+ok(path() === `/admin/automations/workflows/${multi.id}`, `a workflow has its own address (${path()})`);
+ok(await p.getByRole("tab", { name: "Scheduled" }).count() === 0, "the editor is full screen (no section tabs)");
+await p.reload(); await p.waitForTimeout(2000);
+ok(await p.getByRole("button", { name: new RegExp(multi.name.slice(0, 20)) }).count() >= 1, "…and a refresh reopens the same workflow");
+const badge = p.getByRole("button", { name: /1 lead waiting for this step/ });
+ok(await badge.count() === 2, `the canvas shows leads waiting at each step (${await badge.count()})`);
+await badge.first().click(); await p.waitForTimeout(400);
+ok(path().includes("tab=leads") && path().includes("step="), "clicking a count opens the Leads tab for that step");
+ok(await p.locator("tbody tr").count() === 1, "…showing just the lead at that step");
+await p.getByRole("button", { name: /Waiting for/ }).locator("svg").click(); await p.waitForTimeout(300);
+ok(await p.locator("tbody tr").count() === 2, "clearing the step shows every lead in it");
+await shot("5_leads");
+await p.reload(); await p.waitForTimeout(2000);
+ok(await p.getByRole("tab", { name: /Leads/, selected: true }).count() === 1, "a refresh keeps the tab");
+await p.locator("tbody tr", { hasText: "Thandi" }).click(); await p.waitForTimeout(800);
+ok(path().includes(`run=${runTable[0].id}`) && !path().includes("tab="), "clicking a lead shows them on the workflow");
+ok(await p.getByText(/Thandi Mokoena\s*is here/).isVisible(), "…with a strip saying where they are");
+const hi = await p.locator(`[data-step="${multi.definition.steps[1].id}"] button`).first().evaluate((el) => getComputedStyle(el).borderTopWidth);
+ok(hi === "2px", `…and their step highlighted (${hi})`);
+await shot("4_lead_here");
+await p.getByRole("button", { name: "Stop showing this lead" }).click(); await p.waitForTimeout(300);
+ok(!path().includes("run="), "closing the strip clears it from the address");
+
+// Scheduled → the workflow, at that lead
+await p.getByRole("button", { name: "Back to workflows" }).click(); await p.waitForTimeout(500);
+await p.getByRole("tab", { name: "Scheduled" }).click(); await p.waitForTimeout(1000);
+await shot("6_scheduled");
+await p.locator("tbody tr", { hasText: "Thandi" }).click(); await p.waitForTimeout(1000);
+ok(path() === `/admin/automations/workflows/${multi.id}?run=${runTable[0].id}`, `a scheduled row opens its workflow at that lead (${path()})`);
+ok(await p.getByText(/Thandi Mokoena\s*is here/).isVisible(), "…showing where the lead is");
+await p.getByRole("button", { name: "Back to scheduled" }).click(); await p.waitForTimeout(800);
+ok(path().startsWith("/admin/automations/scheduled"), "Back returns to Scheduled");
+await p.locator("tbody tr", { hasText: "Thandi" }).getByRole("link", { name: "Thandi Mokoena" }).click(); await p.waitForTimeout(800);
+ok(path() === `/leads/${leads[0].id}`, "the lead's name opens the lead");
+
+// A new workflow gets its address when saved; an unsaved one doesn't survive a refresh
+await p.goto(`${BASE}/admin/automations/workflows`); await p.waitForTimeout(1500);
+await p.getByRole("button", { name: "Create workflow" }).click();
+await p.getByText("New lead: speed to lead", { exact: true }).click(); await p.waitForTimeout(500);
+ok(path() === "/admin/automations/workflows/new", "a new workflow opens at …/new");
+await p.getByRole("button", { name: /^Save/ }).click(); await p.waitForTimeout(1000);
+const made = wfTable[wfTable.length - 1];
+ok(path() === `/admin/automations/workflows/${made.id}`, `…and moves to its own address once saved (${path()})`);
+await p.goto(`${BASE}/admin/automations/workflows/new`); await p.waitForTimeout(1500);
+ok(path() === "/admin/automations/workflows", "…/new with nothing in progress goes back to the list");
+await p.goto(`${BASE}/admin/automations/workflows/00000000-0000-4000-9000-999999999999`); await p.waitForTimeout(1500);
+ok(await p.getByText("This workflow doesn't exist any more").isVisible(), "a deleted workflow's address says so");
+const tpl = wfTable.find((w) => w.is_template);
+await p.goto(`${BASE}/admin/automations/workflows/${tpl.id}`); await p.waitForTimeout(1500);
+ok(path() === `/admin/automations/templates/${tpl.id}`, "a template opened under workflows moves to its templates address");
 
 ok(errors.length === 0, `no page errors (${errors.join(" | ").slice(0, 300)})`);
 console.log(fails ? `\n${fails} FAILED` : "\nALL PASSED");

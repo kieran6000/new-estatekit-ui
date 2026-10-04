@@ -91,16 +91,18 @@ export async function getEmailStats(agentId: string, days = 30, range?: { since:
     .from("lead_events")
     .select("lead_id, event_type, from_value")
     .eq("agent_id", agentId)
-    .or("event_type.like.email_%,event_type.eq.plan_opened")
+    .or("event_type.like.email_%,event_type.like.workflow_email%,event_type.eq.plan_opened")
     .gte("created_at", since);
   if (range) q = q.lt("created_at", range.until.toISOString());
   const { data, error } = await q.limit(5000);
   if (error) throw new Error(error.message);
-  const leads = (t: string) => new Set((data ?? []).filter((r) => r.event_type === t).map((r) => r.lead_id)).size;
+  // Leads with any of these events. Workflow emails (the confirmation email
+  // is one now) log workflow_email / workflow_email_opened.
+  const leads = (...t: string[]) => new Set((data ?? []).filter((r) => t.includes(r.event_type)).map((r) => r.lead_id)).size;
   return {
-    sent: leads("email_sent"),
+    sent: leads("email_sent", "workflow_email"),
     delivered: leads("email_delivered"),
-    opened: leads("email_opened"),
+    opened: leads("email_opened", "workflow_email_opened"),
     clicked: leads("email_clicked"),
     bounced: leads("email_bounced"),
     failed: leads("email_failed"),

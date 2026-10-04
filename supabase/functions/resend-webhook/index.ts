@@ -3,7 +3,8 @@
 // Resend signs every call (Svix format). We verify the signature with
 // RESEND_WEBHOOK_SECRET ("whsec_…") and reject anything else, so nobody can
 // fake a report. Each report is matched to its lead by
-// leads.confirmation_email_id and written to the lead's history.
+// leads.confirmation_email_id (old confirmation emails) or
+// workflow_emails.resend_id (workflow emails) and written to the lead's history.
 //
 // Handled: delivered, delivery_delayed, bounced, complained, opened (first
 // open only). "sent" is already logged by send-lead-confirmation; "clicked"
@@ -70,9 +71,17 @@ Deno.serve(async (req) => {
   const emailId = evt.data?.email_id;
   if (!type || !emailId) return ok({ ok: true, ignored: evt.type });
 
-  const { data: lead } = await supabase.from("leads").select("id, agent_id, email").eq("confirmation_email_id", emailId).maybeSingle();
-  // Not one of ours (e.g. a test send from the Resend dashboard): acknowledge.
-  if (!lead) return ok({ ok: true, ignored: "no matching lead" });
+  let { data: lead } = await supabase.from("leads").select("id, agent_id, email").eq("confirmation_email_id", emailId).maybeSingle();
+  if (!lead) {
+    // A workflow email (the confirmation email is one now). Opens come from
+    // its own pixel (workflow_email_opened), so only delivery reports here.
+    const { data: wfEmail } = await supabase.from("workflow_emails").select("lead_id").eq("resend_id", emailId).maybeSingle();
+    // Not one of ours (e.g. a test send from the Resend dashboard): acknowledge.
+    if (!wfEmail?.lead_id) return ok({ ok: true, ignored: "no matching lead" });
+    if (type === "email_opened") return ok({ ok: true, ignored: "workflow email opens come from its pixel" });
+    ({ data: lead } = await supabase.from("leads").select("id, agent_id, email").eq("id", wfEmail.lead_id).maybeSingle());
+    if (!lead) return ok({ ok: true, ignored: "lead deleted" });
+  }
 
   // Opens can fire many times; only the first one goes in the history.
   if (type === "email_opened") {

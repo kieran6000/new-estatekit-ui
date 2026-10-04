@@ -1,5 +1,5 @@
 import { useRef, useState, type ReactNode } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AppBar,
@@ -54,6 +54,7 @@ import {
   type ClientProfilePatch,
 } from "../api/clients";
 import { getFbAdAccount, setAgentPassword } from "../api/agentProfile";
+import { listAccountWorkflows } from "../api/workflows";
 import { setActiveAgent, supabase } from "../api/_client";
 import { getEmailStats } from "../api/leadEvents";
 import { listSoldListingsForAgent } from "../api/soldListings";
@@ -292,7 +293,6 @@ function Header({ data }: { data: Data }) {
                 color={setup.complete ? "success" : "default"}
                 variant="outlined"
               />
-              <Chip size="small" variant="outlined" label={p.lead_confirmation_email ? "Email to leads: on" : "Email to leads: off"} />
               {p.deactivated_at ? <Chip size="small" color="warning" label="Deactivated" /> : p.automations_paused && <Chip size="small" color="warning" variant="outlined" label="Automations paused" />}
             </Box>
           </Box>
@@ -662,11 +662,11 @@ function EmailStatsSection({ data, since, until }: { data: Data; since: Date; un
   });
   const pct = (n: number) => (st && st.sent > 0 ? ` (${Math.round((n / st.sent) * 100)}%)` : "");
   return (
-    <Section title="Email to leads & marketing plan" sub={p.lead_confirmation_email ? "On" : "Off"}>
+    <Section title="Emails to leads & marketing plan">
       {isLoading ? (
         <Skeleton height={80} />
       ) : !st?.sent ? (
-        <Empty>{p.lead_confirmation_email ? "No emails sent in these dates." : "Switched off. Turn it on under Settings → Messages to leads."}</Empty>
+        <Empty>No emails sent in these dates.</Empty>
       ) : (
         <KV
           rows={[
@@ -794,37 +794,44 @@ function LoginSection({ data }: { data: Data }) {
 function MessagesSection({ data }: { data: Data }) {
   const { profile: p } = data;
   const save = useClientSaver(p.agent_id);
-  const [busy, setBusy] = useState<"email" | "auto" | null>(null);
+  const [busy, setBusy] = useState(false);
+  // Every message to leads (the confirmation email too) is a workflow.
+  const { data: workflows } = useQuery({
+    queryKey: ["workflows", "account", p.agent_id],
+    queryFn: () => listAccountWorkflows(p.agent_id),
+  });
+  const on = (workflows ?? []).filter((w) => w.published);
 
-  async function toggleEmail(on: boolean) {
-    setBusy("email");
-    await save(() => updateClientProfile(p.agent_id, { lead_confirmation_email: on }), on ? "Confirmation emails on" : "Confirmation emails off");
-    setBusy(null);
-  }
-  async function toggleAuto(on: boolean) {
-    setBusy("auto");
-    await save(() => updateClientProfile(p.agent_id, { automations_paused: !on }), on ? "Automations switched on" : "Automations paused");
-    setBusy(null);
+  async function toggleAuto(next: boolean) {
+    setBusy(true);
+    await save(() => updateClientProfile(p.agent_id, { automations_paused: !next }), next ? "Automations switched on" : "Automations paused");
+    setBusy(false);
   }
 
   return (
     <Section title="Messages to leads">
       <Box sx={{ display: "flex", alignItems: "center", ml: -1 }}>
-        <Switch checked={!!p.lead_confirmation_email} disabled={busy === "email"} onChange={(e) => toggleEmail(e.target.checked)} />
-        <Box>
-          <Typography sx={{ fontSize: 13.5 }}>Confirmation email {p.lead_confirmation_email ? "on" : "off"}</Typography>
-          <Typography sx={{ fontSize: 12, color: tokens.ink3 }}>
-            Emails each new lead in {p.display_name?.split(" ")[0] || "the agent"}'s name{p.email ? "" : ". Add their email first so replies reach them"}
-          </Typography>
-        </Box>
-      </Box>
-      <Box sx={{ display: "flex", alignItems: "center", mt: 0.5, ml: -1 }}>
-        <Switch checked={!p.automations_paused} disabled={busy === "auto"} onChange={(e) => toggleAuto(e.target.checked)} />
+        <Switch checked={!p.automations_paused} disabled={busy} onChange={(e) => toggleAuto(e.target.checked)} />
         <Box>
           <Typography sx={{ fontSize: 13.5 }}>Automations {p.automations_paused ? "paused" : "on"}</Typography>
-          <Typography sx={{ fontSize: 12, color: tokens.ink3 }}>Follow-up WhatsApps to this account's leads</Typography>
+          <Typography sx={{ fontSize: 12, color: tokens.ink3 }}>Every workflow for this account, emails and WhatsApps</Typography>
         </Box>
       </Box>
+      {workflows && (
+        <Box sx={{ mt: 1.25, display: "flex", flexDirection: "column", gap: 0.5 }}>
+          <Typography sx={{ fontSize: 12, color: tokens.ink3 }}>
+            {on.length ? `${on.length} workflow${on.length === 1 ? "" : "s"} on` : "No workflows on"}
+          </Typography>
+          {on.map((w) => (
+            <Link key={w.id} component={RouterLink} to={`/admin/automations/workflows/${w.id}`} sx={{ fontSize: 13.5 }} underline="hover">
+              {w.name}
+            </Link>
+          ))}
+          <Link component={RouterLink} to={`/admin/automations/workflows?account=${p.agent_id}`} sx={{ fontSize: 13.5, mt: 0.5 }} underline="hover">
+            All of this account's workflows
+          </Link>
+        </Box>
+      )}
     </Section>
   );
 }

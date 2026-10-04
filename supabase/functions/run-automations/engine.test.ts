@@ -640,3 +640,61 @@ describe("appointments", () => {
     expect(sent[0].text).toBe("At no time set");
   });
 });
+
+describe("confirmation-style emails", () => {
+  const body = "Hi {{first_name}},\n\nThanks.\n\n{{lead_magnet}}\n\n{{recent_sales}}\n\nWhatsApp me: {{whatsapp_link}}";
+  const send = async (patch: S = {}, pagePatch: S = {}) => {
+    Object.assign(db.tables.lead_pages[0], pagePatch);
+    const wf = workflow([email("Hello {{first_name}}", body)], { trigger: { kind: "lead_created" }, exits: [] });
+    const l = lead({ stage: "New Lead", ...patch });
+    const r = enroll(wf, l);
+    await tick();
+    return { l, r, mail: emails[0] as { html: string; text: string; subject: string } };
+  };
+
+  it("a seller form with no setting gets the marketing plan box, and a WhatsApp link", async () => {
+    const { l, mail } = await send();
+    const token = leadOf(l).plan_token as string;
+    expect(token).toMatch(/^[a-f0-9]{32}$/);
+    expect(mail.html).toContain("Your marketing plan is ready");
+    expect(mail.html).toContain(`https://leads.estatekit.co/plan/${token}`);
+    expect(mail.html).toContain("<table role=\"presentation\"");
+    expect(mail.text).toContain(`YOUR MARKETING PLAN IS READY`);
+    expect(mail.text).toContain(`Open my marketing plan: https://leads.estatekit.co/plan/${token}`);
+    expect(mail.text).toContain(`WhatsApp me: https://leads.estatekit.co/w/${l.id}`);
+    expect(mail.text).not.toContain("\u0000");
+  });
+
+  it("a form's own PDF guide shows with its words", async () => {
+    const { mail } = await send({}, { magnet_kind: "pdf", magnet_title: "Your home seller's guide", magnet_text: "Short read.", magnet_button: "Open the guide", magnet_pdf_url: "https://x/y.pdf" });
+    expect(mail.html).toContain("Your home seller&#39;s guide");
+    expect(mail.html).toContain("Open the guide");
+    expect(mail.text).toContain("Short read.");
+  });
+
+  it("no lead magnet and no sales: those paragraphs are dropped, not left blank", async () => {
+    const { l, mail } = await send({ source_page_id: "pg2", pipeline_id: "pB" });
+    expect(mail.html).not.toContain("<table");
+    expect(mail.text.split("--")[0].trim()).toBe(`Hi Thandi,\n\nThanks.\n\nWhatsApp me: https://leads.estatekit.co/w/${l.id}`);
+    expect(mail.html).not.toContain("<p style=\"margin:0 0 14px\"></p>");
+  });
+
+  it("{{recent_sales}} lists the agent's latest sales with a link to them all", async () => {
+    db.tables.sold_listings = [
+      { agent_id: AGENT, address: "14 Oak Avenue", price: 2150000, status: "sold", sort_order: 0 },
+      { agent_id: AGENT, address: "3 Elm Road", price: 1800000, status: "listed", sort_order: 1 },
+      { agent_id: "other", address: "Not mine", price: 1, status: "sold", sort_order: 0 },
+    ];
+    const { mail } = await send({ source_page_id: "pg2" });
+    expect(mail.text).toContain("- 14 Oak Avenue: sold for R2 150 000");
+    expect(mail.text).toContain("- 3 Elm Road: listed at R1 800 000");
+    expect(mail.text).not.toContain("Not mine");
+    expect(mail.text).toContain(`See them all: https://leads.estatekit.co/sold/${AGENT}`);
+  });
+
+  it("keeps the email service's id, so delivery reports match", async () => {
+    const { r } = await send();
+    const rec = db.rows("workflow_emails").find((e) => e.run_id === r.id)!;
+    expect(rec.resend_id).toBe("re_1");
+  });
+});

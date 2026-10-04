@@ -66,7 +66,6 @@ import { getCapiConfig, saveCapiConfig, listCapiEvents } from "../api/capi";
 import { timeAgo } from "../lib/timeAgo";
 import FormPresetPicker from "../components/FormPresetPicker";
 import InfoTip from "../components/InfoTip";
-import ConfirmationEmailCard from "../components/ConfirmationEmailCard";
 import LeadMagnetCard from "../components/LeadMagnetCard";
 import OptionsEditor from "../components/OptionsEditor";
 import { cleanOptions } from "../lib/options";
@@ -308,7 +307,6 @@ export default function LeadPagePage() {
       {page.sourceType === "fb_form" && (
         <Box sx={{ maxWidth: 1000, mx: "auto", px: 2, pb: 3, display: "flex", flexDirection: "column", gap: 2 }}>
           <LeadMagnetCard page={page} pipelineKind={pipeline.kind} canSetUp={canSetUp} />
-          <ConfirmationEmailCard profile={profile} canSetUp={canSetUp} page={page} pipelineKind={pipeline.kind} />
         </Box>
       )}
       {page.sourceType === "fb_form" ? null : (
@@ -487,8 +485,7 @@ export default function LeadPagePage() {
             )}
 
             <LeadMagnetCard page={page} pipelineKind={pipeline.kind} canSetUp={canSetUp} />
-            <ConfirmationEmailCard profile={profile} canSetUp={canSetUp} page={page} pipelineKind={pipeline.kind} />
-
+  
             {isOperator && (
               <Section title="Facebook tracking">
                 {/* Plain words on purpose, but Facebook's own names where you'll

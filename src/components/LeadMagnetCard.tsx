@@ -16,7 +16,8 @@ import InfoTip from "./InfoTip";
 const MAX_MB = 20;
 
 /** "Lead magnet": what leads get straight after this form, on the thank-you
- *  page and in the confirmation email. Pick a preset, change the words if
+ *  page and wherever a workflow email has {{lead_magnet}} (the standard
+ *  "New lead — confirmation email" does). Pick a preset, change the words if
  *  you like, upload the PDF. Staff set it; agents see what's set. */
 export default function LeadMagnetCard({ page, pipelineKind, canSetUp }: { page: LeadPage; pipelineKind: string | null | undefined; canSetUp: boolean }) {
   const qc = useQueryClient();
@@ -87,8 +88,9 @@ export default function LeadMagnetCard({ page, pipelineKind, canSetUp }: { page:
       <Box sx={{ display: "flex", alignItems: "center", gap: 0.25 }}>
         <Typography sx={label}>Lead magnet</Typography>
         <InfoTip>
-          What leads get straight after this form: a card on the thank-you page and a box in the confirmation email, both with the same link. You can
-          see who opened it in the lead's history, and "Lead opens their lead magnet" can start a workflow.
+          What leads get straight after this form: a card on the thank-you page, and a box in any workflow email that has the Lead magnet field (the
+          "New lead — confirmation email" workflow does). Both use the same link. You can see who opened it in the lead's history, and "Lead opens
+          their lead magnet" can start a workflow.
         </InfoTip>
         <Box sx={{ flex: 1 }} />
         {previewUrl && (

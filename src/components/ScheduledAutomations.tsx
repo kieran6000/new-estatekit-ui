@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link as RouterLink, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Box, Chip, IconButton, InputAdornment, ListItemIcon, Menu, MenuItem, Skeleton, Switch, Tab, Table, TableBody,
@@ -11,30 +11,22 @@ import PauseIcon from "@mui/icons-material/PauseCircleOutlineOutlined";
 import PlayIcon from "@mui/icons-material/PlayCircleOutlineOutlined";
 import SendIcon from "@mui/icons-material/SendOutlined";
 import SkipIcon from "@mui/icons-material/BlockOutlined";
-import UndoIcon from "@mui/icons-material/Undo";
 import WhatsAppIcon from "@mui/icons-material/WhatsApp";
 import { tokens } from "../theme";
 import { getActiveAgentId, getActiveAgentIdSync, listAgentProfiles } from "../api/_client";
 import { getMyProfile } from "../api/agentProfile";
-import {
-  getAccountAutomationsPaused,
-  listScheduledRuns,
-  setAccountAutomationsPaused,
-  updateScheduledRun,
-  type ScheduledRun,
-  type ScheduledRunPatch,
-} from "../api/automations";
-import { useAutomations, useAutomationSteps } from "../hooks/useAutomations";
+import { getAccountAutomationsPaused, setAccountAutomationsPaused } from "../api/automations";
 import { listScheduledWorkflowRuns, updateWorkflowRun, type WorkflowRunRow } from "../api/workflows";
-import { stepTitle, type Step } from "../lib/workflow";
+import { stepAtPos, stepTitle, type Step } from "../lib/workflow";
 import { useSnack } from "../hooks/useSnack";
-import type { AutomationStepRow } from "../types/automations";
+import { workflowPath, type BackTo } from "../lib/automationsPaths";
 import { PlainHead, SortHead, sortRows, useTableSort } from "./SortHead";
 import { trackActivity } from "../lib/activity";
 
 // What's about to go out: every queued workflow step, soonest first, in the
 // same table look as the workflow list. Each row has pause / send now / skip.
-// No message previews: the wording lives in the workflow itself.
+// Clicking a row opens its workflow with that lead's place highlighted; the
+// lead's name opens the lead. ?view=all shows every account.
 
 // Mirrors run-automations: follow-up WhatsApps only send 08:00–20:00 SAST
 // (UTC+2). New-lead alerts are exempt there, so callers pass quietHours=false
@@ -65,24 +57,19 @@ function relative(d: Date): string {
 const whenLabel = (d: Date) =>
   d.toLocaleString("en-ZA", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
-function describeStep(step: AutomationStepRow | undefined): string {
-  if (!step) return "Finishes the workflow";
-  if (step.action_type === "send_whatsapp") return "WhatsApp message";
-  if (step.action_type === "set_reminder") return `Reminder: ${String(step.payload?.label ?? "follow up")}`;
-  if (step.action_type === "set_stage") return `Move to ${String(step.payload?.stage ?? "a new stage")}`;
-  return "Update the lead";
-}
-
 /** The step a workflow run is about to do, from its position in the tree. */
-function workflowStepAt(run: WorkflowRunRow): Step | undefined {
-  const steps = (run.workflow?.definition?.steps ?? []) as Step[];
-  const pos = run.pos ?? [0];
-  let s: Step | undefined = steps[Number(pos[0])];
-  for (let k = 1; k < pos.length; k += 2) {
-    if (!s || s.type !== "branch") return undefined;
-    s = (pos[k] === "yes" ? s.yes : s.no)[Number(pos[k + 1])];
-  }
-  return s;
+const workflowStepAt = (run: WorkflowRunRow): Step | undefined => stepAtPos((run.workflow?.definition?.steps ?? []) as Step[], run.pos);
+
+type Patch = { status?: "pending" | "paused" | "cancelled"; run_at?: string };
+
+interface Row {
+  run: { id: string; status: WorkflowRunRow["status"]; workflowId: string | null; lead: { id: string; name: string } };
+  isWhatsApp: boolean;
+  sendAt: Date;
+  held: boolean;
+  workflow: string;
+  step: string;
+  account: string;
 }
 
 const SORT_KEYS = ["lead", "account", "workflow", "step", "when", "status"] as const;
@@ -96,23 +83,23 @@ function StatusChip({ run }: { run: { status: string } }) {
 
 export default function ScheduledAutomations() {
   const navigate = useNavigate();
+  const location = useLocation();
   const qc = useQueryClient();
   const showSnack = useSnack();
   const isDesktop = useMediaQuery("(min-width:900px)");
   // "account" = just the account you're switched into; "all" = every client's
   // queue in one list, so nothing about to go out is hidden behind a switcher.
-  const [scope, setScope] = useState<"account" | "all">("account");
+  const [params, setParams] = useSearchParams();
+  const scope: "account" | "all" = params.get("view") === "all" ? "all" : "account";
+  const setScope = (v: "account" | "all") => setParams((p) => { const n = new URLSearchParams(p); if (v === "all") n.set("view", "all"); else n.delete("view"); return n; }, { replace: true });
   const [q, setQ] = useState("");
-  const [menu, setMenu] = useState<{ el: HTMLElement; run: ScheduledRun & { kind?: "workflow" } } | null>(null);
+  const [menu, setMenu] = useState<{ el: HTMLElement; run: Row["run"] } | null>(null);
   const allAccounts = scope === "all";
   const agentKey = getActiveAgentIdSync() ?? "me";
-  const runsKey = ["scheduledRuns", allAccounts ? "all" : agentKey];
   const pausedKey = ["automationsPaused", agentKey];
   const { sort, onSort } = useTableSort<SortKey>("estatekit_scheduled_sort", { k: "when", dir: "asc" }, SORT_KEYS);
 
   const { data: profile } = useQuery({ queryKey: ["myProfile"], queryFn: getMyProfile, staleTime: 5 * 60_000 });
-  const { data: automations = [] } = useAutomations();
-  const { data: steps = [] } = useAutomationSteps();
   // Only needed to name the owner of each run in the all-accounts view.
   const { data: agentProfiles = [] } = useQuery({
     queryKey: ["agentProfiles"],
@@ -124,13 +111,8 @@ export default function ScheduledAutomations() {
     const p = agentProfiles.find((a) => a.agent_id === id);
     return p?.display_name || p?.company || "Unknown account";
   };
-  const { data: runs = [], isLoading } = useQuery({
-    queryKey: runsKey,
-    queryFn: async () => listScheduledRuns(allAccounts ? null : await getActiveAgentId()),
-    refetchInterval: 30_000,
-  });
   const wfRunsKey = ["scheduledWorkflowRuns", allAccounts ? "all" : agentKey];
-  const { data: wfRuns = [] } = useQuery({
+  const { data: wfRuns = [], isLoading } = useQuery({
     queryKey: wfRunsKey,
     queryFn: async () => listScheduledWorkflowRuns(allAccounts ? null : await getActiveAgentId()),
     refetchInterval: 30_000,
@@ -143,13 +125,12 @@ export default function ScheduledAutomations() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [togglingAccount, setTogglingAccount] = useState(false);
 
-  const refresh = () => Promise.all([qc.invalidateQueries({ queryKey: runsKey }), qc.invalidateQueries({ queryKey: wfRunsKey })]);
+  const refresh = () => qc.invalidateQueries({ queryKey: wfRunsKey });
 
-  async function act(run: { id: string; kind?: "workflow" }, patch: ScheduledRunPatch, message: string, undo?: ScheduledRunPatch) {
+  async function act(run: { id: string }, patch: Patch, message: string, undo?: Patch) {
     setMenu(null);
     setBusyId(run.id);
-    // Workflow runs have no per-lead wording to change.
-    const apply = (p: ScheduledRunPatch) => (run.kind === "workflow" ? updateWorkflowRun(run.id, { status: p.status, run_at: p.run_at }) : updateScheduledRun(run.id, p));
+    const apply = (p: Patch) => updateWorkflowRun(run.id, p);
     try {
       await apply(patch);
       await refresh();
@@ -178,45 +159,23 @@ export default function ScheduledAutomations() {
     }
   }
 
-  // Everything a row shows, worked out once so sorting and search see the same values.
-  type AnyRun = ScheduledRun & { kind?: "workflow" };
-  const legacyRows = runs.map((run: AnyRun) => {
-    const automation = automations.find((a) => a.id === run.automation_id);
-    const step = steps.find((s) => s.automation_id === run.automation_id && s.step_order === run.current_step);
-    const isWhatsApp = step?.action_type === "send_whatsapp";
-    // New-lead alerts ignore quiet hours (see run-automations), so the
-    // time shown must not claim they'll wait until morning.
-    const quietHoursApply = isWhatsApp && automation?.trigger_type !== "lead_created";
-    const sendAt = effectiveSendTime(run.run_at, quietHoursApply);
-    const held = quietHoursApply && sendAt.getTime() > Math.max(Date.parse(run.run_at), Date.now()) + 60_000;
-    return {
-      run, isWhatsApp, sendAt, held,
-      workflow: automation?.name ?? "Workflow",
-      step: describeStep(step),
-      account: allAccounts ? agentName(run.lead.agent_id) : "",
-    };
-  });
-  // Workflow runs, in the same shape. A weekday summary has no lead.
-  const workflowRows = wfRuns.map((w) => {
+  // Everything a row shows, worked out once so sorting and search see the
+  // same values. A weekday summary has no lead.
+  const rows = wfRuns.map((w): Row => {
     const step = workflowStepAt(w);
     const isWhatsApp = step?.type === "whatsapp_agent";
     const def = w.workflow?.definition;
     const quietHoursApply = (isWhatsApp && def?.trigger?.kind !== "lead_created" && def?.settings?.quietHours !== false) || (step?.type === "email_lead" && !!def?.settings?.quietHours);
     const sendAt = effectiveSendTime(w.run_at, quietHoursApply);
-    const run: AnyRun = {
-      id: w.id, kind: "workflow", run_at: w.run_at, status: w.status, current_step: 0, template_override: null, automation_id: "",
-      lead: { id: w.lead?.id ?? "", name: w.lead?.name ?? "Daily summary", phone: "", stage: "", next_label: "", agent_id: w.agent_id },
-    };
     return {
-      run, isWhatsApp, sendAt,
+      run: { id: w.id, status: w.status, workflowId: w.workflow?.id ?? null, lead: { id: w.lead?.id ?? "", name: w.lead?.name ?? "Daily summary" } },
+      isWhatsApp, sendAt,
       held: quietHoursApply && sendAt.getTime() > Math.max(Date.parse(w.run_at), Date.now()) + 60_000,
       workflow: w.workflow?.name ?? "Workflow",
       step: step ? (step.type === "whatsapp_agent" ? "WhatsApp message" : step.type === "email_lead" ? "Email to the lead" : stepTitle(step)) : "Finishes the workflow",
       account: allAccounts ? agentName(w.agent_id) : "",
     };
   });
-  const rows = [...legacyRows, ...workflowRows];
-  type Row = (typeof rows)[number];
   const needle = q.trim().toLowerCase();
   const shown = sortRows(
     rows.filter((r) => !needle || `${r.run.lead.name} ${r.workflow} ${r.step} ${r.account}`.toLowerCase().includes(needle)),
@@ -240,9 +199,6 @@ export default function ScheduledAutomations() {
     <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, whiteSpace: "nowrap" }}>
       {r.isWhatsApp && <WhatsAppIcon sx={{ fontSize: 15, color: "text.secondary" }} />}
       {r.step}
-      {r.run.template_override !== null && (
-        <Tooltip title="The wording was changed for this lead only"><Chip size="small" label="Edited" variant="outlined" sx={{ height: 18, fontSize: 11, ml: 0.5 }} /></Tooltip>
-      )}
     </Box>
   );
   const menuButton = (r: Row) => (
@@ -255,6 +211,16 @@ export default function ScheduledAutomations() {
       <MoreVertIcon fontSize="small" />
     </IconButton>
   );
+
+  // Open the workflow at this lead's place; Back in the editor returns here.
+  const back: BackTo = { to: `${location.pathname}${location.search}`, label: "Scheduled" };
+  const open = (r: Row) => { if (r.run.workflowId) navigate(`${workflowPath(r.run.workflowId)}?run=${r.run.id}`, { state: { back } }); };
+  const leadName = (r: Row) =>
+    r.run.lead.id ? (
+      <Box component={RouterLink} to={`/leads/${r.run.lead.id}`} onClick={(e: React.MouseEvent) => e.stopPropagation()} sx={{ color: "inherit", textDecorationColor: tokens.line, "&:hover": { textDecorationColor: "inherit" } }}>
+        {r.run.lead.name}
+      </Box>
+    ) : r.run.lead.name;
 
   const m = menu?.run;
   const mWhatsApp = m ? rows.find((r) => r.run.id === m.id)?.isWhatsApp : false;
@@ -328,10 +294,10 @@ export default function ScheduledAutomations() {
                 <TableRow
                   key={r.run.id}
                   hover
-                  onClick={() => { if (r.run.lead.id) navigate(`/leads/${r.run.lead.id}`); }}
+                  onClick={() => open(r)}
                   sx={{ cursor: "pointer", opacity: busyId === r.run.id ? 0.5 : 1, "&:last-child td": { borderBottom: 0 }, "& td": { py: 1.25 } }}
                 >
-                  <TableCell sx={{ fontWeight: 500, fontSize: 14 }}>{r.run.lead.name}</TableCell>
+                  <TableCell sx={{ fontWeight: 500, fontSize: 14 }}>{leadName(r)}</TableCell>
                   {allAccounts && <TableCell sx={{ fontSize: 13 }}>{r.account}</TableCell>}
                   <TableCell sx={{ fontSize: 13, color: "text.secondary" }}>{r.workflow}</TableCell>
                   <TableCell sx={{ fontSize: 13 }}>{stepCell(r)}</TableCell>
@@ -346,12 +312,12 @@ export default function ScheduledAutomations() {
           shown.map((r, i) => (
             <Box
               key={r.run.id}
-              onClick={() => { if (r.run.lead.id) navigate(`/leads/${r.run.lead.id}`); }}
+              onClick={() => open(r)}
               sx={{ display: "flex", alignItems: "center", gap: 1, borderTop: i ? `1px solid ${tokens.divider}` : 0, p: "12px 6px 12px 14px", minHeight: 64, cursor: "pointer", opacity: busyId === r.run.id ? 0.5 : 1 }}
             >
               <Box sx={{ flex: 1, minWidth: 0 }}>
                 <Typography sx={{ fontWeight: 500, fontSize: 14.5 }}>
-                  {r.run.lead.name}
+                  {leadName(r)}
                   {allAccounts && <Box component="span" sx={{ fontWeight: 400, color: "text.secondary" }}> · {r.account}</Box>}
                 </Typography>
                 <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>{r.workflow}</Typography>
@@ -389,11 +355,6 @@ export default function ScheduledAutomations() {
             }}
           >
             <ListItemIcon><SendIcon fontSize="small" /></ListItemIcon>Send now
-          </MenuItem>
-        )}
-        {m && m.template_override !== null && (
-          <MenuItem onClick={() => act(m, { template_override: null }, "Back to the usual message", { template_override: m.template_override })}>
-            <ListItemIcon><UndoIcon fontSize="small" /></ListItemIcon>Use the usual message
           </MenuItem>
         )}
         {m && (

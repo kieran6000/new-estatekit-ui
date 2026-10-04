@@ -111,7 +111,7 @@ export default function App() {
             <Route path="/lead-page" element={<LeadPagePage />} />
             <Route path="/upgrade" element={<UpgradePage />} />
             <Route
-              path="/admin/automations"
+              path="/admin/automations/*"
               element={<AdminAutomationsPage />}
             />
             <Route path="/admin/clients" element={<OperatorOnly><ClientsPage /></OperatorOnly>} />
