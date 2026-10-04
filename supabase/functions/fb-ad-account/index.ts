@@ -20,16 +20,32 @@ function json(body: unknown, status = 200) {
 }
 
 /**
+ * Who's calling, read from their token. The gateway (verify_jwt) has already
+ * checked its signature and expiry, the same check the database makes.
+ * auth.getUser() also needs the login session to still exist on the auth
+ * server, so a staff member whose session ended elsewhere was refused here
+ * while the rest of the dashboard kept working.
+ */
+function userIdFrom(jwt: string): string | null {
+  try {
+    const part = jwt.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    const p = JSON.parse(atob(part + "===".slice((part.length + 3) % 4)));
+    return p.role === "authenticated" && typeof p.sub === "string" ? p.sub : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Only an operator, or the agent who owns this ad account, may read it.
- * This function runs with JWT verification off (and the public anon key would
- * pass that check anyway), so without this any caller could read any ad
+ * The gateway checks the token (verify_jwt), but the public anon key would
+ * pass that check too, so without this any caller could read any ad
  * account our Facebook tokens can see: ads, spend, balance, funding.
  */
 async function mayReadAccount(req: Request, adAccountId: string): Promise<boolean> {
   const jwt = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
   if (!jwt) return false;
-  const { data } = await supabase.auth.getUser(jwt);
-  const uid = data?.user?.id;
+  const uid = userIdFrom(jwt);
   if (!uid) return false;
   const { data: me } = await supabase
     .from("agent_profiles").select("is_operator, fb_ad_account_id").eq("agent_id", uid).maybeSingle();

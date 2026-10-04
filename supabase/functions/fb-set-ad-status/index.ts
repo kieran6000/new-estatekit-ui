@@ -24,16 +24,31 @@ function json(body: unknown, status = 200) {
 
 const digits = (s: string | null | undefined) => String(s ?? "").replace(/^act_/, "").trim();
 
+/**
+ * Who's calling, read from their token. The gateway (verify_jwt) has already
+ * checked its signature and expiry, the same check the database makes.
+ * auth.getUser() also needs the login session to still exist on the auth
+ * server, so a staff member whose session ended elsewhere was refused here
+ * while the rest of the dashboard kept working.
+ */
+function userIdFrom(jwt: string): string | null {
+  try {
+    const part = jwt.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    const p = JSON.parse(atob(part + "===".slice((part.length + 3) % 4)));
+    return p.role === "authenticated" && typeof p.sub === "string" ? p.sub : null;
+  } catch {
+    return null;
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   try {
-    // This function changes live spend on every client's ads and used to accept
-    // any caller: it runs with JWT verification off and never checked who was
-    // asking. Now the caller must be signed in, and is either an operator or
-    // the agent whose ad account the ad belongs to.
+    // This changes live spend on clients' ads: the caller must be signed in
+    // (the gateway checks the token) and be an operator or the agent whose ad
+    // account the ad belongs to.
     const jwt = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
-    const { data: userData } = jwt ? await supabase.auth.getUser(jwt) : { data: null };
-    const uid = userData?.user?.id;
+    const uid = jwt ? userIdFrom(jwt) : null;
     if (!uid) return json({ error: "Not signed in" }, 401);
     const { data: me } = await supabase
       .from("agent_profiles").select("is_operator, fb_ad_account_id").eq("agent_id", uid).maybeSingle();
