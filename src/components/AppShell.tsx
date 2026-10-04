@@ -41,7 +41,7 @@ import { useRealtimeSubscriptions } from "../hooks/useRealtime";
 import { getMyProfile } from "../api/agentProfile";
 import { listMySoldListings } from "../api/soldListings";
 import { setupProgress } from "../lib/setup";
-import { getActiveAgentIdSync, setActiveAgent, supabase } from "../api/_client";
+import { getActiveAgentIdSync, setActiveAgent } from "../api/_client";
 import { isLightColor } from "../lib/contrast";
 import AccountSwitcher from "./AccountSwitcher";
 import DevTierToggle from "./DevTierToggle";
@@ -80,21 +80,10 @@ export default function AppShell() {
   const setup = profile && sales ? setupProgress({ ...profile, salesCount: sales.length }) : null;
   const showSetup = (!!setup && !setup.complete) || pathname.startsWith("/setup");
   const initial = useMemo(() => (user?.phone || "?")[0].toUpperCase(), [user]);
-  // Staff (media buyers, admins) have no leads or forms of their own: in their
-  // own account they only need the admin tabs. Switched into a client's
-  // account, they get that client's tabs. An operator who does run forms of
-  // their own keeps the agent tabs.
-  const { data: ownForms } = useQuery({
-    queryKey: ["ownFormCount", user?.id],
-    queryFn: async () => {
-      const { count, error } = await supabase.from("lead_pages").select("id", { count: "exact", head: true }).eq("agent_id", user!.id);
-      if (error) throw new Error(error.message);
-      return count ?? 0;
-    },
-    enabled: !!user && !!isOperator && !isManagingOther,
-    staleTime: 10 * 60_000,
-  });
-  const staffMode = !!isOperator && !isManagingOther && ownForms === 0;
+  // Staff (admins, media buyers) work in clients' accounts: in their own they
+  // only need the admin tabs. Switched into an account (a client's, or the
+  // demo account for testing), they get that account's tabs.
+  const staffMode = !!isOperator && !isManagingOther;
 
 
   const sidebarBg = profile?.sidebarColor || "#111827";
