@@ -144,6 +144,115 @@ export function fieldsFor(step: "whatsapp_agent" | "email_lead", t: Trigger): re
   return step === "email_lead" ? FIELDS.email_lead : t.kind === "daily_at" ? FIELDS.daily : FIELDS.whatsapp_agent;
 }
 
+export type MessageKind = "whatsapp_agent" | "email_lead";
+
+/** What each field is, in plain words, and what it turns into (the example is
+ *  also what the previews show). Every field in FIELDS has an entry here. */
+export interface FieldInfo { label: string; example: string; group: string }
+const INFO: Record<string, FieldInfo> = {
+  first_name: { label: "First name", example: "Thandi", group: "The lead" },
+  name: { label: "Full name", example: "Thandi Mokoena", group: "The lead" },
+  phone: { label: "Phone number", example: "082 555 0199", group: "The lead" },
+  email: { label: "Email address", example: "thandi@example.com", group: "The lead" },
+  address: { label: "Property address", example: "14 Oak Avenue, Bryanston", group: "The lead" },
+  area: { label: "Their area", example: "Bryanston", group: "The lead" },
+  appointment: { label: "Appointment time", example: "Tue 7 Oct at 10:00", group: "The lead" },
+  stage: { label: "Stage", example: "No Answer", group: "The lead" },
+  next_label: { label: "Next step", example: "Retry today", group: "The lead" },
+  form: { label: "Form they filled in", example: "Home Value page", group: "Their form" },
+  answers: { label: "All their answers", example: "When are you selling?: In 3 months\nProperty address: 14 Oak Avenue, Bryanston", group: "Their form" },
+  action_link: { label: "Call-and-log link", example: "leads.estatekit.co/l/…", group: "Links" },
+  agent_name: { label: "Agent's name", example: "Megan Demo", group: "The agent" },
+  agent_phone: { label: "Agent's phone", example: "083 555 0103", group: "The agent" },
+  lead_magnet: { label: "Lead magnet box", example: "YOUR MARKETING PLAN IS READY\nHow to sell your home without losing money or time.\nOpen my marketing plan: leads.estatekit.co/plan/…", group: "Extras" },
+  recent_sales: { label: "Recent sales nearby", example: "Here's what's moved near you recently:\n- 12 Elm Road: sold for R2 150 000\nSee them all: leads.estatekit.co/sold/…", group: "Extras" },
+  whatsapp_link: { label: "WhatsApp-the-agent link", example: "leads.estatekit.co/w/…", group: "Links" },
+  plan_link: { label: "Marketing plan link", example: "leads.estatekit.co/plan/…", group: "Links" },
+  count: { label: "Leads to call today", example: "7 leads", group: "Their day" },
+  leads_word: { label: "\"lead\" or \"leads\"", example: "leads", group: "Their day" },
+  today: { label: "Today's activity", example: "Today: 3 new leads came in and you updated 5 leads.", group: "Their day" },
+  pipeline: { label: "Pipeline by stage", example: "• New Lead: 2\n• No Answer: 4\n• Contacted: 6\n• Booked: 3", group: "Their day" },
+  not_called: { label: "Leads not called yet", example: "2 leads haven't been called yet (the oldest came in 1 day ago). Call them first tomorrow.", group: "Their day" },
+};
+
+/** A field's words, for this kind of message. In a daily summary there's no
+ *  lead, so {{first_name}} is the agent's. */
+export function fieldInfo(f: string, t?: Trigger): FieldInfo {
+  if (f === "first_name" && t?.kind === "daily_at") return { label: "Agent's first name", example: "Megan", group: "Their day" };
+  return INFO[f] ?? { label: `{{${f}}}`, example: "", group: "" };
+}
+
+/** Example values for every field, as the previews fill them in. */
+export function sampleFields(t?: Trigger): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const f of Object.keys(INFO)) out[f] = fieldInfo(f, t).example;
+  return out;
+}
+
+/** What tapping a field adds. "Leads to call today" brings its own "lead"/"leads",
+ *  so nobody has to add the word that matches the number. */
+export function fieldToken(f: string): string {
+  return f === "count" ? "{{count}} {{leads_word}}" : `{{${f}}}`;
+}
+
+/** The fields a message can use, in groups, in the order to show them.
+ *  {{leads_word}} still works but isn't offered: {{count}} adds it. */
+export function fieldGroups(step: MessageKind, t: Trigger): { group: string; fields: string[] }[] {
+  const groups: { group: string; fields: string[] }[] = [];
+  for (const f of fieldsFor(step, t)) {
+    if (f === "leads_word") continue;
+    const g = fieldInfo(f, t).group;
+    const at = groups.find((x) => x.group === g);
+    if (at) at.fields.push(f); else groups.push({ group: g, fields: [f] });
+  }
+  return groups;
+}
+
+/** Fields used in a message, in order, once each. */
+export function usedFields(text: string): string[] {
+  return [...new Set([...text.matchAll(/\{\{\s*(\w+)\s*\}\}/g)].map((m) => m[1]))];
+}
+
+const distance = (a: string, b: string) => {
+  const d: number[][] = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array<number>(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++)
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[a.length][b.length];
+};
+
+/** A field this message can't use, why, and the field it was probably meant to be. */
+export interface BadField { field: string; why: string; suggest?: string }
+
+export function badFields(text: string, kind: MessageKind, t: Trigger): BadField[] {
+  const allowed = fieldsFor(kind, t);
+  const out: BadField[] = [];
+  for (const f of usedFields(text)) {
+    if (allowed.includes(f)) continue;
+    const known = f in INFO;
+    const label = known ? `"${fieldInfo(f, t).label}"` : `{{${f}}}`;
+    let why: string;
+    if (!known) why = `${label} isn't a field.`;
+    else if (f === "action_link" && kind === "email_lead") why = `${label} is the agent's call link. Don't send it to the lead.`;
+    else if (t.kind === "daily_at" && kind === "whatsapp_agent") why = `${label} can't go in a daily summary: it goes to the agent about their whole day, not about one lead.`;
+    else why = `${label} only works in ${kind === "email_lead" ? "a WhatsApp to the agent" : "an email to the lead"}, not here.`;
+    const close = known ? undefined : allowed.find((x) => distance(x, f.toLowerCase()) <= 2);
+    out.push({ field: f, why: close ? `${why} Did you mean "${fieldInfo(close, t).label}"?` : why, suggest: close });
+  }
+  return out;
+}
+
+/** The message with a field swapped for another, or taken out (tidying the gap it leaves). */
+export function replaceField(text: string, field: string, to?: string): string {
+  const token = `\\{\\{\\s*${field}\\s*\\}\\}`;
+  if (to) return text.replace(new RegExp(token, "g"), `{{${to}}}`);
+  return text
+    .replace(new RegExp(`[ \\t]*${token}`, "g"), "")
+    .replace(/[ \t]+$/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 // ── Creating ─────────────────────────────────────────────────────────────
 
 let seq = 0;
@@ -380,18 +489,8 @@ export function allowedSteps(t: Trigger): StepType[] {
 /** Every problem, keyed by what it's on: a step id, "trigger", "filters" or "workflow". */
 export type Problems = Record<string, string[]>;
 
-const FIELD_RE = /\{\{\s*(\w+)\s*\}\}/g;
-
-function fieldProblems(text: string, kind: "whatsapp_agent" | "email_lead", t: Trigger): string[] {
-  const out: string[] = [];
-  const allowed = fieldsFor(kind, t);
-  for (const [, f] of text.matchAll(FIELD_RE)) {
-    if (allowed.includes(f)) continue;
-    if (f === "action_link" && kind === "email_lead") out.push("{{action_link}} is the agent's call link. Don't send it to the lead.");
-    else if (t.kind === "daily_at" && kind === "whatsapp_agent") out.push(`{{${f}}} doesn't work in a daily summary: it isn't about one lead. Use {{first_name}}, {{count}}, {{leads_word}}, {{today}}, {{pipeline}} or {{not_called}}.`);
-    else out.push(`{{${f}}} isn't a field. Use the field buttons below the box.`);
-  }
-  return [...new Set(out)];
+function fieldProblems(text: string, kind: MessageKind, t: Trigger): string[] {
+  return badFields(text, kind, t).map((b) => `${b.why} Tap ${b.suggest ? "Fix" : "Remove"} under the message.`);
 }
 
 export function validate(wf: Workflow): Problems {

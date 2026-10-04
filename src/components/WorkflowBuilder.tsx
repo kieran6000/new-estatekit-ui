@@ -29,6 +29,7 @@ import {
   useMediaQuery,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
+import CheckIcon from "@mui/icons-material/Check";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
@@ -73,10 +74,10 @@ import LeadTag from "./LeadTag";
 import { PlainHead, SortHead, sortRows, useTableSort } from "./SortHead";
 import {
   BRANCH_CHECKS, EXITS, FILTER_FIELDS, KNOWN_TAGS, PIPELINES, SOURCES, STAGES, STEP_TYPES, TEMPLATES, TRIGGERS,
-  allowedSteps, branchLabel, cloneSteps, countSteps, defaultBranchValue, fieldsFor, filterSummary, findStep,
+  allowedSteps, badFields, branchLabel, cloneSteps, countSteps, defaultBranchValue, fieldGroups, fieldInfo, fieldToken, filterSummary, findStep,
   insertStep, locate, moveStep, newId, newStep, ordinal, stepAtPos, rememberTags, tagsIn, problemCount, removeStep, stepSummary, stepTitle, timeLabel, timeline,
-  triggerOfKind, triggerSummary, unitLabel, updateStep, validate, waitMinutes,
-  type BranchCheck, type Exit, type Filter, type Path, type Problems, type Settings, type Step, type StepType, type Trigger,
+  replaceField, sampleFields, triggerOfKind, triggerSummary, unitLabel, updateStep, usedFields, validate, waitMinutes,
+  type BranchCheck, type Exit, type Filter, type MessageKind, type Path, type Problems, type Settings, type Step, type StepType, type Trigger,
   type Unit, type Workflow,
 } from "../lib/workflow";
 
@@ -99,17 +100,13 @@ const STEP_COLOR: Record<StepType, string> = {
 };
 
 const SAMPLE_LEAD = { id: "sample", name: "Thandi Mokoena", phone: "082 555 0199", stage: "No Answer", next_label: "Retry today" };
-const SAMPLE_FIELDS: Record<string, string> = {
-  first_name: "Thandi", name: "Thandi Mokoena", area: "Bryanston", address: "14 Oak Avenue, Bryanston", agent_name: "Megan Demo",
-  agent_phone: "083 555 0103", plan_link: "leads.estatekit.co/plan/…", stage: "No Answer", next_label: "Retry today",
-  count: "7", leads_word: "leads", phone: "082 555 0199", email: "thandi@example.com", form: "Home Value page",
-  answers: "When are you selling?: In 3 months\nProperty address: 14 Oak Avenue, Bryanston",
-  appointment: "Tue 7 Oct at 10:00",
-  lead_magnet: "YOUR MARKETING PLAN IS READY\nHow to sell your home without losing money or time.\nOpen my marketing plan: leads.estatekit.co/plan/…",
-  whatsapp_link: "leads.estatekit.co/w/…",
-  recent_sales: "Here's what's moved near you recently:\n- 12 Elm Road: sold for R2 150 000\nSee them all: leads.estatekit.co/sold/…",
+// Examples come from lib/workflow (fieldInfo), so the field buttons, the
+// previews and the help all say the same thing.
+const SAMPLE_FIELDS = sampleFields();
+const fill = (t: string, trigger?: Trigger) => {
+  const f = trigger ? sampleFields(trigger) : SAMPLE_FIELDS;
+  return t.replace(/\{\{\s*(\w+)\s*\}\}/g, (m, k: string) => f[k] ?? m);
 };
-const fill = (t: string) => t.replace(/\{\{\s*(\w+)\s*\}\}/g, (m, k: string) => SAMPLE_FIELDS[k] ?? (k === "action_link" ? "leads.estatekit.co/l/…" : m));
 
 // ── Pages: list and editor, each at its own address (lib/automationsPaths) ──
 
@@ -1570,8 +1567,11 @@ function ExitsEditor({ exits, onChange }: { exits: Exit[]; onChange: (e: Exit[])
   );
 }
 
-/** A message box whose field buttons insert at the cursor, not at the end. */
-function MessageField({ label, value, onChange, fields, minRows }: { label: string; value: string; onChange: (v: string) => void; fields: readonly string[]; minRows: number }) {
+/** A message box with the details it can fill in listed under it, in plain
+ *  words with what each turns into. A detail already in the message is ticked;
+ *  one that can't go in this message gets a one-tap Remove (or Fix, when it
+ *  looks like a typo of one that can). Tapping a detail adds it at the cursor. */
+function MessageField({ label, value, onChange, kind, trigger, minRows }: { label: string; value: string; onChange: (v: string) => void; kind: MessageKind; trigger: Trigger; minRows: number }) {
   const ref = useRef<HTMLTextAreaElement | null>(null);
   const pending = useRef<number | null>(null);
   useEffect(() => {
@@ -1582,32 +1582,78 @@ function MessageField({ label, value, onChange, fields, minRows }: { label: stri
     ref.current.setSelectionRange(at, at);
   }, [value]);
   const insert = (f: string) => {
-    const token = `{{${f}}}`;
+    const token = fieldToken(f);
     const el = ref.current;
     const start = el?.selectionStart ?? value.length;
     const end = el?.selectionEnd ?? value.length;
-    pending.current = start + token.length;
-    onChange(value.slice(0, start) + token + value.slice(end));
+    // Keep words apart: "Hi{{first_name}}" would read "HiThandi".
+    const before = start > 0 && !/\s/.test(value[start - 1]) ? " " : "";
+    pending.current = start + before.length + token.length;
+    onChange(value.slice(0, start) + before + token + value.slice(end));
   };
+  const used = new Set(usedFields(value));
+  const bad = badFields(value, kind, trigger);
+  const daily = trigger.kind === "daily_at";
   return (
     <>
       <TextField size="small" multiline minRows={minRows} label={label} value={value} onChange={(e) => onChange(e.target.value)} inputRef={ref} />
-      <Box sx={{ mt: -1 }}>
-        <Typography sx={{ fontSize: 12, color: "text.secondary", mb: 0.5 }}>Insert a field where the cursor is</Typography>
-        <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap" }}>
-          {fields.map((f) => (
-            <Chip
-              key={f}
-              size="small"
-              variant="outlined"
-              label={`{{${f}}}`}
-              // Keep the cursor in the box: a click would otherwise blur it first.
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => insert(f)}
-              sx={{ fontSize: 11, height: 24 }}
-            />
+      {bad.length > 0 && (
+        <Box sx={{ mt: -1, display: "flex", flexDirection: "column", gap: 0.75 }}>
+          {bad.map((b) => (
+            <Box key={b.field} sx={{ display: "flex", alignItems: "center", gap: 1, p: "8px 10px", borderRadius: "6px", bgcolor: tokens.redTint, border: `1px solid ${tokens.redBorder}` }}>
+              <ErrorOutlineIcon sx={{ fontSize: 18, color: tokens.red, flex: "none" }} />
+              <Typography sx={{ flex: 1, fontSize: 13, minWidth: 0 }}>{b.why}</Typography>
+              <Button size="small" variant="contained" color={b.suggest ? "primary" : "error"} sx={{ flex: "none" }}
+                onClick={() => onChange(replaceField(value, b.field, b.suggest))}>
+                {b.suggest ? "Fix" : "Remove"}
+              </Button>
+            </Box>
           ))}
         </Box>
+      )}
+      <Box sx={{ mt: bad.length ? 0 : -1 }}>
+        <Typography sx={{ fontSize: 13, fontWeight: 600 }}>Add a detail</Typography>
+        <Typography sx={{ fontSize: 12.5, color: "text.secondary", mb: 1 }}>
+          {daily ? "Filled in for each agent when the summary goes out." : kind === "email_lead" ? "Filled in for each lead when the email goes out." : "Filled in for each lead when the message goes out."}
+          {" "}Tap one to add it where your cursor is. In the box it shows as {"{{…}}"}; the preview shows what's actually sent.
+        </Typography>
+        {fieldGroups(kind, trigger).map(({ group, fields }) => (
+          <Box key={group} sx={{ mb: 1 }}>
+            <Typography sx={{ fontSize: 11.5, fontWeight: 600, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.05em", mb: 0.5 }}>{group}</Typography>
+            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr 1fr", sm: "repeat(auto-fill, minmax(170px, 1fr))" }, gap: 0.75 }}>
+              {fields.map((f) => {
+                const info = fieldInfo(f, trigger);
+                const isIn = used.has(f);
+                return (
+                  <Box
+                    key={f}
+                    component="button"
+                    type="button"
+                    // Keep the cursor in the box: a tap would otherwise blur it first.
+                    onMouseDown={(e: React.MouseEvent) => e.preventDefault()}
+                    onClick={() => insert(f)}
+                    aria-label={`Add ${info.label}${isIn ? " (already in the message)" : ""}`}
+                    sx={{
+                      display: "flex", alignItems: "flex-start", gap: 0.75, textAlign: "left", font: "inherit", color: "inherit", cursor: "pointer",
+                      minHeight: 44, minWidth: 0, p: "6px 8px", borderRadius: "6px",
+                      border: `1px solid ${isIn ? tokens.greenBorder : tokens.divider}`,
+                      bgcolor: isIn ? tokens.greenTint : "background.paper",
+                      "&:hover, &:focus-visible": { borderColor: "primary.main", outline: "none" },
+                    }}
+                  >
+                    {isIn ? <CheckIcon sx={{ fontSize: 16, color: tokens.green, mt: "1px", flex: "none" }} /> : <AddIcon sx={{ fontSize: 16, color: "text.secondary", mt: "1px", flex: "none" }} />}
+                    <Box sx={{ minWidth: 0 }}>
+                      <Box sx={{ fontSize: 13, fontWeight: 600, lineHeight: 1.3 }}>{info.label}</Box>
+                      <Box sx={{ fontSize: 11.5, color: "text.secondary", lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {isIn ? "In the message" : `e.g. ${info.example.split("\n")[0]}`}
+                      </Box>
+                    </Box>
+                  </Box>
+                );
+              })}
+            </Box>
+          </Box>
+        ))}
       </Box>
     </>
   );
@@ -1632,15 +1678,18 @@ function StepEditor({ step, trigger, onChange }: { step: Step; trigger: Trigger;
     case "whatsapp_agent":
       return (
         <>
-          <MessageField label="Message to the agent" value={step.text} onChange={(text) => onChange({ text }, "text")} fields={fieldsFor("whatsapp_agent", trigger)} minRows={4} />
-          <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>Sent from the EstateKit WhatsApp number to the agent's own. Put {"{{action_link}}"} in so they can call and log it in one tap.</Typography>
+          <MessageField label="Message to the agent" value={step.text} onChange={(text) => onChange({ text }, "text")} kind="whatsapp_agent" trigger={trigger} minRows={4} />
+          <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
+            Sent from the EstateKit WhatsApp number to the agent's own.
+            {trigger.kind === "daily_at" ? " It's about their whole day, not one lead." : " Add the Call-and-log link so they can call the lead and log it in one tap."}
+          </Typography>
         </>
       );
     case "email_lead":
       return (
         <>
           <TextField size="small" label="Subject" value={step.subject} onChange={(e) => onChange({ subject: e.target.value }, "subject")} />
-          <MessageField label="Email" value={step.body} onChange={(body) => onChange({ body }, "body")} fields={fieldsFor("email_lead", trigger)} minRows={7} />
+          <MessageField label="Email" value={step.body} onChange={(body) => onChange({ body }, "body")} kind="email_lead" trigger={trigger} minRows={7} />
           <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>From the agent's name; replies go to the agent's email. Skipped for leads without an email address. Opens are tracked.</Typography>
         </>
       );
@@ -1741,15 +1790,15 @@ function Arrow({ label }: { label: string }) {
 const when = (d: Date) => d.toLocaleString("en-ZA", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
 /** How the email lands in the lead's inbox, filled in for a sample lead. */
-function EmailPreview({ subject, body }: { subject: string; body: string }) {
+function EmailPreview({ subject, body, trigger }: { subject: string; body: string; trigger: Trigger }) {
   return (
     <Box sx={{ border: `1px solid ${tokens.divider}`, borderRadius: "8px", overflow: "hidden", fontSize: 13 }}>
       <Box sx={{ bgcolor: tokens.surface2, px: 1.5, py: 1, borderBottom: `1px solid ${tokens.divider}` }}>
         <Box><Box component="span" sx={{ color: "text.secondary" }}>From:</Box> Megan Demo</Box>
         <Box><Box component="span" sx={{ color: "text.secondary" }}>To:</Box> thandi@example.com</Box>
-        <Box sx={{ fontWeight: 600, mt: 0.5 }}>{fill(subject) || "(no subject)"}</Box>
+        <Box sx={{ fontWeight: 600, mt: 0.5 }}>{fill(subject, trigger) || "(no subject)"}</Box>
       </Box>
-      <Box sx={{ p: 1.5, whiteSpace: "pre-wrap", lineHeight: 1.55 }}>{fill(body) || <Box component="span" sx={{ color: "text.disabled" }}>Nothing written yet</Box>}</Box>
+      <Box sx={{ p: 1.5, whiteSpace: "pre-wrap", lineHeight: 1.55 }}>{fill(body, trigger) || <Box component="span" sx={{ color: "text.disabled" }}>Nothing written yet</Box>}</Box>
     </Box>
   );
 }
@@ -1804,7 +1853,7 @@ function NodePreview({ sel, wf, step }: { sel: Selection; wf: Workflow; step: St
         body = (
           <>
             <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>Arrives on the agent's WhatsApp:</Typography>
-            <WhatsAppPreview lead={SAMPLE_LEAD} text={step.text || " "} sampleFields={SAMPLE_FIELDS} />
+            <WhatsAppPreview lead={SAMPLE_LEAD} text={step.text || " "} sampleFields={sampleFields(wf.trigger)} />
           </>
         );
         break;
@@ -1812,7 +1861,7 @@ function NodePreview({ sel, wf, step }: { sel: Selection; wf: Workflow; step: St
         body = (
           <>
             <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>Lands in {first}'s inbox:</Typography>
-            <EmailPreview subject={step.subject} body={step.body} />
+            <EmailPreview subject={step.subject} body={step.body} trigger={wf.trigger} />
           </>
         );
         break;

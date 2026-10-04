@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import standard from "../../scripts/e2e-standard-workflows.json";
 import {
   TEMPLATES, TRIGGERS, STEP_TYPES, BRANCH_CHECKS, FILTER_FIELDS,
-  allowedSteps, blankWorkflow, cloneSteps, countSteps, defaultBranchValue, findStep,
+  FIELDS, allowedSteps, badFields, blankWorkflow, fieldGroups, fieldInfo, fieldToken, fieldsFor, replaceField, usedFields, cloneSteps, countSteps, defaultBranchValue, findStep,
   insertStep, locate, moveStep, newStep, ordinal, problemCount, removeStep, stepAtPos, stepSummary,
   timeLabel, timeline, triggerOfKind, triggerSummary, unitLabel, updateStep, validate,
-  type Branch, type Path, type Step, type Workflow,
+  type Branch, type Path, type Step, type Trigger, type Workflow,
 } from "./workflow";
 
 const wa = (text = "Call {{first_name}}: {{action_link}}"): Step => ({ ...newStep("whatsapp_agent"), text } as Step);
@@ -188,10 +188,32 @@ describe("checks", () => {
     // The lead's details and every form answer can go in a WhatsApp to the agent.
     expect(validate(wf([wa("{{phone}} {{email}} {{address}} {{form}}\n{{answers}}")]))).toEqual({});
     const w = { ...email(), body: "Answers: {{answers}}" } as Step;
-    expect(validate(wf([w]))[w.id]?.join()).toMatch(/isn't a field/);
+    expect(validate(wf([w]))[w.id]?.join()).toMatch(/only works in a WhatsApp to the agent/);
     const u = wa("Hi {{frist_name}}");
-    expect(validate(wf([u]))[u.id]?.join()).toMatch(/isn't a field/);
+    expect(validate(wf([u]))[u.id]?.join()).toMatch(/isn't a field.*Did you mean "First name"/);
     expect(validate(wf([wa("Hi {{ first_name }}")]))).toEqual({});
+  });
+
+  it("every field has plain words and an example, and the fixes work", () => {
+    const t: Trigger = { kind: "lead_created" };
+    const daily: Trigger = { kind: "daily_at", time: "17:00" };
+    for (const f of new Set(Object.values(FIELDS).flat())) {
+      expect(fieldInfo(f).label, f).not.toMatch(/\{\{/);
+      expect(fieldInfo(f).example, f).not.toBe("");
+    }
+    expect(fieldInfo("first_name", daily).label).toBe("Agent's first name");
+    for (const kind of ["whatsapp_agent", "email_lead"] as const) for (const tr of [t, daily]) {
+      if (kind === "email_lead" && tr === daily) continue;
+      expect(new Set(fieldGroups(kind, tr).flatMap((g) => g.fields))).toEqual(new Set(fieldsFor(kind, tr).filter((f) => f !== "leads_word")));
+    }
+    expect(badFields("Hi {{frist_name}}", "whatsapp_agent", t)).toEqual([expect.objectContaining({ field: "frist_name", suggest: "first_name" })]);
+    expect(replaceField("Hi {{frist_name}}, call", "frist_name", "first_name")).toBe("Hi {{first_name}}, call");
+    expect(replaceField("Hi {{name}}\n\n{{today}}\n\nBye", "name")).toBe("Hi\n\n{{today}}\n\nBye");
+    expect(replaceField("A\n\n{{name}}\n\nB", "name")).toBe("A\n\nB");
+    expect(usedFields("{{a}} {{ b }} {{a}}")).toEqual(["a", "b"]);
+    // A typo in a daily summary still gets its fix.
+    expect(badFields("{{frist_name}}", "whatsapp_agent", daily)[0].suggest).toBe("first_name");
+    expect(validate(wf([wa(`You have ${fieldToken("count")}`)], { trigger: daily }))).toEqual({});
   });
 
   it("'opened the last email' needs an email before it on every path", () => {
