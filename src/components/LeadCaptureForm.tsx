@@ -6,7 +6,7 @@ import WhatsAppIcon from "@mui/icons-material/WhatsApp";
 import EmailOutlinedIcon from "@mui/icons-material/EmailOutlined";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
-import CallIcon from "@mui/icons-material/Call";
+
 import PlaceIcon from "@mui/icons-material/Place";
 import { LEAD_FORM_TEMPLATE } from "../lib/leadFormTemplate";
 import { readableOn } from "../lib/contrast";
@@ -388,7 +388,7 @@ function ThankYouScreen({ page, name }: { page: LeadPage; name: string }) {
             position: "absolute",
             inset: 0,
             borderRadius: "50%",
-            border: `2px solid ${page.accentColor}`,
+            border: "2px solid #25D366",
             opacity: 0.6,
             animation: "ek-call-ring 1.8s cubic-bezier(0,0,0.2,1) infinite",
             "@keyframes ek-call-ring": {
@@ -415,13 +415,13 @@ function ThankYouScreen({ page, name }: { page: LeadPage; name: string }) {
               width: size,
               height: size,
               borderRadius: "50%",
-              bgcolor: page.accentColor,
+              bgcolor: "#25D366",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
             }}
           >
-            <CallIcon sx={{ fontSize: 40, color: readableOn(page.accentColor) }} />
+            <WhatsAppIcon sx={{ fontSize: 48, color: "#fff" }} />
           </Box>
         )}
         {hasPhoto && (
@@ -433,7 +433,7 @@ function ThankYouScreen({ page, name }: { page: LeadPage; name: string }) {
               width: 28,
               height: 28,
               borderRadius: "50%",
-              bgcolor: "#2e7d32",
+              bgcolor: "#25D366",
               color: "#fff",
               display: "flex",
               alignItems: "center",
@@ -441,7 +441,7 @@ function ThankYouScreen({ page, name }: { page: LeadPage; name: string }) {
               boxShadow: "0 0 0 3px #fff",
             }}
           >
-            <CallIcon sx={{ fontSize: 14 }} />
+            <WhatsAppIcon sx={{ fontSize: 16 }} />
           </Box>
         )}
       </Box>

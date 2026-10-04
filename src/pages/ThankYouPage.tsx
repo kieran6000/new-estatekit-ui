@@ -2,10 +2,11 @@ import { useEffect } from "react";
 import { useLocation, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Box, Skeleton, Typography } from "@mui/material";
-import CallIcon from "@mui/icons-material/Call";
 import WhatsAppIcon from "@mui/icons-material/WhatsApp";
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutlined";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
+import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
+import AutoStoriesOutlinedIcon from "@mui/icons-material/AutoStoriesOutlined";
 import { tokens } from "../theme";
 import { getLeadPageBySlug } from "../api/leadPages";
 import { listSoldListingsForAgent } from "../api/soldListings";
@@ -16,7 +17,7 @@ import { initPixel } from "../lib/fbPixel";
 import { fillMessage } from "../lib/format";
 import { readableOn } from "../lib/contrast";
 import { isPlanToken, recallPlanToken } from "../lib/planToken";
-import { resolveMagnet } from "../lib/leadMagnet";
+import { resolveMagnet, type Magnet } from "../lib/leadMagnet";
 import type { LeadPage } from "../types";
 
 export default function ThankYouPage() {
@@ -55,6 +56,11 @@ export default function ThankYouPage() {
 
   if (!page) return <GenericThankYou />;
 
+  // The lead magnet, when this form gives one, is the page's one call to
+  // action: a second button (WhatsApp us) beside it splits the tap.
+  const magnet = planToken ? resolveMagnet(page, "seller") : null;
+  const gift = magnet && magnet.kind !== "none" ? magnet : null;
+
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: tokens.bg }}>
       <Box sx={{ bgcolor: page.accentColor, color: "#fff", p: "14px 20px", textAlign: "center" }}>
@@ -65,10 +71,10 @@ export default function ThankYouPage() {
         <Box sx={{ width: "100%", maxWidth: 480, mt: 2.5 }}>
           <Box sx={{ border: "1px solid #e0e0e0", borderRadius: "8px", overflow: "hidden", bgcolor: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,.08)" }}>
             <Box sx={{ p: "40px 24px", minHeight: 260, display: "flex", flexDirection: "column" }}>
-              <BrandedThankYou page={page} name={name} />
+              <BrandedThankYou page={page} name={name} showWhatsApp={!gift} />
+              {gift && planToken && <MagnetCta page={page} magnet={gift} token={planToken} />}
             </Box>
           </Box>
-          {planToken && <PlanCard page={page} token={planToken} />}
           <SoldListingsSection agentId={page.agentId} />
           <PoweredByEstateKit refSlug={page.slug} placement="thank_you" />
         </Box>
@@ -77,18 +83,29 @@ export default function ThankYouPage() {
   );
 }
 
-/** The form's lead magnet: the same headline, line and link as the box in
- *  the confirmation email (lib/leadMagnet.ts). Only shown when the lead page
- *  made a code for it, which it does only when the form has one. */
-function PlanCard({ page, token }: { page: LeadPage; token: string }) {
-  // The page only makes a code when there's a lead magnet, so "not set" here
-  // means the automatic one: the marketing plan.
-  const m = resolveMagnet(page, "seller");
-  if (m.kind === "none") return null;
+/** The form's lead magnet as the page's call to action: the same headline,
+ *  line and link as the box in the confirmation email (lib/leadMagnet.ts).
+ *  Only shown when the lead page made a code for it, which it does only when
+ *  the form has one. */
+function MagnetCta({ page, magnet, token }: { page: LeadPage; magnet: Magnet; token: string }) {
+  const Icon = magnet.kind === "plan" ? AutoStoriesOutlinedIcon : DescriptionOutlinedIcon;
   return (
-    <Box sx={{ mt: 2, border: "1px solid #e0e0e0", borderLeft: `4px solid ${page.accentColor}`, borderRadius: "8px", bgcolor: "#fff", p: "18px 20px" }}>
-      <Typography sx={{ fontSize: 17, fontWeight: 700 }}>{m.title}</Typography>
-      {m.text && <Typography sx={{ fontSize: 14, color: "text.secondary", mt: 0.5 }}>{m.text}</Typography>}
+    <Box sx={{ mt: 3.5, pt: 3, borderTop: "1px solid #eee", textAlign: "left" }}>
+      <Typography sx={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: page.accentColor, textAlign: "center", mb: 1.5 }}>
+        While you wait
+      </Typography>
+      <Box sx={{ display: "flex", gap: 2, alignItems: "center", p: 2, borderRadius: "12px", bgcolor: `color-mix(in srgb, ${page.accentColor} 7%, #fff)`, border: `1px solid color-mix(in srgb, ${page.accentColor} 22%, #fff)` }}>
+        {/* A little cover, so it reads as something to keep, not a link. */}
+        <Box sx={{ position: "relative", width: 58, height: 74, flex: "none", borderRadius: "4px 8px 8px 4px", bgcolor: page.accentColor, color: readableOn(page.accentColor), display: "grid", placeItems: "center", boxShadow: "0 6px 14px rgba(0,0,0,.18)", transform: "rotate(-4deg)" }}>
+          <Box sx={{ position: "absolute", left: 6, top: 0, bottom: 0, width: 2, bgcolor: "rgba(255,255,255,.35)" }} />
+          <Icon sx={{ fontSize: 28 }} />
+        </Box>
+        <Box sx={{ minWidth: 0 }}>
+          <Typography sx={{ fontSize: 17, fontWeight: 800, lineHeight: 1.25, color: "#1d2327" }}>{magnet.title}</Typography>
+          {magnet.text && <Typography sx={{ fontSize: 14, color: "#5b6670", mt: 0.5, lineHeight: 1.45 }}>{magnet.text}</Typography>}
+          <Typography sx={{ fontSize: 12.5, fontWeight: 600, color: "#2e7d32", mt: 0.75 }}>Free · made for you</Typography>
+        </Box>
+      </Box>
       <Box
         component="a"
         href={`/plan/${token}?from=thanks`}
@@ -96,11 +113,15 @@ function PlanCard({ page, token }: { page: LeadPage; token: string }) {
         rel="noopener"
         sx={{
           display: "flex", alignItems: "center", justifyContent: "center", gap: 1, mt: 2,
-          bgcolor: page.accentColor, color: readableOn(page.accentColor), borderRadius: "10px", p: "13px 18px",
-          fontSize: 16, fontWeight: 700, textDecoration: "none", "&:hover": { filter: "brightness(0.92)" },
+          bgcolor: page.accentColor, color: readableOn(page.accentColor), borderRadius: "12px", p: "16px 18px", minHeight: 56,
+          fontSize: 17, fontWeight: 800, textDecoration: "none", boxShadow: `0 6px 16px color-mix(in srgb, ${page.accentColor} 35%, transparent)`,
+          "&:hover": { filter: "brightness(0.93)" },
+          "& svg": { animation: "ek-nudge 1.6s ease-in-out infinite" },
+          "@keyframes ek-nudge": { "0%, 100%": { transform: "translateX(0)" }, "50%": { transform: "translateX(4px)" } },
+          "@media (prefers-reduced-motion: reduce)": { "& svg": { animation: "none" } },
         }}
       >
-        {m.button} <ArrowForwardIcon fontSize="small" />
+        {magnet.button} <ArrowForwardIcon />
       </Box>
     </Box>
   );
@@ -120,7 +141,9 @@ function SoldListingsSection({ agentId }: { agentId: string }) {
   );
 }
 
-function BrandedThankYou({ page, name }: { page: LeadPage; name: string }) {
+const WA_GREEN = "#25D366";
+
+function BrandedThankYou({ page, name, showWhatsApp }: { page: LeadPage; name: string; showWhatsApp: boolean }) {
   const hasPhoto = !!page.profilePhotoDataUrl;
   const size = hasPhoto ? 76 : 96;
   return (
@@ -131,7 +154,8 @@ function BrandedThankYou({ page, name }: { page: LeadPage; name: string }) {
             position: "absolute",
             inset: 0,
             borderRadius: "50%",
-            border: `2px solid ${page.accentColor}`,
+            // WhatsApp green: plants that the next thing is a WhatsApp from the agent.
+            border: `2px solid ${WA_GREEN}`,
             opacity: 0.6,
             animation: "ek-call-ring 1.8s cubic-bezier(0,0,0.2,1) infinite",
             "@keyframes ek-call-ring": {
@@ -150,13 +174,13 @@ function BrandedThankYou({ page, name }: { page: LeadPage; name: string }) {
               width: size,
               height: size,
               borderRadius: "50%",
-              bgcolor: page.accentColor,
+              bgcolor: WA_GREEN,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
             }}
           >
-            <CallIcon sx={{ fontSize: 40, color: "#fff" }} />
+            <WhatsAppIcon sx={{ fontSize: 48, color: "#fff" }} />
           </Box>
         )}
         {hasPhoto && (
@@ -168,7 +192,7 @@ function BrandedThankYou({ page, name }: { page: LeadPage; name: string }) {
               width: 28,
               height: 28,
               borderRadius: "50%",
-              bgcolor: "#2e7d32",
+              bgcolor: WA_GREEN,
               color: "#fff",
               display: "flex",
               alignItems: "center",
@@ -176,14 +200,14 @@ function BrandedThankYou({ page, name }: { page: LeadPage; name: string }) {
               boxShadow: "0 0 0 3px #fff",
             }}
           >
-            <CallIcon sx={{ fontSize: 14 }} />
+            <WhatsAppIcon sx={{ fontSize: 16 }} />
           </Box>
         )}
       </Box>
       <Typography sx={{ fontSize: 20, fontWeight: 700 }}>{fillMessage(page.thankYouHeadline, name, page.agentName)}</Typography>
       <Typography sx={{ fontSize: 14, color: "text.secondary", mt: 1 }}>{fillMessage(page.thankYouSubtext, name, page.agentName)}</Typography>
 
-      {(() => {
+      {showWhatsApp && (() => {
         const digits = (page.phone || "").replace(/\D/g, "");
         if (!digits) return null;
         const msg = `Hi${page.agentName ? " " + page.agentName : ""}, I just filled in your form and I'd love to hear more.`;
@@ -195,7 +219,7 @@ function BrandedThankYou({ page, name }: { page: LeadPage; name: string }) {
             rel="noopener"
             sx={{
               display: "flex", alignItems: "center", justifyContent: "center", gap: 1,
-              mt: 3, mx: "auto", maxWidth: 340, bgcolor: "#25D366", color: "#fff",
+              mt: 3, mx: "auto", maxWidth: 340, bgcolor: WA_GREEN, color: "#fff",
               borderRadius: "10px", p: "14px 18px", fontSize: 16, fontWeight: 700,
               textDecoration: "none", "&:hover": { bgcolor: "#1FB457" },
             }}
