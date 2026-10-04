@@ -42,6 +42,14 @@ const SOURCE_ICON: Record<string, SvgIconComponent> = {
   website: LanguageIcon,
 };
 
+/** What the Conversions API outcome names mean, in the agent's words. */
+const CAPI_WORDS: Record<string, string> = {
+  Schedule: "booked",
+  MandateSigned: "signed",
+  Purchase: "commission paid",
+  "Commission Received": "commission paid",
+};
+
 function describe(e: LeadEvent): string {
   switch (e.event_type) {
     case "created":
@@ -97,6 +105,8 @@ function describe(e: LeadEvent): string {
       return `Tagged ${e.to_value ?? ""}`;
     case "email_unsubscribed":
       return "Unsubscribed from emails";
+    case "capi_reported":
+      return `Told Facebook: ${CAPI_WORDS[e.to_value ?? ""] ?? e.to_value ?? ""}`;
     default:
       return e.event_type;
   }
@@ -171,7 +181,7 @@ export default function LeadHistory({ leadId }: { leadId: string }) {
         // Plan opens already say everything in the title.
         // Workflow rows name the workflow; the title already says what happened.
         const via = isWorkflow ? (e.event_type === "workflow_email_opened" ? "" : e.from_value ?? "") : isPlan ? "" : e.event_type === "whatsapp_sent" || isEmail ? e.to_value ?? "" : SOURCE_LABEL[e.source] ?? "";
-        const SourceIcon = e.event_type === "whatsapp_sent" ? WhatsAppIcon : isEmail ? MailOutlineIcon : isPlan ? LanguageIcon : SOURCE_ICON[e.source] ?? HistoryIcon;
+        const SourceIcon = e.event_type === "capi_reported" ? FacebookIcon : e.event_type === "whatsapp_sent" ? WhatsAppIcon : isEmail ? MailOutlineIcon : isPlan ? LanguageIcon : SOURCE_ICON[e.source] ?? HistoryIcon;
 
         return (
           <Box

@@ -12,6 +12,17 @@ import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 // Weak leads are NOT reported. Reporting them teaches the pixel to find more of
 // the same, which is the opposite of what the agent wants — see the quality
 // grading in the form builder.
+//
+// Outcomes (Oct 2026): with `outcome`, it reports what happened to a lead
+// later, so Meta can learn which leads turn into business, not just which
+// fill in a form. Called by the database (leads_report_outcome trigger) when
+// a lead is booked, signs, or the commission comes in, and only for a lead
+// whose form has a dataset with backup tracking switched on.
+//   website lead:     Schedule / MandateSigned / Purchase (value = commission)
+//   instant-form lead: Meta's CRM format ("conversion leads"): the stage name,
+//                     matched on Facebook's lead id. Also "Lead" when it arrives.
+// The lead is re-read here and the outcome checked against it, so a call
+// can't report something that didn't happen; each outcome is sent once.
 
 const GRAPH = "https://graph.facebook.com/v21.0";
 
@@ -79,6 +90,7 @@ Deno.serve(async (req) => {
     eventId?: string;
     eventName?: string;
     sourceUrl?: string;
+    outcome?: Outcome;
   };
   try {
     body = await req.json();
@@ -86,6 +98,7 @@ Deno.serve(async (req) => {
     return json({ error: "invalid json" }, 400);
   }
 
+  if (body.leadId && body.outcome) return await reportOutcome(supabase, body.leadId, body.outcome);
   if (!body.leadId || !body.pixelId) return json({ error: "leadId and pixelId required" }, 400);
 
   const config = await loadConfig(supabase, body.pixelId);
@@ -184,3 +197,132 @@ Deno.serve(async (req) => {
 
   return json({ status, eventId, test: !!config.test_event_code });
 });
+
+// ── Outcomes ─────────────────────────────────────────────────────────────
+
+type Outcome = "lead" | "booked" | "signed" | "won";
+
+const BOOKED = ["Booked", "Viewing Booked"];
+const SIGNED = ["Mandate Signed", "Bought"];
+
+/** Did this really happen to the lead? (Never report on a caller's say-so.) */
+function happened(outcome: Outcome, lead: { stage: string; fb_lead_id: string | null; commission_received_at: string | null }): boolean {
+  if (outcome === "lead") return !!lead.fb_lead_id;
+  if (outcome === "booked") return BOOKED.includes(lead.stage) || SIGNED.includes(lead.stage);
+  if (outcome === "signed") return SIGNED.includes(lead.stage);
+  return !!lead.commission_received_at;
+}
+
+/** Website leads: Meta's standard names where one fits, so they can be
+ *  picked as a conversion. Instant-form leads: the CRM stage, as Meta's
+ *  "conversion leads" setup expects. */
+function eventNameFor(outcome: Outcome, instantForm: boolean, kind: string | null): string {
+  if (instantForm) {
+    if (outcome === "lead") return "Lead";
+    if (outcome === "booked") return kind === "buyer" ? "Viewing Booked" : "Booked";
+    if (outcome === "signed") return kind === "buyer" ? "Bought" : kind === "general" ? "Signed Up" : "Mandate Signed";
+    return "Commission Received";
+  }
+  return outcome === "booked" ? "Schedule" : outcome === "signed" ? "MandateSigned" : outcome === "won" ? "Purchase" : "Lead";
+}
+
+async function reportOutcome(supabase: SupabaseClient, leadId: string, outcome: Outcome): Promise<Response> {
+  if (!["lead", "booked", "signed", "won"].includes(outcome)) return json({ error: "unknown outcome" }, 400);
+  const { data: lead } = await supabase
+    .from("leads")
+    .select("id, agent_id, name, phone, email, stage, fb_lead_id, commission, commission_received_at, attribution, source_page_id, pipeline_id, created_at")
+    .eq("id", leadId)
+    .maybeSingle();
+  if (!lead) return json({ error: "lead not found" }, 404);
+  if (!happened(outcome, lead)) return json({ skipped: "that hasn't happened to this lead" });
+
+  const { data: page } = lead.source_page_id
+    ? await supabase.from("lead_pages").select("fb_pixel_id").eq("id", lead.source_page_id).maybeSingle()
+    : { data: null };
+  const pixelId = String(page?.fb_pixel_id ?? "").replace(/\D/g, "");
+  if (!pixelId) return json({ skipped: "this lead's form has no dataset" });
+  const config = await loadConfig(supabase, pixelId);
+  if (!config) return json({ skipped: "no enabled CAPI config for this dataset" });
+
+  const eventId = `${outcome}_${lead.id}`;
+  const { data: existing } = await supabase.from("fb_capi_events").select("id").eq("event_id", eventId).maybeSingle();
+  if (existing) return json({ skipped: "already reported" });
+
+  const { data: pipeline } = lead.pipeline_id
+    ? await supabase.from("pipelines").select("kind").eq("id", lead.pipeline_id).maybeSingle()
+    : { data: null };
+  const instantForm = !!lead.fb_lead_id;
+  const eventName = eventNameFor(outcome, instantForm, pipeline?.kind ?? null);
+  const attribution = (lead.attribution ?? {}) as Record<string, string>;
+  // When it happened: now (this runs as the stage changes); a new lead, when it came in.
+  const eventTime = outcome === "lead" ? Math.floor((Date.parse(lead.created_at) || Date.now()) / 1000) : Math.floor(Date.now() / 1000);
+
+  const [emailHash, phoneHash] = await Promise.all([
+    lead.email ? sha256(lead.email) : Promise.resolve(null),
+    hashPhone(lead.phone ?? ""),
+  ]);
+  const userData: Record<string, unknown> = { country: [await sha256("za")] };
+  if (emailHash) userData.em = [emailHash];
+  if (phoneHash) userData.ph = [phoneHash];
+  if (instantForm) userData.lead_id = Number(lead.fb_lead_id) || lead.fb_lead_id;
+  if (attribution.fbp) userData.fbp = attribution.fbp;
+  const fbc = attribution.fbc || buildFbc(attribution.fbclid, Date.parse(lead.created_at) || Date.now());
+  if (fbc && !instantForm) userData.fbc = fbc;
+
+  const commission = Number(lead.commission);
+  const customData: Record<string, unknown> = instantForm
+    ? { event_source: "crm", lead_event_source: "EstateKit" }
+    : {};
+  if (outcome === "won" && commission > 0) Object.assign(customData, { value: commission, currency: "ZAR" });
+
+  const payload = {
+    data: [{
+      event_name: eventName,
+      event_time: eventTime,
+      event_id: eventId,
+      // Happened in the agent's dashboard, not on a web page.
+      action_source: "system_generated",
+      user_data: userData,
+      custom_data: customData,
+    }],
+    ...(config.test_event_code ? { test_event_code: config.test_event_code } : {}),
+  };
+
+  let status = "sent";
+  let responseText = "";
+  try {
+    const res = await fetch(`${GRAPH}/${config.pixel_id}/events?access_token=${config.access_token}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    responseText = (await res.text()).slice(0, 1000);
+    if (!res.ok) {
+      status = "failed";
+      console.error("CAPI outcome failed", res.status, responseText);
+    }
+  } catch (err) {
+    status = "failed";
+    responseText = String(err).slice(0, 1000);
+  }
+
+  await supabase.from("fb_capi_events").insert({
+    lead_id: lead.id,
+    pixel_id: config.pixel_id,
+    event_id: eventId,
+    event_name: eventName,
+    status,
+    response: responseText,
+  });
+  // On the lead's history, so the agent can see Facebook was told.
+  if (status === "sent" && outcome !== "lead") {
+    await supabase.from("lead_events").insert({
+      lead_id: lead.id,
+      agent_id: lead.agent_id,
+      event_type: "capi_reported",
+      to_value: eventName,
+      source: "automation",
+    });
+  }
+  return json({ status, eventId, eventName, test: !!config.test_event_code });
+}

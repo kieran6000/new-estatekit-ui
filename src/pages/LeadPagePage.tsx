@@ -221,6 +221,57 @@ export default function LeadPagePage() {
     }
   }
 
+  // Staff only. Website pages: the pixel and its backup (Conversions API).
+  // Instant forms: the dataset that gets what happened to each lead.
+  const trackingSection = isOperator ? (
+    <Section title="Facebook tracking">
+      {/* Plain words on purpose, but Facebook's own names where you'll
+          see them in Events Manager ("Dataset ID", "Conversions API"),
+          so the two screens match. Meta renamed pixels to datasets;
+          for a website it's the same number. */}
+      <TextField
+        label="Dataset ID"
+        placeholder="e.g. 1234567890123456"
+        value={form.fbPixelId}
+        onChange={(e) => {
+          let val = e.target.value;
+          const match = val.match(/fbq\s*\(\s*['"]init['"]\s*,\s*['"](\d+)['"]\s*\)/);
+          if (match) val = match[1];
+          fieldChange("fbPixelId", val);
+        }}
+        helperText={page.sourceType === "fb_form"
+        ? "The dataset connected to this Page's lead forms in Events Manager (Data sources). With backup tracking on, we tell Facebook when a lead books, signs or pays, so it finds more like them."
+        : "In Facebook Events Manager, under Data sources. It's the same number as the old Pixel ID. Pasting the whole pixel code works too."}
+        fullWidth
+        multiline
+        minRows={1}
+        maxRows={3}
+      />
+
+      {/* Everything below is off by default and stays collapsed.
+          Nobody needs it to run a page, and a wall of tracking
+          options is how a simple screen turns confusing. */}
+      {/* A show/hide button, not a switch: a switch read as "CAPI off"
+          after every reload. The chip is the real on/off state. */}
+      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1, mt: 0.5 }}>
+        <Box>
+          <Typography sx={{ fontSize: 13.5, fontWeight: 500, display: "flex", alignItems: "center", gap: 1 }}>
+            Backup tracking
+            {capiOn !== undefined && (
+              <Chip size="small" label={capiOn ? "On" : "Off"} color={capiOn ? "success" : "default"} variant={capiOn ? "filled" : "outlined"} sx={{ height: 20, fontSize: 11 }} />
+            )}
+          </Typography>
+          <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
+            Tells Facebook about every lead, even when a phone blocks tracking, and what happens next: booked, signed, commission paid. So it finds more leads like the ones that turn into business. Facebook calls it the Conversions API.
+          </Typography>
+        </Box>
+        <Button onClick={() => setShowAdvanced((v) => !v)} sx={{ flex: "none", whiteSpace: "nowrap", minHeight: 44 }}>{showAdvanced ? "Hide" : capiOn ? "Change" : "Set up"}</Button>
+      </Box>
+
+      {showAdvanced && <CapiSettings pixelId={form.fbPixelId} />}
+    </Section>
+  ) : null;
+
   return (
     <Box>
       <AppBar position="sticky">
@@ -307,6 +358,7 @@ export default function LeadPagePage() {
       {page.sourceType === "fb_form" && (
         <Box sx={{ maxWidth: 1000, mx: "auto", px: 2, pb: 3, display: "flex", flexDirection: "column", gap: 2 }}>
           <LeadMagnetCard page={page} pipelineKind={pipeline.kind} canSetUp={canSetUp} />
+          {trackingSection}
         </Box>
       )}
       {page.sourceType === "fb_form" ? null : (
@@ -486,52 +538,7 @@ export default function LeadPagePage() {
 
             <LeadMagnetCard page={page} pipelineKind={pipeline.kind} canSetUp={canSetUp} />
   
-            {isOperator && (
-              <Section title="Facebook tracking">
-                {/* Plain words on purpose, but Facebook's own names where you'll
-                    see them in Events Manager ("Dataset ID", "Conversions API"),
-                    so the two screens match. Meta renamed pixels to datasets;
-                    for a website it's the same number. */}
-                <TextField
-                  label="Dataset ID"
-                  placeholder="e.g. 1234567890123456"
-                  value={form.fbPixelId}
-                  onChange={(e) => {
-                    let val = e.target.value;
-                    const match = val.match(/fbq\s*\(\s*['"]init['"]\s*,\s*['"](\d+)['"]\s*\)/);
-                    if (match) val = match[1];
-                    fieldChange("fbPixelId", val);
-                  }}
-                  helperText="In Facebook Events Manager, under Data sources. It's the same number as the old Pixel ID. Pasting the whole pixel code works too."
-                  fullWidth
-                  multiline
-                  minRows={1}
-                  maxRows={3}
-                />
-
-                {/* Everything below is off by default and stays collapsed.
-                    Nobody needs it to run a page, and a wall of tracking
-                    options is how a simple screen turns confusing. */}
-                {/* A show/hide button, not a switch: a switch read as "CAPI off"
-                    after every reload. The chip is the real on/off state. */}
-                <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1, mt: 0.5 }}>
-                  <Box>
-                    <Typography sx={{ fontSize: 13.5, fontWeight: 500, display: "flex", alignItems: "center", gap: 1 }}>
-                      Backup tracking
-                      {capiOn !== undefined && (
-                        <Chip size="small" label={capiOn ? "On" : "Off"} color={capiOn ? "success" : "default"} variant={capiOn ? "filled" : "outlined"} sx={{ height: 20, fontSize: 11 }} />
-                      )}
-                    </Typography>
-                    <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
-                      Makes sure Facebook hears about every lead, even when a phone blocks tracking. Facebook calls it the Conversions API.
-                    </Typography>
-                  </Box>
-                  <Button onClick={() => setShowAdvanced((v) => !v)} sx={{ flex: "none", whiteSpace: "nowrap", minHeight: 44 }}>{showAdvanced ? "Hide" : capiOn ? "Change" : "Set up"}</Button>
-                </Box>
-
-                {showAdvanced && <CapiSettings pixelId={form.fbPixelId} />}
-              </Section>
-            )}
+            {trackingSection}
           </Box>
 
           <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2, alignSelf: { md: "flex-start" }, position: { md: "sticky" }, top: { md: 72 }, order: { xs: -1, md: 0 } }}>
