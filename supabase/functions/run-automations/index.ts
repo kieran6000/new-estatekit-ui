@@ -361,6 +361,7 @@ Deno.serve(async (_req: Request) => {
       quietDeferUntil: quietHoursDeferUntil,
       budget,
       maxSends: MAX_SENDS_PER_INVOCATION,
+      logToDiscord,
     });
   } catch (e) {
     console.error("workflows failed", e);

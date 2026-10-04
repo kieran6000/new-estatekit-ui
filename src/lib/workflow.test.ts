@@ -183,8 +183,10 @@ describe("checks", () => {
   it("checks merge fields per message type", () => {
     const e = { ...email(), body: "Call me {{action_link}}" } as Step;
     expect(validate(wf([e]))[e.id]?.join()).toMatch(/agent's call link/);
-    const w = wa("Number: {{phone}}");
-    expect(validate(wf([w]))[w.id]?.join()).toMatch(/phone/);
+    // The lead's details and every form answer can go in a WhatsApp to the agent.
+    expect(validate(wf([wa("{{phone}} {{email}} {{address}} {{form}}\n{{answers}}")]))).toEqual({});
+    const w = { ...email(), body: "Answers: {{answers}}" } as Step;
+    expect(validate(wf([w]))[w.id]?.join()).toMatch(/isn't a field/);
     const u = wa("Hi {{frist_name}}");
     expect(validate(wf([u]))[u.id]?.join()).toMatch(/isn't a field/);
     expect(validate(wf([wa("Hi {{ first_name }}")]))).toEqual({});
@@ -287,5 +289,25 @@ describe("words", () => {
   it("lays out the main path in time", () => {
     const w = wf([wa(), wait(30, "minutes"), email(), wait(2), branch([wa()], [])]);
     expect(timeline(w).map((r) => r.atMinutes)).toEqual([0, 30, 30 + 2880]);
+  });
+});
+
+describe("appointment trigger", () => {
+  it("defaults to 1 day before and reads in words", () => {
+    const t = triggerOfKind("appointment");
+    expect(t).toEqual({ kind: "appointment", amount: 1, unit: "days", when: "before" });
+    expect(triggerSummary({ ...t, amount: 30, unit: "minutes" })).toBe("30 minutes before the appointment");
+    expect(triggerSummary({ ...t, amount: 2, unit: "hours", when: "after" })).toBe("2 hours after the appointment");
+  });
+  it("checks the amount, and allows {{appointment}} in WhatsApps and emails", () => {
+    const wf = { ...blankWorkflow(), trigger: { kind: "appointment" as const, amount: 2, unit: "minutes" as const, when: "before" as const },
+      steps: [{ id: "a", type: "whatsapp_agent" as const, text: "{{name}} at {{appointment}}" }, { id: "b", type: "email_lead" as const, subject: "See you {{appointment}}", body: "Hi" }] };
+    const p = validate(wf);
+    expect(p.trigger).toEqual(["At least 5 minutes: messages go out once a minute."]);
+    expect(p.a).toBeUndefined();
+    expect(p.b).toBeUndefined();
+  });
+  it("the appointment templates are valid as they come", () => {
+    for (const t of TEMPLATES.filter((x) => /ppointment/.test(x.name))) expect(validate(t.make())).toEqual({});
   });
 });

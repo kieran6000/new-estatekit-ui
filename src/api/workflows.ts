@@ -13,9 +13,11 @@ interface WorkflowRowDb {
   published: boolean;
   definition: Pick<Workflow, "trigger" | "filters" | "steps" | "exits" | "settings">;
   updated_at: string;
+  standard: boolean;
+  standard_on: boolean;
 }
 
-const COLS = "id, agent_id, is_template, name, published, definition, updated_at";
+const COLS = "id, agent_id, is_template, name, published, definition, updated_at, standard, standard_on";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Saved yet? New workflows have a temporary id until their first save. */
@@ -33,6 +35,7 @@ function fromRow(r: WorkflowRowDb): Workflow {
     exits: d.exits ?? [],
     settings: d.settings,
     updatedAt: r.updated_at,
+    ...(r.is_template ? { standard: r.standard ? (r.standard_on ? "on" : "off") : "no" } as const : {}),
   };
 }
 
@@ -60,6 +63,8 @@ export async function saveWorkflow(w: Workflow, agentId: string | null): Promise
     definition: definitionOf(w),
     updated_at: new Date().toISOString(),
     updated_by: await getCurrentUserId(),
+    // Templates only: whether new accounts get a copy, switched on or off.
+    ...(!agentId && w.standard ? { standard: w.standard !== "no", standard_on: w.standard === "on" } : {}),
   };
   const q = isSaved(w.id)
     ? supabase.from("workflows").update(row).eq("id", w.id)
@@ -75,17 +80,12 @@ export async function deleteWorkflow(id: string): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
-/** Whether the account has switched from the shared Setup automations to its
- *  own workflows. */
-export async function getUsesWorkflows(agentId: string): Promise<boolean> {
-  const { data, error } = await supabase.from("agent_profiles").select("uses_workflows").eq("agent_id", agentId).maybeSingle();
+/** Gives an account a copy of each standard template it doesn't have yet
+ *  (what every new account gets). Returns how many were added. */
+export async function addStandardWorkflows(agentId: string): Promise<number> {
+  const { data, error } = await supabase.rpc("add_standard_workflows", { p_agent: agentId });
   if (error) throw new Error(error.message);
-  return data?.uses_workflows === true;
-}
-
-export async function setUsesWorkflows(agentId: string, on: boolean): Promise<void> {
-  const { error } = await supabase.from("agent_profiles").update({ uses_workflows: on }).eq("agent_id", agentId);
-  if (error) throw new Error(error.message);
+  return Number(data) || 0;
 }
 
 export interface WorkflowLogRow {

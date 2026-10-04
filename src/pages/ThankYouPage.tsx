@@ -5,9 +5,7 @@ import { Box, Skeleton, Typography } from "@mui/material";
 import CallIcon from "@mui/icons-material/Call";
 import WhatsAppIcon from "@mui/icons-material/WhatsApp";
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutlined";
-import CheckIcon from "@mui/icons-material/Check";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
-import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import { tokens } from "../theme";
 import { getLeadPageBySlug } from "../api/leadPages";
 import { listSoldListingsForAgent } from "../api/soldListings";
@@ -18,6 +16,7 @@ import { initPixel } from "../lib/fbPixel";
 import { fillMessage } from "../lib/format";
 import { readableOn } from "../lib/contrast";
 import { isPlanToken, recallPlanToken } from "../lib/planToken";
+import { resolveMagnet } from "../lib/leadMagnet";
 import type { LeadPage } from "../types";
 
 export default function ThankYouPage() {
@@ -78,29 +77,18 @@ export default function ThankYouPage() {
   );
 }
 
-/** "Your marketing plan is ready": the same plan the confirmation email links
- *  to. KEEP the points IN STEP with PLAN_BLOCK in send-lead-confirmation. */
+/** The form's lead magnet: the same headline, line and link as the box in
+ *  the confirmation email (lib/leadMagnet.ts). Only shown when the lead page
+ *  made a code for it, which it does only when the form has one. */
 function PlanCard({ page, token }: { page: LeadPage; token: string }) {
-  const points = [
-    "How your home will be marketed, and why you pay nothing until it's sold",
-    "The documents to have ready, and the ones that can wait",
-    "The one thing to do now, for your timing",
-  ];
+  // The page only makes a code when there's a lead magnet, so "not set" here
+  // means the automatic one: the marketing plan.
+  const m = resolveMagnet(page, "seller");
+  if (m.kind === "none") return null;
   return (
     <Box sx={{ mt: 2, border: "1px solid #e0e0e0", borderLeft: `4px solid ${page.accentColor}`, borderRadius: "8px", bgcolor: "#fff", p: "18px 20px" }}>
-      <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 0.75 }}>
-        <DescriptionOutlinedIcon sx={{ color: page.accentColor }} />
-        <Typography sx={{ fontSize: 17, fontWeight: 700 }}>Your marketing plan is ready</Typography>
-      </Box>
-      <Typography sx={{ fontSize: 14, color: "text.secondary", mb: 1.25 }}>
-        While you wait for the call, read how to sell your home without losing money or time. It takes 2 minutes.
-      </Typography>
-      {points.map((t) => (
-        <Box key={t} sx={{ display: "flex", gap: 1, fontSize: 14, mb: 0.5 }}>
-          <CheckIcon sx={{ fontSize: 18, color: tokens.green, mt: "1px" }} />
-          <span>{t}</span>
-        </Box>
-      ))}
+      <Typography sx={{ fontSize: 17, fontWeight: 700 }}>{m.title}</Typography>
+      {m.text && <Typography sx={{ fontSize: 14, color: "text.secondary", mt: 0.5 }}>{m.text}</Typography>}
       <Box
         component="a"
         href={`/plan/${token}?from=thanks`}
@@ -112,7 +100,7 @@ function PlanCard({ page, token }: { page: LeadPage; token: string }) {
           fontSize: 16, fontWeight: 700, textDecoration: "none", "&:hover": { filter: "brightness(0.92)" },
         }}
       >
-        Open my marketing plan <ArrowForwardIcon fontSize="small" />
+        {m.button} <ArrowForwardIcon fontSize="small" />
       </Box>
     </Box>
   );

@@ -38,7 +38,7 @@ Deno.serve(async (req: Request) => {
     formAnswers?: { q: string; a: string }[];
     attribution?: Record<string, unknown>;
     quality?: string;
-    /** Seller leads: the marketing plan's code, made by the lead page so the
+    /** Forms with a lead magnet: its code, made by the lead page so the
      *  thank-you page can link to the plan before this finishes. */
     planToken?: string | null;
   };
@@ -56,7 +56,7 @@ Deno.serve(async (req: Request) => {
 
   const { data: page, error: pageErr } = await supabase
     .from("lead_pages")
-    .select("id, agent_id, pipeline_id, agent_name, pipelines(kind)")
+    .select("id, agent_id, pipeline_id, agent_name, magnet_kind, magnet_pdf_url, pipelines(kind)")
     .eq("id", body.pageId)
     .maybeSingle();
 
@@ -78,9 +78,12 @@ Deno.serve(async (req: Request) => {
     if (typeof value === "string" && value.trim()) attribution[key] = value.slice(0, 200);
   }
 
-  // Only seller leads have a plan, and only a code in the plan's format is kept.
-  const kind = (page as { pipelines?: { kind?: string } | null }).pipelines?.kind;
-  const planToken = kind === "seller" && typeof body.planToken === "string" && /^[a-f0-9]{32}$/.test(body.planToken)
+  // Only forms with a lead magnet get the code (KEEP IN STEP with
+  // src/lib/leadMagnet.ts resolveMagnet), and only in the plan's format.
+  const pg = page as { pipelines?: { kind?: string } | null; magnet_kind?: string | null; magnet_pdf_url?: string | null };
+  let magnet = pg.magnet_kind ?? (pg.pipelines?.kind === "seller" ? "plan" : "none");
+  if (magnet === "pdf" && !pg.magnet_pdf_url) magnet = "none";
+  const planToken = magnet !== "none" && typeof body.planToken === "string" && /^[a-f0-9]{32}$/.test(body.planToken)
     ? body.planToken
     : null;
 

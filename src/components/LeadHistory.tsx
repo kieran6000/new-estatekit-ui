@@ -80,6 +80,8 @@ function describe(e: LeadEvent): string {
     case "email_clicked":
       return "Tapped WhatsApp in the email";
     case "plan_opened":
+      // Newer rows name the lead magnet and where it was opened.
+      if (e.from_value && e.to_value?.startsWith("Opened ") && !e.to_value.startsWith("Opened their selling plan")) return e.to_value;
       // from_value says where: the thank-you page or the email (older rows
       // have none; they all came from the email).
       return e.from_value === "thank_you" ? "Opened their marketing plan on the thank-you page"

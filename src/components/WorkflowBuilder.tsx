@@ -56,11 +56,10 @@ import ErrorOutlineIcon from "@mui/icons-material/ErrorOutlined";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import { tokens } from "../theme";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useAutomations, useAutomationSteps } from "../hooks/useAutomations";
 import { useAuth } from "../hooks/useAuth";
 import { getActiveAgentIdSync } from "../api/_client";
 import {
-  deleteWorkflow, getUsesWorkflows, isSaved, listAccountWorkflows, listTemplateWorkflows, listWorkflowLog, saveWorkflow, setUsesWorkflows,
+  addStandardWorkflows, deleteWorkflow, isSaved, listAccountWorkflows, listTemplateWorkflows, listWorkflowLog, saveWorkflow,
 } from "../api/workflows";
 import { trackActivity } from "../lib/activity";
 import { useSnack } from "../hooks/useSnack";
@@ -69,7 +68,7 @@ import LeadTag from "./LeadTag";
 import { PlainHead, SortHead, sortRows, useTableSort } from "./SortHead";
 import {
   BRANCH_CHECKS, EXITS, FILTER_FIELDS, KNOWN_TAGS, PIPELINES, SOURCES, STAGES, STEP_TYPES, TEMPLATES, TRIGGERS,
-  allowedSteps, branchLabel, cloneSteps, countSteps, defaultBranchValue, fieldsFor, filterSummary, findStep, fromAutomation,
+  allowedSteps, branchLabel, cloneSteps, countSteps, defaultBranchValue, fieldsFor, filterSummary, findStep,
   insertStep, locate, moveStep, newId, newStep, ordinal, rememberTags, tagsIn, problemCount, removeStep, stepSummary, stepTitle, timeLabel, timeline,
   triggerOfKind, triggerSummary, unitLabel, updateStep, validate, waitMinutes,
   type BranchCheck, type Exit, type Filter, type Path, type Problems, type Settings, type Step, type StepType, type Trigger,
@@ -98,7 +97,9 @@ const SAMPLE_LEAD = { id: "sample", name: "Thandi Mokoena", phone: "082 555 0199
 const SAMPLE_FIELDS: Record<string, string> = {
   first_name: "Thandi", name: "Thandi Mokoena", area: "Bryanston", address: "14 Oak Avenue, Bryanston", agent_name: "Megan Demo",
   agent_phone: "083 555 0103", plan_link: "leads.estatekit.co/plan/…", stage: "No Answer", next_label: "Retry today",
-  count: "7", leads_word: "leads",
+  count: "7", leads_word: "leads", phone: "082 555 0199", email: "thandi@example.com", form: "Home Value page",
+  answers: "When are you selling?: In 3 months\nProperty address: 14 Oak Avenue, Bryanston",
+  appointment: "Tue 7 Oct at 10:00",
 };
 const fill = (t: string) => t.replace(/\{\{\s*(\w+)\s*\}\}/g, (m, k: string) => SAMPLE_FIELDS[k] ?? (k === "action_link" ? "leads.estatekit.co/l/…" : m));
 
@@ -188,7 +189,7 @@ export default function WorkflowBuilder() {
           onScope={setScope}
           onOpen={setOpenId}
           onCreate={() => setPicker(true)}
-          header={scope === "account" ? <CutoverBar agentId={agentId} workflows={accountWfs ?? []} /> : null}
+          header={scope === "account" ? <StandardSetBar agentId={agentId} workflows={accountWfs ?? []} /> : null}
         />
       )}
       <Dialog open={picker} onClose={() => setPicker(false)} fullWidth maxWidth="sm">
@@ -224,92 +225,40 @@ function TemplateButton({ name, blurb, onClick }: { name: string; blurb: string;
   );
 }
 
-/** Where this account is in the move from the shared Setup automations to its
- *  own workflows. Both run side by side until "Use only workflows". */
-function CutoverBar({ agentId, workflows }: { agentId: string; workflows: Workflow[] }) {
+/** An account with no workflows at all (made before workflows, or every one
+ *  deleted): one tap gives it the standard set every new account gets. */
+function StandardSetBar({ agentId, workflows }: { agentId: string; workflows: Workflow[] }) {
   const qc = useQueryClient();
   const showSnack = useSnack();
-  const { data: automations } = useAutomations();
-  const { data: steps } = useAutomationSteps();
-  const { data: uses, isLoading } = useQuery({ queryKey: ["usesWorkflows", agentId], queryFn: () => getUsesWorkflows(agentId) });
   const [busy, setBusy] = useState(false);
-  const [confirm, setConfirm] = useState<"on" | "off" | null>(null);
-  const onCount = workflows.filter((w) => w.published).length;
+  if (workflows.length) return null;
 
-  async function copySetup() {
+  async function add() {
     setBusy(true);
     try {
-      for (const a of automations ?? []) {
-        const w = fromAutomation(a, (steps ?? []).filter((s) => s.automation_id === a.id));
-        // Copies start off: switch each on once it's checked.
-        await saveWorkflow({ ...w, id: newId(), published: false, note: undefined }, agentId);
-      }
+      const n = await addStandardWorkflows(agentId);
+      trackActivity("automation_toggled", { agentId, detail: `Added the standard workflows (${n})` });
       await qc.invalidateQueries({ queryKey: ["workflows", agentId] });
-      showSnack("Today's setup copied here. They're off until you switch them on.");
+      showSnack(n ? `Added ${n} standard workflow${n === 1 ? "" : "s"}.` : "This account already has them.");
     } catch (e) {
       console.error(e);
-      showSnack("Couldn't copy everything. Check the list and try again.");
+      showSnack("Couldn't add them. Try again.");
     } finally {
       setBusy(false);
     }
   }
 
-  async function setUses(on: boolean) {
-    setConfirm(null);
-    setBusy(true);
-    try {
-      await setUsesWorkflows(agentId, on);
-      trackActivity("automation_toggled", { agentId, detail: on ? "Switched to workflows only (Setup automations off for this account)" : "Back on the Setup automations" });
-      await qc.invalidateQueries({ queryKey: ["usesWorkflows", agentId] });
-      showSnack(on ? "This account now runs on its workflows only" : "This account is back on the Setup automations");
-    } catch (e) {
-      console.error(e);
-      showSnack("Couldn't change that. Try again.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  if (isLoading) return null;
   return (
     <Alert
-      severity={uses ? "success" : "info"}
+      severity="info"
       sx={{ mb: 2, alignItems: "center", "& .MuiAlert-message": { flex: 1 } }}
-      action={
-        <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", justifyContent: "flex-end" }}>
-          {!uses && !workflows.length && <Button size="small" disabled={busy} onClick={copySetup}>Copy today's setup here</Button>}
-          {uses
-            ? <Button size="small" disabled={busy} onClick={() => setConfirm("off")}>Go back to Setup</Button>
-            : <Button size="small" variant="contained" disabled={busy || !onCount} onClick={() => setConfirm("on")}>Use only workflows</Button>}
-        </Box>
-      }
+      action={<Button size="small" variant="contained" disabled={busy} onClick={() => void add()}>Add the standard workflows</Button>}
     >
-      {uses
-        ? "This account runs on the workflows below. The shared Setup automations are off for it."
-        : onCount
-          ? `Side by side: the shared Setup automations still run for this account, and so do the ${onCount} workflow${onCount === 1 ? "" : "s"} switched on below. When they match, use only workflows.`
-          : "This account runs on the shared Setup automations. Copy them here (or build your own), check them, then switch over."}
-      <Dialog open={!!confirm} onClose={() => setConfirm(null)}>
-        <DialogTitle>{confirm === "on" ? "Use only workflows for this account?" : "Go back to the Setup automations?"}</DialogTitle>
-        <DialogContent>
-          <Typography sx={{ fontSize: 14 }}>
-            {confirm === "on"
-              ? "The shared Setup automations stop for this account, including the daily summary, and anything they had queued is cancelled. Only the workflows switched on here will run. Other accounts aren't affected."
-              : "The shared Setup automations start running for this account again. Workflows switched on here keep running too, so switch off any that do the same job."}
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setConfirm(null)}>Cancel</Button>
-          <Button variant="contained" onClick={() => void setUses(confirm === "on")}>{confirm === "on" ? "Use only workflows" : "Go back"}</Button>
-        </DialogActions>
-      </Dialog>
+      This account has no workflows, so no automations run for it. Add the standard set (the same as every new account), then change what you like.
     </Alert>
   );
 }
 
-// ── List ─────────────────────────────────────────────────────────────────
-
-/** Who gets what, in words: "WhatsApp to agent", "Email to lead". */
 function Sends({ steps }: { steps: Step[] }) {
   const kinds = new Set<StepType>();
   const walk = (list: Step[]) => list.forEach((s) => { kinds.add(s.type); if (s.type === "branch") { walk(s.yes); walk(s.no); } });
@@ -481,7 +430,7 @@ function useHistory(initial: Workflow) {
 }
 
 /** What Save stores: anything else (ids aside) is screen state. */
-const snapshot = (w: Workflow) => JSON.stringify({ n: w.name, p: w.published, t: w.trigger, f: w.filters, s: w.steps, e: w.exits, o: w.settings });
+const snapshot = (w: Workflow) => JSON.stringify({ n: w.name, p: w.published, t: w.trigger, f: w.filters, s: w.steps, e: w.exits, o: w.settings, d: w.standard });
 
 function Editor({ initial, isTemplate, onSave, onCopyToTemplates, onBack, onDelete }: {
   initial: Workflow;
@@ -691,7 +640,7 @@ function Editor({ initial, isTemplate, onSave, onCopyToTemplates, onBack, onDele
             )}
           </>
         )}
-        {tab === "settings" && <SettingsTab wf={wf} onChange={update} onDelete={onDelete} onCopyToTemplates={onCopyToTemplates ? () => void onCopyToTemplates(wf) : undefined} />}
+        {tab === "settings" && <SettingsTab wf={wf} isTemplate={isTemplate} onChange={update} onDelete={onDelete} onCopyToTemplates={onCopyToTemplates ? () => void onCopyToTemplates(wf) : undefined} />}
         {tab === "history" && <HistoryTab wf={wf} />}
       </Box>
       <Dialog open={leaving} onClose={() => setLeaving(false)}>
@@ -1023,7 +972,7 @@ function SettingRow({ title, help, children }: { title: string; help: string; ch
   );
 }
 
-function SettingsTab({ wf, onChange, onDelete, onCopyToTemplates }: { wf: Workflow; onChange: (p: Partial<Workflow>, key?: string) => void; onDelete: () => void; onCopyToTemplates?: () => void }) {
+function SettingsTab({ wf, isTemplate, onChange, onDelete, onCopyToTemplates }: { wf: Workflow; isTemplate: boolean; onChange: (p: Partial<Workflow>, key?: string) => void; onDelete: () => void; onCopyToTemplates?: () => void }) {
   const s = wf.settings;
   const setS = (p: Partial<Settings>) => onChange({ settings: { ...s, ...p } });
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -1040,6 +989,17 @@ function SettingsTab({ wf, onChange, onDelete, onCopyToTemplates }: { wf: Workfl
             <Switch checked={s.reEnter} onChange={(e) => setS({ reEnter: e.target.checked })} slotProps={{ input: { "aria-label": "Allow the same lead in again" } }} />
           </SettingRow>
         </Box>
+        {isTemplate && (
+          <Box sx={card}>
+            <SettingRow title="New accounts get this" help="Every new account starts with a copy of these. Changing this doesn't touch accounts that already have one.">
+              <TextField select size="small" value={wf.standard ?? "no"} onChange={(e) => onChange({ standard: e.target.value as Workflow["standard"] })} sx={{ minWidth: 170 }} slotProps={{ htmlInput: { "aria-label": "New accounts get this" } }}>
+                <MenuItem value="no">No</MenuItem>
+                <MenuItem value="on">Yes, switched on</MenuItem>
+                <MenuItem value="off">Yes, switched off</MenuItem>
+              </TextField>
+            </SettingRow>
+          </Box>
+        )}
         <Box sx={{ ...card, display: "flex", flexDirection: "column", gap: 1 }}>
           <Typography sx={{ fontWeight: 600 }}>Stop early when</Typography>
           <ExitsEditor exits={wf.exits} onChange={(exits) => onChange({ exits })} />
@@ -1196,6 +1156,22 @@ function TriggerEditor({ t, onChange }: { t: Trigger; onChange: (t: Trigger) => 
       {t.kind === "not_contacted_for" && <NumberField label="Days without contact" value={t.days ?? 14} min={1} max={365} onChange={(days) => onChange({ ...t, days })} />}
       {t.kind === "daily_at" && (
         <TextField size="small" type="time" label="Time (SAST)" value={t.time ?? "16:00"} onChange={(e) => onChange({ ...t, time: e.target.value })} slotProps={{ inputLabel: { shrink: true } }} />
+      )}
+      {t.kind === "appointment" && (
+        <Box sx={{ display: "flex", gap: 1 }}>
+          <NumberField label="How long" value={t.amount ?? 1} min={1} max={999} onChange={(amount) => onChange({ ...t, amount })} sx={{ width: 96 }} />
+          <TextField select size="small" label="Unit" value={t.unit ?? "days"} onChange={(e) => onChange({ ...t, unit: e.target.value as Trigger["unit"] })} sx={{ flex: 1 }}>
+            <MenuItem value="minutes">minutes</MenuItem><MenuItem value="hours">hours</MenuItem><MenuItem value="days">days</MenuItem>
+          </TextField>
+          <TextField select size="small" label="When" value={t.when ?? "before"} onChange={(e) => onChange({ ...t, when: e.target.value as Trigger["when"] })} sx={{ flex: 1 }}>
+            <MenuItem value="before">before</MenuItem><MenuItem value="after">after</MenuItem>
+          </TextField>
+        </Box>
+      )}
+      {t.kind === "appointment" && (
+        <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
+          Use {"{{appointment}}"} in a message for the day and time. Reminders before an appointment always go on time, even at night. One booked at shorter notice skips it.
+        </Typography>
       )}
       {t.kind === "daily_at" && <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>This runs once per agent, so its steps can only wait and WhatsApp the agent.</Typography>}
     </>
@@ -1459,12 +1435,13 @@ function NodePreview({ sel, wf, step }: { sel: Selection; wf: Workflow; step: St
             : t.kind === "not_contacted_for" ? <>{first} hasn't been called or moved for {unitLabel(t.days ?? 14, "days")}</>
               : t.kind === "plan_opened" ? <>{first} opens the Marketing Plan link</>
                 : t.kind === "reminder_due" ? <>A reminder for {first} comes due</>
+                  : t.kind === "appointment" ? <>It's {triggerSummary(t)} with {first} ({SAMPLE_FIELDS.appointment})</>
                   : <>It's a weekday and the clock hits {t.time || "16:00"}</>;
     body = (
       <>
         <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap", fontSize: 13.5 }}><BoltIcon sx={{ fontSize: 18, color: tokens.primary }} />{event}</Box>
         <Arrow label={t.kind === "daily_at" ? "This workflow runs once for each agent" : "This workflow starts for that lead"} />
-        {t.kind !== "daily_at" && <LeadRowMock stage={t.kind === "stage_changed" ? t.stage ?? "New Lead" : t.kind === "no_answer_times" ? "No Answer" : t.kind === "lead_created" ? "New Lead" : "Contacted"} highlight={t.kind === "stage_changed" ? "stage" : undefined} />}
+        {t.kind !== "daily_at" && <LeadRowMock stage={t.kind === "stage_changed" ? t.stage ?? "New Lead" : t.kind === "no_answer_times" ? "No Answer" : t.kind === "lead_created" ? "New Lead" : t.kind === "appointment" ? "Booked" : "Contacted"} highlight={t.kind === "stage_changed" ? "stage" : undefined} />}
       </>
     );
   } else if (sel?.kind === "filters") {

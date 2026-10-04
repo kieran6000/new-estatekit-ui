@@ -35,9 +35,10 @@ interface Plan {
   accent: string;
   page_slug: string | null;
   sales: { address: string; price: number | null; status: string; image_url: string | null }[];
-  /** The agent's own branded plan, when an operator has uploaded one. */
+  /** "pdf": the form's lead magnet is a PDF; only pdf_url and title come back. */
+  kind?: "plan" | "pdf";
   pdf_url?: string | null;
-  pdf_name?: string | null;
+  title?: string;
 }
 
 type TimeKey = "asap" | "1-3" | "3-6" | "6-12" | "notsure";
@@ -145,6 +146,7 @@ export default function PlanPage() {
     );
   }
   if (isLoading || !plan) return <div className="plan-viewer"><div className="plan-page plan-loading" /></div>;
+  if (plan.kind === "pdf") return <PdfRedirect url={plan.pdf_url ?? ""} title={plan.title ?? ""} />;
 
   const agentFirst = plan.agent_name.split(/\s+/)[0] || "your agent";
   const initials = plan.agent_name.split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase();
@@ -244,22 +246,6 @@ export default function PlanPage() {
           </>
         )}
 
-        {plan.pdf_url && /^https:\/\//.test(plan.pdf_url) && (
-          <a
-            className="plan-pdf"
-            href={plan.pdf_url}
-            target="_blank"
-            rel="noopener"
-            onClick={() => { if (!sample) void supabase.rpc("plan_pdf_opened", { p_token: token }); }}
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zm-1 7V3.5L18.5 9zM8 13h8v2H8zm0 4h8v2H8z"/></svg>
-            <span>
-              <b>{agentFirst}'s full marketing plan</b>
-              <span>{plan.pdf_name?.trim() || "PDF"} · opens in a new tab</span>
-            </span>
-          </a>
-        )}
-
         <section className="plan-next">
           <h3>Book your free consultation</h3>
           <p>When we speak, I'll go through your price and exactly how I'll market your home. Tell me when suits you for a quick call or visit.</p>
@@ -299,6 +285,23 @@ function PlanQr({ url }: { url: string }) {
       <img src={src} alt="" />
       <span>Scan with your phone
         <br />to WhatsApp me</span>
+    </div>
+  );
+}
+
+/** A PDF lead magnet: the open is already logged (open_selling_plan), so go
+ *  straight on to the PDF. The link stays for the odd browser that blocks it. */
+function PdfRedirect({ url, title }: { url: string; title: string }) {
+  const ok = /^https:\/\//.test(url);
+  useEffect(() => {
+    if (ok) window.location.replace(url);
+  }, [ok, url]);
+  return (
+    <div className="plan-viewer">
+      <div className="plan-page plan-missing">
+        <h1>{ok ? "Opening your guide…" : "This guide isn't available"}</h1>
+        {ok && <p><a href={url}>Tap here if it doesn't open{title ? `: ${title}` : ""}</a></p>}
+      </div>
     </div>
   );
 }

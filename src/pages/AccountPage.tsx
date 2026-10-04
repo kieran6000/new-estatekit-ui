@@ -552,7 +552,7 @@ export default function AccountPage() {
                     Emergency stop
                   </Typography>
                   <Typography sx={{ fontSize: 13, color: "text.secondary" }}>
-                    Instantly turns off all automations and cancels every queued message across all accounts.
+                    Instantly switches off every account's workflows and cancels every queued message. Switch them back on per account under Automations → Workflows.
                   </Typography>
                   <Button
                     variant="contained"

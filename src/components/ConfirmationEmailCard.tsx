@@ -2,11 +2,12 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Box, Button, Link, Switch, TextField, Typography } from "@mui/material";
 import LockIcon from "@mui/icons-material/Lock";
-import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import { tokens } from "../theme";
 import { upsertProfile, type AgentProfile } from "../api/agentProfile";
 import { useSnack } from "../hooks/useSnack";
-import { fillLeadEmail, LEAD_EMAIL_PLACEHOLDERS, PLAN_BLOCK, STANDARD_LEAD_EMAIL_BODY } from "../lib/leadEmail";
+import { fillLeadEmail, LEAD_EMAIL_PLACEHOLDERS, STANDARD_LEAD_EMAIL_BODY } from "../lib/leadEmail";
+import { resolveMagnet } from "../lib/leadMagnet";
+import type { LeadPage } from "../types";
 import InfoTip from "./InfoTip";
 import { trackActivity } from "../lib/activity";
 import { getEmailStats } from "../api/leadEvents";
@@ -20,14 +21,20 @@ const SAMPLE = { name: "Thandi", address: "14 Loop Street, Centurion" };
 export default function ConfirmationEmailCard({
   profile,
   canSetUp,
+  page,
+  pipelineKind,
 }: {
   profile: AgentProfile | null | undefined;
   canSetUp: boolean;
+  /** The form on screen: its lead magnet goes in the email's box. */
+  page: LeadPage;
+  pipelineKind: string | null | undefined;
 }) {
   const qc = useQueryClient();
   const showSnack = useSnack();
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
+  const [showEmail, setShowEmail] = useState(false);
   const { data: stats } = useQuery({
     queryKey: ["emailStats", profile?.agentId],
     queryFn: () => getEmailStats(profile!.agentId),
@@ -46,8 +53,8 @@ export default function ConfirmationEmailCard({
   const first = fullName.split(/\s+/)[0];
   const text = canSetUp ? draft : profile.leadEmailBody ?? STANDARD_LEAD_EMAIL_BODY;
   const paragraphs = fillLeadEmail(text, { name: SAMPLE.name, address: SAMPLE.address, agent: first });
-  // The plan with this agent's details and a made-up seller (opens in a new tab).
-  const sampleUrl = `/plan/sample/${profile.agentId}`;
+  // The lead magnet's box goes after the first paragraph (Lead magnet card).
+  const magnet = resolveMagnet(page, pipelineKind);
   const pct = (n: number) => (stats && stats.sent > 0 ? `${Math.round((n / stats.sent) * 100)}%` : "");
   const changed = (draft.trim() || STANDARD_LEAD_EMAIL_BODY) !== (profile.leadEmailBody ?? STANDARD_LEAD_EMAIL_BODY);
 
@@ -170,21 +177,14 @@ export default function ConfirmationEmailCard({
         </Box>
       )}
 
-      {/* What the lead receives, filled in with a sample lead. */}
+      {/* What the lead receives, filled in with a sample lead. Folded away:
+          most visits to this page aren't about the email. */}
       <Box>
-        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1, flexWrap: "wrap", mb: 0.75 }}>
-          <Box sx={{ display: "flex", alignItems: "center", gap: 0.25 }}>
-            <Typography sx={{ fontSize: 12, color: "text.secondary" }}>Preview (sample lead)</Typography>
-            <InfoTip>
-              Seller leads also get a marketing plan with your name, photo, phone number and recent sales. The button shows it with a made-up seller.
-              The "Homes I've sold recently" line only shows if you have sales under Recent sales.
-            </InfoTip>
-          </Box>
-          <Button variant="outlined" href={sampleUrl} target="_blank" rel="noopener" endIcon={<OpenInNewIcon />}>
-            See the plan your sellers get
-          </Button>
-        </Box>
-        <Box sx={{ border: `1px solid ${tokens.divider2}`, borderRadius: "6px", bgcolor: tokens.bg, p: 1.5 }}>
+        <Button size="small" onClick={() => setShowEmail((v) => !v)} sx={{ px: 0 }}>
+          {showEmail ? "Hide the email" : "Show the email (sample lead)"}
+        </Button>
+        {showEmail && (
+        <Box sx={{ border: `1px solid ${tokens.divider2}`, borderRadius: "6px", bgcolor: tokens.bg, p: 1.5, mt: 0.75 }}>
           <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
             From: <b>{fullName}</b> · Subject: Your home evaluation for {SAMPLE.address}
           </Typography>
@@ -194,16 +194,11 @@ export default function ConfirmationEmailCard({
             {paragraphs.map((t, i) => (
               <Box key={i}>
                 <Typography sx={{ fontSize: 14, mb: 1.25 }}>{t}</Typography>
-                {i === 0 && (
+                {i === 0 && magnet.kind !== "none" && (
                   <Box sx={{ borderLeft: "4px solid #1565c0", bgcolor: "#eef4fc", px: 2, py: 1.5, mb: 1.5 }}>
-                    <Typography sx={{ fontSize: 15, fontWeight: 700, color: "#111", lineHeight: 1.35, mb: 0.5 }}>{PLAN_BLOCK.title(SAMPLE.address)}</Typography>
-                    <Typography sx={{ fontSize: 14, mb: 0.75 }}>{PLAN_BLOCK.intro}</Typography>
-                    {[...PLAN_BLOCK.points, PLAN_BLOCK.salesPoint].map((pt) => (
-                      <Typography key={pt} sx={{ fontSize: 14, mb: 0.25 }}>✓&nbsp; {pt}</Typography>
-                    ))}
-                    <Link href={sampleUrl} target="_blank" rel="noopener" underline="always" sx={{ display: "inline-block", mt: 1, fontSize: 15, fontWeight: 700, color: "#1565c0" }}>
-                      {PLAN_BLOCK.link} →
-                    </Link>
+                    <Typography sx={{ fontSize: 15, fontWeight: 700, color: "#111", lineHeight: 1.35, mb: 0.5 }}>{magnet.title}</Typography>
+                    {magnet.text && <Typography sx={{ fontSize: 14, mb: 0.75 }}>{magnet.text}</Typography>}
+                    <Typography sx={{ fontSize: 15, fontWeight: 700, color: "#1565c0", textDecoration: "underline" }}>{magnet.button} →</Typography>
                   </Box>
                 )}
               </Box>
@@ -220,6 +215,7 @@ export default function ConfirmationEmailCard({
             </Typography>
           </Box>
         </Box>
+        )}
       </Box>
     </Box>
   );

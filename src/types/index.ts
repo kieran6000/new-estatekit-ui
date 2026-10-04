@@ -222,6 +222,13 @@ export interface LeadPage {
   dqText: string;
   dqCtaLabel: string;
   dqCtaUrl: string;
+  /** What leads get straight after the form (lib/leadMagnet.ts). Null =
+   *  automatic: the marketing plan on seller forms, nothing otherwise. */
+  magnetKind?: "none" | "plan" | "pdf" | null;
+  magnetTitle?: string;
+  magnetText?: string;
+  magnetButton?: string;
+  magnetPdfUrl?: string | null;
 }
 
 export type FormPresetKey = "most_leads" | "balanced" | "best_quality";

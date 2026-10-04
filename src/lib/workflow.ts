@@ -12,11 +12,12 @@
 
 export type TriggerKind =
   | "lead_created" | "stage_changed" | "no_answer_times" | "not_contacted_for"
-  | "reminder_due" | "plan_opened" | "daily_at";
-
-export interface Trigger { kind: TriggerKind; stage?: string; count?: number; days?: number; time?: string }
+  | "reminder_due" | "plan_opened" | "daily_at" | "appointment";
 
 export type Unit = "minutes" | "hours" | "days";
+
+/** `amount`/`unit`/`when` are for "appointment": e.g. 1 hour before. */
+export interface Trigger { kind: TriggerKind; stage?: string; count?: number; days?: number; time?: string; amount?: number; unit?: Unit; when?: "before" | "after" }
 
 export type BranchCheck = "stage_is" | "has_tag" | "opened_last_email" | "has_email" | "source_is" | "pipeline_is";
 
@@ -52,6 +53,8 @@ export interface Workflow {
   updatedAt: string;
   /** Shown above the canvas: what's true about this workflow today. */
   note?: string;
+  /** Templates only: new accounts get a copy, switched on or off ("no": they don't). */
+  standard?: "no" | "on" | "off";
 }
 
 // ── Vocabulary (labels live here so the canvas, panel and checks agree) ──
@@ -82,8 +85,9 @@ export const TRIGGERS: { kind: TriggerKind; label: string; help: string }[] = [
   { kind: "stage_changed", label: "Lead moves to a stage", help: "When the agent (or a step) moves the lead to this stage." },
   { kind: "no_answer_times", label: "No answer, a number of times", help: "After the agent logs \"No answer\" this many times." },
   { kind: "not_contacted_for", label: "Lead goes quiet", help: "No call or stage change for this many days." },
+  { kind: "appointment", label: "Before or after an appointment", help: "A set time before (or after) a Booked or Viewing Booked appointment: 1 day, 1 hour, 30 minutes... Moves when the appointment moves; stops if it's cancelled." },
   { kind: "reminder_due", label: "A follow-up reminder is due", help: "When a reminder's time arrives." },
-  { kind: "plan_opened", label: "Lead opens their Marketing Plan", help: "From the email or the thank-you page. Once for each." },
+  { kind: "plan_opened", label: "Lead opens their lead magnet", help: "The plan or guide from the form (Forms → Lead magnet), from the email or the thank-you page. Once for each." },
   { kind: "daily_at", label: "Every weekday at a set time", help: "Once per agent, not per lead: for a daily summary on WhatsApp." },
 ];
 
@@ -120,14 +124,15 @@ export const EXITS: { kind: ExitKind; label: string }[] = [
   { kind: "any_stage_change", label: "The lead's stage changes at all" },
 ];
 
-/** Merge fields per message, exactly the ones the senders fill in today
- *  (run-automations, daily-stage-nudge, send-lead-confirmation).
+/** Merge fields per message, exactly the ones the engine fills in
+ *  (run-automations/workflows.ts). {{answers}} is every question and answer
+ *  from the lead's form, one per line, so it fits any form.
  *  {{action_link}} is the agent's call link: never in an email to the lead.
  *  In a daily summary there's no lead: {{first_name}} is the agent's. */
 export const FIELDS = {
-  whatsapp_agent: ["first_name", "name", "stage", "next_label", "action_link"],
+  whatsapp_agent: ["first_name", "name", "phone", "email", "address", "form", "answers", "appointment", "stage", "next_label", "action_link"],
   daily: ["first_name", "count", "leads_word"],
-  email_lead: ["first_name", "area", "address", "agent_name", "agent_phone", "plan_link"],
+  email_lead: ["first_name", "area", "address", "appointment", "agent_name", "agent_phone", "plan_link"],
 } as const;
 export type FieldSet = keyof typeof FIELDS;
 
@@ -164,6 +169,7 @@ export function triggerOfKind(kind: TriggerKind): Trigger {
     case "no_answer_times": return { kind, count: 2 };
     case "not_contacted_for": return { kind, days: 14 };
     case "daily_at": return { kind, time: "16:00" };
+    case "appointment": return { kind, amount: 1, unit: "days", when: "before" };
     default: return { kind };
   }
 }
@@ -289,6 +295,7 @@ export function triggerSummary(t: Trigger): string {
     case "no_answer_times": return `No answer ${t.count ?? 1} time${(t.count ?? 1) === 1 ? "" : "s"}`;
     case "not_contacted_for": return `Quiet for ${t.days ?? 14} day${(t.days ?? 14) === 1 ? "" : "s"}`;
     case "daily_at": return `Every weekday at ${t.time || "16:00"}`;
+    case "appointment": return `${unitLabel(t.amount ?? 1, t.unit ?? "days")} ${t.when === "after" ? "after" : "before"} the appointment`;
     default: return TRIGGERS.find((x) => x.kind === t.kind)?.label ?? t.kind;
   }
 }
@@ -356,7 +363,6 @@ function fieldProblems(text: string, kind: "whatsapp_agent" | "email_lead", t: T
     if (allowed.includes(f)) continue;
     if (f === "action_link" && kind === "email_lead") out.push("{{action_link}} is the agent's call link. Don't send it to the lead.");
     else if (t.kind === "daily_at" && kind === "whatsapp_agent") out.push(`{{${f}}} doesn't work in a daily summary: it isn't about one lead. Use {{first_name}}, {{count}} or {{leads_word}}.`);
-    else if (f === "phone") out.push("{{phone}} isn't available: agents tap the number instead of the call link, so the call isn't logged.");
     else out.push(`{{${f}}} isn't a field. Use the field buttons below the box.`);
   }
   return [...new Set(out)];
@@ -371,6 +377,10 @@ export function validate(wf: Workflow): Problems {
   if (t.kind === "stage_changed" && !t.stage) add("trigger", "Pick the stage.");
   if (t.kind === "no_answer_times" && !(Number.isInteger(t.count) && (t.count ?? 0) >= 1)) add("trigger", "Missed calls must be a whole number, 1 or more.");
   if (t.kind === "not_contacted_for" && !(Number.isInteger(t.days) && (t.days ?? 0) >= 1)) add("trigger", "Days must be a whole number, 1 or more.");
+  if (t.kind === "appointment") {
+    if (!Number.isInteger(t.amount) || (t.amount ?? 0) < 1) add("trigger", "How long before or after must be a whole number, 1 or more.");
+    else if (t.unit === "minutes" && (t.amount ?? 0) < 5) add("trigger", "At least 5 minutes: messages go out once a minute.");
+  }
   if (t.kind === "daily_at" && !/^([01]\d|2[0-3]):[0-5]\d$/.test(t.time ?? "")) add("trigger", "Pick a time.");
 
   const seen = new Set<string>();
@@ -559,6 +569,42 @@ export const TEMPLATES: { name: string; blurb: string; make: () => Workflow }[] 
         { id: newId(), type: "email_lead", subject: "Still thinking about selling, {{first_name}}?", body: "Hi {{first_name}},\n\nJust checking in. Whenever you're ready, I'm happy to give you an up-to-date valuation for your home in {{area}}.\n\n{{agent_name}}\n{{agent_phone}}" },
         { id: newId(), type: "reminder", label: "Check in with {{first_name}}", inDays: 3 },
       ],
+    }),
+  },
+  {
+    name: "Appointment: day-before reminder",
+    blurb: "The day before: the agent gets the details, and the lead gets a friendly reminder email.",
+    make: () => ({
+      ...blankWorkflow(), name: "Appointment: day-before reminder",
+      trigger: { kind: "appointment", amount: 1, unit: "days", when: "before" },
+      settings: { ...defaultSettings(), quietHours: false },
+      steps: [
+        { id: newId(), type: "whatsapp_agent", text: "Tomorrow: {{name}}, {{appointment}}.\n{{address}}\n{{phone}}\n\nConfirm with them: {{action_link}}" },
+        {
+          id: newId(), type: "branch", check: "has_email", value: "",
+          yes: [{ id: newId(), type: "email_lead", subject: "See you {{appointment}}", body: "Hi {{first_name}},\n\nJust a reminder that we're meeting {{appointment}}.\n\nIf the time no longer works, reply here or call me and we'll find another.\n\n{{agent_name}}\n{{agent_phone}}" }],
+          no: [],
+        },
+      ],
+    }),
+  },
+  {
+    name: "Appointment: 1 hour before",
+    blurb: "A heads-up for the agent an hour before, with the address and number.",
+    make: () => ({
+      ...blankWorkflow(), name: "Appointment: 1 hour before",
+      trigger: { kind: "appointment", amount: 1, unit: "hours", when: "before" },
+      settings: { ...defaultSettings(), quietHours: false },
+      steps: [{ id: newId(), type: "whatsapp_agent", text: "In 1 hour: {{name}}, {{appointment}}.\n{{address}}\n{{phone}}" }],
+    }),
+  },
+  {
+    name: "After the appointment: log it",
+    blurb: "2 hours after, ask the agent how it went, with the link to log it.",
+    make: () => ({
+      ...blankWorkflow(), name: "After the appointment: log it",
+      trigger: { kind: "appointment", amount: 2, unit: "hours", when: "after" },
+      steps: [{ id: newId(), type: "whatsapp_agent", text: "How did it go with {{first_name}}? Log it: {{action_link}}" }],
     }),
   },
   {

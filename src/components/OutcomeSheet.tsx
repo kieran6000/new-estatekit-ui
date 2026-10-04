@@ -157,25 +157,15 @@ export default function OutcomeSheet({
       )}
 
       {step === "booked" && stage && (
+        // A real day and time: appointment reminders count down to it.
         <Box sx={{ pb: 1 }}>
           {[
-            ["Tomorrow morning", "Tomorrow AM", 1],
-            ["Tomorrow afternoon", "Tomorrow PM", 1],
-            ["Later this week", "This week", 3],
-          ].map(([label, tag, days]) => (
-            <Opt
-              key={label as string}
-              label={label as string}
-              onClick={() => commitStage(stage, { label: tag as string, at: defaultReminderISO(days as number) })}
-            />
+            ["Tomorrow 9am", 1, 9],
+            ["Tomorrow 2pm", 1, 14],
+          ].map(([label, days, hour]) => (
+            <Opt key={label as string} label={label as string} onClick={() => commitStage(stage, apptExtra(atHour(days as number, hour as number)))} />
           ))}
-          <DatePickerRow
-            buttonLabel="Set date"
-            onSet={(d) => {
-              const lbl = "Appt " + d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
-              commitStage(stage, { label: lbl, at: d.toISOString() });
-            }}
-          />
+          <DateTimePickerRow onSet={(d) => commitStage(stage, apptExtra(d))} />
         </Box>
       )}
 
@@ -269,6 +259,38 @@ function Opt({ icon, label, onClick }: { icon?: React.ReactNode; label: string; 
       {icon && <ListItemIcon sx={{ minWidth: 40, color: "text.secondary" }}>{icon}</ListItemIcon>}
       <ListItemText slotProps={{ primary: { sx: { fontSize: 15 } } }}>{label}</ListItemText>
     </ListItemButton>
+  );
+}
+
+function atHour(daysAhead: number, hour: number): Date {
+  const d = new Date();
+  d.setDate(d.getDate() + daysAhead);
+  d.setHours(hour, 0, 0, 0);
+  return d;
+}
+
+/** "Appt 7 Oct, 10:00", as the WhatsApp link's booking writes it. */
+function apptExtra(d: Date): StageChangeExtra {
+  const label = "Appt " + d.toLocaleString("en-ZA", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false });
+  return { label, at: d.toISOString() };
+}
+
+function DateTimePickerRow({ onSet }: { onSet: (d: Date) => void }) {
+  const [val, setVal] = useState("");
+  return (
+    <Box sx={{ display: "flex", gap: 1, px: 2, py: 1, alignItems: "center" }}>
+      <TextField size="small" type="datetime-local" label="Or pick a day and time" value={val} onChange={(e) => setVal(e.target.value)} fullWidth slotProps={{ inputLabel: { shrink: true } }} />
+      <Button
+        variant="contained"
+        disabled={!val}
+        onClick={() => {
+          const d = new Date(val);
+          if (!Number.isNaN(d.getTime())) onSet(d);
+        }}
+      >
+        Set
+      </Button>
+    </Box>
   );
 }
 
