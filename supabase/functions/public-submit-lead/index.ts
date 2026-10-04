@@ -71,6 +71,10 @@ Deno.serve(async (req: Request) => {
     "ad_id", "adset_id", "campaign_id", "ad_name", "campaign_name",
     "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term",
     "fbclid", "gclid", "referrer",
+    // Meta's browser cookies (_fbp, _fbc): fb-capi-lead sends them so Meta can
+    // match the server event to the person. Dropped here until Oct 2026, so
+    // no Conversions API event carried them.
+    "fbp", "fbc",
   ];
   const attribution: Record<string, string> = {};
   for (const key of ALLOWED_ATTRIBUTION) {
