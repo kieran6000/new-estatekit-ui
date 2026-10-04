@@ -290,7 +290,7 @@ function ActivityTab({ users, events, capped, selected, setSelected, range, setR
         </TextField>
         <TextField size="small" label="Search" placeholder="Lead, change, device, place…" value={q} onChange={(e) => setQ(e.target.value)} />
       </Box>
-      <Box sx={{ display: "flex", gap: 0.75, flexWrap: "wrap", alignItems: "center", mb: 1 }}>
+      <Box sx={{ display: "flex", gap: 0.75, flexWrap: { xs: "nowrap", md: "wrap" }, overflowX: { xs: "auto", md: "visible" }, mx: { xs: -2, md: 0 }, px: { xs: 2, md: 0 }, pb: 0.5, mb: 1, scrollbarWidth: "none", "&::-webkit-scrollbar": { display: "none" } }}>
         {(Object.keys(CATEGORY_LABEL) as AuditCategory[]).map((c) => {
           const on = categories.includes(c);
           return (
@@ -300,14 +300,16 @@ function ActivityTab({ users, events, capped, selected, setSelected, range, setR
               color={on ? "primary" : "default"}
               variant={on ? "filled" : "outlined"}
               onClick={() => setCategories(on ? categories.filter((x) => x !== c) : [...categories, c])}
+              sx={{ flex: "none" }}
             />
           );
         })}
-        <Box sx={{ flex: 1 }} />
-        <Typography sx={{ fontSize: 13, color: "text.secondary" }}>
+      </Box>
+      <Box sx={{ display: "flex", gap: 1, alignItems: "center", mb: 1 }}>
+        <Typography sx={{ flex: 1, minWidth: 0, fontSize: 13, color: "text.secondary" }}>
           {rows.length.toLocaleString()} event{rows.length === 1 ? "" : "s"}{rows.length > shown.length ? ` · showing the latest ${shown.length}` : ""}
         </Typography>
-        <Button size="small" variant="outlined" startIcon={<DownloadIcon />} onClick={exportCsv} disabled={!rows.length}>
+        <Button size="small" variant="outlined" startIcon={<DownloadIcon />} onClick={exportCsv} disabled={!rows.length} sx={{ flex: "none" }}>
           Export CSV
         </Button>
       </Box>
@@ -316,6 +318,61 @@ function ActivityTab({ users, events, capped, selected, setSelected, range, setR
         {capped ? " This range has more events than we load at once: pick a shorter range or a user." : ""}
       </Typography>
 
+      {!isDesktop ? (
+        <Box sx={{ border: `1px solid ${tokens.divider}`, borderRadius: "8px", bgcolor: "background.paper", overflow: "hidden" }}>
+          {shown.map((e, i) => {
+            const account = e.accountId ? byId.get(e.accountId) : undefined;
+            const name = who(e);
+            const expanded = open === e.id;
+            return (
+              <Box key={e.id} sx={{ borderTop: i ? `1px solid ${tokens.divider}` : 0 }}>
+                <Box
+                  component="button"
+                  type="button"
+                  onClick={() => setOpen(expanded ? null : e.id)}
+                  aria-expanded={expanded}
+                  sx={{ display: "flex", gap: 1.25, alignItems: "flex-start", width: "100%", textAlign: "left", font: "inherit", color: "inherit", bgcolor: "transparent", border: 0, p: "12px 12px 12px 14px", minHeight: 64, cursor: "pointer" }}
+                >
+                  <ActionIcon e={e} />
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Box sx={{ display: "flex", alignItems: "baseline", gap: 1 }}>
+                      <Typography sx={{ flex: 1, minWidth: 0, fontSize: 14.5, fontWeight: 600, lineHeight: 1.3 }}>{e.action}</Typography>
+                      <Typography sx={{ flex: "none", fontSize: 12.5, color: "text.secondary" }}>{timeAgo(e.at)}</Typography>
+                    </Box>
+                    {e.target && <Typography sx={{ fontSize: 13, color: "text.secondary", overflowWrap: "anywhere" }}>{e.target}</Typography>}
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, mt: 0.5, fontSize: 12.5, color: "text.secondary", flexWrap: "wrap" }}>
+                      <Avatar sx={{ width: 18, height: 18, fontSize: 9, bgcolor: e.actorId ? undefined : tokens.surface2, color: e.actorId ? undefined : "text.secondary" }}>{initials(name)}</Avatar>
+                      <Box component="span" sx={{ color: "text.primary", fontWeight: 500 }}>{name}</Box>
+                      {account && account.id !== e.actorId && <Box component="span">in {account.name}</Box>}
+                      {e.country && <Flag code={e.country} />}
+                    </Box>
+                    {e.before !== undefined && e.after !== undefined && e.action === "Moved lead" && (
+                      <Typography sx={{ fontSize: 12.5, color: "text.secondary", mt: 0.25 }}>{e.before || "—"} → {e.after || "—"}</Typography>
+                    )}
+                  </Box>
+                  {expanded ? <ExpandLessIcon fontSize="small" sx={{ color: "text.secondary", mt: 0.25 }} /> : <ExpandMoreIcon fontSize="small" sx={{ color: "text.secondary", mt: 0.25 }} />}
+                </Box>
+                <Collapse in={expanded} unmountOnExit>
+                  <Box sx={{ px: 2, py: 1.5, bgcolor: tokens.surface2, display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 16px" }}>
+                    <Detail stacked k="Exact time" v={fullDate(e.at)} />
+                    <Detail stacked k="Category" v={CATEGORY_LABEL[e.category]} />
+                    <Detail stacked k="Done by" v={e.actorId ? `${name} (${byId.get(e.actorId)?.role ?? "User"})` : name} />
+                    <Detail stacked k="In account" v={account?.name ?? ""} />
+                    {e.target && <Detail stacked wide k={e.category === "leads" || e.category === "automations" ? "Lead" : "Details"} v={e.target} />}
+                    {e.before !== undefined && <Detail stacked wide k="Before" v={e.before} />}
+                    {e.after !== undefined && <Detail stacked wide k={e.action.startsWith("WhatsApp") ? "Automation" : "After"} v={e.after} />}
+                    <Detail stacked k="Done from" v={e.via} />
+                    <Detail stacked k="Device" v={e.device || "Not recorded"} />
+                    {e.location && <Detail stacked k="Location" v={e.location} />}
+                    {e.ip && <Detail stacked k="IP address" v={e.ip} />}
+                  </Box>
+                </Collapse>
+              </Box>
+            );
+          })}
+          {!shown.length && <Typography sx={{ textAlign: "center", py: 5, color: "text.secondary" }}>Nothing matches these filters.</Typography>}
+        </Box>
+      ) : (
       <Box sx={{ border: `1px solid ${tokens.divider}`, borderRadius: "4px", bgcolor: "background.paper", overflowX: "auto" }}>
         <Table size="small">
           <TableHead>
@@ -405,11 +462,20 @@ function ActivityTab({ users, events, capped, selected, setSelected, range, setR
           </TableBody>
         </Table>
       </Box>
+      )}
     </Box>
   );
 }
 
-function Detail({ k, v }: { k: string; v: string }) {
+function Detail({ k, v, stacked, wide }: { k: string; v: string; stacked?: boolean; wide?: boolean }) {
+  if (stacked) {
+    return (
+      <Box sx={{ minWidth: 0, gridColumn: wide ? "1 / -1" : undefined }}>
+        <Box sx={{ fontSize: 12, color: "text.secondary" }}>{k}</Box>
+        <Box sx={{ fontSize: 13.5, overflowWrap: "anywhere", whiteSpace: "pre-wrap" }}>{v || "—"}</Box>
+      </Box>
+    );
+  }
   return (
     <>
       <Box sx={{ color: "text.secondary" }}>{k}</Box>
@@ -443,10 +509,64 @@ function UsersTab({ users, onShowActivity }: { users: AuditUser[]; onShowActivit
   return (
     <Box sx={{ maxWidth: 1100, mx: "auto", p: 2, pb: 6 }}>
       <Box sx={{ display: "flex", gap: 1.5, mb: 2, alignItems: "center" }}>
-        <TextField size="small" label="Search users" value={q} onChange={(e) => setQ(e.target.value)} sx={{ flex: 1, maxWidth: 420 }} />
-        <Box sx={{ flex: 1 }} />
+        <TextField size="small" label="Search users" value={q} onChange={(e) => setQ(e.target.value)} sx={{ flex: 1, minWidth: 0, maxWidth: 420 }} />
+        <Box sx={{ flex: { xs: "none", md: 1 } }} />
         <Button size="small" variant="outlined" startIcon={<DownloadIcon />} onClick={exportCsv}>Export CSV</Button>
       </Box>
+      {!isDesktop ? (
+        <Box sx={{ border: `1px solid ${tokens.divider}`, borderRadius: "8px", bgcolor: "background.paper", overflow: "hidden" }}>
+          {rows.map((u, i) => {
+            const expanded = open === u.id;
+            return (
+              <Box key={u.id} sx={{ borderTop: i ? `1px solid ${tokens.divider}` : 0 }}>
+                <Box
+                  component="button"
+                  type="button"
+                  onClick={() => setOpen(expanded ? null : u.id)}
+                  aria-expanded={expanded}
+                  sx={{ display: "flex", gap: 1.25, alignItems: "center", width: "100%", textAlign: "left", font: "inherit", color: "inherit", bgcolor: "transparent", border: 0, p: "12px 12px 12px 14px", minHeight: 64, cursor: "pointer" }}
+                >
+                  <Avatar sx={{ width: 36, height: 36, fontSize: 13 }}>{initials(u.name)}</Avatar>
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography noWrap sx={{ fontSize: 14.5, fontWeight: 600 }}>{u.name}</Typography>
+                    <Typography noWrap sx={{ fontSize: 12.5, color: "text.secondary" }}>{u.role} · {u.plan}</Typography>
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, fontSize: 12.5, color: "text.secondary", mt: 0.25 }}>
+                      <Flag code={u.lastCountry} />{u.lastSeen ? `Seen ${timeAgo(u.lastSeen)}` : "Never signed in"}
+                    </Box>
+                  </Box>
+                  <Chip size="small" label={u.status} color={u.status === "Active" ? "success" : "warning"} variant="outlined" sx={{ flex: "none" }} />
+                  {expanded ? <ExpandLessIcon fontSize="small" sx={{ color: "text.secondary" }} /> : <ExpandMoreIcon fontSize="small" sx={{ color: "text.secondary" }} />}
+                </Box>
+                <Collapse in={expanded} unmountOnExit>
+                  <Box sx={{ px: 2, py: 1.5, bgcolor: tokens.surface2 }}>
+                    <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 16px" }}>
+                            <Detail stacked k="Full name" v={u.name} />
+                            <Detail stacked k="Role" v={u.role} />
+                            <Detail stacked k="WhatsApp" v={u.phone} />
+                            <Detail stacked wide k="Email" v={u.email} />
+                            <Detail stacked k="Company" v={u.company} />
+                            <Detail stacked k="Area" v={u.area} />
+                            <Detail stacked k="Plan" v={u.plan} />
+                            <Detail stacked k="Status" v={u.status} />
+                            <Detail stacked k="Renewal" v={u.renewalDate ? new Date(u.renewalDate + "T00:00:00").toLocaleDateString("en-ZA", { day: "numeric", month: "long", year: "numeric" }) : ""} />
+                            <Detail stacked k="Last seen" v={when(u.lastSeen)} />
+                            <Detail stacked k="Last sign-in" v={when(u.lastSignIn)} />
+                            <Detail stacked k="Last lead action" v={when(u.lastLeadAction)} />
+                            <Detail stacked wide k="Last device" v={u.lastDevice || "Not recorded"} />
+                            <Detail stacked k="Last location" v={u.lastLocation || "Not recorded yet"} />
+                            <Detail stacked k="Last IP" v={u.lastIp || "Not recorded yet"} />
+                            <Detail stacked k="Leads" v={String(u.leads)} />
+                            <Detail stacked k="Lead pages" v={String(u.pages)} />
+                    </Box>
+                    <Button fullWidth variant="contained" onClick={() => onShowActivity(u)} sx={{ mt: 2 }}>See their activity</Button>
+                  </Box>
+                </Collapse>
+              </Box>
+            );
+          })}
+          {!rows.length && <Typography sx={{ textAlign: "center", py: 5, color: "text.secondary" }}>No users match.</Typography>}
+        </Box>
+      ) : (
       <Box sx={{ border: `1px solid ${tokens.divider}`, borderRadius: "4px", bgcolor: "background.paper", overflowX: "auto" }}>
         <Table size="small">
           <TableHead>
@@ -527,6 +647,7 @@ function UsersTab({ users, onShowActivity }: { users: AuditUser[]; onShowActivit
           </TableBody>
         </Table>
       </Box>
+      )}
     </Box>
   );
 }

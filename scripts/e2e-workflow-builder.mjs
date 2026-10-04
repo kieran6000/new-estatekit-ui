@@ -194,7 +194,7 @@ ok((await nodes("If / else")) === 1, "added an If / else");
 // Add buttons now: [root0, yes0, no0, root1]
 await addAt(1, "WhatsApp the agent");
 await p.getByRole("textbox", { name: "Message to the agent" }).fill("Call {{first_name}} now: ");
-await p.getByText("{{action_link}}", { exact: true }).click();
+await p.getByRole("button", { name: "Add Call-and-log link" }).click();
 const msg = await p.getByRole("textbox", { name: "Message to the agent" }).inputValue();
 ok(msg === "Call {{first_name}} now: {{action_link}}", `field button inserts at the cursor (${msg})`);
 await done();
