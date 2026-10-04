@@ -70,11 +70,12 @@ import { listPath, workflowPath, type BackTo, type Scope } from "../lib/automati
 import { trackActivity } from "../lib/activity";
 import { useSnack } from "../hooks/useSnack";
 import WhatsAppPreview from "./WhatsAppPreview";
+import { PillEditor, type PillEditorHandle } from "./PillEditor";
 import LeadTag from "./LeadTag";
 import { PlainHead, SortHead, sortRows, useTableSort } from "./SortHead";
 import {
   BRANCH_CHECKS, EXITS, FILTER_FIELDS, KNOWN_TAGS, PIPELINES, SOURCES, STAGES, STEP_TYPES, TEMPLATES, TRIGGERS,
-  allowedSteps, badFields, branchLabel, cloneSteps, countSteps, defaultBranchValue, fieldGroups, fieldInfo, fieldToken, filterSummary, findStep,
+  allowedSteps, badFields, branchLabel, cloneSteps, countSteps, defaultBranchValue, fieldGroups, fieldInfo, fieldToken, fieldsFor, filterSummary, findStep,
   insertStep, locate, moveStep, newId, newStep, ordinal, stepAtPos, rememberTags, tagsIn, problemCount, removeStep, stepSummary, stepTitle, timeLabel, timeline,
   replaceField, sampleFields, triggerOfKind, triggerSummary, unitLabel, updateStep, usedFields, validate, waitMinutes,
   type BranchCheck, type Exit, type Filter, type MessageKind, type Path, type Problems, type Settings, type Step, type StepType, type Trigger,
@@ -1572,31 +1573,18 @@ function ExitsEditor({ exits, onChange }: { exits: Exit[]; onChange: (e: Exit[])
  *  one that can't go in this message gets a one-tap Remove (or Fix, when it
  *  looks like a typo of one that can). Tapping a detail adds it at the cursor. */
 function MessageField({ label, value, onChange, kind, trigger, minRows }: { label: string; value: string; onChange: (v: string) => void; kind: MessageKind; trigger: Trigger; minRows: number }) {
-  const ref = useRef<HTMLTextAreaElement | null>(null);
-  const pending = useRef<number | null>(null);
-  useEffect(() => {
-    if (pending.current === null || !ref.current) return;
-    const at = pending.current;
-    pending.current = null;
-    ref.current.focus();
-    ref.current.setSelectionRange(at, at);
-  }, [value]);
-  const insert = (f: string) => {
-    const token = fieldToken(f);
-    const el = ref.current;
-    const start = el?.selectionStart ?? value.length;
-    const end = el?.selectionEnd ?? value.length;
-    // Keep words apart: "Hi{{first_name}}" would read "HiThandi".
-    const before = start > 0 && !/\s/.test(value[start - 1]) ? " " : "";
-    pending.current = start + before.length + token.length;
-    onChange(value.slice(0, start) + before + token + value.slice(end));
-  };
+  const editor = useRef<PillEditorHandle | null>(null);
+  const insert = (f: string) => editor.current?.insertField(f, fieldToken(f));
+  const tk = trigger.kind;
+  // Stable per message type and trigger, so the box only redraws its pills when these change.
+  const pillLabel = useCallback((f: string) => fieldInfo(f, { kind: tk } as Trigger).label, [tk]);
+  const isBad = useCallback((f: string) => !fieldsFor(kind, { kind: tk } as Trigger).includes(f), [kind, tk]);
   const used = new Set(usedFields(value));
   const bad = badFields(value, kind, trigger);
   const daily = trigger.kind === "daily_at";
   return (
     <>
-      <TextField size="small" multiline minRows={minRows} label={label} value={value} onChange={(e) => onChange(e.target.value)} inputRef={ref} />
+      <PillEditor ref={editor} label={label} value={value} onChange={onChange} pillLabel={pillLabel} isBad={isBad} minRows={minRows} />
       {bad.length > 0 && (
         <Box sx={{ mt: -1, display: "flex", flexDirection: "column", gap: 0.75 }}>
           {bad.map((b) => (
@@ -1615,7 +1603,7 @@ function MessageField({ label, value, onChange, kind, trigger, minRows }: { labe
         <Typography sx={{ fontSize: 13, fontWeight: 600 }}>Add a detail</Typography>
         <Typography sx={{ fontSize: 12.5, color: "text.secondary", mb: 1 }}>
           {daily ? "Filled in for each agent when the summary goes out." : kind === "email_lead" ? "Filled in for each lead when the email goes out." : "Filled in for each lead when the message goes out."}
-          {" "}Tap one to add it where your cursor is. In the box it shows as {"{{…}}"}; the preview shows what's actually sent.
+          {" "}Tap one to add it where your cursor is. It shows as a blue tag in the message; the preview shows what's actually sent.
         </Typography>
         {fieldGroups(kind, trigger).map(({ group, fields }) => (
           <Box key={group} sx={{ mb: 1 }}>
