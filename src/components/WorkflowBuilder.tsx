@@ -316,12 +316,11 @@ function StandardSetBar({ agentId, workflows }: { agentId: string; workflows: Wo
   }
 
   return (
-    <Alert
-      severity="info"
-      sx={{ mb: 2, alignItems: "center", "& .MuiAlert-message": { flex: 1 } }}
-      action={<Button size="small" variant="contained" disabled={busy} onClick={() => void add()}>Add the standard workflows</Button>}
-    >
-      This account has no workflows, so no automations run for it. Add the standard set (the same as every new account), then change what you like.
+    // The button goes under the words on phones (an Alert action squeezes
+    // the text into a sliver there), beside them on wider screens.
+    <Alert severity="info" sx={{ mb: 2, "& .MuiAlert-message": { flex: 1, display: "flex", flexDirection: { xs: "column", sm: "row" }, alignItems: { xs: "stretch", sm: "center" }, gap: 1.5 } }}>
+      <Box sx={{ flex: 1 }}>This account has no workflows, so no automations run for it. Add the standard set (the same as every new account), then change what you like.</Box>
+      <Button variant="contained" disabled={busy} onClick={() => void add()} sx={{ flex: "none", whiteSpace: "nowrap", minHeight: 44 }}>Add the standard workflows</Button>
     </Alert>
   );
 }
@@ -393,7 +392,7 @@ function WorkflowList({ workflows, scope, counts, onCreate, header }: {
           placeholder="Search"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          sx={{ width: 260, maxWidth: "100%" }}
+          sx={{ width: { xs: "100%", sm: 260 } }}
           slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> } }}
         />
       </Box>
@@ -512,8 +511,7 @@ function Editor({ initial, isTemplate, backTo, onSave, onCopyToTemplates, onBack
   onDelete: () => void;
 }) {
   const isDesktop = useMediaQuery("(min-width:1000px)");
-  // The app's bottom bar shows below 900px (see AppShell).
-  const hasBottomNav = !useMediaQuery("(min-width:900px)");
+  const isPhone = useMediaQuery("(max-width:599px)");
   const showSnack = useSnack();
   const { wf, set, undo, redo, canUndo, canRedo } = useHistory(initial);
   // Changed since it was opened or last saved. A new workflow can be saved as
@@ -679,11 +677,15 @@ function Editor({ initial, isTemplate, backTo, onSave, onCopyToTemplates, onBack
   return (
     // A fixed-height frame: the header and tabs never scroll away, and the
     // canvas and the details panel each scroll on their own.
-    <Box sx={{ height: hasBottomNav ? "calc(100dvh - 56px)" : "100dvh", display: "flex", flexDirection: "column", minHeight: 420 }}>
-      <Box sx={{ display: "flex", alignItems: "center", gap: 1, px: 1.5, height: 56, flex: "none", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
-        <Button startIcon={<ArrowBackIcon />} onClick={back} sx={{ textTransform: "none", color: "text.primary", flex: "none" }} aria-label={`Back to ${backTo.label.toLowerCase()}`}>
-          {isDesktop ? backTo.label : ""}
-        </Button>
+    <Box sx={{ height: "calc(100dvh - var(--ek-nav-h))", display: "flex", flexDirection: "column", minHeight: 420 }}>
+      <Box sx={{ display: "flex", alignItems: "center", gap: { xs: 0.5, sm: 1 }, px: { xs: 0.5, sm: 1.5 }, height: 56, flex: "none", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
+        {isDesktop ? (
+          <Button startIcon={<ArrowBackIcon />} onClick={back} sx={{ textTransform: "none", color: "text.primary", flex: "none" }} aria-label={`Back to ${backTo.label.toLowerCase()}`}>
+            {backTo.label}
+          </Button>
+        ) : (
+          <IconButton onClick={back} aria-label={`Back to ${backTo.label.toLowerCase()}`} sx={{ flex: "none" }}><ArrowBackIcon /></IconButton>
+        )}
         <Box sx={{ flex: 1, minWidth: 0, display: "flex", justifyContent: "center", alignItems: "center", gap: 0.5 }}>
           {editingName ? (
             <InputBase
@@ -715,7 +717,8 @@ function Editor({ initial, isTemplate, backTo, onSave, onCopyToTemplates, onBack
             />
           </Tooltip>
         )}
-        <Tooltip title="Undo (Ctrl+Z)"><span><IconButton onClick={undo} disabled={!canUndo} aria-label="Undo"><UndoIcon fontSize="small" /></IconButton></span></Tooltip>
+        {/* Phones: the name needs the room more than undo does. */}
+        {!isPhone && <Tooltip title="Undo (Ctrl+Z)"><span><IconButton onClick={undo} disabled={!canUndo} aria-label="Undo"><UndoIcon fontSize="small" /></IconButton></span></Tooltip>}
         {isDesktop && <Tooltip title="Redo (Ctrl+Shift+Z)"><span><IconButton onClick={redo} disabled={!canRedo} aria-label="Redo"><RedoIcon fontSize="small" /></IconButton></span></Tooltip>}
         {!isTemplate && (
           <Tooltip title={wf.published ? "On: running for leads" : nProblems ? "Fix the problems to turn it on" : "Off: not running"}>
@@ -871,8 +874,13 @@ function Canvas({ wf, sel, setSel, onAdd, problems, here, onHere, highlight, ban
   // Bring the shown lead's step into view.
   useEffect(() => {
     if (!highlight) return;
-    const el = scroller.current?.querySelector(`[data-step="${CSS.escape(highlight)}"]`);
-    el?.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
+    // Scroll the canvas only: scrollIntoView would also scroll the page
+    // around it and push the app's header off a phone screen.
+    const box = scroller.current;
+    const el = box?.querySelector<HTMLElement>(`[data-step="${CSS.escape(highlight)}"]`);
+    if (!box || !el) return;
+    const b = box.getBoundingClientRect(), r = el.getBoundingClientRect();
+    box.scrollTo({ top: box.scrollTop + r.top - b.top - (b.height - r.height) / 2, left: box.scrollLeft + r.left - b.left - (b.width - r.width) / 2, behavior: "smooth" });
   }, [highlight]);
 
   return (
@@ -1175,9 +1183,9 @@ function stepLine(step: Step | undefined): string {
 function LeadBanner({ run, step, loading, onClose, onHistory }: { run: LeadInWorkflow | undefined; step: Step | undefined; loading: boolean; onClose: () => void; onHistory: () => void }) {
   const next = run ? nextLabel(run) : null;
   return (
-    <Box sx={{ position: "sticky", top: 0, left: 0, zIndex: 3, display: "flex", gap: 1.25, alignItems: "center", bgcolor: tokens.amberTint, borderBottom: `1px solid ${tokens.amberBorder}`, px: 2, py: 1 }}>
-      <PersonIcon sx={{ fontSize: 20, color: tokens.amber, flex: "none" }} />
-      <Box sx={{ flex: 1, minWidth: 0 }}>
+    <Box sx={{ position: "sticky", top: 0, left: 0, zIndex: 3, display: "flex", flexWrap: { xs: "wrap", sm: "nowrap" }, gap: { xs: 0.5, sm: 1.25 }, alignItems: "center", bgcolor: tokens.amberTint, borderBottom: `1px solid ${tokens.amberBorder}`, px: 2, py: 1 }}>
+      <PersonIcon sx={{ fontSize: 20, color: tokens.amber, flex: "none", display: { xs: "none", sm: "block" } }} />
+      <Box sx={{ flex: { xs: "1 1 100%", sm: 1 }, minWidth: 0, order: { xs: 0, sm: 0 } }}>
         {loading ? (
           <Typography sx={{ fontSize: 13.5 }}>Finding this lead…</Typography>
         ) : run ? (

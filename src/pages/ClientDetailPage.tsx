@@ -298,7 +298,7 @@ function Header({ data }: { data: Data }) {
           </Box>
         </Box>
         <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
-          <Button variant="contained" startIcon={<LoginIcon />} onClick={openDashboard}>Open their dashboard</Button>
+          <Button variant="contained" startIcon={<LoginIcon />} onClick={openDashboard} sx={{ width: { xs: "100%", sm: "auto" }, minHeight: 44 }}>Open their dashboard</Button>
           {p.fb_ad_account_id && (
             <Button variant="outlined" endIcon={<OpenInNewIcon />} href={adsManagerUrl(p.fb_ad_account_id)} target="_blank" rel="noopener">
               Ads Manager

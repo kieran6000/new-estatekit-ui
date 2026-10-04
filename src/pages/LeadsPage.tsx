@@ -690,12 +690,12 @@ export default function LeadsPage() {
       )}
 
       {/* Bulk action bar — appears once leads are selected. Sits above the
-          mobile bottom-nav (56px). Boring on purpose. */}
+          phone bottom bar (--ek-nav-h). Boring on purpose. */}
       {selectMode && selected.size > 0 && (
         <Paper
           elevation={8}
           sx={{
-            position: "fixed", left: 0, right: 0, bottom: { xs: 56, sm: 0 }, zIndex: 20,
+            position: "fixed", left: 0, right: 0, bottom: "var(--ek-nav-h)", zIndex: 20,
             borderTop: `1px solid ${tokens.divider}`,
             display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap",
             p: "8px 12px",

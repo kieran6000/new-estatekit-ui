@@ -526,7 +526,7 @@ export default function LeadPagePage() {
                       Makes sure Facebook hears about every lead, even when a phone blocks tracking. Facebook calls it the Conversions API.
                     </Typography>
                   </Box>
-                  <Button size="small" onClick={() => setShowAdvanced((v) => !v)}>{showAdvanced ? "Hide" : capiOn ? "Change" : "Set up"}</Button>
+                  <Button onClick={() => setShowAdvanced((v) => !v)} sx={{ flex: "none", whiteSpace: "nowrap", minHeight: 44 }}>{showAdvanced ? "Hide" : capiOn ? "Change" : "Set up"}</Button>
                 </Box>
 
                 {showAdvanced && <CapiSettings pixelId={form.fbPixelId} />}
@@ -1311,6 +1311,8 @@ function CustomQuestionEditor({
   const [required, setRequired] = useState(false);
   const [options, setOptions] = useState<string[]>(["", ""]);
   const [editingId, setEditingId] = useState<string | null>(null);
+  // Delete asks once, in the row: one stray tap on a phone shouldn't lose a question.
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const canAdd = !!label.trim() && (type !== "multiple_choice" || cleanOptions(options).length >= 2);
 
   async function add() {
@@ -1328,33 +1330,60 @@ function CustomQuestionEditor({
         editingId === q.id ? (
           <EditQuestionRow key={q.id} pageId={pageId} question={q} onDone={() => setEditingId(null)} />
         ) : (
-          <Box key={q.id} sx={{ display: "flex", alignItems: "center", gap: 1, p: "10px 12px", border: `1px solid ${tokens.divider}`, borderRadius: "6px" }}>
-            {q.type === "address" && <PlaceIcon fontSize="small" sx={{ color: "text.secondary" }} />}
+          // Phones: the question gets the full width, its answers wrap as
+          // chips, and the buttons sit in their own row underneath (44px
+          // each). Wider screens: buttons on the right, as before.
+          <Box key={q.id} sx={{ display: "flex", flexDirection: { xs: "column", sm: "row" }, alignItems: { xs: "stretch", sm: "center" }, gap: { xs: 1, sm: 1.5 }, p: { xs: "12px 12px 6px", sm: "10px 12px" }, border: `1px solid ${tokens.divider}`, borderRadius: "8px", bgcolor: "background.paper" }}>
             <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Typography sx={{ fontSize: 14, fontWeight: 500 }}>
-                {q.label}
-                {q.required && <Box component="span" sx={{ ml: 0.75, fontSize: 11, color: "text.secondary", fontWeight: 400 }}>(required)</Box>}
-              </Typography>
-              <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
+              <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1 }}>
+                {q.type === "address" && <PlaceIcon fontSize="small" sx={{ color: "text.secondary", mt: "2px" }} />}
+                <Typography sx={{ fontSize: 15, fontWeight: 600, lineHeight: 1.35, flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>{q.label}</Typography>
+              </Box>
+              <Typography sx={{ fontSize: 12.5, color: "text.secondary", mt: 0.5 }}>
                 {QUESTION_TYPES.find((t) => t.value === q.type)?.label}
-                {q.validation === "street_number" ? " — must include a street number" : ""}
-                {q.options?.length ? ` — ${q.options.join(" · ")}` : ""}
+                {q.required ? " · Required" : " · Optional"}
+                {q.validation === "street_number" ? " · Must include a street number" : ""}
               </Typography>
+              {!!q.options?.length && (
+                <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.75, mt: 1 }}>
+                  {q.options.map((o) => {
+                    // Answers set to end the form, or to not count as a good lead.
+                    const ends = q.disqualifyAnswers?.includes(o);
+                    const weak = !ends && q.lowQualityAnswers?.includes(o);
+                    return (
+                      <Box key={o} component="span" sx={{ fontSize: 12.5, lineHeight: 1.3, px: 1, py: 0.5, borderRadius: "6px", border: `1px solid ${ends ? tokens.redBorder : weak ? tokens.amberBorder : tokens.divider}`, bgcolor: ends ? tokens.redTint : weak ? tokens.amberTint : tokens.surface2, color: "text.primary" }}>
+                        {o}
+                        {(ends || weak) && <Box component="span" sx={{ color: "text.secondary" }}>{ends ? " · ends form" : " · not counted"}</Box>}
+                      </Box>
+                    );
+                  })}
+                </Box>
+              )}
             </Box>
-            {!readOnly && (<>
-            <IconButton size="small" onClick={() => setEditingId(q.id)}>
-              <EditOutlinedIcon fontSize="small" />
-            </IconButton>
-            <IconButton size="small" disabled={i === 0} onClick={() => moveQuestion.mutate({ id: q.id, direction: "up" })}>
-              <ArrowUpwardIcon fontSize="small" />
-            </IconButton>
-            <IconButton size="small" disabled={i === questions.length - 1} onClick={() => moveQuestion.mutate({ id: q.id, direction: "down" })}>
-              <ArrowDownwardIcon fontSize="small" />
-            </IconButton>
-            <IconButton size="small" onClick={() => removeQuestion.mutate(q.id)}>
-              <DeleteOutlineIcon fontSize="small" />
-            </IconButton>
-            </>)}
+            {!readOnly && deletingId === q.id && (
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1, flex: "none", borderTop: { xs: `1px solid ${tokens.divider2}`, sm: 0 }, py: { xs: 0.5, sm: 0 } }}>
+                <Typography sx={{ fontSize: 13.5, flex: 1 }}>Delete this question?</Typography>
+                <Button onClick={() => setDeletingId(null)} sx={{ minHeight: 44 }}>Keep</Button>
+                <Button color="error" variant="contained" onClick={() => { setDeletingId(null); removeQuestion.mutate(q.id); }} sx={{ minHeight: 40 }}>Delete</Button>
+              </Box>
+            )}
+            {!readOnly && deletingId !== q.id && (
+              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, flex: "none", borderTop: { xs: `1px solid ${tokens.divider2}`, sm: 0 }, pt: { xs: 0.5, sm: 0 }, "& .MuiIconButton-root": { width: 44, height: 44 } }}>
+                <Button startIcon={<EditOutlinedIcon />} onClick={() => setEditingId(q.id)} sx={{ minHeight: 44, mr: "auto", display: { sm: "none" } }}>Edit</Button>
+                <IconButton onClick={() => setEditingId(q.id)} aria-label={`Edit "${q.label}"`} sx={{ display: { xs: "none", sm: "inline-flex" } }}>
+                  <EditOutlinedIcon fontSize="small" />
+                </IconButton>
+                <IconButton disabled={i === 0} onClick={() => moveQuestion.mutate({ id: q.id, direction: "up" })} aria-label="Move up">
+                  <ArrowUpwardIcon fontSize="small" />
+                </IconButton>
+                <IconButton disabled={i === questions.length - 1} onClick={() => moveQuestion.mutate({ id: q.id, direction: "down" })} aria-label="Move down">
+                  <ArrowDownwardIcon fontSize="small" />
+                </IconButton>
+                <IconButton onClick={() => setDeletingId(q.id)} aria-label={`Delete "${q.label}"`}>
+                  <DeleteOutlineIcon fontSize="small" />
+                </IconButton>
+              </Box>
+            )}
           </Box>
         ),
       )}
@@ -1585,9 +1614,9 @@ function EditQuestionRow({ pageId, question, onDone }: { pageId: string; questio
           {currentOptions.map((opt) => (
             <FormControlLabel
               key={opt}
-              control={<Checkbox size="small" checked={bad.includes(opt)} onChange={() => toggleBad(opt)} />}
-              label={<Typography sx={{ fontSize: 13.5 }}>{opt}</Typography>}
-              sx={{ display: "flex", m: 0 }}
+              control={<Checkbox checked={bad.includes(opt)} onChange={() => toggleBad(opt)} />}
+              label={<Typography sx={{ fontSize: 14 }}>{opt}</Typography>}
+              sx={{ display: "flex", m: 0, minHeight: 44 }}
             />
           ))}
 

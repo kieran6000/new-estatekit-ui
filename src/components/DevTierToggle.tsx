@@ -15,7 +15,7 @@ export default function DevTierToggle() {
       sx={{
         position: "fixed",
         right: 10,
-        bottom: { xs: 66, md: 10 },
+        bottom: "calc(var(--ek-nav-h) + 10px)",
         zIndex: 1300,
         display: "flex",
         alignItems: "center",
