@@ -32,6 +32,11 @@ interface LeadPageRow {
   dq_text: string | null;
   dq_cta_label: string | null;
   dq_cta_url: string | null;
+  magnet_kind?: "none" | "plan" | "pdf" | null;
+  magnet_title?: string | null;
+  magnet_text?: string | null;
+  magnet_button?: string | null;
+  magnet_pdf_url?: string | null;
 }
 
 function rowToPage(r: LeadPageRow): LeadPage {
@@ -66,6 +71,11 @@ function rowToPage(r: LeadPageRow): LeadPage {
     dqText: r.dq_text ?? "",
     dqCtaLabel: r.dq_cta_label ?? "",
     dqCtaUrl: r.dq_cta_url ?? "",
+    magnetKind: r.magnet_kind ?? null,
+    magnetTitle: r.magnet_title ?? "",
+    magnetText: r.magnet_text ?? "",
+    magnetButton: r.magnet_button ?? "",
+    magnetPdfUrl: r.magnet_pdf_url ?? null,
   };
 }
 
@@ -103,6 +113,11 @@ function patchToRow(
   if (p.dqText !== undefined) m.dq_text = p.dqText;
   if (p.dqCtaLabel !== undefined) m.dq_cta_label = p.dqCtaLabel;
   if (p.dqCtaUrl !== undefined) m.dq_cta_url = p.dqCtaUrl;
+  if (p.magnetKind !== undefined) m.magnet_kind = p.magnetKind;
+  if (p.magnetTitle !== undefined) m.magnet_title = p.magnetTitle;
+  if (p.magnetText !== undefined) m.magnet_text = p.magnetText;
+  if (p.magnetButton !== undefined) m.magnet_button = p.magnetButton;
+  if (p.magnetPdfUrl !== undefined) m.magnet_pdf_url = p.magnetPdfUrl;
   return m;
 }
 
@@ -402,4 +417,14 @@ export async function reportCapiLead(args: {
   sourceUrl?: string;
 }): Promise<void> {
   await supabase.functions.invoke("fb-capi-lead", { body: args });
+}
+
+/** Saves a form's lead magnet on its own (the Lead magnet card), so it never
+ *  waits on, or races, the rest of the page's autosave. */
+export async function saveLeadMagnet(
+  pageId: string,
+  m: Pick<LeadPage, "magnetKind" | "magnetTitle" | "magnetText" | "magnetButton" | "magnetPdfUrl">,
+): Promise<void> {
+  const { error } = await supabase.from("lead_pages").update(patchToRow(m)).eq("id", pageId);
+  if (error) throw new Error(error.message);
 }

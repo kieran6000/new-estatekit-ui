@@ -34,15 +34,22 @@ Deno.serve(async (req) => {
       .maybeSingle();
     if (!prof?.is_operator) return json({ error: "Operators only" }, 403);
 
-    // Stop everything: disable automations and cancel anything queued/in-flight.
+    // Stop everything: switch off every account's workflows (and the old
+    // shared automations) and cancel anything queued or in flight.
     await admin.from("automations").update({ enabled: false }).eq("enabled", true);
     const { data: cancelled } = await admin
       .from("automation_runs")
       .update({ status: "cancelled" })
       .in("status", ["pending", "processing"])
       .select("id");
+    await admin.from("workflows").update({ published: false, updated_at: new Date().toISOString() }).eq("published", true).eq("is_template", false);
+    const { data: runs } = await admin
+      .from("workflow_runs")
+      .update({ status: "cancelled", stop_reason: "Emergency stop", updated_at: new Date().toISOString() })
+      .in("status", ["pending", "processing", "paused"])
+      .select("id");
 
-    return json({ ok: true, cancelled: cancelled?.length ?? 0 });
+    return json({ ok: true, cancelled: (cancelled?.length ?? 0) + (runs?.length ?? 0) });
   } catch (err) {
     return json({ error: String(err) }, 500);
   }

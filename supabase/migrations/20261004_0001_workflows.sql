@@ -250,6 +250,10 @@ declare
   rec record;
   v_settled text[] := array['Lost', 'Invalid Number', 'Booked', 'Mandate Signed', 'Viewing Booked', 'Offer Made', 'Bought'];
 begin
+  -- A run left half-done by a runner that crashed or timed out goes again.
+  update workflow_runs set status = 'pending', updated_at = now()
+   where status = 'processing' and updated_at < now() - interval '10 minutes';
+
   -- A reminder's time arrives (within the last day, so switching a workflow
   -- on doesn't fire for every old reminder).
   for wf in select * from workflows where published and not is_template and trigger_kind = 'reminder_due' loop

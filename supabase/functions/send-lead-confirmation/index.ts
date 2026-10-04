@@ -59,35 +59,39 @@ function fillLeadEmail(text: string, v: { name: string; address: string; agent: 
     );
 }
 
-// The selling-plan box (seller leads), after the first paragraph. Its own box
-// so it isn't lost in the text. Every point is true of every plan; the sales
-// point only when the agent has sales on record.
-// KEEP IN STEP with PLAN_BLOCK in src/lib/leadEmail.ts (the Forms page preview).
-const PLAN_BLOCK = {
-  title: (address: string) => `How to sell ${address || "your home"} without losing money or time`,
-  intro: "While you wait, I've made you a short marketing plan. It takes 2 minutes to read.",
-  points: [
-    "How I'll market your home, and why you pay nothing until it's sold",
-    "The documents to have ready, and the ones that can wait",
-    "The one thing to do now, for your timing",
-  ],
-  salesPoint: "Homes I've sold recently",
-  link: "Open my marketing plan",
+// The form's lead magnet (Forms → the form → Lead magnet): a box after the
+// first paragraph with the same headline, line and button as the thank-you
+// page card. Not set = the marketing plan for sellers, nothing otherwise.
+// KEEP IN STEP with src/lib/leadMagnet.ts (MAGNET_PRESETS and resolveMagnet).
+type MagnetKind = "none" | "plan" | "pdf";
+const MAGNET_DEFAULTS: Record<"plan" | "pdf", { title: string; text: string; button: string }> = {
+  plan: { title: "Your marketing plan is ready", text: "How to sell your home without losing money or time. A 2-minute read.", button: "Open my marketing plan" },
+  pdf: { title: "Your free guide", text: "", button: "Open it" },
 };
+interface PageMagnet { magnet_kind?: MagnetKind | null; magnet_title?: string | null; magnet_text?: string | null; magnet_button?: string | null; magnet_pdf_url?: string | null }
 
-function planBlockHtml(url: string, address: string, withSales: boolean): string {
-  const points = [...PLAN_BLOCK.points, ...(withSales ? [PLAN_BLOCK.salesPoint] : [])];
+function resolveMagnet(page: PageMagnet | null, pipelineKind: string) {
+  let kind: MagnetKind = page?.magnet_kind ?? (pipelineKind === "seller" ? "plan" : "none");
+  if (kind === "pdf" && !page?.magnet_pdf_url) kind = "none";
+  if (kind === "none") return null;
+  const d = MAGNET_DEFAULTS[kind];
+  return {
+    title: page?.magnet_title?.trim() || d.title,
+    text: page?.magnet_text?.trim() || d.text,
+    button: page?.magnet_button?.trim() || d.button,
+  };
+}
+
+function magnetBlockHtml(url: string, m: { title: string; text: string; button: string }): string {
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:100%;margin:4px 0 18px;border-collapse:collapse"><tr><td style="border-left:4px solid #1565c0;background:#eef4fc;padding:14px 16px">
-<p style="margin:0 0 6px;font-size:16px;font-weight:bold;color:#111111;line-height:1.35">${esc(PLAN_BLOCK.title(address))}</p>
-<p style="margin:0 0 8px">${esc(PLAN_BLOCK.intro)}</p>
-${points.map((t) => `<p style="margin:0 0 4px">&#10003;&nbsp; ${esc(t)}</p>`).join("\n")}
-<p style="margin:12px 0 0"><a href="${esc(url)}" style="color:#1565c0;font-weight:bold;font-size:16px">${esc(PLAN_BLOCK.link)} &rarr;</a></p>
+<p style="margin:0 0 6px;font-size:16px;font-weight:bold;color:#111111;line-height:1.35">${esc(m.title)}</p>
+${m.text ? `<p style="margin:0 0 8px">${esc(m.text)}</p>` : ""}
+<p style="margin:10px 0 0"><a href="${esc(url)}" style="color:#1565c0;font-weight:bold;font-size:16px">${esc(m.button)} &rarr;</a></p>
 </td></tr></table>`;
 }
 
-function planBlockText(url: string, address: string, withSales: boolean): string[] {
-  const points = [...PLAN_BLOCK.points, ...(withSales ? [PLAN_BLOCK.salesPoint] : [])];
-  return [PLAN_BLOCK.title(address).toUpperCase(), PLAN_BLOCK.intro, ...points.map((t) => `- ${t}`), `${PLAN_BLOCK.link}: ${url}`];
+function magnetBlockText(url: string, m: { title: string; text: string; button: string }): string[] {
+  return [m.title.toUpperCase(), ...(m.text ? [m.text] : []), `${m.button}: ${url}`];
 }
 
 type Kind = "seller" | "buyer" | "general";
@@ -166,7 +170,7 @@ Deno.serve(async (req) => {
     supabase.from("agent_profiles").select("display_name, company, email, whatsapp_number, lead_confirmation_email, lead_email_body").eq("agent_id", lead.agent_id).maybeSingle(),
     supabase.from("pipelines").select("kind").eq("id", lead.pipeline_id).maybeSingle(),
     lead.source_page_id
-      ? supabase.from("lead_pages").select("agent_name, suburb, accent_color, phone").eq("id", lead.source_page_id).maybeSingle()
+      ? supabase.from("lead_pages").select("agent_name, suburb, accent_color, phone, magnet_kind, magnet_title, magnet_text, magnet_button, magnet_pdf_url").eq("id", lead.source_page_id).maybeSingle()
       : Promise.resolve({ data: null }),
   ]);
   if (!agent?.lead_confirmation_email) return json({ ok: true, skipped: "switched off for this agent" });
@@ -199,13 +203,14 @@ Deno.serve(async (req) => {
   const waText = `Hi ${agentFirst}, it's ${first(lead.name) || lead.name}. ${w.wa(address)}`;
   void waText; // built again by email-click, which is what the link opens
   const waUrl = waNumber ? `${APP}/w/${id}` : "";
-  // Seller leads get a marketing plan (/plan/<token>), with their
-  // timing tip and the agent's recent sales. The token is random
-  // because the plan shows their name and address. Leads from a lead page
-  // already have one (the thank-you page links to it too), so the email uses
-  // the same plan; other leads (Facebook forms) get one made here.
+  // The lead magnet opens through the lead's own link (/plan/<token>): the
+  // personal marketing plan, or the form's PDF. The token is random because
+  // the plan shows their name and address. Leads from a lead page already
+  // have one (the thank-you page links to it too), so the email uses the
+  // same link; other leads (Facebook forms) get one made here.
+  const magnet = resolveMagnet(page as PageMagnet | null, pipeline?.kind ?? "seller");
   let planUrl = "";
-  if (kind === "seller") {
+  if (magnet) {
     if (lead.plan_token) {
       planUrl = `${APP}/plan/${lead.plan_token}`;
     } else {
@@ -222,13 +227,12 @@ Deno.serve(async (req) => {
       ? fillLeadEmail(agent.lead_email_body || "", { name: leadFirst, address, agent: agentFirst }).map(esc)
       : w.body(address, area);
 
-  // Seller leads: the selling-plan box goes straight after the first paragraph.
-  const withSales = (salesCount ?? 0) > 0;
+  // The lead magnet's box goes straight after the first paragraph.
   const htmlBlocks = paragraphs.map((t) => `<p style="margin:0 0 14px">${t}</p>`);
   const textBlocks = paragraphs.map((t) => t.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'"));
-  if (planUrl && paragraphs.length) {
-    htmlBlocks.splice(1, 0, planBlockHtml(planUrl, address, withSales));
-    textBlocks.splice(1, 0, planBlockText(planUrl, address, withSales).join("\n"));
+  if (planUrl && magnet && paragraphs.length) {
+    htmlBlocks.splice(1, 0, magnetBlockHtml(planUrl, magnet));
+    textBlocks.splice(1, 0, magnetBlockText(planUrl, magnet).join("\n"));
   }
 
   // Personal subject, no brand suffix: the From line already says who it is.
@@ -236,7 +240,7 @@ Deno.serve(async (req) => {
 
   // Deliberately plain: it should read like an email the agent typed, not a
   // newsletter. No banner, logo or big buttons (those also tend to land in
-  // Gmail's Promotions tab). The one exception is the plain selling-plan box.
+  // Gmail's Promotions tab). The one exception is the plain lead magnet box.
   const p = 'style="margin:0 0 14px"';
   const html = `<!doctype html><html><body style="margin:0;padding:16px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.55;color:#222222">
 <div style="max-width:560px">

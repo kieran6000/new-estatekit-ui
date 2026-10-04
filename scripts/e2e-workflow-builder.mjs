@@ -5,14 +5,17 @@
 //   BASE=http://localhost:5173 node scripts/e2e-workflow-builder.mjs
 //
 // Optional: PW_CHROMIUM=/path/to/chromium, SHOTS=/some/dir for screenshots.
-// Copies today's real automations (as of Oct 2026) into the account and checks
-// every one opens clean, every template, then builds a workflow with every step type on the
+// Adds the real standard workflows (as of Oct 2026) to an empty account and
+// checks every one opens clean, every starter, the appointment trigger, the
+// template "new accounts get this" setting, then builds a workflow with every step type on the
 // main path and inside both branch paths, and exercises move, delete (with
 // its confirm), undo/redo, the on-switch block, the daily-summary limits,
 // the name, deleting a workflow, and History search. Exits 1 on any failure.
 const BASE = process.env.BASE || "http://localhost:5173";
 // Screenshots of signed-in pages against a mocked backend (no real data).
 import { chromium } from "playwright";
+import { readFileSync } from "node:fs";
+const standard = JSON.parse(readFileSync(new URL("./e2e-standard-workflows.json", import.meta.url), "utf8"));
 const UID = "00000000-0000-4000-8000-000000000001", PID = "00000000-0000-4000-8000-0000000000aa";
 const now = Date.now(), iso = (m) => new Date(now - m * 60000).toISOString();
 const profile = { agent_id: UID, display_name: "Demo Agent", whatsapp_number: "+27 82 000 0000", is_operator: true, tier: "paid", email: "demo@example.com", area: "Bryanston", company: "Demo Realty", sidebar_color: "#1b2431", onboarded: true, automations_paused: false, renewal_date: "2027-01-01", adspend_balance: 1200, billing_type: "card", lead_confirmation_email: true, lead_email_body: null, avatar_url: null, sidebar_logo_url: null, fb_page_id: null, fb_ad_account_id: null, contract_pdf_url: null, updated_at: iso(10) };
@@ -30,8 +33,10 @@ const report = { period: "22 Sep – 28 Sep 2026", thisWeek: { label: "22 Sep", 
 const automationsRows = [{"id":"fe8d453b-12e1-400b-9701-4d3a9f625e03","name":"New lead — instant agent ping","enabled":true,"trigger_type":"lead_created","trigger_stage":null,"created_at":"2026-08-28T13:53:41Z"},{"id":"71355fcc-c542-4223-97e6-50cf5ae92eae","name":"No Answer — retry nudge","enabled":true,"trigger_type":"stage_changed","trigger_stage":"No Answer","created_at":"2026-08-28T13:53:41Z"},{"id":"4b5468c9-a3a9-43ff-852c-65000f7db98e","name":"Booked — appt reminder + did-they-sign nudge","enabled":true,"trigger_type":"stage_changed","trigger_stage":"Booked","created_at":"2026-08-28T13:53:41Z"},{"id":"ed460cc6-2733-4fb6-b416-3bd80cf59fa2","name":"Contacted — follow-up sequence","enabled":true,"trigger_type":"stage_changed","trigger_stage":"Contacted","created_at":"2026-08-28T13:53:41Z"},{"id":"3d7c1cc2-70fd-43bf-bcea-02aa325ed260","name":"Mandate Signed — confirmation","enabled":true,"trigger_type":"stage_changed","trigger_stage":"Mandate Signed","created_at":"2026-09-03T11:05:23Z"},{"id":"8071add2-d440-4495-8840-d42496b7bea7","name":"Viewing Booked — prep reminder","enabled":false,"trigger_type":"stage_changed","trigger_stage":"Viewing Booked","created_at":"2026-09-03T11:05:23Z"},{"id":"40fb9709-dd1b-4804-b61d-dff3e6b1d307","name":"Offer Made — follow-up","enabled":false,"trigger_type":"stage_changed","trigger_stage":"Offer Made","created_at":"2026-09-03T11:05:23Z"},{"id":"13477b99-db05-49cc-be76-7eb0dd5f4fdc","name":"Daily â€” leads still to update","enabled":true,"trigger_type":"daily_digest","trigger_stage":null,"created_at":"2026-09-23T12:27:24Z"}];
 const stepRows = [{"id":"1","automation_id":"13477b99-db05-49cc-be76-7eb0dd5f4fdc","step_order":1,"delay_minutes":0,"action_type":"send_whatsapp","template_text":"Hi {{first_name}}, hope you're well.\n\nYou have {{count}} {{leads_word}} that still need updating.\n\nTap here to update them: https://leads.estatekit.co/leads","payload":{}},{"id":"2","automation_id":"3d7c1cc2-70fd-43bf-bcea-02aa325ed260","step_order":0,"delay_minutes":0,"action_type":"send_whatsapp","template_text":"Congrats! {{first_name}} is signed up. Update: {{action_link}}","payload":{}},{"id":"3","automation_id":"40fb9709-dd1b-4804-b61d-dff3e6b1d307","step_order":0,"delay_minutes":0,"action_type":"send_whatsapp","template_text":"{{first_name}} made an offer! Keep the momentum going. {{action_link}}","payload":{}},{"id":"4","automation_id":"40fb9709-dd1b-4804-b61d-dff3e6b1d307","step_order":1,"delay_minutes":2880,"action_type":"send_whatsapp","template_text":"Any update on {{first_name}}'s offer? {{action_link}}","payload":{}},{"id":"5","automation_id":"4b5468c9-a3a9-43ff-852c-65000f7db98e","step_order":0,"delay_minutes":1440,"action_type":"send_whatsapp","template_text":"Appointment with {{first_name}} coming up — confirm details. {{action_link}}","payload":{}},{"id":"6","automation_id":"4b5468c9-a3a9-43ff-852c-65000f7db98e","step_order":1,"delay_minutes":4320,"action_type":"send_whatsapp","template_text":"Did {{first_name}} sign? Update their stage: {{action_link}}","payload":{}},{"id":"7","automation_id":"71355fcc-c542-4223-97e6-50cf5ae92eae","step_order":0,"delay_minutes":240,"action_type":"send_whatsapp","template_text":"Still need to retry {{first_name}}? {{action_link}}","payload":{}},{"id":"8","automation_id":"8071add2-d440-4495-8840-d42496b7bea7","step_order":0,"delay_minutes":1440,"action_type":"send_whatsapp","template_text":"Viewing with {{first_name}} coming up — confirm the time. {{action_link}}","payload":{}},{"id":"9","automation_id":"8071add2-d440-4495-8840-d42496b7bea7","step_order":1,"delay_minutes":4320,"action_type":"send_whatsapp","template_text":"How did the viewing with {{first_name}} go? Update: {{action_link}}","payload":{}},{"id":"10","automation_id":"ed460cc6-2733-4fb6-b416-3bd80cf59fa2","step_order":0,"delay_minutes":2880,"action_type":"send_whatsapp","template_text":"Following up with {{first_name}} yet? {{action_link}}","payload":{}},{"id":"11","automation_id":"ed460cc6-2733-4fb6-b416-3bd80cf59fa2","step_order":1,"delay_minutes":4320,"action_type":"send_whatsapp","template_text":"Still haven't closed the loop with {{first_name}}? {{action_link}}","payload":{}},{"id":"12","automation_id":"fe8d453b-12e1-400b-9701-4d3a9f625e03","step_order":0,"delay_minutes":0,"action_type":"send_whatsapp","template_text":"New lead: {{name}}. Tap to contact: {{action_link}}","payload":{}}];
 // In-memory workflows table, so saving, listing and deleting really round-trip.
-const wfTable = [];
 let wfSeq = 0;
+const wfId = () => `00000000-0000-4000-9000-${String(++wfSeq).padStart(12, "0")}`;
+// The template library holds the standard set, as in the real database.
+const wfTable = standard.map((t) => ({ id: wfId(), agent_id: null, is_template: true, name: t.name, published: false, definition: t.definition, standard: true, standard_on: t.standard_on, updated_at: iso(60), created_at: iso(60) }));
 const logRows = [
   { id: 1, at: iso(30), what: "WhatsApp the agent", status: "Sent", detail: "Call Thandi now", lead_id: leads[0].id, lead: { name: "Thandi Mokoena" } },
   { id: 2, at: iso(90), what: "Email the lead", status: "Skipped", detail: "No email address", lead_id: leads[1].id, lead: { name: "Pieter van Wyk" } },
@@ -46,7 +51,17 @@ await ctx.route(/supabase\.co/, async (route) => {
   const json = (body, status = 200) => route.fulfill({ status, contentType: "application/json", headers: { "content-range": `0-${Array.isArray(body) ? body.length : 1}/${Array.isArray(body) ? body.length : 1}`, "access-control-allow-origin": "*", "access-control-allow-headers": "*", "access-control-expose-headers": "content-range" }, body: JSON.stringify(body) });
   if (req.method() === "OPTIONS") return json({});
   if (path.includes("/auth/v1/user")) return json({ id: UID, email: "demo@example.com", aud: "authenticated", role: "authenticated" });
-  if (path.includes("/rpc/")) { const fn = path.split("/rpc/")[1]; if (fn === "is_operator") return json(true); return json([]); }
+  if (path.includes("/rpc/")) {
+    const fn = path.split("/rpc/")[1];
+    if (fn === "is_operator") return json(true);
+    if (fn === "add_standard_workflows") {
+      const agent = JSON.parse(req.postData() || "{}").p_agent;
+      const add = wfTable.filter((t) => t.is_template && t.standard && !wfTable.some((w) => w.agent_id === agent && w.from_template === t.id));
+      for (const t of add) wfTable.push({ id: wfId(), agent_id: agent, is_template: false, name: t.name, published: t.standard_on, definition: t.definition, from_template: t.id, standard: false, standard_on: false, updated_at: new Date().toISOString(), created_at: new Date().toISOString() });
+      return json(add.length);
+    }
+    return json([]);
+  }
   const table = path.split("/rest/v1/")[1];
   if (table === "agent_profiles") return json(single ? profile : agents);
   if (table === "weekly_report_sends") return json(sendsRows);
@@ -59,7 +74,7 @@ await ctx.route(/supabase\.co/, async (route) => {
     if (m === "GET") return json(wfTable.filter((w) => (eq("agent_id") ? w.agent_id === eq("agent_id") : true) && (eq("is_template") ? String(w.is_template) === eq("is_template") : true)));
     if (m === "POST") {
       const body = JSON.parse(req.postData() || "{}");
-      const row = { ...body, id: `00000000-0000-4000-9000-${String(++wfSeq).padStart(12, "0")}`, created_at: new Date().toISOString() };
+      const row = { standard: false, standard_on: false, ...body, id: wfId(), created_at: new Date().toISOString() };
       wfTable.push(row);
       return json(single ? row : [row], 201);
     }
@@ -103,12 +118,15 @@ await p.waitForTimeout(2500);
 await p.evaluate(() => { for (const el of document.querySelectorAll("div")) if (el.textContent?.trim().startsWith("DEV · TIER") && getComputedStyle(el).position === "fixed") el.remove(); });
 await p.getByRole("tab", { name: /Workflows/ }).click();
 await p.waitForTimeout(800);
-ok((await p.locator("tbody tr").count()) === 0, "a new account starts with no workflows");
-await p.getByRole("button", { name: "Copy today's setup here" }).click();
+ok((await p.locator("tbody tr").count()) === 0, "an account with no workflows shows none");
+ok(!(await p.getByRole("tab", { name: "Setup" }).count()), "the old Setup tab is gone");
+await p.getByRole("button", { name: "Add the standard workflows" }).click();
 await p.waitForTimeout(1500);
 const rows = await p.locator("tbody tr").count();
-ok(rows === 8 && wfTable.length === 8, `copying today's setup saves the 8 automations as this account's workflows (${rows})`);
-ok(wfTable.every((w) => w.published === false && w.agent_id === UID), "copies are saved to this account, switched off");
+const mine = wfTable.filter((w) => w.agent_id === UID);
+ok(rows === standard.length && mine.length === standard.length, `adds the ${standard.length} standard workflows to this account (${rows})`);
+ok(mine.every((w) => w.published === standard.find((t) => t.name === w.name).standard_on), "each is on or off as the standard set says");
+ok(!(await p.getByRole("button", { name: "Add the standard workflows" }).count()), "the button goes once the account has workflows");
 await shot("0_list");
 ok((await p.locator('[data-testid="ErrorOutlinedIcon"]').count()) === 0, "none of today's workflows is flagged as broken");
 
@@ -130,7 +148,7 @@ for (const n of wfNames) {
 }
 
 // Templates: each opens with nothing to fix (blank: 1)
-for (const t of ["No answer → email follow-up", "New lead: speed to lead", "Not tracked: stay in touch", "Blank workflow"]) {
+for (const t of ["No answer → email follow-up", "New lead: speed to lead", "Not tracked: stay in touch", "Appointment: day-before reminder", "Appointment: 1 hour before", "After the appointment: log it", "Blank workflow"]) {
   await p.getByRole("button", { name: "Create workflow" }).click();
   await p.getByText(t, { exact: true }).click();
   await p.waitForTimeout(400);
@@ -254,6 +272,23 @@ await p.keyboard.press("Escape");
 await p.waitForTimeout(200);
 ok(await p.locator('button[aria-label^="Trigger:"]').isVisible(), "Escape in a menu doesn't break the canvas");
 
+// Trigger: before / after an appointment
+await p.locator('button[aria-label^="Trigger:"]').click();
+await p.getByRole("combobox", { name: "Start this workflow when" }).click();
+await p.getByRole("option", { name: "Before or after an appointment" }).click();
+await p.waitForTimeout(200);
+ok(await p.locator('button[aria-label^="Trigger: 1 day before the appointment"]').count() === 1, "appointment trigger starts at 1 day before");
+await p.getByRole("textbox", { name: "How long" }).fill("30");
+await p.getByRole("combobox", { name: "Unit", exact: true }).click();
+await p.getByRole("option", { name: "minutes", exact: true }).click();
+await p.waitForTimeout(200);
+ok(await p.locator('button[aria-label^="Trigger: 30 minutes before the appointment"]').count() === 1, "…30 minutes before");
+await p.getByRole("combobox", { name: "When", exact: true }).click();
+await p.getByRole("option", { name: "after", exact: true }).click();
+await p.waitForTimeout(200);
+ok(await p.locator('button[aria-label^="Trigger: 30 minutes after the appointment"]').count() === 1, "…or after");
+await done();
+
 // Name can't be left empty
 await p.getByRole("button", { name: /Untitled workflow/ }).click();
 await p.getByRole("textbox", { name: "Workflow name" }).fill("");
@@ -279,6 +314,23 @@ await p.getByRole("tab", { name: "History" }).click();
 await p.getByPlaceholder("Find a lead").fill("thandi");
 ok((await p.locator("tbody tr").count()) === 1, "history search filters");
 await shot("3_history");
+
+// Templates: "New accounts get this"
+await p.getByRole("button", { name: /Back to workflows/ }).click().catch(() => {});
+await p.waitForTimeout(300);
+await p.getByRole("tab", { name: "Templates" }).click().catch(async () => { await p.getByRole("button", { name: "Templates" }).click(); });
+await p.waitForTimeout(600);
+await p.locator("tbody tr", { hasText: "Offer Made — follow-up" }).first().click();
+await p.waitForTimeout(400);
+await p.getByRole("tab", { name: "Settings" }).click();
+const std = p.getByRole("combobox", { name: "New accounts get this" });
+ok((await std.innerText()).includes("Yes, switched off"), "a standard template shows it's added switched off");
+await std.click();
+await p.getByRole("option", { name: "Yes, switched on" }).click();
+await p.getByRole("button", { name: /^Save/ }).click();
+await p.waitForTimeout(800);
+const offer = wfTable.find((w) => w.is_template && w.name === "Offer Made — follow-up");
+ok(offer.standard === true && offer.standard_on === true, "…and saving it switches it on for new accounts");
 
 ok(errors.length === 0, `no page errors (${errors.join(" | ").slice(0, 300)})`);
 console.log(fails ? `\n${fails} FAILED` : "\nALL PASSED");

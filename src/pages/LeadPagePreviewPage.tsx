@@ -15,6 +15,7 @@ import { listSoldListingsForAgent } from "../api/soldListings";
 import { SoldStrip } from "../components/SoldListings";
 import PoweredByEstateKit from "../components/PoweredByEstateKit";
 import { newPlanToken, rememberPlanToken } from "../lib/planToken";
+import { resolveMagnet } from "../lib/leadMagnet";
 
 export default function LeadPagePreviewPage() {
   const { slug } = useParams<{ slug: string }>();
@@ -107,9 +108,9 @@ export default function LeadPagePreviewPage() {
                   // the insert. Both sides must quote the same id or Meta counts
                   // one conversion twice.
                   const eventId = crypto.randomUUID();
-                  // Seller leads get a marketing plan; its link goes on the
-                  // thank-you page, so the code is made here, before sending.
-                  const planToken = pipeline.kind === "seller" ? newPlanToken() : null;
+                  // A form with a lead magnet: its link goes on the thank-you
+                  // page, so the code is made here, before sending.
+                  const planToken = resolveMagnet(page, pipeline.kind).kind !== "none" ? newPlanToken() : null;
                   rememberPlanToken(page.slug, planToken);
 
                   void submitMockLead(page.id, name, phone, answers, email, attribution, quality, planToken)

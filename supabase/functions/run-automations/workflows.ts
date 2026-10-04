@@ -1,8 +1,9 @@
 // The workflow engine: runs the workflows built under Automations → Workflows.
 //
-// Called by run-automations every minute, after the old shared automations,
-// with the same WhatsApp sender and send budget, so the two never break
-// TextMeBot's one-message-per-5-seconds limit between them.
+// Called by run-automations every minute, with its WhatsApp sender and send
+// budget, so sends never break TextMeBot's one-message-per-5-seconds limit.
+// Every account runs on workflows (Oct 2026); the old shared automations
+// only remain as a no-op path in index.ts.
 //
 // A run is one lead (or one agent, for a weekday summary) going through one
 // workflow. `pos` says where it is in the step tree: [3] is the 4th main
@@ -23,7 +24,7 @@ type Step =
   | { id: string; type: "branch"; check: string; value: string; yes: Step[]; no: Step[] };
 
 interface Definition {
-  trigger: { kind: string };
+  trigger: { kind: string; amount?: number; unit?: Unit; when?: "before" | "after" };
   filters: { field: string; value: string }[];
   steps: Step[];
   exits: { kind: string; on: boolean }[];
@@ -58,6 +59,7 @@ interface Lead {
   archived: boolean;
   form_answers: unknown;
   plan_token: string | null;
+  appointment_at: string | null;
 }
 
 interface Profile {
@@ -78,6 +80,8 @@ export interface EngineDeps {
   quietDeferUntil: (now: Date) => Date | null;
   budget: { sends: number };
   maxSends: number;
+  /** The client-activity Discord channel, like the old automations post to. */
+  logToDiscord?: (msg: string) => Promise<void>;
 }
 
 const APP = "https://leads.estatekit.co";
@@ -103,6 +107,19 @@ const prettyPhone = (s: string) => {
 const esc = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 const waitMinutes = (s: { amount: number; unit: Unit }) => s.amount * (s.unit === "minutes" ? 1 : s.unit === "hours" ? 60 : 1440);
+/** "12 long kloof midrand" → "12 Long Kloof Midrand"; anything with capitals is left as typed. */
+const tidyAddress = (s: string) => {
+  const raw = s.trim().slice(0, 160);
+  return raw === raw.toLowerCase() ? raw.replace(/\b([a-z])/g, (m) => m.toUpperCase()) : raw;
+};
+/** "Tue 7 Oct at 10:00", in South African time. */
+export function appointmentLabel(iso: string | null | undefined): string {
+  if (!iso) return "no time set";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "no time set";
+  const part = (o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Johannesburg", ...o }).format(d);
+  return `${part({ weekday: "short" })} ${part({ day: "numeric" })} ${part({ month: "short" })} at ${part({ hour: "2-digit", minute: "2-digit", hour12: false })}`;
+}
 const fill = (t: string, v: Record<string, string>) => t.replace(/\{\{\s*(\w+)\s*\}\}/g, (m, k: string) => (k in v ? v[k] : m));
 
 /** The step at `pos`, or undefined when the position is past the end of its list. */
@@ -211,6 +228,12 @@ async function processRun(supabase: SupabaseClient, deps: EngineDeps, run: Run) 
     .maybeSingle();
   const profile = profileRow as Profile | null;
   if (profile?.automations_paused || profile?.deactivated_at) {
+    // A weekday summary is about today: drop it (as the old digest did), so
+    // switching the account back on never sends yesterday's numbers.
+    if (!run.lead_id) {
+      await save(supabase, run, { status: "cancelled", stop_reason: profile.deactivated_at ? "The account is deactivated" : "The account's automations are paused" });
+      return;
+    }
     // Held, like the old automations: Scheduled → Resume (or switching the
     // account back on) releases it.
     await save(supabase, run, { status: "paused" });
@@ -221,7 +244,7 @@ async function processRun(supabase: SupabaseClient, deps: EngineDeps, run: Run) 
   if (run.lead_id) {
     const { data } = await supabase
       .from("leads")
-      .select("id, agent_id, name, phone, email, stage, next_label, pipeline_id, source_page_id, fb_lead_id, quality, tags, email_opt_out, archived, form_answers, plan_token")
+      .select("id, agent_id, name, phone, email, stage, next_label, pipeline_id, source_page_id, fb_lead_id, quality, tags, email_opt_out, archived, form_answers, plan_token, appointment_at")
       .eq("id", run.lead_id)
       .maybeSingle();
     lead = data as Lead | null;
@@ -278,7 +301,7 @@ async function processRun(supabase: SupabaseClient, deps: EngineDeps, run: Run) 
 type Outcome = { kind: "done" } | { kind: "goto"; pos: (number | string)[] } | { kind: "wait"; until: Date } | { kind: "hold"; until: Date };
 
 class Context {
-  private pageCache: { suburb: string | null; fb_pixel_id: string | null; phone: string | null } | null | undefined;
+  private pageCache: { name: string | null; suburb: string | null; fb_pixel_id: string | null; phone: string | null; magnet_kind: string | null } | null | undefined;
   private kindCache: string | null | undefined;
 
   constructor(
@@ -295,7 +318,7 @@ class Context {
     if (this.pageCache === undefined) {
       this.pageCache = null;
       if (this.lead?.source_page_id) {
-        const { data } = await this.supabase.from("lead_pages").select("suburb, fb_pixel_id, phone").eq("id", this.lead.source_page_id).maybeSingle();
+        const { data } = await this.supabase.from("lead_pages").select("name, suburb, fb_pixel_id, phone, magnet_kind").eq("id", this.lead.source_page_id).maybeSingle();
         this.pageCache = data;
       }
     }
@@ -354,7 +377,10 @@ class Context {
   stopReason(): string | null {
     const stage = this.lead!.stage;
     const on = (k: string) => (this.def.exits ?? []).some((e) => e.kind === k && e.on);
-    if (on("booked") && BOOKED.includes(stage)) return `Lead moved to ${stage}`;
+    // Appointment workflows are for booked leads: only signing (or an offer)
+    // counts as "booked" for them, not the appointment itself.
+    const bookedNow = this.def.trigger.kind === "appointment" ? BOOKED.filter((s) => s !== "Booked" && s !== "Viewing Booked") : BOOKED;
+    if (on("booked") && bookedNow.includes(stage)) return `Lead moved to ${stage}`;
     if (on("lost") && LOST.includes(stage)) return `Lead moved to ${stage}`;
     if (on("any_stage_change") && this.run.start_stage && stage !== this.run.start_stage) return `Lead moved to ${stage}`;
     return null;
@@ -362,6 +388,8 @@ class Context {
 
   private quietHold(): Outcome | null {
     if (!this.def.settings?.quietHours) return null;
+    // A reminder before an appointment is no use after it: always on time.
+    if (this.def.trigger.kind === "appointment" && this.def.trigger.when !== "after") return null;
     const until = this.deps.quietDeferUntil(new Date());
     return until ? { kind: "hold", until } : null;
   }
@@ -446,8 +474,14 @@ class Context {
       }
       text = fill(step.text, { first_name: first(this.profile?.display_name) || "there", count: String(count), leads_word: count === 1 ? "lead" : "leads" });
     } else {
+      const answers = Array.isArray(l.form_answers) ? (l.form_answers as { q?: string; a?: string }[]) : [];
       const fields: Record<string, string> = {
         first_name: first(l.name) || l.name, name: l.name, stage: l.stage, next_label: l.next_label ?? "",
+        phone: prettyPhone(l.phone || ""), email: (l.email || "").trim() || "no email",
+        address: tidyAddress(answers.find((x) => /address/i.test(x.q || ""))?.a || ""),
+        form: l.fb_lead_id ? "Facebook form" : (await this.page())?.name || (l.source_page_id ? "Lead page" : "Added by hand"),
+        answers: answers.filter((x) => (x.a || "").trim()).map((x) => `${(x.q || "").trim()}: ${(x.a || "").trim()}`).join("\n") || "No answers",
+        appointment: appointmentLabel(l.appointment_at),
       };
       if (/\{\{\s*action_link\s*\}\}/.test(step.text)) fields.action_link = await this.deps.actionLink(l.id, l.agent_id, this.deps.linkTypeFor(this.wfName));
       text = fill(step.text, fields);
@@ -457,8 +491,10 @@ class Context {
     this.deps.budget.sends++;
     const result = await this.deps.sendWhatsApp(phone, text);
     if (result === "rate_limited") return { kind: "hold", until: new Date(Date.now() + RATE_LIMIT_RETRY_MS) };
+    const who = this.profile?.display_name || phone;
     if (result === "sent") {
       await log(this.supabase, this.run, step.id, "WhatsApp the agent", "Sent", text.slice(0, 300));
+      await this.deps.logToDiscord?.(`\u{2699}\u{FE0F} Workflow **${this.wfName}** sent WhatsApp to **${who}**${l ? ` re: ${l.name}` : ""}`);
       if (l) {
         await this.supabase.from("lead_events").insert({
           lead_id: l.id, agent_id: l.agent_id, event_type: "whatsapp_sent", to_value: this.wfName, source: "automation",
@@ -466,13 +502,18 @@ class Context {
       }
     } else {
       await log(this.supabase, this.run, step.id, "WhatsApp the agent", "Failed", result === "not_configured" ? "WhatsApp sending isn't set up" : "The WhatsApp service didn't accept it");
+      await this.deps.logToDiscord?.(`\u{26A0}\u{FE0F} Workflow **${this.wfName}** could NOT send WhatsApp to **${who}**${l ? ` re: ${l.name}` : ""} (${result})`);
     }
     return { kind: "done" };
   }
 
+  /** The lead magnet's link (KEEP IN STEP with the form's lead magnet: no
+   *  setting = the marketing plan for sellers, nothing otherwise). A lead
+   *  with nothing to open gets the agent's recent sales instead. */
   private async planLink(l: Lead): Promise<string> {
     if (l.plan_token) return `${APP}/plan/${l.plan_token}`;
-    if ((await this.pipelineKind()) !== "seller") return `${APP}/sold/${l.agent_id}`;
+    const kind = (await this.page())?.magnet_kind ?? ((await this.pipelineKind()) === "seller" ? "plan" : "none");
+    if (kind === "none") return `${APP}/sold/${l.agent_id}`;
     const token = crypto.randomUUID().replace(/-/g, "");
     const { error } = await this.supabase.from("leads").update({ plan_token: token }).eq("id", l.id).is("plan_token", null);
     if (error) return `${APP}/sold/${l.agent_id}`;
@@ -502,8 +543,7 @@ class Context {
 
     const page = await this.page();
     const answers = Array.isArray(l.form_answers) ? (l.form_answers as { q?: string; a?: string }[]) : [];
-    const raw = (answers.find((x) => /address/i.test(x.q || ""))?.a || "").trim().slice(0, 160);
-    const address = raw === raw.toLowerCase() ? raw.replace(/\b([a-z])/g, (m) => m.toUpperCase()) : raw;
+    const address = tidyAddress(answers.find((x) => /address/i.test(x.q || ""))?.a || "");
     const agentName = (this.profile?.display_name || "").trim() || "Your agent";
     const fields: Record<string, string> = {
       first_name: first(l.name) || "there",
@@ -511,6 +551,7 @@ class Context {
       address: address || "your home",
       agent_name: agentName,
       agent_phone: prettyPhone(page?.phone || this.profile?.whatsapp_number || ""),
+      appointment: appointmentLabel(l.appointment_at),
     };
     if (/\{\{\s*plan_link\s*\}\}/.test(step.body)) fields.plan_link = await this.planLink(l);
     const subject = fill(step.subject, fields).replace(/\s+/g, " ").trim().slice(0, 200);
@@ -584,6 +625,12 @@ You're getting this because you asked ${esc(agentName)} about your property. <a 
   private async reminder(step: Extract<Step, { type: "reminder" }>): Promise<Outcome> {
     const l = this.lead;
     if (!l) return { kind: "done" };
+    // A booked lead's reminder time IS the appointment (the diary reads it
+    // there): never overwrite an appointment still to come.
+    if (l.appointment_at && new Date(l.appointment_at).getTime() > Date.now()) {
+      await log(this.supabase, this.run, step.id, "Set reminder", "Skipped", `The lead has an appointment (${appointmentLabel(l.appointment_at)}); it stays as it is`);
+      return { kind: "done" };
+    }
     const label = fill(step.label, { first_name: first(l.name) || l.name, name: l.name }).slice(0, 120);
     const at = new Date(Date.now() + Math.max(0, step.inDays) * 86_400_000);
     const { error } = await this.supabase.from("leads").update({ next_label: label, reminder_at: at.toISOString(), due: true }).eq("id", l.id);
