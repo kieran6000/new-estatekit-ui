@@ -17,7 +17,7 @@ export async function getCapiConfig(pixelId: string): Promise<CapiConfig | null>
     .from("fb_capi_config")
     // Deliberately not selecting access_token: nothing in the browser needs it,
     // and not fetching it means it can't leak through the dashboard.
-    .select("pixel_id, enabled, test_event_code, label, access_token")
+    .select("pixel_id, enabled, test_event_code, label")
     .eq("pixel_id", pixelId)
     .maybeSingle();
   if (error || !data) return null;
@@ -26,7 +26,8 @@ export async function getCapiConfig(pixelId: string): Promise<CapiConfig | null>
     enabled: data.enabled,
     testEventCode: data.test_event_code,
     label: data.label ?? "",
-    hasToken: !!data.access_token,
+    // access_token is NOT NULL, so a saved config always has one.
+    hasToken: true,
   };
 }
 
