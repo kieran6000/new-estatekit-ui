@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   Avatar,
   Box,
@@ -41,7 +41,7 @@ import { useRealtimeSubscriptions } from "../hooks/useRealtime";
 import { getMyProfile } from "../api/agentProfile";
 import { listMySoldListings } from "../api/soldListings";
 import { setupProgress } from "../lib/setup";
-import { getActiveAgentIdSync, setActiveAgent } from "../api/_client";
+import { getActiveAgentIdSync, setActiveAgent, supabase } from "../api/_client";
 import { isLightColor } from "../lib/contrast";
 import AccountSwitcher from "./AccountSwitcher";
 import DevTierToggle from "./DevTierToggle";
@@ -80,6 +80,21 @@ export default function AppShell() {
   const setup = profile && sales ? setupProgress({ ...profile, salesCount: sales.length }) : null;
   const showSetup = (!!setup && !setup.complete) || pathname.startsWith("/setup");
   const initial = useMemo(() => (user?.phone || "?")[0].toUpperCase(), [user]);
+  // Staff (media buyers, admins) have no leads or forms of their own: in their
+  // own account they only need the admin tabs. Switched into a client's
+  // account, they get that client's tabs. An operator who does run forms of
+  // their own keeps the agent tabs.
+  const { data: ownForms } = useQuery({
+    queryKey: ["ownFormCount", user?.id],
+    queryFn: async () => {
+      const { count, error } = await supabase.from("lead_pages").select("id", { count: "exact", head: true }).eq("agent_id", user!.id);
+      if (error) throw new Error(error.message);
+      return count ?? 0;
+    },
+    enabled: !!user && !!isOperator && !isManagingOther,
+    staleTime: 10 * 60_000,
+  });
+  const staffMode = !!isOperator && !isManagingOther && ownForms === 0;
 
 
   const sidebarBg = profile?.sidebarColor || "#111827";
@@ -94,7 +109,7 @@ export default function AppShell() {
   const logoSrc = profile?.sidebarLogoUrl || estateKitLogoWhite;
 
   const SZ = 20;
-  const agentNav = [
+  const agentNav = staffMode ? [] : [
     ...(showSetup
       ? [{ key: "setup", label: setup ? `Get set up · ${setup.done}/${setup.total}` : "Get set up", icon: <ChecklistOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <ChecklistIcon sx={{ fontSize: SZ }} />, to: "/setup" }]
       : []),
@@ -104,7 +119,7 @@ export default function AppShell() {
   ];
 
   const adminNav = [
-    { key: "overview", label: "Overview", icon: <DashboardOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <DashboardIcon sx={{ fontSize: SZ }} />, to: "/overview" },
+    ...(staffMode ? [] : [{ key: "overview", label: "Overview", icon: <DashboardOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <DashboardIcon sx={{ fontSize: SZ }} />, to: "/overview" }]),
     { key: "clients", label: "Accounts", icon: <GroupsOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <GroupsIcon sx={{ fontSize: SZ }} />, to: "/admin/clients" },
     { key: "automations", label: "Automations", icon: <SettingsOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <SettingsIcon sx={{ fontSize: SZ }} />, to: "/admin/automations" },
   ];
@@ -119,7 +134,11 @@ export default function AppShell() {
     "&:hover": { bgcolor: hoverBg, color: textColor },
   });
 
-  const mobileNav = [
+  const mobileNav = staffMode ? [
+    { key: "clients", label: "Accounts", icon: <GroupsOutlinedIcon />, activeIcon: <GroupsIcon />, to: "/admin/clients" },
+    { key: "automations", label: "Automations", icon: <SettingsOutlinedIcon />, activeIcon: <SettingsIcon />, to: "/admin/automations" },
+    { key: "account", label: "Account", icon: <AccountCircleOutlinedIcon />, activeIcon: <AccountCircleIcon />, to: "/account" },
+  ] : [
     ...(showSetup && !isOperator ? [{ key: "setup", label: "Set up", icon: <ChecklistOutlinedIcon />, activeIcon: <ChecklistIcon />, to: "/setup" }] : []),
     { key: "leads", label: "Leads", icon: <ContactsOutlinedIcon />, activeIcon: <ContactsIcon />, to: "/leads" },
     { key: "mypage", label: "Forms", icon: <WebOutlinedIcon />, activeIcon: <WebIcon />, to: "/lead-page" },
@@ -131,6 +150,8 @@ export default function AppShell() {
       : []),
     { key: "account", label: "Account", icon: <AccountCircleOutlinedIcon />, activeIcon: <AccountCircleIcon />, to: "/account" },
   ];
+
+  if (staffMode && ["leads", "mypage", "overview", "home", "setup"].includes(section)) return <Navigate to="/admin/clients" replace />;
 
   return (
     <Box sx={{ display: "flex", minHeight: "100vh", bgcolor: "background.default" }}>
@@ -205,7 +226,7 @@ export default function AppShell() {
             </Box>
           )}
 
-          <Divider sx={{ borderColor: dividerColor, mx: 1.25, my: 0.75 }} />
+          {agentNav.length > 0 && <Divider sx={{ borderColor: dividerColor, mx: 1.25, my: 0.75 }} />}
 
           <List disablePadding sx={{ px: 1.25 }}>
             {agentNav.map((item) => {
