@@ -138,6 +138,18 @@ async function fetchFormLeads(formId: string, token: string, sinceFilter: string
   return out;
 }
 
+/** Which of these Facebook lead ids are already saved. One query per 200,
+ *  instead of an insert that fails (and an update) for every lead each run:
+ *  that was thousands of wasted requests a day against the free-plan quota. */
+async function knownIds(ids: string[]): Promise<Set<string>> {
+  const known = new Set<string>();
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data } = await supabase.from("leads").select("fb_lead_id").in("fb_lead_id", ids.slice(i, i + 200));
+    for (const r of data ?? []) if (r.fb_lead_id) known.add(r.fb_lead_id as string);
+  }
+  return known;
+}
+
 async function insertLead(row: Record<string, unknown>): Promise<{ id: string } | "dup" | "err"> {
   const { data, error } = await supabase.from("leads").insert(row).select("id").single();
   if (!error) return data as { id: string };
@@ -220,7 +232,9 @@ Deno.serve(async (req) => {
         pipelineName = pl?.name;
       }
       let inserted = 0;
+      const known = await knownIds(leads.map((l) => l.id));
       for (const l of leads) {
+        if (known.has(l.id)) continue;
         const { name, phone, email, answers } = extract(l.field_data || []);
         const r = await insertLead({ agent_id: page.agent_id, name, phone, email, stage: "New Lead", next_label: "Just came in", due: true, form_answers: answers, pipeline_id: page.pipeline_id, source_page_id: page.id, fb_lead_id: l.id, created_at: l.created_time || undefined });
         if (r === "dup") { if (l.created_time) await supabase.from("leads").update({ created_at: l.created_time }).eq("fb_lead_id", l.id); }
@@ -285,7 +299,9 @@ Deno.serve(async (req) => {
           let leads: FbLead[] | null = null;
           for (const t of tryTokens) { leads = await fetchFormLeads(form.id, t, sinceFilter); if (leads) break; }
           if (!leads) continue;
+          const known = await knownIds(leads.map((l) => l.id));
           for (const l of leads) {
+            if (known.has(l.id)) continue;
             const { name, phone, email, answers } = extract(l.field_data || []);
             const r = await insertLead({ agent_id: a.agent_id, name, phone, email, stage: "New Lead", next_label: "Just came in", due: true, form_answers: answers, pipeline_id: pipelineId, fb_lead_id: l.id, created_at: l.created_time || undefined });
             if (r === "dup") { if (l.created_time) await supabase.from("leads").update({ created_at: l.created_time }).eq("fb_lead_id", l.id); }
