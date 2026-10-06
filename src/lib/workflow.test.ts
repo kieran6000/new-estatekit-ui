@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import standard from "../../scripts/e2e-standard-workflows.json";
 import {
   TEMPLATES, TRIGGERS, STEP_TYPES, BRANCH_CHECKS, FILTER_FIELDS,
-  FIELDS, allowedSteps, badFields, blankWorkflow, fieldGroups, fieldInfo, fieldToken, fieldsFor, replaceField, usedFields, cloneSteps, countSteps, defaultBranchValue, findStep,
+  FIELDS, optionsFor, setAccountVocab, valueLabel, valueProblem, allowedSteps, badFields, blankWorkflow, fieldGroups, fieldInfo, fieldToken, fieldsFor, replaceField, usedFields, cloneSteps, countSteps, defaultBranchValue, findStep,
   insertStep, locate, moveStep, newStep, ordinal, problemCount, removeStep, stepAtPos, stepSummary,
   timeLabel, timeline, triggerOfKind, triggerSummary, unitLabel, updateStep, validate,
   type Branch, type Path, type Step, type Trigger, type Workflow,
@@ -322,5 +322,40 @@ describe("where a lead is (stepAtPos)", () => {
   it("an empty or missing position is the first step", () => {
     expect(stepAtPos(steps, [])?.id).toBe(a.id);
     expect(stepAtPos(steps, null)?.id).toBe(a.id);
+  });
+});
+
+describe("an account's own pipelines, forms and stages", () => {
+  const acct = {
+    pipelines: [{ id: "p1", name: "Wierda Park buyers", kind: "buyer" as const }, { id: "p2", name: "Recruitment", kind: "general" as const }],
+    forms: [{ id: "f1", name: "Home Value" }],
+    tags: ["VIP"],
+  };
+  it("offers the account's pipelines by name, its forms, and only stages its pipelines use", () => {
+    setAccountVocab(acct);
+    try {
+      expect(optionsFor("pipeline").map((o) => o.l)).toEqual(["Wierda Park buyers", "Recruitment"]);
+      expect(optionsFor("source").map((o) => o.v)).toContain("page:f1");
+      const stages = optionsFor("stage").map((o) => o.v);
+      expect(stages).toContain("Viewing Booked");
+      expect(stages).toContain("Mandate Signed");
+      expect(optionsFor("stage").find((o) => o.v === "Mandate Signed")?.l).toBe("Signed up");
+      expect(optionsFor("tag").map((o) => o.v)).toContain("VIP");
+      expect(valueLabel("pipeline", "id:p1")).toBe("Wierda Park buyers");
+      // Deleted or not used here: kept in the list, flagged by the checks.
+      expect(optionsFor("pipeline", "id:gone").at(-1)?.l).toBe("a deleted pipeline");
+      expect(valueProblem("pipeline", "id:gone")).toMatch(/deleted/);
+      expect(valueProblem("pipeline", "Sellers")).toBeNull(); // standard workflows: fine, just never fires
+      expect(valueProblem("pipeline", "id:p2")).toBeNull();
+      const b = branch([wa()], [], "pipeline_is");
+      (b as Extract<Step, { type: "branch" }>).value = "id:gone";
+      expect(validate(wf([b]))[b.id]?.join()).toMatch(/deleted/);
+    } finally {
+      setAccountVocab(null);
+    }
+  });
+  it("templates stay generic", () => {
+    expect(optionsFor("pipeline").map((o) => o.v)).toEqual(["Sellers", "Buyers", "General"]);
+    expect(valueProblem("pipeline", "id:anything")).toBeNull();
   });
 });

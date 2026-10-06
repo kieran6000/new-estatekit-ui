@@ -243,6 +243,9 @@ describe("if / else", () => {
       [mk("has_email", ""), "Y"], [mk("has_email", "", { email: "" }), "N"], [mk("has_email", "", { email_opt_out: true }), "N"],
       [mk("source_is", "EstateKit page"), "Y"], [mk("source_is", "Facebook form", { fb_lead_id: "fb1" }), "Y"], [mk("source_is", "Added by hand", { source_page_id: null }), "Y"],
       [mk("pipeline_is", "Sellers"), "Y"], [mk("pipeline_is", "Buyers"), "N"], [mk("pipeline_is", "Buyers", { pipeline_id: "pB" }), "Y"],
+      // An account's own pipeline or form, by id.
+      [mk("pipeline_is", "id:pS"), "Y"], [mk("pipeline_is", "id:pB"), "N"], [mk("pipeline_is", "id:pB", { pipeline_id: "pB" }), "Y"],
+      [mk("source_is", "page:pg1"), "Y"], [mk("source_is", "page:pg2"), "N"], [mk("source_is", "page:pg1", { source_page_id: null }), "N"],
       [mk("has_tag", "VIP", { tags: ["vip"] }), "Y"], [mk("has_tag", "VIP"), "N"],
       [mk("has_tag", "Not tracked", { quality: "weak" }), "Y"], [mk("has_tag", "Not tracked", { source_page_id: "pg2" }), "Y"],
       [mk("has_tag", "Not tracked"), "N"], [mk("has_tag", "Not tracked", { fb_lead_id: "fb1", quality: "weak" }), "N"],

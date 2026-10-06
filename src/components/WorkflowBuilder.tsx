@@ -71,11 +71,12 @@ import { trackActivity } from "../lib/activity";
 import { useSnack } from "../hooks/useSnack";
 import WhatsAppPreview from "./WhatsAppPreview";
 import { PillEditor, type PillEditorHandle } from "./PillEditor";
+import { getAccountVocab } from "../api/accountVocab";
 import LeadTag from "./LeadTag";
 import { PlainHead, SortHead, sortRows, useTableSort } from "./SortHead";
 import {
-  BRANCH_CHECKS, EXITS, FILTER_FIELDS, KNOWN_TAGS, PIPELINES, SOURCES, STAGES, STEP_TYPES, TEMPLATES, TRIGGERS,
-  allowedSteps, badFields, branchLabel, cloneSteps, countSteps, defaultBranchValue, fieldGroups, fieldInfo, fieldToken, fieldsFor, filterSummary, findStep,
+  BRANCH_CHECKS, EXITS, FILTER_FIELDS, STEP_TYPES, TEMPLATES, TRIGGERS,
+  allowedSteps, badFields, branchLabel, checkKind, optionsFor, setAccountVocab, valueLabel, cloneSteps, countSteps, defaultBranchValue, fieldGroups, fieldInfo, fieldToken, fieldsFor, filterSummary, findStep,
   insertStep, locate, moveStep, newId, newStep, ordinal, stepAtPos, rememberTags, tagsIn, problemCount, removeStep, stepSummary, stepTitle, timeLabel, timeline,
   replaceField, sampleFields, triggerOfKind, triggerSummary, unitLabel, updateStep, usedFields, validate, waitMinutes,
   type BranchCheck, type Exit, type Filter, type MessageKind, type Path, type Problems, type Settings, type Step, type StepType, type Trigger,
@@ -125,6 +126,18 @@ function useAgentId(): string {
   return id;
 }
 
+/** The account's own pipelines, forms and tags, for the pick lists and checks
+ *  (lib/workflow.ts). Templates get none: they're copied to every account, so
+ *  they stay generic ("any seller pipeline"). Returns once it's set, so the
+ *  page redraws with the account's choices. */
+function useAccountVocab(agentId: string, forAccount: boolean): boolean {
+  const { data, isLoading } = useQuery({ queryKey: ["accountVocab", agentId], queryFn: () => getAccountVocab(agentId), enabled: !!agentId && forAccount, staleTime: 60_000 });
+  // Module state, set as the page draws so the first draw already has it.
+  // Setting it again with the same data changes nothing.
+  setAccountVocab(forAccount ? data ?? null : null);
+  return !forAccount || !isLoading;
+}
+
 /** Tags added by any workflow can be checked for in the others. */
 function useKnownTags(agentId: string) {
   const { data: accountWfs } = useQuery({ queryKey: ["workflows", agentId], queryFn: () => listAccountWorkflows(agentId), enabled: !!agentId });
@@ -140,6 +153,7 @@ export function WorkflowListPage({ scope }: { scope: Scope }) {
   const [params, setParams] = useSearchParams();
   const [picker, setPicker] = useState(false);
   useKnownTags(agentId);
+  const vocabReady = useAccountVocab(agentId, scope === "account");
 
   // ?account=<id> (from a client's page): switch to that account first.
   const wanted = params.get("account");
@@ -157,7 +171,7 @@ export function WorkflowListPage({ scope }: { scope: Scope }) {
     navigate(`${listPath(scope)}/new`, { state: { draft: { ...w, published: false } } });
   };
 
-  if (!agentId || (scope === "account" && l1) || l2) return <Loading />;
+  if (!agentId || (scope === "account" && l1) || l2 || !vocabReady) return <Loading />;
   if (e1 || e2) return <Alert severity="error" sx={{ m: 2 }}>Couldn't load workflows. Refresh to try again.</Alert>;
 
   return (
@@ -196,6 +210,7 @@ export function WorkflowEditorPage({ scope }: { scope: Scope }) {
   const qc = useQueryClient();
   const showSnack = useSnack();
   useKnownTags(agentId);
+  const vocabReady = useAccountVocab(agentId, scope === "account");
   const isNew = id === "new";
   const draft = (location.state as { draft?: Workflow } | null)?.draft;
   const backTo: BackTo = (location.state as { back?: BackTo } | null)?.back ?? { to: listPath(scope), label: scope === "templates" ? "Templates" : "Workflows" };
@@ -205,6 +220,7 @@ export function WorkflowEditorPage({ scope }: { scope: Scope }) {
   // or from a client's page): switch to that account, like opening a lead.
   useFollowAccount(opened?.agentId ? { agent_id: opened.agentId } : null, "workflow");
 
+  if (!vocabReady) return <Loading />;
   if (isNew) {
     // A refresh loses the unsaved draft: back to the list rather than a blank page.
     if (!draft) return <Navigate to={listPath(scope)} replace />;
@@ -1478,7 +1494,7 @@ function TriggerEditor({ t, onChange }: { t: Trigger; onChange: (t: Trigger) => 
       {meta?.help && <Typography sx={{ fontSize: 12.5, color: "text.secondary", mt: -1 }}>{meta.help}</Typography>}
       {t.kind === "stage_changed" && (
         <TextField select size="small" label="Stage" value={t.stage ?? ""} onChange={(e) => onChange({ ...t, stage: e.target.value })}>
-          {STAGES.map((s) => <MenuItem key={s} value={s}>{s}</MenuItem>)}
+          {optionsFor("stage", t.stage).map((o) => <MenuItem key={o.v} value={o.v}>{o.l}</MenuItem>)}
         </TextField>
       )}
       {t.kind === "no_answer_times" && <NumberField label="Missed calls" value={t.count ?? 2} min={1} max={20} onChange={(count) => onChange({ ...t, count })} />}
@@ -1528,7 +1544,7 @@ function FiltersEditor({ filters, onChange }: { filters: Filter[]; onChange: (f:
               {FILTER_FIELDS.map((x) => <MenuItem key={x.field} value={x.field} disabled={used.has(x.field) && x.field !== f.field}>{x.label}</MenuItem>)}
             </TextField>
             <TextField select size="small" value={f.value} onChange={(e) => onChange(filters.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))} sx={{ flex: 1, minWidth: 0 }} aria-label="Value">
-              {meta.options().map((o) => <MenuItem key={o.v} value={o.v}>{o.l}</MenuItem>)}
+              {(checkKind(f.field) ? optionsFor(checkKind(f.field)!, f.value) : meta.options()).map((o) => <MenuItem key={o.v} value={o.v}>{o.l}</MenuItem>)}
             </TextField>
             <IconButton size="small" onClick={() => onChange(filters.filter((_, j) => j !== i))} aria-label="Remove filter"><DeleteOutlinedIcon fontSize="small" /></IconButton>
           </Box>
@@ -1684,7 +1700,7 @@ function StepEditor({ step, trigger, onChange }: { step: Step; trigger: Trigger;
     case "set_stage":
       return (
         <TextField select size="small" label="Move lead to" value={step.stage} onChange={(e) => onChange({ stage: e.target.value })}>
-          {STAGES.map((s) => <MenuItem key={s} value={s}>{s}</MenuItem>)}
+          {optionsFor("stage", step.stage).map((o) => <MenuItem key={o.v} value={o.v}>{o.l}</MenuItem>)}
         </TextField>
       );
     case "reminder":
@@ -1703,7 +1719,8 @@ function StepEditor({ step, trigger, onChange }: { step: Step; trigger: Trigger;
       );
     case "branch": {
       const meta = BRANCH_CHECKS.find((x) => x.check === step.check);
-      const options = step.check === "stage_is" ? STAGES : step.check === "has_tag" ? KNOWN_TAGS : step.check === "source_is" ? SOURCES : step.check === "pipeline_is" ? PIPELINES : [];
+      const kind = checkKind(step.check);
+      const options = kind ? optionsFor(kind, step.value) : [];
       return (
         <>
           <TextField select size="small" label="Check" value={step.check} onChange={(e) => { const check = e.target.value as BranchCheck; onChange({ check, value: defaultBranchValue(check) }); }}>
@@ -1711,7 +1728,7 @@ function StepEditor({ step, trigger, onChange }: { step: Step; trigger: Trigger;
           </TextField>
           {meta?.needsValue && (
             <TextField select size="small" label={branchLabel(step.check)} value={step.value} onChange={(e) => onChange({ value: e.target.value })}>
-              {options.map((o) => <MenuItem key={o} value={o}>{o}</MenuItem>)}
+              {options.map((o) => <MenuItem key={o.v} value={o.v}>{o.l}</MenuItem>)}
             </TextField>
           )}
           <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>Add steps under Yes and No on the canvas. Both paths join again and carry on to the steps below.</Typography>
@@ -1898,7 +1915,7 @@ function NodePreview({ sel, wf, step }: { sel: Selection; wf: Workflow; step: St
         break;
       case "branch": {
         const meta = BRANCH_CHECKS.find((x) => x.check === step.check);
-        const yesLabel = step.check === "opened_last_email" ? "She opened it" : step.check === "has_email" ? "She has an email" : `${meta?.label} ${step.value || "…"}`;
+        const yesLabel = step.check === "opened_last_email" ? "She opened it" : step.check === "has_email" ? "She has an email" : `${meta?.label} ${checkKind(step.check) ? valueLabel(checkKind(step.check)!, step.value) : step.value || "…"}`;
         body = (
           <>
             <Typography sx={{ fontSize: 13.5 }}>The workflow checks {first}: <b>{stepSummary(step)}</b></Typography>

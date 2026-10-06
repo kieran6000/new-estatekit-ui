@@ -377,16 +377,26 @@ class Context {
     return l.fb_lead_id ? "Facebook form" : l.source_page_id ? "EstateKit page" : "Added by hand";
   }
 
+  /** "id:<uuid>" is one of the account's pipelines; "Sellers", "Buyers" and
+   *  "General" mean any pipeline of that kind (templates use these).
+   *  KEEP IN STEP with optionsFor in src/lib/workflow.ts. */
   private async pipelineIs(v: string): Promise<boolean> {
+    if (v.startsWith("id:")) return this.lead?.pipeline_id === v.slice(3);
     const k = await this.pipelineKind();
-    return (v === "Sellers" && k === "seller") || (v === "Buyers" && k === "buyer");
+    return (v === "Sellers" && k === "seller") || (v === "Buyers" && k === "buyer") || (v === "General" && k === "general");
+  }
+
+  /** "page:<uuid>" is one of the account's forms; otherwise the kind of source. */
+  private sourceIs(v: string): boolean {
+    if (v.startsWith("page:")) return this.lead?.source_page_id === v.slice(5);
+    return this.source() === v;
   }
 
   async matchesFilters(): Promise<boolean> {
     const l = this.lead!;
     for (const f of this.def.filters ?? []) {
       if (f.field === "pipeline" && !(await this.pipelineIs(f.value))) return false;
-      if (f.field === "source" && this.source() !== f.value) return false;
+      if (f.field === "source" && !this.sourceIs(f.value)) return false;
       if (f.field === "stage" && l.stage !== f.value) return false;
       if (f.field === "has_email" && (f.value === "no") === !!(l.email || "").trim()) return false;
       if (f.field === "has_tag" && !(await this.hasTag(f.value))) return false;
@@ -446,7 +456,7 @@ class Context {
       case "stage_is": return l.stage === step.value;
       case "has_tag": return this.hasTag(step.value);
       case "has_email": return !!(l.email || "").trim() && !l.email_opt_out;
-      case "source_is": return this.source() === step.value;
+      case "source_is": return this.sourceIs(step.value);
       case "pipeline_is": return this.pipelineIs(step.value);
       case "opened_last_email": {
         if (!this.run.last_email_id) return false;
