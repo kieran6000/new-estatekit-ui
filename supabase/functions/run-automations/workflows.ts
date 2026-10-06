@@ -131,6 +131,11 @@ interface PageRow {
   name: string | null; suburb: string | null; fb_pixel_id: string | null; phone: string | null;
   magnet_kind: string | null; magnet_title: string | null; magnet_text: string | null; magnet_button: string | null; magnet_pdf_url: string | null;
 }
+/** "seller lead" / "buyer lead" by the pipeline's kind; plain "lead" otherwise. */
+export function leadType(kind: string | null): string {
+  return kind === "seller" ? "seller lead" : kind === "buyer" ? "buyer lead" : "lead";
+}
+
 export function resolveMagnet(page: PageRow | null, pipelineKind: string | null): (Magnet & { kind: "plan" | "pdf" }) | null {
   let kind = page?.magnet_kind ?? (pipelineKind === "seller" ? "plan" : "none");
   if (kind === "pdf" && !page?.magnet_pdf_url) kind = "none";
@@ -560,6 +565,7 @@ class Context {
         form: l.fb_lead_id ? "Facebook form" : (await this.page())?.name || (l.source_page_id ? "Lead page" : "Added by hand"),
         answers: answers.filter((x) => (x.a || "").trim()).map((x) => `${(x.q || "").trim()}: ${(x.a || "").trim()}`).join("\n") || "No answers",
         appointment: appointmentLabel(l.appointment_at),
+        lead_type: leadType(await this.pipelineKind()),
       };
       if (/\{\{\s*action_link\s*\}\}/.test(step.text)) fields.action_link = await this.deps.actionLink(l.id, l.agent_id, this.deps.linkTypeFor(this.wfName));
       text = fill(step.text, fields);

@@ -227,9 +227,10 @@ export const EXITS: { kind: ExitKind; label: string }[] = [
  *  {{recent_sales}} the agent's latest sales, and a paragraph left empty by
  *  either (nothing to show) is left out.
  *  {{action_link}} is the agent's call link: never in an email to the lead.
+ *  {{lead_type}} is "seller lead" or "buyer lead" by the lead's pipeline, else "lead".
  *  In a daily summary there's no lead: {{first_name}} is the agent's. */
 export const FIELDS = {
-  whatsapp_agent: ["first_name", "name", "phone", "email", "address", "form", "answers", "appointment", "stage", "next_label", "action_link"],
+  whatsapp_agent: ["first_name", "name", "lead_type", "phone", "email", "address", "form", "answers", "appointment", "stage", "next_label", "action_link"],
   daily: ["first_name", "count", "leads_word", "today", "pipeline", "not_called"],
   email_lead: ["first_name", "area", "address", "appointment", "lead_magnet", "recent_sales", "whatsapp_link", "agent_name", "agent_phone", "plan_link"],
 } as const;
@@ -253,6 +254,7 @@ const INFO: Record<string, FieldInfo> = {
   address: { label: "Property address", example: "14 Oak Avenue, Bryanston", group: "The lead" },
   area: { label: "Their area", example: "Bryanston", group: "The lead" },
   appointment: { label: "Appointment time", example: "Tue 7 Oct at 10:00", group: "The lead" },
+  lead_type: { label: "Seller or buyer lead", example: "seller lead", group: "The lead" },
   stage: { label: "Stage", example: "No Answer", group: "The lead" },
   next_label: { label: "Next step", example: "Retry today", group: "The lead" },
   form: { label: "Form they filled in", example: "Home Value page", group: "Their form" },
@@ -717,7 +719,7 @@ export const TEMPLATES: { name: string; blurb: string; make: () => Workflow }[] 
       ...blankWorkflow(), name: "New lead: speed to lead",
       settings: { ...defaultSettings(), quietHours: false },
       steps: [
-        { id: newId(), type: "whatsapp_agent", text: "New lead: {{name}}. Tap to contact: {{action_link}}" },
+        { id: newId(), type: "whatsapp_agent", text: "New {{lead_type}}: {{name}}. Tap to contact: {{action_link}}" },
         { id: newId(), type: "wait", amount: 10, unit: "minutes" },
         { id: newId(), type: "branch", check: "stage_is", value: "New Lead", yes: [{ id: newId(), type: "whatsapp_agent", text: "{{first_name}} is still waiting for your call: {{action_link}}" }], no: [] },
       ],
