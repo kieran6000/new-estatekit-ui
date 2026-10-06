@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  Alert,
   AppBar,
   Avatar,
   Box,
@@ -33,6 +34,7 @@ import {
 import SearchIcon from "@mui/icons-material/Search";
 import CallIcon from "@mui/icons-material/Call";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
 import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import SyncIcon from "@mui/icons-material/Sync";
@@ -73,7 +75,7 @@ import { dueLeads, pipelineKindFor, sortLeadsForList, stepForStage, computeStage
 import { timeAgo } from "../lib/timeAgo";
 import { useLeads, useUpdateLeadStage } from "../hooks/useLeads";
 import { useAddPipeline, usePipelines, useSyncPipelineSheet } from "../hooks/usePipelines";
-import { renamePipeline } from "../api/pipelines";
+import { deletePipeline, pipelineUsage, renamePipeline } from "../api/pipelines";
 import { useIsOperator } from "../hooks/useAutomations";
 import { useSnack } from "../hooks/useSnack";
 import { maskPhone } from "../lib/format";
@@ -470,8 +472,8 @@ export default function LeadsPage() {
         {isOperator && (
           <IconButton
             onClick={() => setRenameOpen(true)}
-            title="Rename pipeline"
-            aria-label="Rename pipeline"
+            title="Edit pipeline"
+            aria-label="Edit pipeline"
             size="small"
             sx={{ color: "text.secondary" }}
           >
@@ -751,7 +753,14 @@ export default function LeadsPage() {
       <FocusCallModal leads={pipelineLeads} pipelines={pipelines} open={focusOpen} onClose={() => setFocusOpen(false)} onSnack={showSnack} />
       <RenamePipelineDialog
         open={renameOpen}
-        currentName={activePipeline.name}
+        pipeline={activePipeline}
+        others={pipelines.filter((p) => p.id !== activePipeline.id)}
+        onDeleted={(movedTo) => {
+          setRenameOpen(false);
+          for (const k of ["pipelines", "leads", "leadPages", "workflows", "accountVocab"]) void qc.invalidateQueries({ queryKey: [k] });
+          if (movedTo) selectPipeline(movedTo);
+          showSnack("Pipeline deleted");
+        }}
         onClose={() => setRenameOpen(false)}
         onSave={(name) => {
           renamePipeline(activePipeline.id, name)
@@ -939,37 +948,106 @@ function PipelineMenu({
   );
 }
 
-/** Dead simple: one field, Save. */
+/** Rename a pipeline, or delete it. Deleting moves its leads and forms (and
+ *  any workflow checks on it) to another pipeline first, so nothing is lost. */
 function RenamePipelineDialog({
-  open, currentName, onClose, onSave,
+  open, pipeline, others, onClose, onSave, onDeleted,
 }: {
   open: boolean;
-  currentName: string;
+  pipeline: { id: string; name: string };
+  others: { id: string; name: string }[];
   onClose: () => void;
   onSave: (name: string) => void;
+  onDeleted: (movedTo: string | null) => void;
 }) {
-  const [name, setName] = useState(currentName);
-  useEffect(() => { if (open) setName(currentName); }, [open, currentName]);
+  const [name, setName] = useState(pipeline.name);
+  const [deleting, setDeleting] = useState(false);
+  const [moveTo, setMoveTo] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    if (!open) return;
+    setName(pipeline.name);
+    setDeleting(false);
+    setErr("");
+    setMoveTo(others[0]?.id ?? "");
+  }, [open, pipeline.name, pipeline.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const { data: usage } = useQuery({ queryKey: ["pipelineUsage", pipeline.id], queryFn: () => pipelineUsage(pipeline.id), enabled: open && deleting });
+  const inUse = !!usage && usage.leads + usage.forms > 0;
 
+  async function remove() {
+    setBusy(true);
+    setErr("");
+    try {
+      await deletePipeline(pipeline.id, inUse ? moveTo : null);
+      onDeleted(inUse ? moveTo : others[0]?.id ?? null);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "That didn't work. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="xs">
-      <DialogTitle sx={{ fontSize: 18, fontWeight: 500 }}>Rename pipeline</DialogTitle>
+    <Dialog open={open} onClose={busy ? undefined : onClose} fullWidth maxWidth="xs">
+      <DialogTitle sx={{ fontSize: 18, fontWeight: 500 }}>{deleting ? `Delete ${pipeline.name}?` : "Edit pipeline"}</DialogTitle>
       <DialogContent>
-        <TextField
-          label="Pipeline name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && name.trim()) onSave(name.trim()); }}
-          fullWidth
-          autoFocus
-          sx={{ mt: 1 }}
-        />
+        {!deleting ? (
+          <>
+            <TextField
+              label="Pipeline name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && name.trim()) onSave(name.trim()); }}
+              fullWidth
+              autoFocus
+              sx={{ mt: 1 }}
+            />
+            <Box sx={{ mt: 3, pt: 2, borderTop: `1px solid ${tokens.divider}` }}>
+              {others.length === 0 ? (
+                <Typography sx={{ fontSize: 13, color: "text.secondary" }}>An account needs at least one pipeline, so this one can't be deleted.</Typography>
+              ) : (
+                <Button color="error" variant="outlined" startIcon={<DeleteOutlineIcon />} onClick={() => setDeleting(true)}>Delete this pipeline</Button>
+              )}
+            </Box>
+          </>
+        ) : !usage ? (
+          <Box sx={{ display: "flex", justifyContent: "center", py: 3 }}><CircularProgress size={24} /></Box>
+        ) : (
+          <>
+            {inUse ? (
+              <>
+                <Typography sx={{ fontSize: 14, mb: 2 }}>
+                  It has {[usage.leads ? plural(usage.leads, "lead") : "", usage.forms ? plural(usage.forms, "form") : ""].filter(Boolean).join(" and ")}. They'll move to the pipeline you pick, along with any workflow checks on this one. Nothing is lost.
+                </Typography>
+                <TextField select fullWidth size="small" label="Move them to" value={moveTo} onChange={(e) => setMoveTo(e.target.value)}>
+                  {others.map((p) => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)}
+                </TextField>
+              </>
+            ) : (
+              <Typography sx={{ fontSize: 14 }}>It has no leads or forms. This can't be undone.</Typography>
+            )}
+            {err && <Alert severity="error" sx={{ mt: 2 }}>{err}</Alert>}
+          </>
+        )}
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>Cancel</Button>
-        <Button variant="contained" disabled={!name.trim()} onClick={() => onSave(name.trim())}>
-          Save
-        </Button>
+        {deleting ? (
+          <>
+            <Button onClick={() => setDeleting(false)} disabled={busy}>Back</Button>
+            <Button variant="contained" color="error" disabled={busy || !usage || (inUse && !moveTo)} onClick={() => void remove()}>
+              {busy ? "Deleting…" : "Delete pipeline"}
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button onClick={onClose}>Cancel</Button>
+            <Button variant="contained" disabled={!name.trim() || name.trim() === pipeline.name} onClick={() => onSave(name.trim())}>
+              Save
+            </Button>
+          </>
+        )}
       </DialogActions>
     </Dialog>
   );

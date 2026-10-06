@@ -1,3 +1,5 @@
+import { PIPELINE_STAGES, stageLabel, type PipelineKind, type Stage } from "../types";
+
 // The workflow model behind Automations → Workflows: what a workflow is,
 // every edit you can make to one, and the checks that keep a broken one from
 // being switched on. No React here, so all of it is unit-tested
@@ -60,8 +62,102 @@ export interface Workflow {
 // ── Vocabulary (labels live here so the canvas, panel and checks agree) ──
 
 export const STAGES = ["New Lead", "No Answer", "Contacted", "Booked", "Viewing Booked", "Offer Made", "Mandate Signed", "Bought", "Lost", "Invalid Number"];
-export const PIPELINES = ["Sellers", "Buyers"];
+/** Pipeline values that mean "any pipeline of this kind". Templates use these
+ *  (they're copied to every account); an account's own workflows pick its
+ *  pipelines by id ("id:<uuid>"). KEEP IN STEP with pipelineIs in
+ *  run-automations/workflows.ts. */
+export const PIPELINES = ["Sellers", "Buyers", "General"];
+const PIPELINE_KIND_VALUE: Record<string, { kind: PipelineKind; label: string }> = {
+  Sellers: { kind: "seller", label: "Any seller pipeline" },
+  Buyers: { kind: "buyer", label: "Any buyer pipeline" },
+  General: { kind: "general", label: "Any other pipeline" },
+};
+/** Where a lead came from. An account's workflows can also pick one of its
+ *  forms ("page:<uuid>"). KEEP IN STEP with source matching in workflows.ts. */
 export const SOURCES = ["Facebook form", "EstateKit page", "Added by hand"];
+
+// ── This account's own pipelines, forms and tags ─────────────────────────
+// Set by the builder for the account being edited; null for templates, which
+// stay generic. Every pick list, summary and check below reads from here.
+
+export interface AccountVocab {
+  pipelines: { id: string; name: string; kind: PipelineKind }[];
+  forms: { id: string; name: string }[];
+  tags: string[];
+}
+let vocab: AccountVocab | null = null;
+export function setAccountVocab(v: AccountVocab | null): void {
+  vocab = v;
+  if (v) rememberTags(v.tags);
+}
+export const accountVocab = () => vocab;
+
+export type OptionKind = "pipeline" | "source" | "stage" | "tag";
+export interface Option { v: string; l: string }
+
+/** The stages this account's pipelines use, in the usual order. A stage a
+ *  recruitment ("general") pipeline renames shows both names. */
+function stageOptions(): Option[] {
+  if (!vocab || !vocab.pipelines.length) return STAGES.map((v) => ({ v, l: v }));
+  const kinds = new Set(vocab.pipelines.map((p) => p.kind));
+  const used = new Set([...kinds].flatMap((k) => PIPELINE_STAGES[k]));
+  return STAGES.filter((s) => used.has(s as Stage)).map((v) => ({ v, l: stageName(v) }));
+}
+
+function stageName(v: string): string {
+  if (!vocab) return v;
+  const kinds = [...new Set(vocab.pipelines.map((p) => p.kind))];
+  const names = [...new Set(kinds.filter((k) => PIPELINE_STAGES[k].includes(v as Stage)).map((k) => stageLabel(v as Stage, k)))];
+  return names.length ? names.join(" / ") : v;
+}
+
+/** What a picked value reads as, e.g. "id:…" → the pipeline's name. */
+export function valueLabel(kind: OptionKind, v: string): string {
+  if (!v) return "…";
+  if (kind === "pipeline") {
+    if (v.startsWith("id:")) return vocab?.pipelines.find((p) => `id:${p.id}` === v)?.name ?? "a deleted pipeline";
+    return PIPELINE_KIND_VALUE[v]?.label ?? v;
+  }
+  if (kind === "source" && v.startsWith("page:")) {
+    const f = vocab?.forms.find((x) => `page:${x.id}` === v);
+    return f ? `Form: ${f.name}` : "a deleted form";
+  }
+  if (kind === "stage") return stageName(v);
+  return v;
+}
+
+/** The choices for a pick list. The current value is kept even when it's no
+ *  longer offered (a deleted pipeline, an old "Sellers"), so nothing changes
+ *  silently; the checks flag it instead. */
+export function optionsFor(kind: OptionKind, current?: string): Option[] {
+  let opts: Option[];
+  if (kind === "pipeline") {
+    opts = vocab
+      ? vocab.pipelines.map((p) => ({ v: `id:${p.id}`, l: p.name }))
+      : PIPELINES.map((v) => ({ v, l: PIPELINE_KIND_VALUE[v].label }));
+  } else if (kind === "source") {
+    opts = SOURCES.map((v) => ({ v, l: v }));
+    if (vocab) opts = opts.concat(vocab.forms.map((f) => ({ v: `page:${f.id}`, l: `Form: ${f.name}` })));
+  } else if (kind === "stage") {
+    opts = stageOptions();
+  } else {
+    opts = KNOWN_TAGS.map((v) => ({ v, l: v }));
+  }
+  if (current && !opts.some((o) => o.v === current)) opts = [...opts, { v: current, l: valueLabel(kind, current) }];
+  return opts;
+}
+
+/** Why a picked value won't work for this account, if it won't: only a
+ *  pipeline or form that was deleted. A kind or stage the account doesn't use
+ *  yet isn't a problem: every account gets the same standard workflows (the
+ *  buyer ones too), and those just never fire until it has that pipeline. */
+export function valueProblem(kind: OptionKind, v: string): string | null {
+  if (!vocab || !v) return null;
+  if (kind === "pipeline" && v.startsWith("id:") && !vocab.pipelines.some((p) => `id:${p.id}` === v)) return "That pipeline was deleted. Pick another.";
+  if (kind === "source" && v.startsWith("page:") && !vocab.forms.some((f) => `page:${f.id}` === v)) return "That form was deleted. Pick another.";
+  return null;
+}
+
 /** Tags a workflow can check for or filter on. "Not tracked" is
  *  worked out from the lead page (lib/leadTags.ts); the rest are the ones
  *  "Add tag" steps add (rememberTags fills them in as workflows load). */
@@ -111,9 +207,9 @@ export const BRANCH_CHECKS: { check: BranchCheck; label: string; needsValue: boo
 ];
 
 export const FILTER_FIELDS: { field: FilterField; label: string; options: () => { v: string; l: string }[] }[] = [
-  { field: "pipeline", label: "Pipeline", options: () => PIPELINES.map((v) => ({ v, l: v })) },
-  { field: "source", label: "Source", options: () => SOURCES.map((v) => ({ v, l: v })) },
-  { field: "stage", label: "Stage", options: () => STAGES.map((v) => ({ v, l: v })) },
+  { field: "pipeline", label: "Pipeline", options: () => optionsFor("pipeline") },
+  { field: "source", label: "Source", options: () => optionsFor("source") },
+  { field: "stage", label: "Stage", options: () => optionsFor("stage") },
   { field: "has_email", label: "Email", options: () => [{ v: "yes", l: "Has an email" }, { v: "no", l: "No email" }] },
   { field: "has_tag", label: "Tag", options: () => KNOWN_TAGS.map((v) => ({ v, l: v })) },
 ];
@@ -291,8 +387,8 @@ export function defaultBranchValue(check: BranchCheck): string {
   switch (check) {
     case "stage_is": return "New Lead";
     case "has_tag": return KNOWN_TAGS[0];
-    case "source_is": return SOURCES[0];
-    case "pipeline_is": return PIPELINES[0];
+    case "source_is": return optionsFor("source")[0]?.v ?? SOURCES[0];
+    case "pipeline_is": return optionsFor("pipeline")[0]?.v ?? PIPELINES[0];
     default: return "";
   }
 }
@@ -426,7 +522,7 @@ export function ordinal(n: number): string {
 
 export function triggerSummary(t: Trigger): string {
   switch (t.kind) {
-    case "stage_changed": return `Lead moves to ${t.stage || "…"}`;
+    case "stage_changed": return `Lead moves to ${valueLabel("stage", t.stage ?? "")}`;
     case "no_answer_times": return `No answer ${t.count ?? 1} time${(t.count ?? 1) === 1 ? "" : "s"}`;
     case "not_contacted_for": return `Quiet for ${t.days ?? 14} day${(t.days ?? 14) === 1 ? "" : "s"}`;
     case "daily_at": return `Every weekday at ${t.time || "16:00"}`;
@@ -435,6 +531,10 @@ export function triggerSummary(t: Trigger): string {
   }
 }
 
+/** The pick list a branch check or filter draws from. */
+export const checkKind = (c: BranchCheck | FilterField): OptionKind | null =>
+  c === "stage_is" || c === "stage" ? "stage" : c === "pipeline_is" || c === "pipeline" ? "pipeline" : c === "source_is" || c === "source" ? "source" : c === "has_tag" ? "tag" : null;
+
 export const branchLabel = (c: BranchCheck) => BRANCH_CHECKS.find((x) => x.check === c)?.label ?? c;
 
 export function stepSummary(s: Step): string {
@@ -442,12 +542,13 @@ export function stepSummary(s: Step): string {
     case "wait": return `Wait ${unitLabel(s.amount, s.unit)}`;
     case "whatsapp_agent": return s.text.split("\n")[0] || "No message yet";
     case "email_lead": return s.subject || "No subject yet";
-    case "set_stage": return `Move to ${s.stage || "…"}`;
+    case "set_stage": return `Move to ${valueLabel("stage", s.stage)}`;
     case "reminder": return `${s.label || "Reminder"} · ${s.inDays === 0 ? "due today" : `in ${unitLabel(s.inDays, "days")}`}`;
     case "tag": return s.tag ? `Tag "${s.tag}"` : "No tag yet";
     case "branch": {
       const needs = BRANCH_CHECKS.find((x) => x.check === s.check)?.needsValue;
-      return `${branchLabel(s.check)}${needs ? ` ${s.value || "…"}` : ""}?`;
+      const k = checkKind(s.check);
+      return `${branchLabel(s.check)}${needs ? ` ${k ? valueLabel(k, s.value) : s.value || "…"}` : ""}?`;
     }
   }
 }
@@ -457,7 +558,8 @@ export const stepTitle = (s: Step | { type: StepType }) => STEP_TYPES.find((x) =
 export function filterSummary(f: Filter): string {
   if (f.field === "has_email") return f.value === "no" ? "Has no email" : "Has an email";
   if (f.field === "has_tag") return `Tagged ${f.value || "…"}`;
-  return `${FILTER_FIELDS.find((x) => x.field === f.field)?.label}: ${f.value || "…"}`;
+  const k = checkKind(f.field);
+  return `${FILTER_FIELDS.find((x) => x.field === f.field)?.label}: ${k ? valueLabel(k, f.value) : f.value || "…"}`;
 }
 
 /** Messages and waits on the main path, in time, for "How this plays out". */
@@ -500,6 +602,7 @@ export function validate(wf: Workflow): Problems {
 
   if (!wf.name.trim()) add("workflow", "Give the workflow a name.");
   if (t.kind === "stage_changed" && !t.stage) add("trigger", "Pick the stage.");
+  if (t.kind === "stage_changed" && t.stage) { const tp = valueProblem("stage", t.stage); if (tp) add("trigger", tp); }
   if (t.kind === "no_answer_times" && !(Number.isInteger(t.count) && (t.count ?? 0) >= 1)) add("trigger", "Missed calls must be a whole number, 1 or more.");
   if (t.kind === "not_contacted_for" && !(Number.isInteger(t.days) && (t.days ?? 0) >= 1)) add("trigger", "Days must be a whole number, 1 or more.");
   if (t.kind === "appointment") {
@@ -511,6 +614,9 @@ export function validate(wf: Workflow): Problems {
   const seen = new Set<string>();
   for (const f of wf.filters) {
     if (!f.value) add("filters", `Pick a value for ${FILTER_FIELDS.find((x) => x.field === f.field)?.label}.`);
+    const fk = checkKind(f.field);
+    const fp = fk ? valueProblem(fk, f.value) : null;
+    if (fp) add("filters", fp);
     if (seen.has(f.field)) add("filters", `${FILTER_FIELDS.find((x) => x.field === f.field)?.label} is there twice. Keep one.`);
     seen.add(f.field);
   }
@@ -544,6 +650,7 @@ export function validate(wf: Workflow): Problems {
         case "set_stage":
           actions++;
           if (!STAGES.includes(s.stage)) add(s.id, "Pick a stage.");
+          else { const sp = valueProblem("stage", s.stage); if (sp) add(s.id, sp); }
           if (t.kind === "stage_changed" && t.stage === s.stage) add(s.id, `The lead is already ${s.stage}: this trigger just moved them there.`);
           break;
         case "reminder":
@@ -558,6 +665,9 @@ export function validate(wf: Workflow): Problems {
         case "branch": {
           const meta = BRANCH_CHECKS.find((x) => x.check === s.check);
           if (meta?.needsValue && !s.value) add(s.id, "Pick what to check for.");
+          const bk = checkKind(s.check);
+          const bp = meta?.needsValue && bk ? valueProblem(bk, s.value) : null;
+          if (bp) add(s.id, bp);
           if (s.check === "opened_last_email" && !hadEmail) add(s.id, "There's no email before this check. Add an \"Email the lead\" step above it.");
           if (!s.yes.length && !s.no.length) add(s.id, "Both paths are empty. Add a step under Yes or No, or delete the check.");
           const y = walk(s.yes, hadEmail);
