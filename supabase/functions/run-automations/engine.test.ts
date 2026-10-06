@@ -313,6 +313,16 @@ describe("emails to the lead", () => {
     expect(leadOf(b).tags).toEqual(["not opened"]);
   });
 
+  it("{{lead_type}} says seller lead or buyer lead by the pipeline", async () => {
+    const wf = workflow([wa("New {{lead_type}}: {{name}}")]);
+    lead();
+    lead({ pipeline_id: "pB" });
+    lead({ pipeline_id: null });
+    for (const l of db.rows("leads")) enroll(wf, l as never);
+    await tick();
+    expect(sent.map((s) => s.text.split(":")[0])).toEqual(["New seller lead", "New buyer lead", "New lead"]);
+  });
+
   it("the lead magnet link: an existing plan, a buyer form, a form with no magnet", async () => {
     const wf = workflow([email("Hi", "{{plan_link}}")]);
     lead({ plan_token: "a".repeat(32) });
