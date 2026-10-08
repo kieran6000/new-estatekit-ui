@@ -324,7 +324,7 @@ function LeadActionUI({
     retry: false,
   });
   const pipelineKind: PipelineKind = matchedKind ?? kindHint ?? leadPipeline?.kind ?? "seller";
-  const digits = lead?.phone.replace(/\D/g, "") ?? "";
+  const digits = intlDigits(lead?.phone ?? "");
   // Surface the property address right under the phone; keep it out of the
   // generic "From their form" list so it isn't shown twice.
   const addressAnswer = lead?.form_answers.find((a) => /address/i.test(a.q)) ?? null;
@@ -404,7 +404,7 @@ function LeadActionUI({
 
             <Divider sx={{ my: 1 }} />
 
-            <InfoLine icon={<CallIcon fontSize="small" />} value={lead.phone} href={`tel:${digits}`} strong />
+            <InfoLine icon={<CallIcon fontSize="small" />} value={showIntl(digits)} href={`tel:+${digits}`} strong />
             {lead.email && <InfoLine icon={<EmailOutlinedIcon fontSize="small" />} value={lead.email} href={`mailto:${lead.email}`} />}
             {addressAnswer && <InfoLine icon={<PlaceIcon fontSize="small" />} value={addressAnswer.a} />}
 
@@ -753,6 +753,16 @@ function Step({ n, label, optional, children }: { n: number; label: string; opti
       </Box>
     </Box>
   );
+}
+
+/** South African numbers with the country code: "082 668 5452" → "27826685452". */
+function intlDigits(phone: string): string {
+  const d = phone.replace(/\D/g, "");
+  return d.length === 10 && d.startsWith("0") ? "27" + d.slice(1) : d;
+}
+/** "27826685452" → "+27 82 668 5452". */
+function showIntl(d: string): string {
+  return d.length === 11 && d.startsWith("27") ? `+27 ${d.slice(2, 4)} ${d.slice(4, 7)} ${d.slice(7)}` : `+${d}`;
 }
 
 function InfoLine({ icon, value, href, strong }: { icon: React.ReactNode; value: string; href?: string; strong?: boolean }) {
