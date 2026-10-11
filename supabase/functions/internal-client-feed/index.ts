@@ -377,6 +377,8 @@ Deno.serve(async (req) => {
           },
         },
         automationsPaused: p.automations_paused,
+        // `email` above is replaced by the email stats; this keeps the address.
+        emailAddress: p.email,
         ...extrasFor(p, myLeads),
       };
     }),
