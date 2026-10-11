@@ -143,8 +143,29 @@ function buildBrief(input: {
   return out;
 }
 
+// ---- Pipeline columns, in the order the client sees them. COPY of
+// PIPELINE_STAGES and stageLabel in src/types/index.ts (edge functions can't
+// import app code). KEEP IN STEP: change both together.
+type PipelineKind = "seller" | "buyer" | "general";
+const PIPELINE_STAGES: Record<PipelineKind, string[]> = {
+  seller: ["New Lead", "No Answer", "Contacted", "Booked", "Mandate Signed", "Lost", "Invalid Number"],
+  buyer: ["New Lead", "No Answer", "Contacted", "Viewing Booked", "Offer Made", "Bought", "Lost", "Invalid Number"],
+  general: ["New Lead", "No Answer", "Contacted", "Booked", "Mandate Signed", "Lost", "Invalid Number"],
+};
+const STAGE_LABEL: Partial<Record<PipelineKind, Record<string, string>>> = {
+  general: { Booked: "Meeting booked", "Mandate Signed": "Signed up" },
+};
+const stageLabel = (stage: string, kind: PipelineKind) => STAGE_LABEL[kind]?.[stage] ?? stage;
+
+/** A day as the client's dashboard counts it: South African time (UTC+2, no daylight saving). */
+const sastDay = (iso: string) => new Date(Date.parse(iso) + 2 * 3600e3).toISOString().slice(0, 10);
+
+/** The client's own actions that show they're working their leads (WhatsApps are sent by automations, so they don't count). */
+const ACTIVE_EVENTS = ["call", "stage_changed", "pipeline_moved", "note_changed"];
+
 interface Profile {
   agent_id: string;
+  deactivated_at?: string | null;
   display_name: string | null;
   company: string | null;
   area: string | null;
@@ -169,7 +190,7 @@ Deno.serve(async (req) => {
 
   let q = supabase
     .from("agent_profiles")
-    .select("agent_id, display_name, company, area, email, whatsapp_number, avatar_url, fb_page_id, fb_ad_account_id, lead_confirmation_email, automations_paused")
+    .select("agent_id, display_name, company, area, email, whatsapp_number, avatar_url, fb_page_id, fb_ad_account_id, lead_confirmation_email, automations_paused, deactivated_at")
     .eq("is_operator", false);
   if (one) q = q.eq("agent_id", one);
   const { data: profiles, error } = await q;
@@ -183,12 +204,38 @@ Deno.serve(async (req) => {
     supabase.from("sold_listings").select("agent_id").in("agent_id", ids),
     supabase.from("signup_requests").select("created_at, name, whatsapp, email, agency, wants, city, suburbs, budget, status"),
     supabase.from("client_dossiers").select("agent_id, data").in("agent_id", ids),
-    all<{ agent_id: string; stage: string; created_at: string }>((a, b) =>
-      supabase.from("leads").select("agent_id, stage, created_at").in("agent_id", ids).eq("archived", false).order("id").range(a, b)),
+    all<{ agent_id: string; stage: string; created_at: string; quality: string | null; pipeline_id: string | null }>((a, b) =>
+      supabase.from("leads").select("agent_id, stage, created_at, quality, pipeline_id").in("agent_id", ids).eq("archived", false).order("id").range(a, b)),
     all<{ agent_id: string; lead_id: string; event_type: string }>((a, b) =>
       supabase.from("lead_events").select("agent_id, lead_id, event_type").in("agent_id", ids).gt("created_at", since30)
         .in("event_type", ["email_sent", "email_opened", "plan_opened", "email_clicked"]).order("id").range(a, b)),
   ]);
+
+  // For the team app's Clients tab: pipelines, the client's own actions, and
+  // when they last signed in. Read on their own, so if one fails the feed still
+  // sends everything else, without that part.
+  const since90 = new Date(Date.now() - 90 * 864e5).toISOString();
+  const [pipesRes, actsRes, loginsRes, authRes] = await Promise.allSettled([
+    supabase.from("pipelines").select("id, agent_id, name, kind, created_at").in("agent_id", ids).order("created_at"),
+    all<{ agent_id: string; actor_id: string; event_type: string; created_at: string }>((a, b) =>
+      supabase.from("lead_events").select("agent_id, actor_id, event_type, created_at").in("agent_id", ids).gt("created_at", since90)
+        .in("event_type", ACTIVE_EVENTS).not("actor_id", "is", null).order("id").range(a, b)),
+    supabase.from("audit_log").select("actor_id, created_at").eq("event", "login").in("actor_id", ids).order("created_at", { ascending: false }).limit(5000),
+    supabase.auth.admin.listUsers({ page: 1, perPage: 1000 }),
+  ]);
+  type PipeRow = { id: string; agent_id: string; name: string; kind: string };
+  const pipeRows: PipeRow[] | null = pipesRes.status === "fulfilled" && !pipesRes.value.error ? (pipesRes.value.data ?? []) as PipeRow[] : null;
+  const acts = actsRes.status === "fulfilled" ? actsRes.value : null;
+  const logins = loginsRes.status === "fulfilled" && !loginsRes.value.error ? loginsRes.value.data ?? [] : [];
+  const signedIn = new Map<string, string>();
+  if (authRes.status === "fulfilled" && !authRes.value.error) {
+    for (const u of authRes.value.data?.users ?? []) if (u.last_sign_in_at) signedIn.set(u.id, u.last_sign_in_at);
+  }
+  const lastLoginOf = (agentId: string): string | null => {
+    const fromLog = (logins as { actor_id: string; created_at: string }[]).find((l) => l.actor_id === agentId)?.created_at ?? null;
+    const fromAuth = signedIn.get(agentId) ?? null;
+    return [fromLog, fromAuth].filter(Boolean).sort().at(-1) ?? null;
+  };
 
   const byAgent = <T extends { agent_id: string }>(rows: T[] | null) => {
     const m = new Map<string, T[]>();
@@ -200,6 +247,65 @@ Deno.serve(async (req) => {
   const leadsBy = byAgent(leads);
   const eventsBy = byAgent(events);
   const dossierBy = new Map((dossiers.data ?? []).map((d) => [d.agent_id, d.data]));
+  const pipesBy = byAgent(pipeRows);
+  const actsBy = byAgent(acts);
+
+  /** The team app's extras for one client: good/weak leads per day, pipelines, and their own activity. */
+  const extrasFor = (p: Profile, myLeads: { stage: string; created_at: string; quality: string | null; pipeline_id: string | null }[]) => {
+    const out: Record<string, unknown> = { deactivatedAt: p.deactivated_at ?? null };
+    try {
+      const from = sastDay(since90);
+      const days = new Map<string, { good: number; weak: number }>();
+      let weakTotal = 0;
+      for (const l of myLeads) {
+        const weak = l.quality === "weak";
+        if (weak) weakTotal++;
+        const d = sastDay(l.created_at);
+        if (d < from) continue;
+        const x = days.get(d) ?? { good: 0, weak: 0 };
+        if (weak) x.weak++; else x.good++;
+        days.set(d, x);
+      }
+      out.leadsByDay = [...days].sort(([a], [b]) => a.localeCompare(b)).map(([day, v]) => ({ day, ...v }));
+      out.weakTotal = weakTotal;
+    } catch { /* left out */ }
+    try {
+      if (pipeRows) {
+        out.pipelines = (pipesBy.get(p.agent_id) ?? []).map((pp) => {
+          const kind: PipelineKind = pp.kind in PIPELINE_STAGES ? pp.kind as PipelineKind : "general";
+          const counts: Record<string, number> = {};
+          for (const l of myLeads) if (l.pipeline_id === pp.id) counts[l.stage] = (counts[l.stage] ?? 0) + 1;
+          const known = PIPELINE_STAGES[kind];
+          // Every column in order, empty ones too; a stage the preset doesn't list goes on the end.
+          const stages = [...known, ...Object.keys(counts).filter((s) => !known.includes(s))]
+            .map((s) => ({ name: stageLabel(s, kind), count: counts[s] ?? 0 }));
+          return { id: pp.id, name: pp.name, kind, stages };
+        });
+      }
+    } catch { /* left out */ }
+    try {
+      if (acts) {
+        const mine = (actsBy.get(p.agent_id) ?? []).filter((e) => e.actor_id === p.agent_id);
+        const days = new Map<string, { calls: number; moves: number; notes: number }>();
+        let last: string | null = null;
+        for (const e of mine) {
+          if (!last || e.created_at > last) last = e.created_at;
+          const d = sastDay(e.created_at);
+          const x = days.get(d) ?? { calls: 0, moves: 0, notes: 0 };
+          if (e.event_type === "call") x.calls++;
+          else if (e.event_type === "note_changed") x.notes++;
+          else x.moves++;
+          days.set(d, x);
+        }
+        out.activity = {
+          lastLoginAt: lastLoginOf(p.agent_id),
+          lastActiveAt: last,
+          byDay: [...days].sort(([a], [b]) => a.localeCompare(b)).map(([day, v]) => ({ day, ...v })),
+        };
+      }
+    } catch { /* left out */ }
+    return out;
+  };
 
   const clients = await Promise.all(
     (profiles as Profile[]).map(async (p) => {
@@ -271,6 +377,7 @@ Deno.serve(async (req) => {
           },
         },
         automationsPaused: p.automations_paused,
+        ...extrasFor(p, myLeads),
       };
     }),
   );
