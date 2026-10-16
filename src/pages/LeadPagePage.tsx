@@ -671,6 +671,13 @@ function FbFormSource({
   });
   const form = data?.form;
   const rateLimited = data?.rateLimited === true;
+  const showSnack = useSnack();
+  // The instant form's end-screen button: people who finish the form land on
+  // this form's thank-you page and still get the lead magnet (general version).
+  const thanksUrl = `https://leads.estatekit.co/thank-you?p=${page.slug}`;
+  function copyThanks() {
+    navigator.clipboard.writeText(thanksUrl).then(() => showSnack("Link copied"), () => showSnack("Couldn't copy. Select the link and copy it."));
+  }
   const fbName = data?.page?.name || pageName;
   const fbAvatar = data?.page?.picture || avatarUrl;
 
@@ -715,6 +722,21 @@ function FbFormSource({
               </Typography>
             </Box>
           ) : null}
+        </Section>
+
+        <Section
+          title="End screen link"
+          info={<>People who finish the instant form and tap its end-screen button land on your thank-you page, with this form&apos;s lead magnet.</>}
+        >
+          <Typography sx={{ fontSize: 13.5, color: "text.secondary", mb: 1.25 }}>
+            In Facebook, open this form, go to the end screen (Completion) and set the button&apos;s website link to:
+          </Typography>
+          <Box sx={{ display: "flex", gap: 1, flexDirection: { xs: "column", sm: "row" } }}>
+            <TextField size="small" value={thanksUrl} fullWidth slotProps={{ htmlInput: { readOnly: true, onFocus: (e: React.FocusEvent<HTMLInputElement>) => e.target.select() } }} />
+            <Button variant="outlined" startIcon={<ContentCopyIcon fontSize="small" />} onClick={copyThanks} sx={{ flexShrink: 0, minHeight: 40 }}>
+              Copy link
+            </Button>
+          </Box>
         </Section>
       </Box>
 

@@ -19,6 +19,7 @@ import { readableOn } from "../lib/contrast";
 import { isPlanToken, recallPlanToken } from "../lib/planToken";
 import { resolveMagnet, type Magnet } from "../lib/leadMagnet";
 import type { LeadPage } from "../types";
+import { getPagePlan } from "../api/pagePlan";
 
 export default function ThankYouPage() {
   const [params] = useSearchParams();
@@ -36,6 +37,15 @@ export default function ThankYouPage() {
     enabled: !!slug,
   });
 
+  // No personal code (e.g. they came from a Facebook instant form's end
+  // button): we still give the lead magnet, the general version. This says
+  // whether it's a seller form, which decides the default magnet.
+  const { data: pagePlan } = useQuery({
+    queryKey: ["pagePlan", slug],
+    queryFn: () => getPagePlan(slug!),
+    enabled: !!slug && !planToken,
+    staleTime: Infinity,
+  });
   // Load the agent's pixel here (PageView only). The Lead event is fired once,
   // on submit, by the lead page: it carries the event id the Conversions API
   // shares, and it is skipped for weak leads. Firing Lead here as well counted
@@ -58,8 +68,11 @@ export default function ThankYouPage() {
 
   // The lead magnet, when this form gives one, is the page's one call to
   // action: a second button (WhatsApp us) beside it splits the tap.
-  const magnet = planToken ? resolveMagnet(page, "seller") : null;
+  const magnet = planToken ? resolveMagnet(page, "seller") : pagePlan ? resolveMagnet(page, pagePlan.pipeline_kind) : null;
   const gift = magnet && magnet.kind !== "none" ? magnet : null;
+  // Where the button goes: their own plan when we know who they are; else
+  // the PDF itself, or the general plan for this form.
+  const giftUrl = !gift ? "" : planToken ? `/plan/${planToken}?from=thanks` : gift.kind === "pdf" ? gift.pdfUrl ?? "" : `/plan/general/${page.slug}`;
 
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: tokens.bg }}>
@@ -72,7 +85,7 @@ export default function ThankYouPage() {
           <Box sx={{ border: "1px solid #e0e0e0", borderRadius: "8px", overflow: "hidden", bgcolor: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,.08)" }}>
             <Box sx={{ p: "40px 24px", minHeight: 260, display: "flex", flexDirection: "column" }}>
               <BrandedThankYou page={page} name={name} showWhatsApp={!gift} />
-              {gift && planToken && <MagnetCta page={page} magnet={gift} token={planToken} />}
+              {gift && giftUrl && <MagnetCta page={page} magnet={gift} href={giftUrl} personal={!!planToken} />}
             </Box>
           </Box>
           <SoldListingsSection agentId={page.agentId} />
@@ -87,7 +100,7 @@ export default function ThankYouPage() {
  *  line and link as the box in the confirmation email (lib/leadMagnet.ts).
  *  Only shown when the lead page made a code for it, which it does only when
  *  the form has one. */
-function MagnetCta({ page, magnet, token }: { page: LeadPage; magnet: Magnet; token: string }) {
+function MagnetCta({ page, magnet, href, personal }: { page: LeadPage; magnet: Magnet; href: string; personal: boolean }) {
   const Icon = magnet.kind === "plan" ? AutoStoriesOutlinedIcon : DescriptionOutlinedIcon;
   return (
     <Box sx={{ mt: 3.5, pt: 3, borderTop: "1px solid #eee", textAlign: "left" }}>
@@ -103,12 +116,12 @@ function MagnetCta({ page, magnet, token }: { page: LeadPage; magnet: Magnet; to
         <Box sx={{ minWidth: 0 }}>
           <Typography sx={{ fontSize: 17, fontWeight: 800, lineHeight: 1.25, color: "#1d2327" }}>{magnet.title}</Typography>
           {magnet.text && <Typography sx={{ fontSize: 14, color: "#5b6670", mt: 0.5, lineHeight: 1.45 }}>{magnet.text}</Typography>}
-          <Typography sx={{ fontSize: 12.5, fontWeight: 600, color: "#2e7d32", mt: 0.75 }}>Free · made for you</Typography>
+          <Typography sx={{ fontSize: 12.5, fontWeight: 600, color: "#2e7d32", mt: 0.75 }}>{personal ? "Free · made for you" : "Free"}</Typography>
         </Box>
       </Box>
       <Box
         component="a"
-        href={`/plan/${token}?from=thanks`}
+        href={href}
         target="_blank"
         rel="noopener"
         sx={{

@@ -4,6 +4,7 @@ import { useParams, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "../api/_client";
 import "./plan.css";
+import { getPagePlan } from "../api/pagePlan";
 
 // The "Marketing Plan" linked from the confirmation email
 // (leads.estatekit.co/plan/<token>). One standard plan for every seller and
@@ -109,6 +110,12 @@ async function getPlanPatiently(token: string, from: string | null): Promise<Pla
   }
 }
 
+// The general plan's tip: true for anyone selling with a bond, whatever their timing.
+const GENERAL_TIP = {
+  tipTitle: "Tell your bank early",
+  tip: "If you have a bond, the bank needs 90 days (3 months) of notice before you sell. Telling them early avoids a penalty and delays.",
+};
+
 async function getSamplePlan(agentId: string): Promise<Plan | null> {
   const { data, error } = await supabase.rpc("get_sample_selling_plan", { p_agent: agentId });
   if (error) throw new Error(error.message);
@@ -116,21 +123,24 @@ async function getSamplePlan(agentId: string): Promise<Plan | null> {
 }
 
 export default function PlanPage() {
-  const { token = "", agentId = "" } = useParams();
+  const { token = "", agentId = "", slug = "" } = useParams();
   const [params] = useSearchParams();
   const from = params.get("from") === "thanks" ? "thanks" : null;
   const sample = !!agentId;
-  const valid = sample ? /^[0-9a-f-]{36}$/i.test(agentId) : /^[a-f0-9]{32}$/.test(token);
+  // /plan/general/<form>: the plan without anyone's details, for people who
+  // come from a Facebook instant form's end button (we don't know who they are).
+  const general = !!slug;
+  const valid = general ? /^[a-z0-9-]{1,80}$/.test(slug) : sample ? /^[0-9a-f-]{36}$/i.test(agentId) : /^[a-f0-9]{32}$/.test(token);
   // Read once: every load would otherwise count as another open.
   const { data: plan, isLoading, isError } = useQuery({
-    queryKey: sample ? ["samplePlan", agentId] : ["plan", token],
-    queryFn: () => (sample ? getSamplePlan(agentId) : getPlanPatiently(token, from)),
+    queryKey: general ? ["pagePlan", slug] : sample ? ["samplePlan", agentId] : ["plan", token],
+    queryFn: (): Promise<Plan | null> => (general ? getPagePlan(slug) : sample ? getSamplePlan(agentId) : getPlanPatiently(token, from)),
     enabled: valid,
     staleTime: Infinity,
     retry: 1,
   });
 
-  const t = TIMES[timeKey(plan?.timeline || "")];
+  const t = general ? { label: "", ...GENERAL_TIP } : TIMES[timeKey(plan?.timeline || "")];
   useEffect(() => {
     if (plan) document.title = `${TITLE} · ${plan.agent_name}`;
   }, [plan]);
@@ -151,7 +161,13 @@ export default function PlanPage() {
   const agentFirst = plan.agent_name.split(/\s+/)[0] || "your agent";
   const initials = plan.agent_name.split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase();
   const phone = digits(plan.agent_phone);
-  const waUrl = phone ? (sample ? `https://wa.me/${phone}` : `/w/${plan.lead_id}/plan`) : "";
+  const waUrl = phone
+    ? general
+      ? `https://wa.me/${phone}?text=${encodeURIComponent(`Hi ${agentFirst}, I just asked for a free home evaluation and read your marketing plan. When suits you for a quick call?`)}`
+      : sample
+        ? `https://wa.me/${phone}`
+        : `/w/${plan.lead_id}/plan`
+    : "";
   const address = tidy(plan.address);
   // Stable for this lead, so it reads the same every time they open it.
   const ref = `EK-${(plan.date.match(/\d{4}$/) || [""])[0]}-${plan.lead_id.replace(/-/g, "").slice(0, 5).toUpperCase()}`;
@@ -174,8 +190,12 @@ export default function PlanPage() {
             </div>
           </div>
           <div className="plan-ref">
-            Ref: <b>{ref}</b>
-            <br />
+            {!general && (
+              <>
+                Ref: <b>{ref}</b>
+                <br />
+              </>
+            )}
             Date: <b>{plan.date}</b>
             <br />
             Status: <b>In progress</b>
@@ -193,13 +213,15 @@ export default function PlanPage() {
         <h1>{TITLE}</h1>
         <p className="plan-sub"><b>How I'll sell your home, what to have ready, and the one thing to do now.</b></p>
 
-        <table className="plan-facts">
-          <tbody>
-            <tr><th scope="row">Prepared for</th><td>{plan.lead_name || "You"}</td></tr>
-            {address && <tr><th scope="row">Property</th><td>{address}</td></tr>}
-            <tr><th scope="row">When you want to sell</th><td>{t.label}</td></tr>
-          </tbody>
-        </table>
+        {!general && (
+          <table className="plan-facts">
+            <tbody>
+              <tr><th scope="row">Prepared for</th><td>{plan.lead_name || "You"}</td></tr>
+              {address && <tr><th scope="row">Property</th><td>{address}</td></tr>}
+              <tr><th scope="row">When you want to sell</th><td>{t.label}</td></tr>
+            </tbody>
+          </table>
+        )}
 
         <h2><span>1.</span> How I'll sell your home</h2>
         <ul className="plan-why">
