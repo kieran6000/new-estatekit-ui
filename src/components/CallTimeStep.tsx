@@ -1,101 +1,123 @@
-import { useState, type ReactNode } from "react";
-import { Box, Button, Typography } from "@mui/material";
-import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import { Box, TextField, Typography } from "@mui/material";
+import CalendarTodayOutlinedIcon from "@mui/icons-material/CalendarTodayOutlined";
+import ScheduleOutlinedIcon from "@mui/icons-material/ScheduleOutlined";
 
-// "When suits you for a quick call?" — built from the same radio list as
-// every other choice question on the form, so it works the way people already
-// expect: one small choice per screen, tap an answer and the form moves on.
-//   1. Which day: Today / Tomorrow / Later this week / Any time is fine
-//   2. Which time: Morning / Afternoon / After work (then it moves on)
-// Choices that can't work (today when it's late, a time that has passed) are
-// left out rather than greyed out. A request for a call, not a booking: the
-// agent confirms, which is true for every agent.
-// Saved as text, e.g. "Tomorrow (Fri 17 Oct), morning".
+// "When suits you for a quick call?" — set like an appointment: a day and a
+// time, side by side, each the phone's own picker (the scroll wheel on an
+// iPhone, the list on Android), then a line saying the agent will confirm.
+// It's a request for a call, not a booked slot, so it says "around".
+// Saved as text, e.g. "Fri 17 Oct, around 10:00". While only one of the two
+// is chosen the answer is partial ("Fri 17 Oct, around " or ", around 10:00")
+// so "Next Step" can ask for the other.
 
-export const CALL_TIME_CONFIRM = "{agent} will call you then to confirm.";
-export const ANY_TIME = "Any time is fine";
-
-const SLOTS = [
-  { label: "Morning", saved: "morning", endsAt: 12 },
-  { label: "Afternoon", saved: "afternoon", endsAt: 16 },
-  { label: "After work", saved: "after work", endsAt: 19 },
-];
+export const CALL_TIME_CONFIRM = "{agent} will call you around then to confirm.";
+const AROUND = ", around ";
+const FIRST_HOUR = 8;
+const LAST_HOUR = 18;
 
 const dateText = (d: Date) => d.toLocaleDateString("en-ZA", { weekday: "short", day: "numeric", month: "short" }).replace(/,/g, "");
+const hh = (h: number) => `${String(h).padStart(2, "0")}:00`;
 
-/** The day choices for right now. */
-function dayChoices(now = new Date()) {
-  const hour = now.getHours();
-  const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-  const dow = now.getDay(); // 0 Sun … 6 Sat
-  const days: { label: string; saved: string; today?: boolean }[] = [];
-  // Today only while at least one time is still ahead (with an hour to spare).
-  if (SLOTS.some((s) => s.endsAt - 1 > hour)) days.push({ label: "Today", saved: `Today (${dateText(now)})`, today: true });
-  days.push({ label: "Tomorrow", saved: `Tomorrow (${dateText(tomorrow)})` });
-  const later = dow >= 1 && dow <= 3 ? "Later this week" : "Early next week";
-  days.push({ label: later, saved: later });
-  return days;
+/** The next 7 days; today only while there's still a time left today. */
+function days(now = new Date()) {
+  const out: { value: string; label: string; today: boolean }[] = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
+    if (i === 0 && now.getHours() + 1 > LAST_HOUR) continue;
+    const text = dateText(d);
+    out.push({ value: text, label: i === 0 ? `Today (${text})` : i === 1 ? `Tomorrow (${text})` : text, today: i === 0 });
+  }
+  return out;
+}
+
+/** Hours to offer: 08:00–18:00; today, only from the next full hour. */
+function hours(today: boolean, now = new Date()) {
+  const from = today ? Math.max(FIRST_HOUR, now.getHours() + 1) : FIRST_HOUR;
+  const out: string[] = [];
+  for (let h = from; h <= LAST_HOUR; h++) out.push(hh(h));
+  return out;
+}
+
+/** Only the day or only the time has been chosen. */
+export function callTimeIncomplete(v: string): boolean {
+  if (!v) return false;
+  const [d = "", t = ""] = v.split(AROUND);
+  return !d || !t;
 }
 
 export default function CallTimeStep({
   question,
+  required,
   confirmText,
   value,
   error,
-  renderChoices,
-  onAnswer,
+  onChange,
 }: {
   question: string;
-  /** Shown above the times, e.g. "Zainub will call you then to confirm." */
+  required: boolean;
+  /** Shown under the two pickers, e.g. "Zainub will call you around then to confirm." */
   confirmText: string;
-  /** The saved answer, if they come back to this step. */
   value: string;
   error?: string;
-  /** The form's own radio list: (question, options, picked, onPick). */
-  renderChoices: (question: string, options: string[], picked: string, onPick: (v: string) => void, sub?: ReactNode) => ReactNode;
-  /** Final answer: the form saves it and moves on, like any choice. */
-  onAnswer: (v: string) => void;
+  onChange: (v: string) => void;
 }) {
-  const days = dayChoices();
-  const savedDay = value && value !== ANY_TIME ? days.find((d) => value.startsWith(d.saved)) : undefined;
-  const [day, setDay] = useState<(typeof days)[number] | null>(null);
+  const dayList = days();
+  const [day = "", time = ""] = value ? value.split(AROUND) : [];
+  const pickedDay = dayList.find((d) => d.value === day);
+  const hourList = hours(!!pickedDay?.today);
 
-  if (!day) {
-    return (
-      <Box>
-        {renderChoices(
-          question,
-          [...days.map((d) => d.label), ANY_TIME],
-          value === ANY_TIME ? ANY_TIME : savedDay?.label ?? "",
-          (v) => {
-            if (v === ANY_TIME) return onAnswer(ANY_TIME);
-            const picked = days.find((d) => d.label === v);
-            if (picked) setDay(picked);
-          },
-        )}
-        {error && <Typography sx={{ fontSize: 12.5, color: "error.main", mt: 1 }}>{error}</Typography>}
-      </Box>
-    );
-  }
+  const set = (d: string, t: string) => onChange(d || t ? `${d}${AROUND}${t}` : "");
 
-  const hour = new Date().getHours();
-  const slots = SLOTS.filter((s) => !day.today || s.endsAt - 1 > hour);
-  const savedSlot = value.startsWith(day.saved) ? SLOTS.find((s) => value.endsWith(", " + s.saved))?.label ?? "" : "";
+  // The phone's own picker; MUI only styles the box around it.
+  const picker = {
+    select: true,
+    fullWidth: true,
+    sx: { "& select": { fontSize: 16, py: 1.5 } },
+  } as const;
+
   return (
-    <Box>
-      {renderChoices(
-        `What time ${day.label.toLowerCase()}?`,
-        slots.map((s) => s.label),
-        savedSlot,
-        (v) => {
-          const s = SLOTS.find((x) => x.label === v);
-          if (s) onAnswer(`${day.saved}, ${s.saved}`);
-        },
-        <Typography sx={{ fontSize: 14, color: "text.secondary", mt: -0.5, mb: 1.25 }}>{confirmText}</Typography>,
-      )}
-      <Button size="small" startIcon={<ArrowBackIcon />} onClick={() => setDay(null)} sx={{ mt: 1.5, color: "text.secondary" }}>
-        Change day
-      </Button>
+    <Box sx={{ mt: 1.5 }}>
+      <Typography sx={{ fontSize: 18, fontWeight: 600, mb: 1.5 }}>
+        {question}
+        {required && <Box component="span" sx={{ color: "error.main" }}> *</Box>}
+      </Typography>
+
+      <Box sx={{ display: "grid", gridTemplateColumns: "minmax(0, 1.3fr) minmax(0, 1fr)", gap: 1.25 }}>
+        <TextField
+          {...picker}
+          label="Day"
+          value={pickedDay ? day : ""}
+          onChange={(e) => {
+            const d = e.target.value;
+            const today = dayList.find((x) => x.value === d)?.today;
+            // Keep the time if it still works for the new day.
+            set(d, time && hours(!!today).includes(time) ? time : "");
+          }}
+          error={!!error && !pickedDay}
+          slotProps={{ select: { native: true }, inputLabel: { shrink: true }, input: { startAdornment: <CalendarTodayOutlinedIcon sx={{ fontSize: 18, color: "text.secondary", mr: 1 }} /> } }}
+        >
+          <option value="" disabled>Select day</option>
+          {dayList.map((d) => (
+            <option key={d.value} value={d.value}>{d.label}</option>
+          ))}
+        </TextField>
+        <TextField
+          {...picker}
+          label="Time"
+          value={hourList.includes(time) ? time : ""}
+          onChange={(e) => set(day, e.target.value)}
+          error={!!error && !hourList.includes(time)}
+          slotProps={{ select: { native: true }, inputLabel: { shrink: true }, input: { startAdornment: <ScheduleOutlinedIcon sx={{ fontSize: 18, color: "text.secondary", mr: 1 }} /> } }}
+        >
+          <option value="" disabled>Select time</option>
+          {hourList.map((h) => (
+            <option key={h} value={h}>{h}</option>
+          ))}
+        </TextField>
+      </Box>
+
+      <Typography sx={{ fontSize: 13.5, color: "text.secondary", mt: 1.25 }}>{confirmText}</Typography>
+      {error && <Typography sx={{ fontSize: 12.5, color: "error.main", mt: 0.75 }}>{error}</Typography>}
     </Box>
   );
 }

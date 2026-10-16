@@ -1427,8 +1427,8 @@ function CustomQuestionEditor({
           {type === "multiple_choice" && <OptionsEditor value={options} onChange={setOptions} />}
           {type === "call_time" && (
             <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
-              Leads tap a day (today, tomorrow, later this week, or any time), then morning, afternoon or after work. It&apos;s a
-              request for a call, not a booked appointment. Best as the last question.
+              Leads pick a day (the next 7) and a time (08:00 to 18:00), like setting an appointment. It&apos;s a request for a
+              call, not a booked slot, so the line under it says you&apos;ll confirm. Best as the last question.
             </Typography>
           )}
           {(type === "short_text" || type === "call_time") && (
@@ -1634,7 +1634,7 @@ function EditQuestionRow({ pageId, question, onDone }: { pageId: string; questio
       {question.type === "call_time" && (
         <TextField
           label="Line shown after they pick (optional)"
-          placeholder="{agent} will call you then to confirm."
+          placeholder="{agent} will call you around then to confirm."
           helperText="{agent} becomes your first name."
           size="small"
           value={helperText}
