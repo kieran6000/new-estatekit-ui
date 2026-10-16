@@ -39,6 +39,7 @@ import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import PlaceIcon from "@mui/icons-material/PlaceOutlined";
+import ScheduleIcon from "@mui/icons-material/Schedule";
 import { usePostHog } from "@posthog/react";
 import { tokens } from "../theme";
 import { PIPELINE_KIND_LABEL, type CustomQuestion, type LeadPage, type Pipeline, type PipelineKind, type QuestionType } from "../types";
@@ -1294,7 +1295,11 @@ const QUESTION_TYPES: { value: QuestionType; label: string }[] = [
   { value: "address", label: "Street address" },
   { value: "multiple_choice", label: "Multiple choice" },
   { value: "yes_no", label: "Yes / no" },
+  { value: "call_time", label: "Preferred call time" },
 ];
+
+/** Starting wording for a new call-time question. */
+const CALL_TIME_LABEL = "When suits you for a quick call?";
 
 function CustomQuestionEditor({
   pageId,
@@ -1344,6 +1349,7 @@ function CustomQuestionEditor({
             <Box sx={{ flex: 1, minWidth: 0 }}>
               <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1 }}>
                 {q.type === "address" && <PlaceIcon fontSize="small" sx={{ color: "text.secondary", mt: "2px" }} />}
+                {q.type === "call_time" && <ScheduleIcon fontSize="small" sx={{ color: "text.secondary", mt: "2px" }} />}
                 <Typography sx={{ fontSize: 15, fontWeight: 600, lineHeight: 1.35, flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>{q.label}</Typography>
               </Box>
               <Typography sx={{ fontSize: 12.5, color: "text.secondary", mt: 0.5 }}>
@@ -1400,7 +1406,18 @@ function CustomQuestionEditor({
       ) : (
         <Box sx={{ display: "flex", flexDirection: "column", gap: 1, p: "12px", border: `1px dashed ${tokens.divider}`, borderRadius: "6px" }}>
           <TextField label="Question" size="small" value={label} onChange={(e) => setLabel(e.target.value)} fullWidth />
-          <TextField select label="Type" size="small" value={type} onChange={(e) => setType(e.target.value as QuestionType)} fullWidth>
+          <TextField
+            select
+            label="Type"
+            size="small"
+            value={type}
+            onChange={(e) => {
+              const t = e.target.value as QuestionType;
+              setType(t);
+              if (t === "call_time" && !label.trim()) setLabel(CALL_TIME_LABEL);
+            }}
+            fullWidth
+          >
             {QUESTION_TYPES.filter((t) => t.value !== "address").map((t) => (
               <MenuItem key={t.value} value={t.value}>
                 {t.label}
@@ -1408,7 +1425,13 @@ function CustomQuestionEditor({
             ))}
           </TextField>
           {type === "multiple_choice" && <OptionsEditor value={options} onChange={setOptions} />}
-          {type === "short_text" && (
+          {type === "call_time" && (
+            <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
+              Leads pick a day (the next 7) and morning, afternoon or after work. It&apos;s a request for a call, not a booked
+              appointment. Best as the last question, and optional, so it doesn&apos;t cost you leads.
+            </Typography>
+          )}
+          {(type === "short_text" || type === "call_time") && (
             <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <Typography sx={{ fontSize: 13 }}>Required</Typography>
               <Switch size="small" checked={required} onChange={(e) => setRequired(e.target.checked)} />
@@ -1585,7 +1608,7 @@ function EditQuestionRow({ pageId, question, onDone }: { pageId: string; questio
       patch: {
         label: label.trim(),
         required,
-        ...(question.type === "address" ? { helperText: helperText.trim() } : {}),
+        ...(question.type === "address" || question.type === "call_time" ? { helperText: helperText.trim() } : {}),
         ...(question.type === "multiple_choice" ? { options: savedOptions } : {}),
         // The ticked answers go into whichever column matches the treatment,
         // and the other is cleared. Options that no longer exist are dropped,
@@ -1608,6 +1631,17 @@ function EditQuestionRow({ pageId, question, onDone }: { pageId: string; questio
         <TextField label="Hint (optional)" placeholder="e.g. 14 Loop Street, Centurion" size="small" value={helperText} onChange={(e) => setHelperText(e.target.value)} fullWidth />
       )}
       {question.type === "multiple_choice" && <OptionsEditor value={options} onChange={setOptions} />}
+      {question.type === "call_time" && (
+        <TextField
+          label="Line shown after they pick (optional)"
+          placeholder="{agent} will call you then to confirm."
+          helperText="{agent} becomes your first name."
+          size="small"
+          value={helperText}
+          onChange={(e) => setHelperText(e.target.value)}
+          fullWidth
+        />
+      )}
 
       {isChoice && currentOptions.length > 0 && (
         <Box sx={{ bgcolor: tokens.surface2, border: `1px solid ${tokens.divider2}`, borderRadius: "6px", p: "10px 12px" }}>

@@ -236,7 +236,7 @@ export type FormPresetKey = "most_leads" | "balanced" | "best_quality";
 /** "address" behaves like short_text but keeps the location-pin icon and an
  * example caption (CustomQuestion.helperText) — the only visual difference
  * from a plain short_text question. */
-export type QuestionType = "short_text" | "address" | "multiple_choice" | "yes_no";
+export type QuestionType = "short_text" | "address" | "multiple_choice" | "yes_no" | "call_time";
 
 export interface CustomQuestion {
   id: string;
@@ -251,7 +251,9 @@ export interface CustomQuestion {
    * Facebook as a conversion — so the pixel stops looking for more like them.
    * The middle ground between carrying on and disqualifyAnswers. */
   lowQualityAnswers?: string[];
-  /** Small example/caption text shown under the question — mainly for "address". */
+  /** Small example/caption text shown under the question — mainly for "address".
+   *  For "call_time" it is the line shown once a day and time are picked
+   *  ({agent} = the agent's first name). */
   helperText?: string;
   /** Extra check on the answer. "street_number": an address must contain a
    *  number (browsers type a suburb, sellers type their address). */

@@ -13,6 +13,7 @@ import { readableOn } from "../lib/contrast";
 import { trackPageEvent } from "../lib/pageTracking";
 import { fillMessage } from "../lib/format";
 import type { CustomQuestion, LeadPage, PipelineKind } from "../types";
+import CallTimeStep, { CALL_TIME_CONFIRM, callTimeIncomplete } from "./CallTimeStep";
 
 type Phase = "intro" | "steps" | "done";
 type StepDef = { kind: "question"; question: CustomQuestion } | { kind: "contact" };
@@ -157,6 +158,17 @@ export default function LeadCaptureForm({
 
   function handleNext() {
     markStarted();
+    if (step.kind === "question" && step.question.type === "call_time") {
+      const v = answers[step.question.id] ?? "";
+      if (callTimeIncomplete(v)) {
+        setErrors({ question: "Please pick a time too." });
+        return;
+      }
+      if (step.question.required && !v) {
+        setErrors({ question: "Please pick a day and a time." });
+        return;
+      }
+    }
     if (step.kind === "question" && (step.question.type === "address" || step.question.type === "short_text")) {
       if (step.question.required && !(answers[step.question.id] ?? "").trim()) {
         setErrors({ question: "This question needs an answer." });
@@ -265,7 +277,8 @@ export default function LeadCaptureForm({
                   value={answers[step.question.id] ?? ""}
                   error={errors.question}
                   accent={page.accentColor}
-                  onChange={(v) => setAnswers((a) => ({ ...a, [step.question.id]: v }))}
+                  agentFirst={(page.agentName || "").trim().split(/\s+/)[0] || "We"}
+                  onChange={(v) => { setErrors({}); setAnswers((a) => ({ ...a, [step.question.id]: v })); }}
                   onPickChoice={(v) => pickChoice(step.question.id, v)}
                 />
               )}
@@ -314,7 +327,7 @@ export default function LeadCaptureForm({
                 </Box>
               )}
 
-              {(step.kind === "contact" || (step.kind === "question" && (step.question.type === "address" || step.question.type === "short_text"))) && (
+              {(step.kind === "contact" || (step.kind === "question" && (step.question.type === "address" || step.question.type === "short_text" || step.question.type === "call_time"))) && (
                 <Button
                   variant="contained"
                   size="large"
@@ -518,6 +531,7 @@ function QuestionStep({
   value,
   error,
   accent,
+  agentFirst,
   onChange,
   onPickChoice,
 }: {
@@ -525,9 +539,24 @@ function QuestionStep({
   value: string;
   error?: string;
   accent: string;
+  /** For the call-time confirmation line. */
+  agentFirst: string;
   onChange: (v: string) => void;
   onPickChoice: (v: string) => void;
 }) {
+  if (question.type === "call_time") {
+    return (
+      <CallTimeStep
+        question={question.label}
+        required={question.required}
+        confirmText={(question.helperText || CALL_TIME_CONFIRM).replaceAll("{agent}", agentFirst)}
+        value={value}
+        accent={accent}
+        error={error}
+        onChange={onChange}
+      />
+    );
+  }
   if (question.type === "multiple_choice") {
     return <ChoiceStep question={question.label} options={question.options ?? []} value={value} onPick={onPickChoice} accent={accent} error={error} />;
   }
