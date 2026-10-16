@@ -1,135 +1,101 @@
-import { Box, ButtonBase, Typography } from "@mui/material";
-import CheckCircleIcon from "@mui/icons-material/CheckCircle";
+import { useState, type ReactNode } from "react";
+import { Box, Button, Typography } from "@mui/material";
+import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 
-// "When suits you for a quick call?": a day (the next 7) and a part of the
-// day. A request for a call, not a booked appointment: nothing is promised
-// at an exact time, which is true for every agent. The answer is saved as
-// text like "Thu 16 Oct · Morning (8–12)"; while only the day is picked it is
-// "Thu 16 Oct · " (ends with the separator), so "Next" can ask for a time.
+// "When suits you for a quick call?" — built from the same radio list as
+// every other choice question on the form, so it works the way people already
+// expect: one small choice per screen, tap an answer and the form moves on.
+//   1. Which day: Today / Tomorrow / Later this week / Any time is fine
+//   2. Which time: Morning / Afternoon / After work (then it moves on)
+// Choices that can't work (today when it's late, a time that has passed) are
+// left out rather than greyed out. A request for a call, not a booking: the
+// agent confirms, which is true for every agent.
+// Saved as text, e.g. "Tomorrow (Fri 17 Oct), morning".
 
-export const CALL_TIME_SEP = " · ";
+export const CALL_TIME_CONFIRM = "{agent} will call you then to confirm.";
+export const ANY_TIME = "Any time is fine";
 
-export const CALL_SLOTS = [
-  { label: "Morning (8–12)", endsAt: 12 },
-  { label: "Afternoon (12–4)", endsAt: 16 },
-  { label: "After work (4–7)", endsAt: 19 },
+const SLOTS = [
+  { label: "Morning", saved: "morning", endsAt: 12 },
+  { label: "Afternoon", saved: "afternoon", endsAt: 16 },
+  { label: "After work", saved: "after work", endsAt: 19 },
 ];
 
-/** The default line shown once both are picked; {agent} = agent's first name. */
-export const CALL_TIME_CONFIRM = "{agent} will call you then to confirm.";
+const dateText = (d: Date) => d.toLocaleDateString("en-ZA", { weekday: "short", day: "numeric", month: "short" }).replace(/,/g, "");
 
-function nextDays(n = 7): { key: string; short: string }[] {
-  const out: { key: string; short: string }[] = [];
-  const now = new Date();
-  for (let i = 0; i < n; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
-    // Saved form, e.g. "Thu 16 Oct": readable in WhatsApp and on the lead.
-    const key = d.toLocaleDateString("en-ZA", { weekday: "short", day: "numeric", month: "short" }).replace(/,/g, "");
-    const short = i === 0 ? "Today" : i === 1 ? "Tomorrow" : d.toLocaleDateString("en-ZA", { weekday: "short", day: "numeric" }).replace(/,/g, "");
-    out.push({ key, short });
-  }
-  return out;
-}
-
-export function callTimeIncomplete(value: string): boolean {
-  return value.endsWith(CALL_TIME_SEP);
+/** The day choices for right now. */
+function dayChoices(now = new Date()) {
+  const hour = now.getHours();
+  const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  const dow = now.getDay(); // 0 Sun … 6 Sat
+  const days: { label: string; saved: string; today?: boolean }[] = [];
+  // Today only while at least one time is still ahead (with an hour to spare).
+  if (SLOTS.some((s) => s.endsAt - 1 > hour)) days.push({ label: "Today", saved: `Today (${dateText(now)})`, today: true });
+  days.push({ label: "Tomorrow", saved: `Tomorrow (${dateText(tomorrow)})` });
+  const later = dow >= 1 && dow <= 3 ? "Later this week" : "Early next week";
+  days.push({ label: later, saved: later });
+  return days;
 }
 
 export default function CallTimeStep({
   question,
-  required,
   confirmText,
   value,
-  accent,
   error,
-  onChange,
+  renderChoices,
+  onAnswer,
 }: {
   question: string;
-  required: boolean;
-  /** Shown once a day and a time are picked. */
+  /** Shown above the times, e.g. "Zainub will call you then to confirm." */
   confirmText: string;
+  /** The saved answer, if they come back to this step. */
   value: string;
-  accent: string;
   error?: string;
-  onChange: (v: string) => void;
+  /** The form's own radio list: (question, options, picked, onPick). */
+  renderChoices: (question: string, options: string[], picked: string, onPick: (v: string) => void, sub?: ReactNode) => ReactNode;
+  /** Final answer: the form saves it and moves on, like any choice. */
+  onAnswer: (v: string) => void;
 }) {
-  const days = nextDays();
-  const [pickedDay = "", pickedSlot = ""] = value ? value.split(CALL_TIME_SEP) : [];
-  const hourNow = new Date().getHours();
-  const isToday = pickedDay === days[0].key;
+  const days = dayChoices();
+  const savedDay = value && value !== ANY_TIME ? days.find((d) => value.startsWith(d.saved)) : undefined;
+  const [day, setDay] = useState<(typeof days)[number] | null>(null);
 
-  const box = (selected: boolean, disabled = false) => ({
-    borderRadius: "8px",
-    border: `1.5px solid ${selected ? accent : "#dadce0"}`,
-    bgcolor: selected ? `${accent}14` : "#fff",
-    color: disabled ? "#9aa0a6" : "#202124",
-    fontWeight: selected ? 600 : 500,
-    minHeight: 48,
-    px: 1,
-    fontSize: 15,
-    opacity: disabled ? 0.55 : 1,
-    width: "100%",
-  });
+  if (!day) {
+    return (
+      <Box>
+        {renderChoices(
+          question,
+          [...days.map((d) => d.label), ANY_TIME],
+          value === ANY_TIME ? ANY_TIME : savedDay?.label ?? "",
+          (v) => {
+            if (v === ANY_TIME) return onAnswer(ANY_TIME);
+            const picked = days.find((d) => d.label === v);
+            if (picked) setDay(picked);
+          },
+        )}
+        {error && <Typography sx={{ fontSize: 12.5, color: "error.main", mt: 1 }}>{error}</Typography>}
+      </Box>
+    );
+  }
 
+  const hour = new Date().getHours();
+  const slots = SLOTS.filter((s) => !day.today || s.endsAt - 1 > hour);
+  const savedSlot = value.startsWith(day.saved) ? SLOTS.find((s) => value.endsWith(", " + s.saved))?.label ?? "" : "";
   return (
-    <Box sx={{ mt: 1.5 }}>
-      <Typography sx={{ fontSize: 18, fontWeight: 600 }}>
-        {question}
-        {required && <Box component="span" sx={{ color: "error.main" }}> *</Box>}
-      </Typography>
-
-      <Typography sx={{ fontSize: 13.5, color: "text.secondary", mt: 1.5, mb: 0.75 }}>Pick a day</Typography>
-      <Box sx={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 1 }} role="radiogroup" aria-label="Day">
-        {days.map((d) => {
-          const selected = pickedDay === d.key;
-          return (
-            <ButtonBase
-              key={d.key}
-              role="radio"
-              aria-checked={selected}
-              // Changing the day keeps the time if it still works for that day.
-              onClick={() => {
-                const today = d.key === days[0].key;
-                const slotOk = pickedSlot && !(today && (CALL_SLOTS.find((s) => s.label === pickedSlot)?.endsAt ?? 24) <= hourNow);
-                onChange(d.key + CALL_TIME_SEP + (slotOk ? pickedSlot : ""));
-              }}
-              sx={box(selected)}
-            >
-              {d.short}
-            </ButtonBase>
-          );
-        })}
-      </Box>
-
-      <Typography sx={{ fontSize: 13.5, color: "text.secondary", mt: 2, mb: 0.75 }}>Pick a time</Typography>
-      <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }} role="radiogroup" aria-label="Time">
-        {CALL_SLOTS.map((s) => {
-          const selected = pickedSlot === s.label;
-          // Today's slots that are already over can't be picked.
-          const past = isToday && s.endsAt <= hourNow;
-          return (
-            <ButtonBase
-              key={s.label}
-              role="radio"
-              aria-checked={selected}
-              disabled={past || !pickedDay}
-              onClick={() => onChange(pickedDay + CALL_TIME_SEP + s.label)}
-              sx={{ ...box(selected, past || !pickedDay), justifyContent: "flex-start", px: 2 }}
-            >
-              {s.label}
-              {past && <Box component="span" sx={{ ml: 1, fontSize: 13, fontWeight: 400 }}>· passed</Box>}
-            </ButtonBase>
-          );
-        })}
-      </Box>
-
-      {pickedDay && pickedSlot && (
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 2, p: 1.5, borderRadius: "8px", bgcolor: "#e6f4ea", color: "#137333" }}>
-          <CheckCircleIcon sx={{ fontSize: 20 }} />
-          <Typography sx={{ fontSize: 14.5 }}>{confirmText}</Typography>
-        </Box>
+    <Box>
+      {renderChoices(
+        `What time ${day.label.toLowerCase()}?`,
+        slots.map((s) => s.label),
+        savedSlot,
+        (v) => {
+          const s = SLOTS.find((x) => x.label === v);
+          if (s) onAnswer(`${day.saved}, ${s.saved}`);
+        },
+        <Typography sx={{ fontSize: 14, color: "text.secondary", mt: -0.5, mb: 1.25 }}>{confirmText}</Typography>,
       )}
-      {error && <Typography sx={{ fontSize: 12.5, color: "error.main", mt: 1 }}>{error}</Typography>}
+      <Button size="small" startIcon={<ArrowBackIcon />} onClick={() => setDay(null)} sx={{ mt: 1.5, color: "text.secondary" }}>
+        Change day
+      </Button>
     </Box>
   );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Box, Button, FormControlLabel, InputAdornment, LinearProgress, Radio, RadioGroup, TextField, Typography } from "@mui/material";
 import EventNoteIcon from "@mui/icons-material/EventNote";
 import PersonOutlineIcon from "@mui/icons-material/PersonOutlineOutlined";
@@ -13,7 +13,7 @@ import { readableOn } from "../lib/contrast";
 import { trackPageEvent } from "../lib/pageTracking";
 import { fillMessage } from "../lib/format";
 import type { CustomQuestion, LeadPage, PipelineKind } from "../types";
-import CallTimeStep, { CALL_TIME_CONFIRM, callTimeIncomplete } from "./CallTimeStep";
+import CallTimeStep, { CALL_TIME_CONFIRM } from "./CallTimeStep";
 
 type Phase = "intro" | "steps" | "done";
 type StepDef = { kind: "question"; question: CustomQuestion } | { kind: "contact" };
@@ -158,17 +158,6 @@ export default function LeadCaptureForm({
 
   function handleNext() {
     markStarted();
-    if (step.kind === "question" && step.question.type === "call_time") {
-      const v = answers[step.question.id] ?? "";
-      if (callTimeIncomplete(v)) {
-        setErrors({ question: "Please pick a time too." });
-        return;
-      }
-      if (step.question.required && !v) {
-        setErrors({ question: "Please pick a day and a time." });
-        return;
-      }
-    }
     if (step.kind === "question" && (step.question.type === "address" || step.question.type === "short_text")) {
       if (step.question.required && !(answers[step.question.id] ?? "").trim()) {
         setErrors({ question: "This question needs an answer." });
@@ -327,7 +316,7 @@ export default function LeadCaptureForm({
                 </Box>
               )}
 
-              {(step.kind === "contact" || (step.kind === "question" && (step.question.type === "address" || step.question.type === "short_text" || step.question.type === "call_time"))) && (
+              {(step.kind === "contact" || (step.kind === "question" && (step.question.type === "address" || step.question.type === "short_text"))) && (
                 <Button
                   variant="contained"
                   size="large"
@@ -493,10 +482,11 @@ function DisqualifiedScreen({ page }: { page: LeadPage }) {
   );
 }
 
-function ChoiceStep({ question, options, value, onPick, accent, error }: { question: string; options: string[]; value: string; onPick: (v: string) => void; accent: string; error?: string }) {
+function ChoiceStep({ question, options, value, onPick, accent, error, sub }: { question: string; options: string[]; value: string; onPick: (v: string) => void; accent: string; error?: string; sub?: ReactNode }) {
   return (
     <Box sx={{ mt: 1.5 }}>
       <Typography sx={{ fontSize: 18, fontWeight: 600, mb: 1 }}>{question}</Typography>
+      {sub}
       <RadioGroup value={value} onChange={(_e, v) => onPick(v)}>
         {options.map((opt, i) => {
           const selected = value === opt;
@@ -547,13 +537,15 @@ function QuestionStep({
   if (question.type === "call_time") {
     return (
       <CallTimeStep
+        key={question.id}
         question={question.label}
-        required={question.required}
         confirmText={(question.helperText || CALL_TIME_CONFIRM).replaceAll("{agent}", agentFirst)}
         value={value}
-        accent={accent}
         error={error}
-        onChange={onChange}
+        renderChoices={(q, options, picked, onPick, sub) => (
+          <ChoiceStep question={q} options={options} value={picked} onPick={onPick} accent={accent} sub={sub} />
+        )}
+        onAnswer={onPickChoice}
       />
     );
   }

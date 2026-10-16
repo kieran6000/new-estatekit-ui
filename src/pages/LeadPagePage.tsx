@@ -1427,8 +1427,8 @@ function CustomQuestionEditor({
           {type === "multiple_choice" && <OptionsEditor value={options} onChange={setOptions} />}
           {type === "call_time" && (
             <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
-              Leads pick a day (the next 7) and morning, afternoon or after work. It&apos;s a request for a call, not a booked
-              appointment. Best as the last question, and optional, so it doesn&apos;t cost you leads.
+              Leads tap a day (today, tomorrow, later this week, or any time), then morning, afternoon or after work. It&apos;s a
+              request for a call, not a booked appointment. Best as the last question.
             </Typography>
           )}
           {(type === "short_text" || type === "call_time") && (
