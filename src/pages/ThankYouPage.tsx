@@ -107,7 +107,7 @@ export default function ThankYouPage() {
               <BrandedThankYou page={page} name={name} video={video} endCta={endCta} onVideoEnd={showNext} showWhatsApp={!gift && !askCall && !video} />
               <Box ref={nextRef}>
                 {askCall && (planToken || preview) && <ThankYouCallTime token={planToken ?? ""} preview={preview} accent={page.accentColor} agentName={page.agentName} question={page.thankYouCallQuestion} />}
-                {gift && giftUrl && <MagnetCta page={page} magnet={gift} href={giftUrl} personal={!!planToken} compact={askCall} />}
+                {gift && giftUrl && <MagnetCta page={page} magnet={gift} href={giftUrl} personal={!!planToken} compact={askCall} still={!!video} />}
               </Box>
             </Box>
           </Box>
@@ -123,7 +123,7 @@ export default function ThankYouPage() {
  *  line and link as the box in the confirmation email (lib/leadMagnet.ts).
  *  Only shown when the lead page made a code for it, which it does only when
  *  the form has one. */
-function MagnetCta({ page, magnet, href, personal, compact }: { page: LeadPage; magnet: Magnet; href: string; personal: boolean; compact?: boolean }) {
+function MagnetCta({ page, magnet, href, personal, compact, still }: { page: LeadPage; magnet: Magnet; href: string; personal: boolean; compact?: boolean; still?: boolean }) {
   const Icon = magnet.kind === "plan" ? AutoStoriesOutlinedIcon : DescriptionOutlinedIcon;
   // Second to the call-time button: one line, not a second big button.
   if (compact) {
@@ -172,7 +172,7 @@ function MagnetCta({ page, magnet, href, personal, compact }: { page: LeadPage; 
         endIcon={<ArrowForwardIcon />}
         sx={{
           mt: 2, bgcolor: page.accentColor, color: readableOn(page.accentColor), "&:hover": { bgcolor: page.accentColor, filter: "brightness(0.9)" },
-          "& .MuiButton-endIcon": { animation: "ek-nudge 1.6s ease-in-out infinite" },
+          "& .MuiButton-endIcon": { animation: still ? "none" : "ek-nudge 1.6s ease-in-out infinite" },
           "@keyframes ek-nudge": { "0%, 100%": { transform: "translateX(0)" }, "50%": { transform: "translateX(4px)" } },
           "@media (prefers-reduced-motion: reduce)": { "& .MuiButton-endIcon": { animation: "none" } },
         }}
@@ -222,6 +222,8 @@ function BrandedThankYou({ page, name, video, endCta, onVideoEnd, showWhatsApp }
             // WhatsApp green: plants that the next thing is a WhatsApp from the agent.
             border: `2px solid ${WA_GREEN}`,
             opacity: 0.6,
+            // With a video, its sound badge is the page's only animation.
+            display: video ? "none" : "block",
             animation: "ek-call-ring 1.8s cubic-bezier(0,0,0.2,1) infinite",
             "@keyframes ek-call-ring": {
               "0%": { transform: "scale(0.85)", opacity: 0.6 },

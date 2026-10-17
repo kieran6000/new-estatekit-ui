@@ -74,22 +74,34 @@ export default function VideoPlayer({ url, accent = "#1a73e8", autoplay = false,
 
 type Report = React.MutableRefObject<((p: VideoProgress) => void) | undefined>;
 
-/** Over a silent autoplay: "Tap to turn on sound", gently pulsing. */
+/** Over a silent autoplay (like Vidalytics): the picture tinted in the
+ *  agent's colour, "Your video is playing / Tap to turn on sound", and a
+ *  speaker whose sound waves fill in one by one. The page's only animation. */
 function SoundBadge({ accent }: { accent: string }) {
+  const ink = readableOn(accent);
   return (
-    <Box sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", bgcolor: "rgba(0,0,0,.15)" }}>
-      <Box
-        sx={{
-          display: "flex", alignItems: "center", gap: 1, px: 2.25, py: 1.25, borderRadius: "999px",
-          bgcolor: accent, color: readableOn(accent), fontSize: 16, fontWeight: 700, boxShadow: "0 6px 20px rgba(0,0,0,.35)",
-          animation: "ek-sound 1.4s ease-in-out infinite",
-          "@keyframes ek-sound": { "0%, 100%": { transform: "scale(1)" }, "50%": { transform: "scale(1.07)" } },
-          "@media (prefers-reduced-motion: reduce)": { animation: "none" },
-        }}
-      >
-        <VolumeOffRoundedIcon />
-        Tap to turn on sound
+    <Box
+      sx={{
+        position: "absolute", inset: { xs: 8, sm: 12 }, borderRadius: "10px", border: `2px solid ${ink}`,
+        bgcolor: `color-mix(in srgb, ${accent} 78%, transparent)`, color: ink,
+        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: { xs: 0.5, sm: 1 }, textAlign: "center", px: 2,
+        "& .ek-w1": { animation: "ek-w1 1.5s infinite" },
+        "& .ek-w2": { animation: "ek-w2 1.5s infinite" },
+        "@keyframes ek-w1": { "0%, 32%": { opacity: 0 }, "33%, 100%": { opacity: 1 } },
+        "@keyframes ek-w2": { "0%, 65%": { opacity: 0 }, "66%, 100%": { opacity: 1 } },
+        "@media (prefers-reduced-motion: reduce)": { "& .ek-w1, & .ek-w2": { animation: "none" } },
+      }}
+    >
+      <Box component="svg" viewBox="0 0 24 24" aria-hidden sx={{ width: { xs: 44, sm: 56 }, height: { xs: 44, sm: 56 } }}>
+        <path d="M3 9v6h4l5 5V4L7 9H3z" fill="currentColor" />
+        <path className="ek-w1" d="M15.5 8.5a5 5 0 0 1 0 7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        <path className="ek-w2" d="M18.5 5.5a9.2 9.2 0 0 1 0 13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
       </Box>
+      <Typography sx={{ fontWeight: 800, fontSize: { xs: 17, sm: 21 }, lineHeight: 1.25, color: "inherit" }}>
+        Your video is playing
+        <br />
+        Tap to turn on sound
+      </Typography>
     </Box>
   );
 }
