@@ -326,7 +326,7 @@ export default function ClientsPage() {
         />
         <RangePicker value={range} onChange={setRange} />
         {deactivatedCount > 0 && (
-          <Tabs value={view} onChange={(_, v) => setView(v)} sx={{ minHeight: 40, width: { xs: "100%", md: "auto" }, "& .MuiTab-root": { minHeight: 40, textTransform: "none", fontWeight: 600, px: 1.5, minWidth: 0 } }}>
+          <Tabs value={view} onChange={(_, v) => setView(v)} sx={{ minHeight: 40, width: { xs: "100%", md: "auto" }, "& .MuiTab-root": { minHeight: 40, px: 1.5, minWidth: 0 } }}>
             <Tab value="active" label={`Active (${(clients?.length ?? 0) - deactivatedCount})`} />
             <Tab value="deactivated" label={`Deactivated (${deactivatedCount})`} />
           </Tabs>

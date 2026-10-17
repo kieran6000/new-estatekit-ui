@@ -60,9 +60,12 @@ interface Lead {
   form_answers: unknown;
   plan_token: string | null;
   appointment_at: string | null;
+  /** The call time they picked (leads.call_at, from their answer). */
+  call_at: string | null;
 }
 
 interface Profile {
+  avatar_url?: string | null;
   display_name: string | null;
   whatsapp_number: string | null;
   email: string | null;
@@ -120,6 +123,22 @@ export function appointmentLabel(iso: string | null | undefined): string {
   const part = (o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Johannesburg", ...o }).format(d);
   return `${part({ weekday: "short" })} ${part({ day: "numeric" })} ${part({ month: "short" })} at ${part({ hour: "2-digit", minute: "2-digit", hour12: false })}`;
 }
+/** The call time they picked, from when the message goes: "today around
+ *  10:00", "tomorrow around 10:00", else "Fri 17 Oct around 10:00". So "I'll
+ *  call you {{call_time}}" reads right whenever it's sent. */
+export function callTimeLabel(iso: string | null | undefined, now = new Date()): string {
+  if (!iso) return "at the time you picked";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "at the time you picked";
+  const fmt = (x: Date, o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Johannesburg", ...o }).format(x);
+  const day = (x: Date) => fmt(x, { year: "numeric", month: "2-digit", day: "2-digit" });
+  const time = fmt(d, { hour: "2-digit", minute: "2-digit", hour12: false });
+  if (day(d) === day(now)) return `today around ${time}`;
+  if (day(d) === day(new Date(now.getTime() + 86_400_000))) return `tomorrow around ${time}`;
+  return `${fmt(d, { weekday: "short" })} ${fmt(d, { day: "numeric" })} ${fmt(d, { month: "short" })} around ${time}`;
+}
+/** Counted from a time (an appointment, or the call time they picked). */
+const countsDown = (kind: string) => kind === "appointment" || kind === "call_time";
 /** A form's lead magnet, as the thank-you page and emails show it.
  *  KEEP IN STEP with src/lib/leadMagnet.ts (MAGNET_PRESETS and resolveMagnet). */
 interface Magnet { title: string; text: string; button: string }
@@ -130,6 +149,8 @@ const MAGNET_DEFAULTS: Record<"plan" | "pdf", Magnet> = {
 interface PageRow {
   name: string | null; suburb: string | null; fb_pixel_id: string | null; phone: string | null;
   magnet_kind: string | null; magnet_title: string | null; magnet_text: string | null; magnet_button: string | null; magnet_pdf_url: string | null;
+  /** The agent's photo on this form (a Storage link; older ones may be inline data). */
+  profile_photo_data_url?: string | null;
 }
 /** "seller lead" / "buyer lead" by the pipeline's kind; plain "lead" otherwise. */
 export function leadType(kind: string | null): string {
@@ -249,7 +270,7 @@ async function processRun(supabase: SupabaseClient, deps: EngineDeps, run: Run) 
 
   const { data: profileRow } = await supabase
     .from("agent_profiles")
-    .select("display_name, whatsapp_number, email, company, automations_paused, deactivated_at")
+    .select("display_name, whatsapp_number, email, company, automations_paused, deactivated_at, avatar_url")
     .eq("agent_id", run.agent_id)
     .maybeSingle();
   const profile = profileRow as Profile | null;
@@ -270,7 +291,7 @@ async function processRun(supabase: SupabaseClient, deps: EngineDeps, run: Run) 
   if (run.lead_id) {
     const { data } = await supabase
       .from("leads")
-      .select("id, agent_id, name, phone, email, stage, next_label, pipeline_id, source_page_id, fb_lead_id, quality, tags, email_opt_out, archived, form_answers, plan_token, appointment_at")
+      .select("id, agent_id, name, phone, email, stage, next_label, pipeline_id, source_page_id, fb_lead_id, quality, tags, email_opt_out, archived, form_answers, plan_token, appointment_at, call_at")
       .eq("id", run.lead_id)
       .maybeSingle();
     lead = data as Lead | null;
@@ -344,7 +365,7 @@ class Context {
     if (this.pageCache === undefined) {
       this.pageCache = null;
       if (this.lead?.source_page_id) {
-        const { data } = await this.supabase.from("lead_pages").select("name, suburb, fb_pixel_id, phone, magnet_kind, magnet_title, magnet_text, magnet_button, magnet_pdf_url").eq("id", this.lead.source_page_id).maybeSingle();
+        const { data } = await this.supabase.from("lead_pages").select("name, suburb, fb_pixel_id, phone, magnet_kind, magnet_title, magnet_text, magnet_button, magnet_pdf_url, profile_photo_data_url").eq("id", this.lead.source_page_id).maybeSingle();
         this.pageCache = data;
       }
     }
@@ -424,8 +445,8 @@ class Context {
 
   private quietHold(): Outcome | null {
     if (!this.def.settings?.quietHours) return null;
-    // A reminder before an appointment is no use after it: always on time.
-    if (this.def.trigger.kind === "appointment" && this.def.trigger.when !== "after") return null;
+    // A reminder before an appointment (or call time) is no use after it: always on time.
+    if (countsDown(this.def.trigger.kind) && this.def.trigger.when !== "after") return null;
     const until = this.deps.quietDeferUntil(new Date());
     return until ? { kind: "hold", until } : null;
   }
@@ -565,6 +586,7 @@ class Context {
         form: l.fb_lead_id ? "Facebook form" : (await this.page())?.name || (l.source_page_id ? "Lead page" : "Added by hand"),
         answers: answers.filter((x) => (x.a || "").trim()).map((x) => `${(x.q || "").trim()}: ${(x.a || "").trim()}`).join("\n") || "No answers",
         appointment: appointmentLabel(l.appointment_at),
+        call_time: callTimeLabel(l.call_at),
         lead_type: leadType(await this.pipelineKind()),
       };
       if (/\{\{\s*action_link\s*\}\}/.test(step.text)) fields.action_link = await this.deps.actionLink(l.id, l.agent_id, this.deps.linkTypeFor(this.wfName));
@@ -646,6 +668,7 @@ class Context {
       agent_name: agentName,
       agent_phone: prettyPhone(page?.phone || this.profile?.whatsapp_number || ""),
       appointment: appointmentLabel(l.appointment_at),
+      call_time: callTimeLabel(l.call_at),
       whatsapp_link: `${APP}/w/${l.id}`,
     };
     const uses = (f: string) => new RegExp(`\\{\\{\\s*${f}\\s*\\}\\}`).test(`${step.subject}\n${step.body}`);
@@ -680,10 +703,24 @@ ${magnet.text ? `<p style="margin:0 0 8px">${esc(magnet.text)}</p>` : ""}
 </td></tr></table>`
       : "";
     const htmlPara = (p: string) => (p === MAGNET_MARK ? magnetHtml : `<p style="margin:0 0 14px">${linkify(p.split(MAGNET_MARK).join(magnetText)).replace(/\n/g, "<br>")}</p>`);
+    // The sign-off ("{{agent_name}}" then their number) with the agent's
+    // photo beside it, so the lead sees who's writing. The photo on their
+    // form first (what the lead saw), else the account's. Only a web link:
+    // email apps block pictures written into the email itself.
+    const photo = [page?.profile_photo_data_url, this.profile?.avatar_url].find((u) => /^https:\/\/\S+$/.test(u || ""));
+    const signOff = (p: string) => {
+      const [nameLine, ...rest] = p.split("\n");
+      return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 14px;border-collapse:collapse"><tr>
+<td style="padding:0 12px 0 0;vertical-align:middle"><img src="${esc(photo!)}" width="56" height="56" alt="${esc(agentName)}" style="display:block;width:56px;height:56px;border-radius:50%;object-fit:cover;border:0"></td>
+<td style="vertical-align:middle;line-height:1.45"><strong>${esc(nameLine.trim())}</strong>${rest.length ? "<br>" + rest.map(linkify).join("<br>") : ""}</td>
+</tr></table>`;
+    };
+    const last = paras.length - 1;
+    const isSignOff = (p: string, i: number) => !!photo && i === last && p.split("\n")[0].trim() === agentName;
     const body = paras.map((p) => p.split(MAGNET_MARK).join(magnetText)).join("\n\n");
     const html = `<!doctype html><html><body style="margin:0;padding:16px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.55;color:#222222">
 <div style="max-width:560px">
-${paras.map(htmlPara).join("\n")}
+${paras.map((p, i) => (isSignOff(p, i) ? signOff(p) : htmlPara(p))).join("\n")}
 <p style="margin:28px 0 0;font-size:11px;color:#999999;line-height:1.5">
 You're getting this because you asked ${esc(agentName)} about your property. <a href="${unsub}" style="color:#999999">Unsubscribe</a>
 </p>
@@ -751,7 +788,10 @@ You're getting this because you asked ${esc(agentName)} about your property. <a 
       return { kind: "done" };
     }
     const label = fill(step.label, { first_name: first(l.name) || l.name, name: l.name }).slice(0, 120);
-    const at = new Date(Date.now() + Math.max(0, step.inDays) * 86_400_000);
+    // From a call time they picked, "due today" means at that time.
+    const callAt = l.call_at ? new Date(l.call_at) : null;
+    const atCall = step.inDays === 0 && (this.def.trigger.kind === "call_time_picked" || this.def.trigger.kind === "call_time") && callAt && callAt.getTime() > Date.now();
+    const at = atCall ? callAt : new Date(Date.now() + Math.max(0, step.inDays) * 86_400_000);
     const { error } = await this.supabase.from("leads").update({ next_label: label, reminder_at: at.toISOString(), due: true }).eq("id", l.id);
     if (error) throw new Error(`reminder: ${error.message}`);
     l.next_label = label;

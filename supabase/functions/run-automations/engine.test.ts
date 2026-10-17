@@ -4,7 +4,7 @@
 // lead, paused or deactivated accounts, archived leads...).
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeDb } from "./fakeSupabase";
-import { runWorkflows, type EngineDeps, type SendResult } from "./workflows";
+import { callTimeLabel, runWorkflows, type EngineDeps, type SendResult } from "./workflows";
 
 (globalThis as unknown as { Deno: unknown }).Deno = {
   env: { get: (k: string) => ({ SUPABASE_SERVICE_ROLE_KEY: "test-key", RESEND_API_KEY: "re_test" } as Record<string, string>)[k] },
@@ -680,6 +680,76 @@ describe("appointments", () => {
     enroll(wf, lead({ stage: "Booked", appointment_at: null }));
     await tick();
     expect(sent[0].text).toBe("At no time set");
+  });
+});
+
+describe("the agent's photo in emails", () => {
+  it("signs off with the agent's photo beside their name and number", async () => {
+    db.tables.lead_pages.push({ id: "pg-photo", name: "Home value", suburb: "Bryanston", phone: "0835550103", profile_photo_data_url: "https://cdn.example.com/agent.jpg" });
+    const wf = workflow([email("Hi", "Hi {{first_name}}.\n\n{{agent_name}}\n{{agent_phone}}")]);
+    enroll(wf, lead({ source_page_id: "pg-photo" }));
+    await tick();
+    const html = emails[0].html as string;
+    expect(html).toContain('<img src="https://cdn.example.com/agent.jpg"');
+    expect(html).toMatch(/<strong>[^<]+<\/strong><br>083 555 0103/);
+  });
+
+  it("no photo, or one written into the page itself: the plain sign-off", async () => {
+    db.tables.lead_pages.push({ id: "pg-data", name: "Home value", suburb: "", phone: "", profile_photo_data_url: "data:image/png;base64,AAAA" });
+    const wf = workflow([email("Hi", "Hi.\n\n{{agent_name}}")]);
+    enroll(wf, lead({ source_page_id: "pg-data" }));
+    await tick();
+    expect(emails[0].html as string).not.toContain("<img src=\"data:");
+    expect(emails[0].html as string).not.toContain("border-radius:50%");
+  });
+});
+
+describe("call times", () => {
+  const before = { kind: "call_time", amount: 15, unit: "minutes", when: "before" };
+
+  it("{{call_time}} reads from when it's sent: today, tomorrow, or the date", () => {
+    const now = new Date("2026-10-16T06:00:00Z"); // Fri 16 Oct, 08:00 SAST
+    expect(callTimeLabel("2026-10-16T08:00:00Z", now)).toBe("today around 10:00");
+    expect(callTimeLabel("2026-10-17T15:00:00Z", now)).toBe("tomorrow around 17:00");
+    expect(callTimeLabel("2026-10-20T07:00:00Z", now)).toBe("Tue 20 Oct around 09:00");
+    expect(callTimeLabel(null, now)).toBe("at the time you picked");
+  });
+
+  it("fills in {{call_time}} in WhatsApps and emails", async () => {
+    const at = new Date(Date.now() + 3 * 86_400_000).toISOString();
+    const wf = workflow([wa("{{first_name}}: {{call_time}}"), email("Speak soon", "I'll call you {{call_time}}.")], { trigger: before });
+    enroll(wf, lead({ stage: "New Lead", call_at: at }));
+    await tick();
+    expect(sent[0].text).toBe(`Thandi: ${callTimeLabel(at)}`);
+    expect(emails[0].subject).toBe("Speak soon");
+    expect(sent[0].text).toMatch(/around \d\d:\d\d$/);
+  });
+
+  it("a reminder before the call time ignores quiet hours", async () => {
+    quiet = new Date(Date.now() + 3 * 3600_000);
+    const wf = workflow([wa("in 15")], { trigger: before });
+    const r = enroll(wf, lead({ stage: "New Lead", call_at: new Date(Date.now() + 15 * 60_000).toISOString() }));
+    await tick();
+    expect(sent.map((s) => s.text)).toEqual(["in 15"]);
+    expect(runOf(r).status).toBe("completed");
+  });
+
+  it("a reminder due today, from a picked call time, is set for that time", async () => {
+    const at = new Date(Date.now() + 86_400_000).toISOString();
+    const wf = workflow([rem("Call {{first_name}}", 0)], { trigger: { kind: "call_time_picked" } });
+    const l = lead({ stage: "New Lead", call_at: at });
+    enroll(wf, l);
+    await tick();
+    expect(new Date(leadOf(l).reminder_at as string).toISOString()).toBe(at);
+    expect(leadOf(l).next_label).toBe("Call Thandi");
+  });
+
+  it("other triggers' reminders due today are still for now", async () => {
+    const wf = workflow([rem("Call", 0)]);
+    const l = lead({ call_at: new Date(Date.now() + 86_400_000).toISOString() });
+    enroll(wf, l);
+    await tick();
+    expect(Math.abs(new Date(leadOf(l).reminder_at as string).getTime() - Date.now())).toBeLessThan(60_000);
   });
 });
 

@@ -89,6 +89,7 @@ export default function App() {
       <Route path="/start" element={<SignupPage />} />
       <Route path="/sold/:agentId" element={<SoldPage />} />
       <Route path="/plan/sample/:agentId" element={<PlanPage />} />
+      <Route path="/plan/general/:slug" element={<PlanPage />} />
       <Route path="/plan/:token" element={<PlanPage />} />
       <Route path="/r/:token" element={<SharedReportPage />} />
 

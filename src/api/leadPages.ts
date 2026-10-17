@@ -37,6 +37,9 @@ interface LeadPageRow {
   magnet_text?: string | null;
   magnet_button?: string | null;
   magnet_pdf_url?: string | null;
+  thank_you_video_url?: string | null;
+  thank_you_ask_call?: boolean | null;
+  thank_you_call_question?: string | null;
 }
 
 function rowToPage(r: LeadPageRow): LeadPage {
@@ -72,6 +75,9 @@ function rowToPage(r: LeadPageRow): LeadPage {
     dqCtaLabel: r.dq_cta_label ?? "",
     dqCtaUrl: r.dq_cta_url ?? "",
     magnetKind: r.magnet_kind ?? null,
+    thankYouVideoUrl: r.thank_you_video_url ?? null,
+    thankYouAskCall: r.thank_you_ask_call === true,
+    thankYouCallQuestion: r.thank_you_call_question ?? null,
     magnetTitle: r.magnet_title ?? "",
     magnetText: r.magnet_text ?? "",
     magnetButton: r.magnet_button ?? "",
@@ -118,6 +124,9 @@ function patchToRow(
   if (p.magnetText !== undefined) m.magnet_text = p.magnetText;
   if (p.magnetButton !== undefined) m.magnet_button = p.magnetButton;
   if (p.magnetPdfUrl !== undefined) m.magnet_pdf_url = p.magnetPdfUrl;
+  if (p.thankYouVideoUrl !== undefined) m.thank_you_video_url = p.thankYouVideoUrl;
+  if (p.thankYouAskCall !== undefined) m.thank_you_ask_call = p.thankYouAskCall;
+  if (p.thankYouCallQuestion !== undefined) m.thank_you_call_question = p.thankYouCallQuestion;
   return m;
 }
 
@@ -348,6 +357,25 @@ export interface LeadPageFunnel {
   submits: number;
 }
 
+/** How many visitors reached each step of one website form in [since, until)
+ *  (each step counts once per visitor). Counted by the database, so "All
+ *  time" is as quick as today. Operator-only (RLS). */
+export async function getLeadPageCounts(pageId: string, since: Date, until: Date): Promise<LeadPageFunnel> {
+  const count = async (type: string) => {
+    const { count: n, error } = await supabase
+      .from("lead_page_events")
+      .select("id", { count: "exact", head: true })
+      .eq("page_id", pageId)
+      .eq("event_type", type)
+      .gte("created_at", since.toISOString())
+      .lt("created_at", until.toISOString());
+    if (error) throw new Error(error.message);
+    return n ?? 0;
+  };
+  const [views, starts, contacts, disqualified, submits] = await Promise.all(["view", "start", "contact", "disqualified", "submit"].map(count));
+  return { views, starts, contacts, disqualified, submits };
+}
+
 /** Unique-visitor funnel counts for one landing page. Operator-only (RLS). */
 export async function getLeadPageFunnel(pageId: string, sinceIso: string | null): Promise<LeadPageFunnel> {
   const { data, error } = await supabase.rpc("lead_page_funnel", { p_page_id: pageId, p_since: sinceIso });
@@ -372,6 +400,13 @@ export async function updateLeadPage(
     .from("lead_pages")
     .update(row)
     .eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+/** Which pipeline this form's new leads go to. Leads already in are left
+ *  where they are (each lead has its own pipeline). Staff only (the screen). */
+export async function setLeadPagePipeline(id: string, pipelineId: string): Promise<void> {
+  const { error } = await supabase.from("lead_pages").update({ pipeline_id: pipelineId }).eq("id", id);
   if (error) throw new Error(error.message);
 }
 

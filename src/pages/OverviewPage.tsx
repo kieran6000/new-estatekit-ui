@@ -285,8 +285,8 @@ export default function OverviewPage() {
           variant="fullWidth"
           sx={{ bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}`, minHeight: 44 }}
         >
-          <Tab label="Numbers" value="numbers" sx={{ minHeight: 44, textTransform: "none", fontWeight: 600 }} />
-          <Tab label="Active ads" value="ads" sx={{ minHeight: 44, textTransform: "none", fontWeight: 600 }} />
+          <Tab label="Numbers" value="numbers" />
+          <Tab label="Active ads" value="ads" />
         </Tabs>
       )}
 

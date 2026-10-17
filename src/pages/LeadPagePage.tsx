@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   AppBar,
   Box,
@@ -20,6 +20,8 @@ import {
   FormControlLabel,
   Skeleton,
   Switch,
+  Tab,
+  Tabs,
   TextField,
   Toolbar,
   Typography,
@@ -39,12 +41,13 @@ import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import PlaceIcon from "@mui/icons-material/PlaceOutlined";
+import ScheduleIcon from "@mui/icons-material/Schedule";
 import { usePostHog } from "@posthog/react";
 import { tokens } from "../theme";
 import { PIPELINE_KIND_LABEL, type CustomQuestion, type LeadPage, type Pipeline, type PipelineKind, type QuestionType } from "../types";
 import { useAddLeadPage, useDeleteLeadPage, useLeadPages, useUpdateLeadPage } from "../hooks/useLeadPages";
 import { usePipelines } from "../hooks/usePipelines";
-import { getFbForm, listFbForms, listFbPages, type FbForm } from "../api/leadPages";
+import { getFbForm, listFbForms, listFbPages, setLeadPagePipeline, type FbForm } from "../api/leadPages";
 import FbFormPreview from "../components/FbFormPreview";
 import { getMyProfile } from "../api/agentProfile";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -67,6 +70,9 @@ import { timeAgo } from "../lib/timeAgo";
 import FormPresetPicker from "../components/FormPresetPicker";
 import InfoTip from "../components/InfoTip";
 import LeadMagnetCard from "../components/LeadMagnetCard";
+import ThankYouPageCard from "../components/ThankYouPageCard";
+import { useFormSaving } from "../hooks/useAutosave";
+import CheckIcon from "@mui/icons-material/Check";
 import OptionsEditor from "../components/OptionsEditor";
 import { cleanOptions } from "../lib/options";
 import { applyFormPreset, FORM_PRESET_VERSION, presetByKey } from "../lib/formPresets";
@@ -96,6 +102,11 @@ export default function LeadPagePage() {
   const [renameDialogId, setRenameDialogId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
+  // Three tabs, in the order a lead goes through it: the form, what they see
+  // after sending it, and sharing it. One job per screen, not ten cards.
+  const [params, setParams] = useSearchParams();
+  const tabParam = params.get("tab");
+  const setTab = (t: PageTab) => setParams((p) => { const n = new URLSearchParams(p); if (t === "form") n.delete("tab"); else n.set("tab", t); return n; }, { replace: true });
 
   const page: LeadPage | undefined = pages.find((p) => p.id === pageId) ?? pages[0];
   // A page can point at a pipeline this account can't see — it happens when the
@@ -195,6 +206,15 @@ export default function LeadPagePage() {
     updatePage.mutate({ id: page!.id, patch });
   }
 
+  const fb = page.sourceType === "fb_form";
+  const tabs: { value: PageTab; label: string }[] = [
+    { value: "form", label: "Form" },
+    { value: "thanks", label: "Thank-you page" },
+    ...(!fb ? [{ value: "link" as const, label: "Link" }] : []),
+    ...(isOperator ? [{ value: "tracking" as const, label: "Tracking" }] : []),
+  ];
+  const tab: PageTab = tabs.some((t) => t.value === tabParam) ? (tabParam as PageTab) : "form";
+
   // Pictures go to Storage (shrunk); the row only keeps the link. They used
   // to be stored inside the row, so every page view re-downloaded them.
   async function onLogoChange(file: File | null) {
@@ -280,7 +300,8 @@ export default function LeadPagePage() {
         </Toolbar>
       </AppBar>
 
-      <Box sx={{ display: "flex", alignItems: "center", gap: 1.25, p: "10px 16px", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
+      <Box sx={{ position: "sticky", top: 56, zIndex: 3, display: "flex", flexWrap: { xs: "wrap", md: "nowrap" }, alignItems: "center", columnGap: 3, px: 2, bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1.25, py: 1.25, flex: { xs: "1 1 100%", md: "none" }, minWidth: 0 }}>
         <Box
           component="button"
           onClick={(e) => setPageMenuAnchor(e.currentTarget)}
@@ -339,15 +360,25 @@ export default function LeadPagePage() {
             </MenuItem>
           )}
         </Menu>
-        <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
-          {linkedPipeline
-            ? <>Sends leads to <b style={{ color: tokens.ink }}>{pipeline.name}</b> pipeline</>
-            : <>This page isn't linked to one of your lists yet</>}
-        </Typography>
+        <PipelineLine page={page} linked={linkedPipeline} pipelines={pipelines} canChange={canSetUp} sx={{ display: { md: "none" } }} />
+        {canSetUp && <SaveStatus sx={{ ml: "auto", display: { md: "none" } }} />}
+      </Box>
+      <PageTabs tabs={tabs} value={tab} onChange={setTab} />
+      <Box sx={{ ml: "auto", display: { xs: "none", md: "flex" }, alignItems: "center", gap: 2.5 }}>
+        {canSetUp && <SaveStatus />}
+        <PipelineLine page={page} linked={linkedPipeline} pipelines={pipelines} canChange={canSetUp} sx={{ whiteSpace: "nowrap" }} />
+      </Box>
       </Box>
 
+      {/* Every tab stays loaded and is only hidden, so switching tabs never
+          loses something half-edited. */}
       {page.sourceType === "fb_form" ? (
         <FbFormSource
+          tab={tab}
+          extras={<>
+            <ThankYouPageCard key={page.id} page={page} canSetUp={canSetUp} />
+            <LeadMagnetCard key={page.id} page={page} pipelineKind={pipeline.kind} canSetUp={canSetUp} />
+          </>}
           page={page}
           pipelineName={pipeline.name}
           fbPageId={profile?.fbPageId || null}
@@ -356,14 +387,16 @@ export default function LeadPagePage() {
         />
       ) : null}
       {page.sourceType === "fb_form" && (
-        <Box sx={{ maxWidth: 1000, mx: "auto", px: 2, pb: 3, display: "flex", flexDirection: "column", gap: 2 }}>
-          <LeadMagnetCard page={page} pipelineKind={pipeline.kind} canSetUp={canSetUp} />
-          {trackingSection}
+        <Box hidden={tab !== "tracking"}>
+          <Box sx={{ maxWidth: 720, mx: "auto", p: 2, display: "flex", flexDirection: "column", gap: 3 }}>
+            {trackingSection}
+          </Box>
         </Box>
       )}
-      {page.sourceType === "fb_form" ? null : (
-        // Phones: preview and link first, then what the agent uses most.
-        // Desktop: the same order on the left, preview + link sticky on the right.
+      {page.sourceType !== "fb_form" && (<>
+      {/* Phones: preview first, then the settings. Desktop: settings on the
+          left, the preview sticky on the right. */}
+      <Box hidden={tab !== "form"}>
         <Box sx={{ display: "flex", flexDirection: { xs: "column", md: "row" }, gap: 3, p: 2, maxWidth: 1100, mx: "auto" }}>
           <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
             <Section
@@ -505,43 +538,9 @@ export default function LeadPagePage() {
               <RecentSalesEditor />
             </Section>
 
-            {canSetUp && (
-              <>
-              <Section title="Message for leads" info="What people see right after they send the form. Write {name} for their first name and {agent} for yours.">
-                <TextField
-                  label="Headline"
-                  value={form.thankYouHeadline}
-                  onChange={(e) => fieldChange("thankYouHeadline", e.target.value)}
-                  fullWidth
-                 
-                />
-                <TextField label="Description" value={form.thankYouSubtext} onChange={(e) => fieldChange("thankYouSubtext", e.target.value)} fullWidth multiline minRows={2} />
-              </Section>
-              </>
-            )}
-
-            {canSetUp && (
-              <>
-              <Section
-                title="End page"
-                info="Shown instead of the message for leads when someone picks an answer you've set to “Send to end page”. They aren't saved as a lead. Leave it blank for our standard wording, or add a button to send them somewhere useful."
-              >
-                <TextField label="Headline" placeholder="Thanks for your interest!" value={form.dqHeadline} onChange={(e) => fieldChange("dqHeadline", e.target.value)} fullWidth />
-                <TextField label="Description" placeholder="Based on your answers, this might not be the right time for a valuation…" value={form.dqText} onChange={(e) => fieldChange("dqText", e.target.value)} fullWidth multiline minRows={2} />
-                <Box sx={{ display: "flex", gap: 1.5, flexWrap: "wrap" }}>
-                  <TextField label="Button text" placeholder="e.g. Follow us on Facebook" value={form.dqCtaLabel} onChange={(e) => fieldChange("dqCtaLabel", e.target.value)} sx={{ flex: "1 1 160px" }} />
-                  <TextField label="Website link" placeholder="https://…" value={form.dqCtaUrl} onChange={(e) => fieldChange("dqCtaUrl", e.target.value.trim())} sx={{ flex: "2 1 220px" }} />
-                </Box>
-              </Section>
-              </>
-            )}
-
-            <LeadMagnetCard page={page} pipelineKind={pipeline.kind} canSetUp={canSetUp} />
-  
-            {trackingSection}
           </Box>
 
-          <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2, alignSelf: { md: "flex-start" }, position: { md: "sticky" }, top: { md: 72 }, order: { xs: -1, md: 0 } }}>
+          <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2, alignSelf: { md: "flex-start" }, position: { md: "sticky" }, top: { md: 120 }, order: { xs: -1, md: 0 } }}>
             <Section
               title="Live preview"
               action={
@@ -558,13 +557,66 @@ export default function LeadPagePage() {
             >
               <PreviewAndSubmit page={{ ...page, ...form }} pipelineKind={pipeline.kind} />
             </Section>
+          </Box>
+        </Box>
+      </Box>
+      <Box hidden={tab !== "thanks"}>
+        <Box sx={{ display: "flex", flexDirection: { xs: "column", md: "row" }, gap: 3, p: 2, maxWidth: 1100, mx: "auto" }}>
+          <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
+            {canSetUp && (
+              <>
+              <Section title="Message for leads" info="What people see right after they send the form. Write {name} for their first name and {agent} for yours.">
+                <TextField
+                  label="Headline"
+                  value={form.thankYouHeadline}
+                  onChange={(e) => fieldChange("thankYouHeadline", e.target.value)}
+                  fullWidth
+                 
+                />
+                <TextField label="Description" value={form.thankYouSubtext} onChange={(e) => fieldChange("thankYouSubtext", e.target.value)} fullWidth multiline minRows={2} />
+              </Section>
+              </>
+            )}
 
-            <ShareSection page={page} onUpdateSlug={canSetUp ? (slug) => updatePage.mutate({ id: page.id, patch: { slug } }) : undefined} />
+            <ThankYouPageCard key={page.id} page={page} canSetUp={canSetUp} />
+            <LeadMagnetCard key={page.id} page={page} pipelineKind={pipeline.kind} canSetUp={canSetUp} />
+            {canSetUp && (
+              <>
+              <Section
+                title="If they don't qualify"
+                info="Shown instead of the message for leads when someone picks an answer you've set to “Send to end page”. They aren't saved as a lead. Leave it blank for our standard wording, or add a button to send them somewhere useful."
+              >
+                <TextField label="Headline" placeholder="Thanks for your interest!" value={form.dqHeadline} onChange={(e) => fieldChange("dqHeadline", e.target.value)} fullWidth />
+                <TextField label="Description" placeholder="Based on your answers, this might not be the right time for a valuation…" value={form.dqText} onChange={(e) => fieldChange("dqText", e.target.value)} fullWidth multiline minRows={2} />
+                <Box sx={{ display: "flex", gap: 1.5, flexWrap: "wrap" }}>
+                  <TextField label="Button text" placeholder="e.g. Follow us on Facebook" value={form.dqCtaLabel} onChange={(e) => fieldChange("dqCtaLabel", e.target.value)} sx={{ flex: "1 1 160px" }} />
+                  <TextField label="Website link" placeholder="https://…" value={form.dqCtaUrl} onChange={(e) => fieldChange("dqCtaUrl", e.target.value.trim())} sx={{ flex: "2 1 220px" }} />
+                </Box>
+              </Section>
+              </>
+            )}
 
-            {isOperator && <LeadPageFunnelStats pageId={page.id} />}
+          </Box>
+          <Box sx={{ flex: 1, minWidth: 0, alignSelf: { md: "flex-start" }, position: { md: "sticky" }, top: { md: 120 }, order: { xs: -1, md: 0 } }}>
+            <ThankYouPreview page={page} />
+          </Box>
+        </Box>
+      </Box>
+      <Box hidden={tab !== "link"}>
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 3, p: 2, maxWidth: 720, mx: "auto" }}>
+          <ShareSection page={page} onUpdateSlug={canSetUp ? (slug) => updatePage.mutate({ id: page.id, patch: { slug } }) : undefined} />
+        </Box>
+      </Box>
+      {isOperator && (
+        <Box hidden={tab !== "tracking"}>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 3, p: 2, maxWidth: 960, mx: "auto" }}>
+            {/* The pixel first (it's set up once, and everything else depends on it), then the numbers. */}
+            {trackingSection}
+            <LeadPageFunnelStats pageId={page.id} active={tab === "tracking"} />
           </Box>
         </Box>
       )}
+      </>)}
 
       <AddPageDialog
         open={addPageOpen}
@@ -643,12 +695,16 @@ export default function LeadPagePage() {
 }
 
 function FbFormSource({
+  tab,
+  extras,
   page,
   pipelineName,
   fbPageId,
   pageName,
   avatarUrl,
 }: {
+  tab: PageTab;
+  extras: React.ReactNode;
   page: LeadPage;
   pipelineName: string;
   fbPageId: string | null;
@@ -670,12 +726,44 @@ function FbFormSource({
   });
   const form = data?.form;
   const rateLimited = data?.rateLimited === true;
+  const showSnack = useSnack();
+  // The instant form's end-screen button: people who finish the form land on
+  // this form's thank-you page and still get the lead magnet (general version).
+  const thanksUrl = `https://leads.estatekit.co/thank-you?p=${page.slug}`;
+  function copyThanks() {
+    navigator.clipboard.writeText(thanksUrl).then(() => showSnack("Link copied"), () => showSnack("Couldn't copy. Select the link and copy it."));
+  }
   const fbName = data?.page?.name || pageName;
   const fbAvatar = data?.page?.picture || avatarUrl;
 
   const CONTACT = new Set(["FULL_NAME", "EMAIL", "PHONE", "FIRST_NAME", "LAST_NAME", "STREET_ADDRESS", "CITY", "ZIP", "COUNTRY", "PROVINCE", "STATE"]);
 
-  return (
+  const thanksView = (
+      <Box sx={{ display: "flex", flexDirection: { xs: "column", md: "row" }, gap: 3, p: 2, maxWidth: 1100, mx: "auto" }}>
+        <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
+          <Section
+            title="End screen link"
+            info={<>People who finish the instant form and tap its end-screen button land on your thank-you page, with this form&apos;s lead magnet.</>}
+          >
+            <Typography sx={{ fontSize: 13.5, color: "text.secondary", mb: 1.25 }}>
+              In Facebook, open this form, go to the end screen (Completion) and set the button&apos;s website link to:
+            </Typography>
+            <Box sx={{ display: "flex", gap: 1, flexDirection: { xs: "column", sm: "row" } }}>
+              <TextField size="small" value={thanksUrl} fullWidth slotProps={{ htmlInput: { readOnly: true, onFocus: (e: React.FocusEvent<HTMLInputElement>) => e.target.select() } }} />
+              <Button variant="outlined" startIcon={<ContentCopyIcon fontSize="small" />} onClick={copyThanks} sx={{ flexShrink: 0, minHeight: 40 }}>
+                Copy link
+              </Button>
+            </Box>
+          </Section>
+          {extras}
+        </Box>
+        <Box sx={{ flex: 1, minWidth: 0, alignSelf: { md: "flex-start" }, position: { md: "sticky" }, top: { md: 120 }, order: { xs: -1, md: 0 } }}>
+          <ThankYouPreview page={page} />
+        </Box>
+      </Box>
+  );
+
+  const formView = (
     <Box sx={{ display: "flex", flexDirection: { xs: "column", md: "row" }, gap: 3, p: 2, maxWidth: 1000, mx: "auto", alignItems: "flex-start" }}>
       <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3, width: "100%" }}>
         <Section title="Questions">
@@ -715,9 +803,10 @@ function FbFormSource({
             </Box>
           ) : null}
         </Section>
+
       </Box>
 
-      <Box sx={{ flex: 1, minWidth: 0, width: "100%", alignSelf: { md: "flex-start" }, position: { md: "sticky" }, top: { md: 72 } }}>
+      <Box sx={{ flex: 1, minWidth: 0, width: "100%", alignSelf: { md: "flex-start" }, position: { md: "sticky" }, top: { md: 120 } }}>
         <Section title="Live preview">
           {isLoading ? (
             <Skeleton variant="rounded" height={620} sx={{ borderRadius: "12px" }} />
@@ -739,6 +828,139 @@ function FbFormSource({
         </Section>
       </Box>
     </Box>
+  );
+
+  return (
+    <>
+      <Box hidden={tab !== "form"}>{formView}</Box>
+      <Box hidden={tab !== "thanks"}>{thanksView}</Box>
+    </>
+  );
+}
+
+type PageTab = "form" | "thanks" | "link" | "tracking";
+
+/** Everything on this page saves as you go; this says so. */
+function SaveStatus({ sx }: { sx?: object }) {
+  const saving = useFormSaving();
+  return (
+    <Typography component="div" aria-live="polite" sx={{ display: "flex", alignItems: "center", gap: 0.5, fontSize: 12.5, color: "text.secondary", whiteSpace: "nowrap", ...sx }}>
+      {saving ? <><CircularProgress size={12} sx={{ color: "inherit" }} /> Saving…</> : <><CheckIcon sx={{ fontSize: 16, color: tokens.green }} /> All changes saved</>}
+    </Typography>
+  );
+}
+
+/** "Sends leads to Seller pipeline". Staff can change it (new leads only;
+ *  leads already in stay where they are), after a plain confirmation. */
+function PipelineLine({ page, linked, pipelines, canChange, sx }: { page: LeadPage; linked: Pipeline | undefined; pipelines: Pipeline[]; canChange: boolean; sx?: object }) {
+  const qc = useQueryClient();
+  const showSnack = useSnack();
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const [pick, setPick] = useState<Pipeline | null>(null);
+  const [busy, setBusy] = useState(false);
+  async function move() {
+    if (!pick) return;
+    setBusy(true);
+    try {
+      await setLeadPagePipeline(page.id, pick.id);
+      await qc.invalidateQueries({ queryKey: ["leadPages"] });
+      showSnack(`New leads from this form now go to ${pick.name}.`);
+      setPick(null);
+    } catch (e) {
+      console.error(e);
+      showSnack("Couldn't change it. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  const name = linked ? linked.name : "a pipeline";
+  return (
+    <>
+      <Typography component="div" sx={{ fontSize: 12.5, color: "text.secondary", ...sx }}>
+        {canChange ? (
+          <>
+            {linked ? "Sends leads to " : "Not linked yet: "}
+            <Box
+              component="button"
+              onClick={(e: React.MouseEvent<HTMLElement>) => setAnchor(e.currentTarget)}
+              sx={{ display: "inline-flex", alignItems: "center", border: 0, bgcolor: "transparent", p: 0, font: "inherit", fontWeight: 700, color: tokens.ink, cursor: "pointer", "&:hover": { textDecoration: "underline" } }}
+            >
+              {linked ? linked.name : "Pick a pipeline"}
+              <ArrowDropDownIcon fontSize="small" />
+            </Box>
+            {linked ? " pipeline" : ""}
+          </>
+        ) : linked ? (
+          <>Sends leads to <b style={{ color: tokens.ink }}>{linked.name}</b> pipeline</>
+        ) : (
+          <>This page isn't linked to one of your lists yet</>
+        )}
+      </Typography>
+      <Menu anchorEl={anchor} open={!!anchor} onClose={() => setAnchor(null)}>
+        {pipelines.map((p) => (
+          <MenuItem key={p.id} selected={p.id === linked?.id} onClick={() => { setAnchor(null); if (p.id !== linked?.id) setPick(p); }}>
+            {p.name}
+          </MenuItem>
+        ))}
+      </Menu>
+      <Dialog open={!!pick} onClose={() => !busy && setPick(null)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontSize: 16, fontWeight: 600 }}>Send new leads to {pick?.name}?</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ fontSize: 14, color: "text.secondary" }}>
+            From now on, leads from this form go to the {pick?.name} pipeline. Leads already in {name} stay where they are.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPick(null)} disabled={busy}>Cancel</Button>
+          <Button variant="contained" onClick={move} disabled={busy}>Change it</Button>
+        </DialogActions>
+      </Dialog>
+    </>
+  );
+}
+
+/** The page's tabs, beside the page picker (under it on phones). */
+function PageTabs({ tabs, value, onChange }: { tabs: { value: PageTab; label: string }[]; value: PageTab; onChange: (t: PageTab) => void }) {
+  return (
+    <Tabs
+      value={value}
+      onChange={(_, v: PageTab) => onChange(v)}
+      variant="scrollable"
+      scrollButtons={false}
+      sx={{
+        flex: { xs: "1 1 100%", md: "none" }, mx: { xs: -2, md: 0 }, alignSelf: "stretch", minHeight: 52,
+        "& .MuiTabs-flexContainer": { height: "100%" },
+        "& .MuiTab-root": { minHeight: 52, minWidth: { xs: 0, md: 90 }, flex: { xs: "1 0 auto", md: "none" }, px: { xs: 1.5, md: 2 }, whiteSpace: "nowrap" },
+      }}
+    >
+      {tabs.map((t) => <Tab key={t.value} value={t.value} label={t.label} />)}
+    </Tabs>
+  );
+}
+
+/** The real thank-you page, as a phone shows it, with a sample name. It
+ *  reloads as changes save. Nothing in it is saved (preview mode). */
+function ThankYouPreview({ page }: { page: LeadPage }) {
+  const src = `/thank-you?p=${encodeURIComponent(page.slug)}&n=Thandi&preview=1`;
+  return (
+    <Section
+      title="Preview"
+      action={
+        <Typography
+          component="a"
+          href={src}
+          target="_blank"
+          rel="noopener"
+          sx={{ display: "flex", alignItems: "center", gap: 0.4, fontSize: 12.5, color: tokens.primary, textDecoration: "none", textTransform: "none", fontWeight: 500, "&:hover": { textDecoration: "underline" } }}
+        >
+          Open in a new tab <OpenInNewIcon sx={{ fontSize: 14 }} />
+        </Typography>
+      }
+    >
+      <Box sx={{ mx: "auto", width: "100%", maxWidth: 400, height: 680, border: `1px solid ${tokens.divider}`, borderRadius: "16px", overflow: "hidden", bgcolor: "#fff" }}>
+        <Box component="iframe" key={JSON.stringify(page)} src={src} title="Thank-you page preview" sx={{ width: "100%", height: "100%", border: 0, display: "block" }} />
+      </Box>
+    </Section>
   );
 }
 
@@ -1294,7 +1516,11 @@ const QUESTION_TYPES: { value: QuestionType; label: string }[] = [
   { value: "address", label: "Street address" },
   { value: "multiple_choice", label: "Multiple choice" },
   { value: "yes_no", label: "Yes / no" },
+  { value: "call_time", label: "Preferred call time" },
 ];
+
+/** Starting wording for a new call-time question. */
+const CALL_TIME_LABEL = "When suits you for a quick call?";
 
 function CustomQuestionEditor({
   pageId,
@@ -1344,6 +1570,7 @@ function CustomQuestionEditor({
             <Box sx={{ flex: 1, minWidth: 0 }}>
               <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1 }}>
                 {q.type === "address" && <PlaceIcon fontSize="small" sx={{ color: "text.secondary", mt: "2px" }} />}
+                {q.type === "call_time" && <ScheduleIcon fontSize="small" sx={{ color: "text.secondary", mt: "2px" }} />}
                 <Typography sx={{ fontSize: 15, fontWeight: 600, lineHeight: 1.35, flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>{q.label}</Typography>
               </Box>
               <Typography sx={{ fontSize: 12.5, color: "text.secondary", mt: 0.5 }}>
@@ -1400,7 +1627,18 @@ function CustomQuestionEditor({
       ) : (
         <Box sx={{ display: "flex", flexDirection: "column", gap: 1, p: "12px", border: `1px dashed ${tokens.divider}`, borderRadius: "6px" }}>
           <TextField label="Question" size="small" value={label} onChange={(e) => setLabel(e.target.value)} fullWidth />
-          <TextField select label="Type" size="small" value={type} onChange={(e) => setType(e.target.value as QuestionType)} fullWidth>
+          <TextField
+            select
+            label="Type"
+            size="small"
+            value={type}
+            onChange={(e) => {
+              const t = e.target.value as QuestionType;
+              setType(t);
+              if (t === "call_time" && !label.trim()) setLabel(CALL_TIME_LABEL);
+            }}
+            fullWidth
+          >
             {QUESTION_TYPES.filter((t) => t.value !== "address").map((t) => (
               <MenuItem key={t.value} value={t.value}>
                 {t.label}
@@ -1408,7 +1646,13 @@ function CustomQuestionEditor({
             ))}
           </TextField>
           {type === "multiple_choice" && <OptionsEditor value={options} onChange={setOptions} />}
-          {type === "short_text" && (
+          {type === "call_time" && (
+            <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
+              Leads pick a day (the next 7) and a time (08:00 to 18:00), like setting an appointment. It&apos;s a request for a
+              call, not a booked slot, so the line under it says you&apos;ll confirm. Best as the last question.
+            </Typography>
+          )}
+          {(type === "short_text" || type === "call_time") && (
             <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <Typography sx={{ fontSize: 13 }}>Required</Typography>
               <Switch size="small" checked={required} onChange={(e) => setRequired(e.target.checked)} />
@@ -1585,7 +1829,7 @@ function EditQuestionRow({ pageId, question, onDone }: { pageId: string; questio
       patch: {
         label: label.trim(),
         required,
-        ...(question.type === "address" ? { helperText: helperText.trim() } : {}),
+        ...(question.type === "address" || question.type === "call_time" ? { helperText: helperText.trim() } : {}),
         ...(question.type === "multiple_choice" ? { options: savedOptions } : {}),
         // The ticked answers go into whichever column matches the treatment,
         // and the other is cleared. Options that no longer exist are dropped,
@@ -1608,6 +1852,17 @@ function EditQuestionRow({ pageId, question, onDone }: { pageId: string; questio
         <TextField label="Hint (optional)" placeholder="e.g. 14 Loop Street, Centurion" size="small" value={helperText} onChange={(e) => setHelperText(e.target.value)} fullWidth />
       )}
       {question.type === "multiple_choice" && <OptionsEditor value={options} onChange={setOptions} />}
+      {question.type === "call_time" && (
+        <TextField
+          label="Line shown after they pick (optional)"
+          placeholder="{agent} will call you around then to confirm."
+          helperText="{agent} becomes your first name."
+          size="small"
+          value={helperText}
+          onChange={(e) => setHelperText(e.target.value)}
+          fullWidth
+        />
+      )}
 
       {isChoice && currentOptions.length > 0 && (
         <Box sx={{ bgcolor: tokens.surface2, border: `1px solid ${tokens.divider2}`, borderRadius: "6px", p: "10px 12px" }}>

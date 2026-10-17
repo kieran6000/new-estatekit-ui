@@ -394,7 +394,7 @@ function WorkflowList({ workflows, scope, counts, onCreate, header }: {
       {header}
       <Box sx={{ display: "flex", gap: 1.5, mb: 2, flexWrap: "wrap", alignItems: "center" }}>
         {!templates && (
-          <Tabs value={filter} onChange={(_, v) => setFilter(v)} sx={{ minHeight: 40, "& .MuiTab-root": { minHeight: 40, textTransform: "none", fontWeight: 600, px: 1.5, minWidth: 0 } }}>
+          <Tabs value={filter} onChange={(_, v) => setFilter(v)} sx={{ minHeight: 40, "& .MuiTab-root": { minHeight: 40, px: 1.5, minWidth: 0 } }}>
             <Tab value="all" label={`All (${workflows.length})`} />
             <Tab value="on" label={`On (${count(true)})`} />
             <Tab value="off" label={`Off (${count(false)})`} />
@@ -762,7 +762,7 @@ function Editor({ initial, isTemplate, backTo, onSave, onCopyToTemplates, onBack
         {([["builder", "Builder"], ["leads", runs.length ? `Leads (${runs.length})` : "Leads"], ["history", "History"], ["settings", "Settings"]] as const)
           .filter(([v]) => !(isTemplate && v === "leads"))
           .map(([v, l]) => (
-            <Tab key={v} value={v} label={l} sx={{ minHeight: 44, textTransform: "none", fontWeight: 600 }} />
+            <Tab key={v} value={v} label={l} />
           ))}
       </Tabs>
 
@@ -1502,7 +1502,7 @@ function TriggerEditor({ t, onChange }: { t: Trigger; onChange: (t: Trigger) => 
       {t.kind === "daily_at" && (
         <TextField size="small" type="time" label="Time (SAST)" value={t.time ?? "16:00"} onChange={(e) => onChange({ ...t, time: e.target.value })} slotProps={{ inputLabel: { shrink: true } }} />
       )}
-      {t.kind === "appointment" && (
+      {(t.kind === "appointment" || t.kind === "call_time") && (
         <Box sx={{ display: "flex", gap: 1 }}>
           <NumberField label="How long" value={t.amount ?? 1} min={1} max={999} onChange={(amount) => onChange({ ...t, amount })} sx={{ width: 96 }} />
           <TextField select size="small" label="Unit" value={t.unit ?? "days"} onChange={(e) => onChange({ ...t, unit: e.target.value as Trigger["unit"] })} sx={{ flex: 1 }}>
@@ -1516,6 +1516,16 @@ function TriggerEditor({ t, onChange }: { t: Trigger; onChange: (t: Trigger) => 
       {t.kind === "appointment" && (
         <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
           Use {"{{appointment}}"} in a message for the day and time. Reminders before an appointment always go on time, even at night. One booked at shorter notice skips it.
+        </Typography>
+      )}
+      {t.kind === "call_time" && (
+        <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
+          Use {"{{call_time}}"} in a message for the day and time they picked. Reminders before it always go on time. A time picked at shorter notice skips it.
+        </Typography>
+      )}
+      {t.kind === "call_time_picked" && (
+        <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
+          Use {"{{call_time}}"} in a message for the day and time they picked. A "Set reminder" step due today puts the reminder at that time.
         </Typography>
       )}
       {t.kind === "daily_at" && <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>This runs once per agent, so its steps can only wait and WhatsApp the agent.</Typography>}
@@ -1821,12 +1831,14 @@ function NodePreview({ sel, wf, step }: { sel: Selection; wf: Workflow; step: St
               : t.kind === "plan_opened" ? <>{first} opens the Marketing Plan link</>
                 : t.kind === "reminder_due" ? <>A reminder for {first} comes due</>
                   : t.kind === "appointment" ? <>It's {triggerSummary(t)} with {first} ({SAMPLE_FIELDS.appointment})</>
+                  : t.kind === "call_time_picked" ? <>{first} picks a time for a call: {SAMPLE_FIELDS.call_time}</>
+                  : t.kind === "call_time" ? <>It's {triggerSummary(t)} with {first} ({SAMPLE_FIELDS.call_time})</>
                   : <>It's a weekday and the clock hits {t.time || "16:00"}</>;
     body = (
       <>
         <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap", fontSize: 13.5 }}><BoltIcon sx={{ fontSize: 18, color: tokens.primary }} />{event}</Box>
         <Arrow label={t.kind === "daily_at" ? "This workflow runs once for each agent" : "This workflow starts for that lead"} />
-        {t.kind !== "daily_at" && <LeadRowMock stage={t.kind === "stage_changed" ? t.stage ?? "New Lead" : t.kind === "no_answer_times" ? "No Answer" : t.kind === "lead_created" ? "New Lead" : t.kind === "appointment" ? "Booked" : "Contacted"} highlight={t.kind === "stage_changed" ? "stage" : undefined} />}
+        {t.kind !== "daily_at" && <LeadRowMock stage={t.kind === "stage_changed" ? t.stage ?? "New Lead" : t.kind === "no_answer_times" ? "No Answer" : t.kind === "lead_created" || t.kind === "call_time_picked" || t.kind === "call_time" ? "New Lead" : t.kind === "appointment" ? "Booked" : "Contacted"} highlight={t.kind === "stage_changed" ? "stage" : undefined} />}
       </>
     );
   } else if (sel?.kind === "filters") {

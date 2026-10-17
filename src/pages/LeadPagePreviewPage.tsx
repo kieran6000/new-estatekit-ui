@@ -110,7 +110,9 @@ export default function LeadPagePreviewPage() {
                   const eventId = crypto.randomUUID();
                   // A form with a lead magnet: its link goes on the thank-you
                   // page, so the code is made here, before sending.
-                  const planToken = resolveMagnet(page, pipeline.kind).kind !== "none" ? newPlanToken() : null;
+                  // The lead's private code: for the lead magnet, and for picking a
+                  // call time on the thank-you page (KEEP IN STEP with public-submit-lead).
+                  const planToken = resolveMagnet(page, pipeline.kind).kind !== "none" || page.thankYouAskCall ? newPlanToken() : null;
                   rememberPlanToken(page.slug, planToken);
 
                   void submitMockLead(page.id, name, phone, answers, email, attribution, quality, planToken)

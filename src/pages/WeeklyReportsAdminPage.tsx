@@ -217,7 +217,7 @@ export default function WeeklyReportsAdminPage() {
         </Box>
 
         <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1, mb: 1.5 }}>
-          <Tabs value={view} onChange={(_, v) => setView(v)} sx={{ minHeight: 40, "& .MuiTab-root": { minHeight: 40, textTransform: "none", fontWeight: 600, px: 1.5, minWidth: 0 } }}>
+          <Tabs value={view} onChange={(_, v) => setView(v)} sx={{ minHeight: 40, "& .MuiTab-root": { minHeight: 40, px: 1.5, minWidth: 0 } }}>
             <Tab value="all" label={`All (${counts.total})`} />
             <Tab value="not_sent" label={`Not sent (${counts.total - counts.sent})`} />
             <Tab value="not_opened" label={`Not opened (${counts.sent - counts.opened})`} />

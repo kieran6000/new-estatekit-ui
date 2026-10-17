@@ -207,8 +207,8 @@ export default function AuditLogPage() {
         onChange={(_, v) => setTab(v)}
         sx={{ bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}`, minHeight: 44, px: 1 }}
       >
-        <Tab label="Activity" value="activity" sx={{ minHeight: 44, textTransform: "none", fontWeight: 600 }} />
-        <Tab label={`Users${data ? ` (${data.users.length})` : ""}`} value="users" sx={{ minHeight: 44, textTransform: "none", fontWeight: 600 }} />
+        <Tab label="Activity" value="activity" />
+        <Tab label={`Users${data ? ` (${data.users.length})` : ""}`} value="users" />
       </Tabs>
       {isLoading ? (
         <Box sx={{ display: "flex", justifyContent: "center", p: 6 }}><CircularProgress /></Box>

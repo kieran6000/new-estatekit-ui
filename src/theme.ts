@@ -188,6 +188,14 @@ export const theme = createTheme({
         colorDefault: { backgroundColor: "var(--ek-avatar)" },
       },
     },
+    // One tab style everywhere (screens used to style their own: some
+    // UPPERCASE, some not, different sizes). Screens only set layout.
+    MuiTabs: {
+      styleOverrides: { root: { minHeight: 44 } },
+    },
+    MuiTab: {
+      styleOverrides: { root: { minHeight: 44, textTransform: "none", fontWeight: 600, fontSize: 14, letterSpacing: 0 } },
+    },
     MuiChip: {
       styleOverrides: { root: { borderRadius: 16 } },
     },
