@@ -68,6 +68,7 @@ import { timeAgo } from "../lib/timeAgo";
 import FormPresetPicker from "../components/FormPresetPicker";
 import InfoTip from "../components/InfoTip";
 import LeadMagnetCard from "../components/LeadMagnetCard";
+import ThankYouPageCard from "../components/ThankYouPageCard";
 import OptionsEditor from "../components/OptionsEditor";
 import { cleanOptions } from "../lib/options";
 import { applyFormPreset, FORM_PRESET_VERSION, presetByKey } from "../lib/formPresets";
@@ -359,6 +360,7 @@ export default function LeadPagePage() {
       {page.sourceType === "fb_form" && (
         <Box sx={{ maxWidth: 1000, mx: "auto", px: 2, pb: 3, display: "flex", flexDirection: "column", gap: 2 }}>
           <LeadMagnetCard page={page} pipelineKind={pipeline.kind} canSetUp={canSetUp} />
+          <ThankYouPageCard page={page} canSetUp={canSetUp} />
           {trackingSection}
         </Box>
       )}
@@ -538,7 +540,8 @@ export default function LeadPagePage() {
             )}
 
             <LeadMagnetCard page={page} pipelineKind={pipeline.kind} canSetUp={canSetUp} />
-  
+            <ThankYouPageCard page={page} canSetUp={canSetUp} />
+
             {trackingSection}
           </Box>
 

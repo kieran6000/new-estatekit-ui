@@ -87,6 +87,8 @@ function describe(e: LeadEvent): string {
       return "Opened the confirmation email";
     case "email_clicked":
       return "Tapped WhatsApp in the email";
+    case "call_time_set":
+      return `Picked a call time: ${e.to_value ?? ""}`;
     case "plan_opened":
       // Newer rows name the lead magnet and where it was opened.
       if (e.from_value && e.to_value?.startsWith("Opened ") && !e.to_value.startsWith("Opened their selling plan")) return e.to_value;

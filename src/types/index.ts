@@ -229,6 +229,12 @@ export interface LeadPage {
   magnetText?: string;
   magnetButton?: string;
   magnetPdfUrl?: string | null;
+  /** A short video at the top of the thank-you page (YouTube, Vimeo, Wistia,
+   *  Bunny or an .mp4 link). */
+  thankYouVideoUrl?: string | null;
+  /** Ask "When suits you for a quick call?" on the thank-you page (leads from
+   *  our own forms only). */
+  thankYouAskCall?: boolean;
 }
 
 export type FormPresetKey = "most_leads" | "balanced" | "best_quality";

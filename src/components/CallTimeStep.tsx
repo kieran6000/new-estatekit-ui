@@ -82,7 +82,9 @@ export default function CallTimeStep({
         {required && <Box component="span" sx={{ color: "error.main" }}> *</Box>}
       </Typography>
 
-      <Box sx={{ display: "grid", gridTemplateColumns: "minmax(0, 1.3fr) minmax(0, 1fr)", gap: 1.25 }}>
+      {/* Phones: one under the other, full width, so nothing is cut off
+          ("Select ti…"). Side by side from tablet width. */}
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "minmax(0, 1fr)", sm: "minmax(0, 1.3fr) minmax(0, 1fr)" }, gap: 1.75 }}>
         <TextField
           {...picker}
           label="Day"

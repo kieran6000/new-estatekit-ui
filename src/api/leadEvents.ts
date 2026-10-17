@@ -17,7 +17,8 @@ export type LeadEventType =
   | "workflow_email_opened"
   | "tagged"
   | "email_unsubscribed"
-  | "capi_reported";
+  | "capi_reported"
+  | "call_time_set";
 
 export type LeadEventSource =
   | "dashboard" | "action_link" | "automation" | "facebook" | "website" | "system" | "backfill";

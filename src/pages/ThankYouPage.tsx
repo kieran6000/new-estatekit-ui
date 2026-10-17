@@ -20,11 +20,14 @@ import { isPlanToken, recallPlanToken } from "../lib/planToken";
 import { resolveMagnet, type Magnet } from "../lib/leadMagnet";
 import type { LeadPage } from "../types";
 import { getPagePlan } from "../api/pagePlan";
+import { ThankYouCallTime, ThankYouVideo } from "../components/ThankYouExtras";
 
 export default function ThankYouPage() {
   const [params] = useSearchParams();
   const slug = params.get("p");
-  const name = params.get("n") || "there";
+  // No name (e.g. from a Facebook instant form's end button): "Thanks!", not "Thanks there!".
+  const nameParam = (params.get("n") || "").trim();
+  const name = nameParam.toLowerCase() === "there" ? "" : nameParam;
   // Seller leads: the marketing plan made for them (see lib/planToken). The
   // router state says "none" with null; only with no state at all (opened
   // some other way) is the tab's saved copy used.
@@ -37,13 +40,13 @@ export default function ThankYouPage() {
     enabled: !!slug,
   });
 
-  // No personal code (e.g. they came from a Facebook instant form's end
-  // button): we still give the lead magnet, the general version. This says
-  // whether it's a seller form, which decides the default magnet.
+  // Whether it's a seller form (decides the default lead magnet), and the
+  // general plan for people with no personal code (e.g. from a Facebook
+  // instant form's end button, where we don't know who they are).
   const { data: pagePlan } = useQuery({
     queryKey: ["pagePlan", slug],
     queryFn: () => getPagePlan(slug!),
-    enabled: !!slug && !planToken,
+    enabled: !!slug,
     staleTime: Infinity,
   });
   // Load the agent's pixel here (PageView only). The Lead event is fired once,
@@ -68,11 +71,14 @@ export default function ThankYouPage() {
 
   // The lead magnet, when this form gives one, is the page's one call to
   // action: a second button (WhatsApp us) beside it splits the tap.
-  const magnet = planToken ? resolveMagnet(page, "seller") : pagePlan ? resolveMagnet(page, pagePlan.pipeline_kind) : null;
+  const magnet = pagePlan ? resolveMagnet(page, pagePlan.pipeline_kind) : planToken ? resolveMagnet(page, "seller") : null;
   const gift = magnet && magnet.kind !== "none" ? magnet : null;
   // Where the button goes: their own plan when we know who they are; else
   // the PDF itself, or the general plan for this form.
   const giftUrl = !gift ? "" : planToken ? `/plan/${planToken}?from=thanks` : gift.kind === "pdf" ? gift.pdfUrl ?? "" : `/plan/general/${page.slug}`;
+  // Asking for a call time needs to know who they are (their private code).
+  // When it's on, it is the main button and the lead magnet becomes a line.
+  const askCall = !!planToken && page.thankYouAskCall === true;
 
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: tokens.bg }}>
@@ -84,8 +90,10 @@ export default function ThankYouPage() {
         <Box sx={{ width: "100%", maxWidth: 480, mt: 2.5 }}>
           <Box sx={{ border: "1px solid #e0e0e0", borderRadius: "8px", overflow: "hidden", bgcolor: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,.08)" }}>
             <Box sx={{ p: "40px 24px", minHeight: 260, display: "flex", flexDirection: "column" }}>
-              <BrandedThankYou page={page} name={name} showWhatsApp={!gift} />
-              {gift && giftUrl && <MagnetCta page={page} magnet={gift} href={giftUrl} personal={!!planToken} />}
+              <BrandedThankYou page={page} name={name} showWhatsApp={!gift && !askCall} />
+              {page.thankYouVideoUrl && <ThankYouVideo url={page.thankYouVideoUrl} accent={page.accentColor} />}
+              {askCall && planToken && <ThankYouCallTime token={planToken} accent={page.accentColor} agentName={page.agentName} />}
+              {gift && giftUrl && <MagnetCta page={page} magnet={gift} href={giftUrl} personal={!!planToken} compact={askCall} />}
             </Box>
           </Box>
           <SoldListingsSection agentId={page.agentId} />
@@ -100,8 +108,27 @@ export default function ThankYouPage() {
  *  line and link as the box in the confirmation email (lib/leadMagnet.ts).
  *  Only shown when the lead page made a code for it, which it does only when
  *  the form has one. */
-function MagnetCta({ page, magnet, href, personal }: { page: LeadPage; magnet: Magnet; href: string; personal: boolean }) {
+function MagnetCta({ page, magnet, href, personal, compact }: { page: LeadPage; magnet: Magnet; href: string; personal: boolean; compact?: boolean }) {
   const Icon = magnet.kind === "plan" ? AutoStoriesOutlinedIcon : DescriptionOutlinedIcon;
+  // Second to the call-time button: one line, not a second big button.
+  if (compact) {
+    return (
+      <Box
+        component="a"
+        href={href}
+        target="_blank"
+        rel="noopener"
+        sx={{ display: "flex", alignItems: "center", gap: 1.25, mt: 2.5, p: 1.5, borderRadius: "10px", border: "1px solid #e0e0e0", color: "#1d2327", textDecoration: "none", "&:hover": { bgcolor: "#fafafa" } }}
+      >
+        <Icon sx={{ color: page.accentColor }} />
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography sx={{ fontSize: 12, color: "#5b6670" }}>While you wait</Typography>
+          <Typography sx={{ fontSize: 15, fontWeight: 700, lineHeight: 1.3 }}>{magnet.title}</Typography>
+        </Box>
+        <ArrowForwardIcon sx={{ color: "#5b6670" }} />
+      </Box>
+    );
+  }
   return (
     <Box sx={{ mt: 3.5, pt: 3, borderTop: "1px solid #eee", textAlign: "left" }}>
       <Typography sx={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: page.accentColor, textAlign: "center", mb: 1.5 }}>
@@ -152,6 +179,12 @@ function SoldListingsSection({ agentId }: { agentId: string }) {
       <SoldList listings={listings} />
     </Box>
   );
+}
+
+/** fillMessage, but with no name "{name}" is left out (and the space before
+ *  it), so "Thanks {name}!" reads "Thanks!". */
+function fillNamed(text: string, name: string, agentName: string | null | undefined): string {
+  return name ? fillMessage(text, name, agentName) : fillMessage((text || "").replace(/\s*\{name\}/g, ""), "", agentName);
 }
 
 const WA_GREEN = "#25D366";
@@ -217,8 +250,8 @@ function BrandedThankYou({ page, name, showWhatsApp }: { page: LeadPage; name: s
           </Box>
         )}
       </Box>
-      <Typography sx={{ fontSize: 20, fontWeight: 700 }}>{fillMessage(page.thankYouHeadline, name, page.agentName)}</Typography>
-      <Typography sx={{ fontSize: 14, color: "text.secondary", mt: 1 }}>{fillMessage(page.thankYouSubtext, name, page.agentName)}</Typography>
+      <Typography sx={{ fontSize: 20, fontWeight: 700 }}>{fillNamed(page.thankYouHeadline, name, page.agentName)}</Typography>
+      <Typography sx={{ fontSize: 14, color: "text.secondary", mt: 1 }}>{fillNamed(page.thankYouSubtext, name, page.agentName)}</Typography>
 
       {showWhatsApp && (() => {
         const digits = (page.phone || "").replace(/\D/g, "");

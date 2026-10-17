@@ -56,7 +56,7 @@ Deno.serve(async (req: Request) => {
 
   const { data: page, error: pageErr } = await supabase
     .from("lead_pages")
-    .select("id, agent_id, pipeline_id, agent_name, magnet_kind, magnet_pdf_url, pipelines(kind)")
+    .select("id, agent_id, pipeline_id, agent_name, magnet_kind, magnet_pdf_url, thank_you_ask_call, pipelines(kind)")
     .eq("id", body.pageId)
     .maybeSingle();
 
@@ -82,12 +82,13 @@ Deno.serve(async (req: Request) => {
     if (typeof value === "string" && value.trim()) attribution[key] = value.slice(0, 200);
   }
 
-  // Only forms with a lead magnet get the code (KEEP IN STEP with
-  // src/lib/leadMagnet.ts resolveMagnet), and only in the plan's format.
-  const pg = page as { pipelines?: { kind?: string } | null; magnet_kind?: string | null; magnet_pdf_url?: string | null };
+  // Only forms with a lead magnet, or that ask for a call time on the
+  // thank-you page, get the code (KEEP IN STEP with src/lib/leadMagnet.ts
+  // resolveMagnet and LeadPagePreviewPage), and only in the plan's format.
+  const pg = page as { pipelines?: { kind?: string } | null; magnet_kind?: string | null; magnet_pdf_url?: string | null; thank_you_ask_call?: boolean | null };
   let magnet = pg.magnet_kind ?? (pg.pipelines?.kind === "seller" ? "plan" : "none");
   if (magnet === "pdf" && !pg.magnet_pdf_url) magnet = "none";
-  const planToken = magnet !== "none" && typeof body.planToken === "string" && /^[a-f0-9]{32}$/.test(body.planToken)
+  const planToken = (magnet !== "none" || pg.thank_you_ask_call === true) && typeof body.planToken === "string" && /^[a-f0-9]{32}$/.test(body.planToken)
     ? body.planToken
     : null;
 
