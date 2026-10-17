@@ -683,6 +683,27 @@ describe("appointments", () => {
   });
 });
 
+describe("the agent's photo in emails", () => {
+  it("signs off with the agent's photo beside their name and number", async () => {
+    db.tables.lead_pages.push({ id: "pg-photo", name: "Home value", suburb: "Bryanston", phone: "0835550103", profile_photo_data_url: "https://cdn.example.com/agent.jpg" });
+    const wf = workflow([email("Hi", "Hi {{first_name}}.\n\n{{agent_name}}\n{{agent_phone}}")]);
+    enroll(wf, lead({ source_page_id: "pg-photo" }));
+    await tick();
+    const html = emails[0].html as string;
+    expect(html).toContain('<img src="https://cdn.example.com/agent.jpg"');
+    expect(html).toMatch(/<strong>[^<]+<\/strong><br>083 555 0103/);
+  });
+
+  it("no photo, or one written into the page itself: the plain sign-off", async () => {
+    db.tables.lead_pages.push({ id: "pg-data", name: "Home value", suburb: "", phone: "", profile_photo_data_url: "data:image/png;base64,AAAA" });
+    const wf = workflow([email("Hi", "Hi.\n\n{{agent_name}}")]);
+    enroll(wf, lead({ source_page_id: "pg-data" }));
+    await tick();
+    expect(emails[0].html as string).not.toContain("<img src=\"data:");
+    expect(emails[0].html as string).not.toContain("border-radius:50%");
+  });
+});
+
 describe("call times", () => {
   const before = { kind: "call_time", amount: 15, unit: "minutes", when: "before" };
 

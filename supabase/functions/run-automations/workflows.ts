@@ -65,6 +65,7 @@ interface Lead {
 }
 
 interface Profile {
+  avatar_url?: string | null;
   display_name: string | null;
   whatsapp_number: string | null;
   email: string | null;
@@ -148,6 +149,8 @@ const MAGNET_DEFAULTS: Record<"plan" | "pdf", Magnet> = {
 interface PageRow {
   name: string | null; suburb: string | null; fb_pixel_id: string | null; phone: string | null;
   magnet_kind: string | null; magnet_title: string | null; magnet_text: string | null; magnet_button: string | null; magnet_pdf_url: string | null;
+  /** The agent's photo on this form (a Storage link; older ones may be inline data). */
+  profile_photo_data_url?: string | null;
 }
 /** "seller lead" / "buyer lead" by the pipeline's kind; plain "lead" otherwise. */
 export function leadType(kind: string | null): string {
@@ -267,7 +270,7 @@ async function processRun(supabase: SupabaseClient, deps: EngineDeps, run: Run) 
 
   const { data: profileRow } = await supabase
     .from("agent_profiles")
-    .select("display_name, whatsapp_number, email, company, automations_paused, deactivated_at")
+    .select("display_name, whatsapp_number, email, company, automations_paused, deactivated_at, avatar_url")
     .eq("agent_id", run.agent_id)
     .maybeSingle();
   const profile = profileRow as Profile | null;
@@ -362,7 +365,7 @@ class Context {
     if (this.pageCache === undefined) {
       this.pageCache = null;
       if (this.lead?.source_page_id) {
-        const { data } = await this.supabase.from("lead_pages").select("name, suburb, fb_pixel_id, phone, magnet_kind, magnet_title, magnet_text, magnet_button, magnet_pdf_url").eq("id", this.lead.source_page_id).maybeSingle();
+        const { data } = await this.supabase.from("lead_pages").select("name, suburb, fb_pixel_id, phone, magnet_kind, magnet_title, magnet_text, magnet_button, magnet_pdf_url, profile_photo_data_url").eq("id", this.lead.source_page_id).maybeSingle();
         this.pageCache = data;
       }
     }
@@ -700,10 +703,24 @@ ${magnet.text ? `<p style="margin:0 0 8px">${esc(magnet.text)}</p>` : ""}
 </td></tr></table>`
       : "";
     const htmlPara = (p: string) => (p === MAGNET_MARK ? magnetHtml : `<p style="margin:0 0 14px">${linkify(p.split(MAGNET_MARK).join(magnetText)).replace(/\n/g, "<br>")}</p>`);
+    // The sign-off ("{{agent_name}}" then their number) with the agent's
+    // photo beside it, so the lead sees who's writing. The photo on their
+    // form first (what the lead saw), else the account's. Only a web link:
+    // email apps block pictures written into the email itself.
+    const photo = [page?.profile_photo_data_url, this.profile?.avatar_url].find((u) => /^https:\/\/\S+$/.test(u || ""));
+    const signOff = (p: string) => {
+      const [nameLine, ...rest] = p.split("\n");
+      return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 14px;border-collapse:collapse"><tr>
+<td style="padding:0 12px 0 0;vertical-align:middle"><img src="${esc(photo!)}" width="56" height="56" alt="${esc(agentName)}" style="display:block;width:56px;height:56px;border-radius:50%;object-fit:cover;border:0"></td>
+<td style="vertical-align:middle;line-height:1.45"><strong>${esc(nameLine.trim())}</strong>${rest.length ? "<br>" + rest.map(linkify).join("<br>") : ""}</td>
+</tr></table>`;
+    };
+    const last = paras.length - 1;
+    const isSignOff = (p: string, i: number) => !!photo && i === last && p.split("\n")[0].trim() === agentName;
     const body = paras.map((p) => p.split(MAGNET_MARK).join(magnetText)).join("\n\n");
     const html = `<!doctype html><html><body style="margin:0;padding:16px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.55;color:#222222">
 <div style="max-width:560px">
-${paras.map(htmlPara).join("\n")}
+${paras.map((p, i) => (isSignOff(p, i) ? signOff(p) : htmlPara(p))).join("\n")}
 <p style="margin:28px 0 0;font-size:11px;color:#999999;line-height:1.5">
 You're getting this because you asked ${esc(agentName)} about your property. <a href="${unsub}" style="color:#999999">Unsubscribe</a>
 </p>
