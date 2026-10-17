@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useLocation, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Box, Skeleton, Typography } from "@mui/material";
+import { Box, Button, Skeleton, Typography } from "@mui/material";
 import WhatsAppIcon from "@mui/icons-material/WhatsApp";
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutlined";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
@@ -147,23 +147,24 @@ function MagnetCta({ page, magnet, href, personal, compact }: { page: LeadPage; 
           <Typography sx={{ fontSize: 12.5, fontWeight: 600, color: "#2e7d32", mt: 0.75 }}>{personal ? "Free · made for you" : "Free"}</Typography>
         </Box>
       </Box>
-      <Box
-        component="a"
+      {/* The form's own button, so the end page looks like the form. */}
+      <Button
+        variant="contained"
+        size="large"
+        fullWidth
         href={href}
         target="_blank"
         rel="noopener"
+        endIcon={<ArrowForwardIcon />}
         sx={{
-          display: "flex", alignItems: "center", justifyContent: "center", gap: 1, mt: 2,
-          bgcolor: page.accentColor, color: readableOn(page.accentColor), borderRadius: "12px", p: "16px 18px", minHeight: 56,
-          fontSize: 17, fontWeight: 800, textDecoration: "none", boxShadow: `0 6px 16px color-mix(in srgb, ${page.accentColor} 35%, transparent)`,
-          "&:hover": { filter: "brightness(0.93)" },
-          "& svg": { animation: "ek-nudge 1.6s ease-in-out infinite" },
+          mt: 2, bgcolor: page.accentColor, color: readableOn(page.accentColor), "&:hover": { bgcolor: page.accentColor, filter: "brightness(0.9)" },
+          "& .MuiButton-endIcon": { animation: "ek-nudge 1.6s ease-in-out infinite" },
           "@keyframes ek-nudge": { "0%, 100%": { transform: "translateX(0)" }, "50%": { transform: "translateX(4px)" } },
-          "@media (prefers-reduced-motion: reduce)": { "& svg": { animation: "none" } },
+          "@media (prefers-reduced-motion: reduce)": { "& .MuiButton-endIcon": { animation: "none" } },
         }}
       >
-        {magnet.button} <ArrowForwardIcon />
-      </Box>
+        {magnet.button}
+      </Button>
     </Box>
   );
 }
@@ -256,7 +257,7 @@ function BrandedThankYou({ page, name, video, showWhatsApp }: { page: LeadPage; 
       <Typography sx={{ fontSize: 20, fontWeight: 700 }}>{fillNamed(page.thankYouHeadline, name, page.agentName)}</Typography>
       {video ? (
         <Box sx={{ mt: 2.5 }}>
-          <VideoPlayer url={video} accent={page.accentColor} />
+          <VideoPlayer url={video} accent={page.accentColor} autoplay />
         </Box>
       ) : (
         <Typography sx={{ fontSize: 14, color: "text.secondary", mt: 1 }}>{fillNamed(page.thankYouSubtext, name, page.agentName)}</Typography>

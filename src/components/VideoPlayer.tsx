@@ -19,6 +19,11 @@ import { readableOn } from "../lib/contrast";
 //    it plays we ask for the current time every second.
 // Both report the same thing to onProgress, so the tracking is the same
 // whichever kind of video it is.
+//
+// autoplay: browsers only let a video start by itself with the sound off, so
+// it starts silent with a big "Tap to turn on sound" badge (the ClickFunnels
+// trick). The tap turns the sound on and starts again from the beginning.
+// The silent preview isn't reported: only a tap counts as a play.
 
 export interface VideoProgress {
   /** Seconds into the video right now. */
@@ -52,25 +57,73 @@ const clock = (s: number) => {
   return h ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`;
 };
 
-export default function VideoPlayer({ url, accent = "#1a73e8", onProgress }: { url: string; accent?: string; onProgress?: (p: VideoProgress) => void }) {
+export default function VideoPlayer({ url, accent = "#1a73e8", autoplay = false, onProgress }: { url: string; accent?: string; autoplay?: boolean; onProgress?: (p: VideoProgress) => void }) {
   const kind = videoKind(url);
   const report = useRef(onProgress);
   report.current = onProgress;
   if (!kind) return null;
 
-  if (kind.type === "youtube") return <YouTubePlayer key={kind.id} id={kind.id} accent={accent} report={report} />;
+  if (kind.type === "youtube") return <YouTubePlayer key={kind.id} id={kind.id} accent={accent} autoplay={autoplay} report={report} />;
+  return <FilePlayer key={kind.src} src={kind.src} accent={accent} autoplay={autoplay} report={report} />;
+}
 
+type Report = React.MutableRefObject<((p: VideoProgress) => void) | undefined>;
+
+/** Over a silent autoplay: "Tap to turn on sound", gently pulsing. */
+function SoundBadge({ accent }: { accent: string }) {
+  return (
+    <Box sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", bgcolor: "rgba(0,0,0,.15)" }}>
+      <Box
+        sx={{
+          display: "flex", alignItems: "center", gap: 1, px: 2.25, py: 1.25, borderRadius: "999px",
+          bgcolor: accent, color: readableOn(accent), fontSize: 16, fontWeight: 700, boxShadow: "0 6px 20px rgba(0,0,0,.35)",
+          animation: "ek-sound 1.4s ease-in-out infinite",
+          "@keyframes ek-sound": { "0%, 100%": { transform: "scale(1)" }, "50%": { transform: "scale(1.07)" } },
+          "@media (prefers-reduced-motion: reduce)": { animation: "none" },
+        }}
+      >
+        <VolumeOffRoundedIcon />
+        Tap to turn on sound
+      </Box>
+    </Box>
+  );
+}
+
+function FilePlayer({ src, accent, autoplay, report }: { src: string; accent: string; autoplay: boolean; report: Report }) {
+  const video = useRef<HTMLVideoElement>(null);
+  const [teasing, setTeasing] = useState(false);
+  useEffect(() => {
+    const el = video.current;
+    if (!autoplay || !el) return;
+    el.muted = true;
+    el.play().then(() => setTeasing(true)).catch(() => setTeasing(false));
+  }, [autoplay]);
+  const soundOn = () => {
+    const el = video.current;
+    if (!el) return;
+    setTeasing(false);
+    el.currentTime = 0;
+    el.muted = false;
+    void el.play().catch(() => {});
+  };
+  const send = (p: VideoProgress) => { if (!teasing) report.current?.(p); };
   return (
     <Frame>
       <video
-        src={kind.src}
-        controls
+        ref={video}
+        src={src}
+        controls={!teasing}
         playsInline
         preload="metadata"
-        onTimeUpdate={(e) => report.current?.({ position: e.currentTarget.currentTime, duration: e.currentTarget.duration || 0, playing: !e.currentTarget.paused })}
-        onPause={(e) => report.current?.({ position: e.currentTarget.currentTime, duration: e.currentTarget.duration || 0, playing: false })}
-        onEnded={(e) => report.current?.({ position: e.currentTarget.duration, duration: e.currentTarget.duration, playing: false, ended: true })}
+        onTimeUpdate={(e) => send({ position: e.currentTarget.currentTime, duration: e.currentTarget.duration || 0, playing: !e.currentTarget.paused })}
+        onPause={(e) => send({ position: e.currentTarget.currentTime, duration: e.currentTarget.duration || 0, playing: false })}
+        onEnded={(e) => { send({ position: e.currentTarget.duration, duration: e.currentTarget.duration, playing: false, ended: true }); setTeasing(false); }}
       />
+      {teasing && (
+        <ButtonBase onClick={soundOn} aria-label="Turn on sound" sx={{ position: "absolute", inset: 0, display: "block" }}>
+          <SoundBadge accent={accent} />
+        </ButtonBase>
+      )}
     </Frame>
   );
 }
@@ -133,7 +186,7 @@ function loadYouTube(): Promise<YTNamespace> {
 
 type Status = "idle" | "playing" | "paused" | "ended";
 
-function YouTubePlayer({ id, accent, report }: { id: string; accent: string; report: React.MutableRefObject<((p: VideoProgress) => void) | undefined> }) {
+function YouTubePlayer({ id, accent, autoplay, report }: { id: string; accent: string; autoplay: boolean; report: Report }) {
   const frame = useRef<HTMLDivElement>(null);
   const holder = useRef<HTMLDivElement>(null);
   const player = useRef<YTPlayer | null>(null);
@@ -142,6 +195,9 @@ function YouTubePlayer({ id, accent, report }: { id: string; accent: string; rep
   const [pos, setPos] = useState(0);
   const [dur, setDur] = useState(0);
   const [muted, setMuted] = useState(false);
+  // Playing silently by itself, waiting for the tap that turns the sound on.
+  const teaser = useRef(autoplay);
+  const [teasing, setTeasing] = useState(false);
   const onAccent = readableOn(accent);
 
   useEffect(() => {
@@ -164,6 +220,11 @@ function YouTubePlayer({ id, accent, report }: { id: string; accent: string; rep
             player.current = p;
             setDur(p.getDuration());
             setReady(true);
+            if (teaser.current) {
+              p.mute();
+              setMuted(true);
+              p.playVideo();
+            }
           },
           onStateChange: (e: { data: number }) => {
             const tick = () => {
@@ -171,17 +232,22 @@ function YouTubePlayer({ id, accent, report }: { id: string; accent: string; rep
               const duration = p.getDuration();
               setPos(position);
               setDur(duration);
-              report.current?.({ position, duration, playing: p.getPlayerState() === YT.PlayerState.PLAYING });
+              if (!teaser.current) report.current?.({ position, duration, playing: p.getPlayerState() === YT.PlayerState.PLAYING });
             };
             window.clearInterval(timer);
             if (e.data === YT.PlayerState.PLAYING) {
               setStatus("playing");
+              setTeasing(teaser.current);
               timer = window.setInterval(tick, 1000);
               tick();
             } else if (e.data === YT.PlayerState.ENDED) {
-              setStatus("ended");
               setPos(p.getDuration());
-              report.current?.({ position: p.getDuration(), duration: p.getDuration(), playing: false, ended: true });
+              if (teaser.current) {
+                // The silent preview ran out: back to Play (sound on, from the start).
+                setTeasing(false);
+                setStatus("idle");
+              } else setStatus("ended");
+              if (!teaser.current) report.current?.({ position: p.getDuration(), duration: p.getDuration(), playing: false, ended: true });
             } else if (e.data === YT.PlayerState.PAUSED) {
               setStatus("paused");
               tick();
@@ -202,10 +268,17 @@ function YouTubePlayer({ id, accent, report }: { id: string; accent: string; rep
   const play = () => {
     const p = player.current;
     if (!p) return;
-    if (status === "ended") p.seekTo(0, true);
+    // Their first tap: sound on, from the beginning (also when autoplay was blocked).
+    if (teaser.current) {
+      teaser.current = false;
+      setTeasing(false);
+      p.unMute();
+      setMuted(false);
+      p.seekTo(0, true);
+    } else if (status === "ended") p.seekTo(0, true);
     p.playVideo();
   };
-  const toggle = () => (status === "playing" ? player.current?.pauseVideo() : play());
+  const toggle = () => (status === "playing" && !teasing ? player.current?.pauseVideo() : play());
   const seek = (fraction: number) => {
     if (!player.current || !dur) return;
     const s = Math.max(0, Math.min(dur, fraction * dur));
@@ -241,9 +314,10 @@ function YouTubePlayer({ id, accent, report }: { id: string; accent: string; rep
       <ButtonBase
         onClick={toggle}
         disabled={!ready}
-        aria-label={status === "playing" ? "Pause" : status === "ended" ? "Watch again" : "Play"}
-        sx={{ position: "absolute", inset: 0, bottom: status === "idle" ? 0 : 44, display: "block", cursor: ready ? "pointer" : "default" }}
+        aria-label={teasing ? "Turn on sound" : status === "playing" ? "Pause" : status === "ended" ? "Watch again" : "Play"}
+        sx={{ position: "absolute", inset: 0, bottom: status === "idle" || teasing ? 0 : 44, display: "block", cursor: ready ? "pointer" : "default" }}
       >
+        {teasing && <SoundBadge accent={accent} />}
         {showCover && (
           <Box
             sx={{
@@ -269,7 +343,7 @@ function YouTubePlayer({ id, accent, report }: { id: string; accent: string; rep
       </ButtonBase>
 
       {/* Slim bar: play/pause, progress (tap to jump), time, sound, full screen. */}
-      {status !== "idle" && (
+      {status !== "idle" && !teasing && (
         <Box sx={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 44, display: "flex", alignItems: "center", gap: 0.5, px: 0.5, bgcolor: "rgba(0,0,0,.75)", color: "#fff" }}>
           <IconButton size="small" onClick={toggle} aria-label={status === "playing" ? "Pause" : "Play"} sx={{ color: "#fff" }}>
             {status === "playing" ? <PauseRoundedIcon /> : <PlayArrowRoundedIcon />}

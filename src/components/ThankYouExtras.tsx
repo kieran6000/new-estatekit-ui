@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Box, ButtonBase, CircularProgress, Typography } from "@mui/material";
+import { Box, Button, CircularProgress, Typography } from "@mui/material";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import { supabase } from "../api/_client";
 import { readableOn } from "../lib/contrast";
@@ -63,18 +63,18 @@ export function ThankYouCallTime({ token, accent, agentName, question }: { token
         error={error}
         onChange={(v) => { setError(""); setValue(v); }}
       />
-      <ButtonBase
+      {/* The form's own button (LeadCaptureForm), so it looks the same. */}
+      <Button
+        variant="contained"
+        size="large"
+        fullWidth
         onClick={confirm}
         disabled={busy}
-        sx={{
-          width: "100%", mt: 2, minHeight: 56, borderRadius: "12px", bgcolor: accent, color: readableOn(accent),
-          // A plain <button> uses the browser's own font, not the page's.
-          fontFamily: "inherit", fontSize: 17, fontWeight: 700, gap: 1, "&:hover": { filter: "brightness(0.93)" },
-        }}
+        startIcon={busy ? <CircularProgress size={18} sx={{ color: "inherit" }} /> : undefined}
+        sx={{ mt: 3, bgcolor: accent, color: readableOn(accent), "&:hover": { bgcolor: accent, filter: "brightness(0.9)" }, "&.Mui-disabled": { bgcolor: accent, color: readableOn(accent), opacity: 0.7 } }}
       >
-        {busy && <CircularProgress size={18} sx={{ color: "inherit" }} />}
         Confirm call time
-      </ButtonBase>
+      </Button>
     </Box>
   );
 }
