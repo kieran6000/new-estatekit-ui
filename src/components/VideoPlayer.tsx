@@ -84,7 +84,7 @@ function SoundBadge({ accent, blocked = false }: { accent: string; blocked?: boo
     <Box
       sx={{
         width: "min(270px, 88%)", py: { xs: 1, sm: 1.5 }, px: 1.5, borderRadius: "10px", border: `2px solid ${ink}`,
-        bgcolor: `color-mix(in srgb, ${accent} 85%, transparent)`, color: ink, boxShadow: "0 6px 20px rgba(0,0,0,.3)",
+        bgcolor: `color-mix(in srgb, ${accent} 94%, transparent)`, color: ink, boxShadow: "0 6px 20px rgba(0,0,0,.3)",
         display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 0.25, textAlign: "center",
         "& .ek-w1": { animation: "ek-w1 1.5s infinite" },
         "& .ek-w2": { animation: "ek-w2 1.5s infinite" },

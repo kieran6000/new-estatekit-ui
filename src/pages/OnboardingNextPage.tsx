@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Box, Button, CircularProgress, Skeleton, Typography } from "@mui/material";
+import { Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Skeleton, Typography } from "@mui/material";
 import CheckIcon from "@mui/icons-material/Check";
 import { tokens } from "../theme";
 import { getOnboardingVideo, markOnboardingWatched } from "../api/onboarding";
@@ -12,7 +12,8 @@ import estateKitLogoWhite from "../assets/whitelogofull.png";
 // After the onboarding form (/onboarding): what happens next. Just the
 // headline, the video (staff set it on the Accounts page) and one button.
 // The button notes they watched it (the submission's private code, ?t=) and
-// takes them to log in with the details we sent.
+// takes them to log in with the details we sent. Tapped before they've seen
+// most of it, it asks first (Keep watching is the big button).
 
 export default function OnboardingNextPage() {
   const navigate = useNavigate();
@@ -20,13 +21,28 @@ export default function OnboardingNextPage() {
   const token = params.get("t") || "";
   const first = (params.get("n") || "").trim();
   const [busy, setBusy] = useState(false);
+  // How far they've got with the sound on (the silent start doesn't count).
+  const [seen, setSeen] = useState(0);
+  const [asking, setAsking] = useState(false);
+  const videoRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLDivElement>(null);
   const { data: url = "", isLoading } = useQuery({ queryKey: ["onboardingVideo"], queryFn: getOnboardingVideo, staleTime: 5 * 60_000 });
   const video = url && canPlayVideo(url) ? url : "";
 
   useEffect(() => { document.title = "What happens next · EstateKit"; }, []);
 
+  /** The button: straight on once they've seen most of it; otherwise ask. */
+  function tapDone() {
+    if (video && seen < 0.9) setAsking(true);
+    else void done();
+  }
+  function keepWatching() {
+    setAsking(false);
+    videoRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
   async function done() {
+    setAsking(false);
     setBusy(true);
     try {
       if (token) await markOnboardingWatched(token);
@@ -56,7 +72,15 @@ export default function OnboardingNextPage() {
               {isLoading ? (
                 <Skeleton variant="rounded" sx={{ width: "100%", height: 0, pt: "56.25%", borderRadius: "10px" }} />
               ) : video ? (
-                <VideoPlayer url={video} accent={ACCENT} autoplay endCta={{ label: "I've watched it", onClick: showButton, below: true }} />
+                <Box ref={videoRef}>
+                  <VideoPlayer
+                    url={video}
+                    accent={ACCENT}
+                    autoplay
+                    endCta={{ label: "I've watched it", onClick: showButton, below: true }}
+                    onProgress={(p) => { if (p.duration) setSeen((s) => Math.max(s, p.ended ? 1 : p.position / p.duration)); }}
+                  />
+                </Box>
               ) : (
                 <Typography sx={{ fontSize: 15, color: "text.secondary" }}>
                   Your account is ready. Your login is on your WhatsApp and email.
@@ -71,7 +95,7 @@ export default function OnboardingNextPage() {
                 fullWidth
                 disabled={busy}
                 startIcon={busy ? <CircularProgress size={18} sx={{ color: "inherit" }} /> : <CheckIcon />}
-                onClick={done}
+                onClick={tapDone}
                 sx={{ mt: 3, bgcolor: ACCENT }}
               >
                 {video ? "I've watched the video" : "Log in"}
@@ -80,6 +104,20 @@ export default function OnboardingNextPage() {
           </Box>
         </Box>
       </Box>
+
+      <Dialog open={asking} onClose={() => setAsking(false)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontSize: 18, fontWeight: 700 }}>Did you watch it all?</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ fontSize: 15, color: "text.secondary", lineHeight: 1.55 }}>
+            {seen > 0.02 ? `You've watched ${Math.round(seen * 100)}% of the video. ` : ""}
+            It explains what happens next and what we need from you, so your first leads come in quickly.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ flexDirection: "column", alignItems: "stretch", gap: 1, px: 3, pb: 2.5 }}>
+          <Button variant="contained" size="large" onClick={keepWatching} sx={{ bgcolor: ACCENT }}>Keep watching</Button>
+          <Button onClick={() => void done()} sx={{ color: "text.secondary", m: "0 !important" }}>I&apos;ve seen it, carry on</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }
