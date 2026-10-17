@@ -83,7 +83,8 @@ export function ThankYouCallTime({ token, accent, agentName, question }: { token
         disabled={busy}
         sx={{
           width: "100%", mt: 2, minHeight: 56, borderRadius: "12px", bgcolor: accent, color: readableOn(accent),
-          fontSize: 17, fontWeight: 800, gap: 1, "&:hover": { filter: "brightness(0.93)" },
+          // A plain <button> uses the browser's own font, not the page's.
+          fontFamily: "inherit", fontSize: 17, fontWeight: 700, gap: 1, "&:hover": { filter: "brightness(0.93)" },
         }}
       >
         {busy && <CircularProgress size={18} sx={{ color: "inherit" }} />}

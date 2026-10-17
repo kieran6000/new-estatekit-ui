@@ -230,7 +230,11 @@ function YouTubePlayer({ id, accent, report }: { id: string; accent: string; rep
 
   return (
     <Frame frameRef={frame}>
-      <Box ref={holder} sx={{ position: "absolute", inset: 0 }} />
+      {/* YouTube pins its title bar, "AI" button, "More videos" strip and logo
+          to the top and bottom edges of its own frame. Making that frame twice
+          as tall as the box (centred) keeps the video exactly filling the box,
+          and pushes those strips into the hidden part. */}
+      <Box ref={holder} sx={{ position: "absolute", inset: 0, "& iframe": { top: "-50% !important", bottom: "auto !important", height: "200% !important" } }} />
 
       {/* Our layer over YouTube's: taps go to us, so YouTube's own menus,
           title and suggested videos never appear. */}
