@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   AppBar,
   Box,
@@ -20,6 +20,8 @@ import {
   FormControlLabel,
   Skeleton,
   Switch,
+  Tab,
+  Tabs,
   TextField,
   Toolbar,
   Typography,
@@ -98,6 +100,11 @@ export default function LeadPagePage() {
   const [renameDialogId, setRenameDialogId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
+  // Three tabs, in the order a lead goes through it: the form, what they see
+  // after sending it, and sharing it. One job per screen, not ten cards.
+  const [params, setParams] = useSearchParams();
+  const tabParam = params.get("tab");
+  const setTab = (t: PageTab) => setParams((p) => { const n = new URLSearchParams(p); if (t === "form") n.delete("tab"); else n.set("tab", t); return n; }, { replace: true });
 
   const page: LeadPage | undefined = pages.find((p) => p.id === pageId) ?? pages[0];
   // A page can point at a pipeline this account can't see — it happens when the
@@ -196,6 +203,14 @@ export default function LeadPagePage() {
   function update(patch: Partial<Omit<LeadPage, "id" | "pipelineId">>) {
     updatePage.mutate({ id: page!.id, patch });
   }
+
+  const fb = page.sourceType === "fb_form";
+  const tabs: { value: PageTab; label: string }[] = [
+    { value: "form", label: "Form" },
+    { value: "thanks", label: "Thank-you page" },
+    ...(!fb ? [{ value: "share" as const, label: "Share" }] : isOperator ? [{ value: "share" as const, label: "Tracking" }] : []),
+  ];
+  const tab: PageTab = tabs.some((t) => t.value === tabParam) ? (tabParam as PageTab) : "form";
 
   // Pictures go to Storage (shrunk); the row only keeps the link. They used
   // to be stored inside the row, so every page view re-downloaded them.
@@ -348,8 +363,13 @@ export default function LeadPagePage() {
         </Typography>
       </Box>
 
-      {page.sourceType === "fb_form" ? (
+      {page.sourceType === "fb_form" && tab !== "share" ? (
         <FbFormSource
+          tab={tab}
+          extras={<>
+            <ThankYouPageCard page={page} canSetUp={canSetUp} />
+            <LeadMagnetCard page={page} pipelineKind={pipeline.kind} canSetUp={canSetUp} />
+          </>}
           page={page}
           pipelineName={pipeline.name}
           fbPageId={profile?.fbPageId || null}
@@ -357,16 +377,16 @@ export default function LeadPagePage() {
           avatarUrl={profile?.sidebarLogoUrl || null}
         />
       ) : null}
-      {page.sourceType === "fb_form" && (
-        <Box sx={{ maxWidth: 1000, mx: "auto", px: 2, pb: 3, display: "flex", flexDirection: "column", gap: 2 }}>
-          <LeadMagnetCard page={page} pipelineKind={pipeline.kind} canSetUp={canSetUp} />
-          <ThankYouPageCard page={page} canSetUp={canSetUp} />
+      {page.sourceType === "fb_form" && tab === "share" && (
+        <Box sx={{ maxWidth: 720, mx: "auto", p: 2, display: "flex", flexDirection: "column", gap: 3 }}>
           {trackingSection}
         </Box>
       )}
-      {page.sourceType === "fb_form" ? null : (
-        // Phones: preview and link first, then what the agent uses most.
-        // Desktop: the same order on the left, preview + link sticky on the right.
+      <PageTabs tabs={tabs} value={tab} onChange={setTab} />
+
+      {page.sourceType === "fb_form" ? null : tab === "form" ? (
+        // Phones: preview first, then the settings. Desktop: settings on the
+        // left, the preview sticky on the right.
         <Box sx={{ display: "flex", flexDirection: { xs: "column", md: "row" }, gap: 3, p: 2, maxWidth: 1100, mx: "auto" }}>
           <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
             <Section
@@ -508,44 +528,9 @@ export default function LeadPagePage() {
               <RecentSalesEditor />
             </Section>
 
-            {canSetUp && (
-              <>
-              <Section title="Message for leads" info="What people see right after they send the form. Write {name} for their first name and {agent} for yours.">
-                <TextField
-                  label="Headline"
-                  value={form.thankYouHeadline}
-                  onChange={(e) => fieldChange("thankYouHeadline", e.target.value)}
-                  fullWidth
-                 
-                />
-                <TextField label="Description" value={form.thankYouSubtext} onChange={(e) => fieldChange("thankYouSubtext", e.target.value)} fullWidth multiline minRows={2} />
-              </Section>
-              </>
-            )}
-
-            {canSetUp && (
-              <>
-              <Section
-                title="End page"
-                info="Shown instead of the message for leads when someone picks an answer you've set to “Send to end page”. They aren't saved as a lead. Leave it blank for our standard wording, or add a button to send them somewhere useful."
-              >
-                <TextField label="Headline" placeholder="Thanks for your interest!" value={form.dqHeadline} onChange={(e) => fieldChange("dqHeadline", e.target.value)} fullWidth />
-                <TextField label="Description" placeholder="Based on your answers, this might not be the right time for a valuation…" value={form.dqText} onChange={(e) => fieldChange("dqText", e.target.value)} fullWidth multiline minRows={2} />
-                <Box sx={{ display: "flex", gap: 1.5, flexWrap: "wrap" }}>
-                  <TextField label="Button text" placeholder="e.g. Follow us on Facebook" value={form.dqCtaLabel} onChange={(e) => fieldChange("dqCtaLabel", e.target.value)} sx={{ flex: "1 1 160px" }} />
-                  <TextField label="Website link" placeholder="https://…" value={form.dqCtaUrl} onChange={(e) => fieldChange("dqCtaUrl", e.target.value.trim())} sx={{ flex: "2 1 220px" }} />
-                </Box>
-              </Section>
-              </>
-            )}
-
-            <LeadMagnetCard page={page} pipelineKind={pipeline.kind} canSetUp={canSetUp} />
-            <ThankYouPageCard page={page} canSetUp={canSetUp} />
-
-            {trackingSection}
           </Box>
 
-          <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2, alignSelf: { md: "flex-start" }, position: { md: "sticky" }, top: { md: 72 }, order: { xs: -1, md: 0 } }}>
+          <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2, alignSelf: { md: "flex-start" }, position: { md: "sticky" }, top: { md: 120 }, order: { xs: -1, md: 0 } }}>
             <Section
               title="Live preview"
               action={
@@ -562,11 +547,54 @@ export default function LeadPagePage() {
             >
               <PreviewAndSubmit page={{ ...page, ...form }} pipelineKind={pipeline.kind} />
             </Section>
-
-            <ShareSection page={page} onUpdateSlug={canSetUp ? (slug) => updatePage.mutate({ id: page.id, patch: { slug } }) : undefined} />
-
-            {isOperator && <LeadPageFunnelStats pageId={page.id} />}
           </Box>
+        </Box>
+      ) : tab === "thanks" ? (
+        <Box sx={{ display: "flex", flexDirection: { xs: "column", md: "row" }, gap: 3, p: 2, maxWidth: 1100, mx: "auto" }}>
+          <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
+            {canSetUp && (
+              <>
+              <Section title="Message for leads" info="What people see right after they send the form. Write {name} for their first name and {agent} for yours.">
+                <TextField
+                  label="Headline"
+                  value={form.thankYouHeadline}
+                  onChange={(e) => fieldChange("thankYouHeadline", e.target.value)}
+                  fullWidth
+                 
+                />
+                <TextField label="Description" value={form.thankYouSubtext} onChange={(e) => fieldChange("thankYouSubtext", e.target.value)} fullWidth multiline minRows={2} />
+              </Section>
+              </>
+            )}
+
+            <ThankYouPageCard page={page} canSetUp={canSetUp} />
+            <LeadMagnetCard page={page} pipelineKind={pipeline.kind} canSetUp={canSetUp} />
+            {canSetUp && (
+              <>
+              <Section
+                title="If they don't qualify"
+                info="Shown instead of the message for leads when someone picks an answer you've set to “Send to end page”. They aren't saved as a lead. Leave it blank for our standard wording, or add a button to send them somewhere useful."
+              >
+                <TextField label="Headline" placeholder="Thanks for your interest!" value={form.dqHeadline} onChange={(e) => fieldChange("dqHeadline", e.target.value)} fullWidth />
+                <TextField label="Description" placeholder="Based on your answers, this might not be the right time for a valuation…" value={form.dqText} onChange={(e) => fieldChange("dqText", e.target.value)} fullWidth multiline minRows={2} />
+                <Box sx={{ display: "flex", gap: 1.5, flexWrap: "wrap" }}>
+                  <TextField label="Button text" placeholder="e.g. Follow us on Facebook" value={form.dqCtaLabel} onChange={(e) => fieldChange("dqCtaLabel", e.target.value)} sx={{ flex: "1 1 160px" }} />
+                  <TextField label="Website link" placeholder="https://…" value={form.dqCtaUrl} onChange={(e) => fieldChange("dqCtaUrl", e.target.value.trim())} sx={{ flex: "2 1 220px" }} />
+                </Box>
+              </Section>
+              </>
+            )}
+
+          </Box>
+          <Box sx={{ flex: 1, minWidth: 0, alignSelf: { md: "flex-start" }, position: { md: "sticky" }, top: { md: 120 }, order: { xs: -1, md: 0 } }}>
+            <ThankYouPreview page={page} />
+          </Box>
+        </Box>
+      ) : (
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 3, p: 2, maxWidth: 720, mx: "auto" }}>
+          <ShareSection page={page} onUpdateSlug={canSetUp ? (slug) => updatePage.mutate({ id: page.id, patch: { slug } }) : undefined} />
+          {trackingSection}
+          {isOperator && <LeadPageFunnelStats pageId={page.id} />}
         </Box>
       )}
 
@@ -647,12 +675,16 @@ export default function LeadPagePage() {
 }
 
 function FbFormSource({
+  tab,
+  extras,
   page,
   pipelineName,
   fbPageId,
   pageName,
   avatarUrl,
 }: {
+  tab: PageTab;
+  extras: React.ReactNode;
   page: LeadPage;
   pipelineName: string;
   fbPageId: string | null;
@@ -685,6 +717,33 @@ function FbFormSource({
   const fbAvatar = data?.page?.picture || avatarUrl;
 
   const CONTACT = new Set(["FULL_NAME", "EMAIL", "PHONE", "FIRST_NAME", "LAST_NAME", "STREET_ADDRESS", "CITY", "ZIP", "COUNTRY", "PROVINCE", "STATE"]);
+
+  if (tab === "thanks") {
+    return (
+      <Box sx={{ display: "flex", flexDirection: { xs: "column", md: "row" }, gap: 3, p: 2, maxWidth: 1100, mx: "auto" }}>
+        <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
+          <Section
+            title="End screen link"
+            info={<>People who finish the instant form and tap its end-screen button land on your thank-you page, with this form&apos;s lead magnet.</>}
+          >
+            <Typography sx={{ fontSize: 13.5, color: "text.secondary", mb: 1.25 }}>
+              In Facebook, open this form, go to the end screen (Completion) and set the button&apos;s website link to:
+            </Typography>
+            <Box sx={{ display: "flex", gap: 1, flexDirection: { xs: "column", sm: "row" } }}>
+              <TextField size="small" value={thanksUrl} fullWidth slotProps={{ htmlInput: { readOnly: true, onFocus: (e: React.FocusEvent<HTMLInputElement>) => e.target.select() } }} />
+              <Button variant="outlined" startIcon={<ContentCopyIcon fontSize="small" />} onClick={copyThanks} sx={{ flexShrink: 0, minHeight: 40 }}>
+                Copy link
+              </Button>
+            </Box>
+          </Section>
+          {extras}
+        </Box>
+        <Box sx={{ flex: 1, minWidth: 0, alignSelf: { md: "flex-start" }, position: { md: "sticky" }, top: { md: 120 }, order: { xs: -1, md: 0 } }}>
+          <ThankYouPreview page={page} />
+        </Box>
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ display: "flex", flexDirection: { xs: "column", md: "row" }, gap: 3, p: 2, maxWidth: 1000, mx: "auto", alignItems: "flex-start" }}>
@@ -727,23 +786,9 @@ function FbFormSource({
           ) : null}
         </Section>
 
-        <Section
-          title="End screen link"
-          info={<>People who finish the instant form and tap its end-screen button land on your thank-you page, with this form&apos;s lead magnet.</>}
-        >
-          <Typography sx={{ fontSize: 13.5, color: "text.secondary", mb: 1.25 }}>
-            In Facebook, open this form, go to the end screen (Completion) and set the button&apos;s website link to:
-          </Typography>
-          <Box sx={{ display: "flex", gap: 1, flexDirection: { xs: "column", sm: "row" } }}>
-            <TextField size="small" value={thanksUrl} fullWidth slotProps={{ htmlInput: { readOnly: true, onFocus: (e: React.FocusEvent<HTMLInputElement>) => e.target.select() } }} />
-            <Button variant="outlined" startIcon={<ContentCopyIcon fontSize="small" />} onClick={copyThanks} sx={{ flexShrink: 0, minHeight: 40 }}>
-              Copy link
-            </Button>
-          </Box>
-        </Section>
       </Box>
 
-      <Box sx={{ flex: 1, minWidth: 0, width: "100%", alignSelf: { md: "flex-start" }, position: { md: "sticky" }, top: { md: 72 } }}>
+      <Box sx={{ flex: 1, minWidth: 0, width: "100%", alignSelf: { md: "flex-start" }, position: { md: "sticky" }, top: { md: 120 } }}>
         <Section title="Live preview">
           {isLoading ? (
             <Skeleton variant="rounded" height={620} sx={{ borderRadius: "12px" }} />
@@ -765,6 +810,50 @@ function FbFormSource({
         </Section>
       </Box>
     </Box>
+  );
+}
+
+type PageTab = "form" | "thanks" | "share";
+
+/** The page's tabs, under the page picker. Stays put while scrolling. */
+function PageTabs({ tabs, value, onChange }: { tabs: { value: PageTab; label: string }[]; value: PageTab; onChange: (t: PageTab) => void }) {
+  return (
+    <Box sx={{ position: "sticky", top: 56, zIndex: 3, bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
+      <Tabs
+        value={value}
+        onChange={(_, v: PageTab) => onChange(v)}
+        variant="fullWidth"
+        sx={{ maxWidth: 560, mx: "auto", minHeight: 48, "& .MuiTab-root": { minHeight: 48, fontSize: 15, fontWeight: 600, textTransform: "none" } }}
+      >
+        {tabs.map((t) => <Tab key={t.value} value={t.value} label={t.label} />)}
+      </Tabs>
+    </Box>
+  );
+}
+
+/** The real thank-you page, as a phone shows it, with a sample name. It
+ *  reloads as changes save. Nothing in it is saved (preview mode). */
+function ThankYouPreview({ page }: { page: LeadPage }) {
+  const src = `/thank-you?p=${encodeURIComponent(page.slug)}&n=Thandi&preview=1`;
+  return (
+    <Section
+      title="Preview"
+      action={
+        <Typography
+          component="a"
+          href={src}
+          target="_blank"
+          rel="noopener"
+          sx={{ display: "flex", alignItems: "center", gap: 0.4, fontSize: 12.5, color: tokens.primary, textDecoration: "none", textTransform: "none", fontWeight: 500, "&:hover": { textDecoration: "underline" } }}
+        >
+          Open in a new tab <OpenInNewIcon sx={{ fontSize: 14 }} />
+        </Typography>
+      }
+    >
+      <Box sx={{ mx: "auto", width: "100%", maxWidth: 400, height: 680, border: `1px solid ${tokens.divider}`, borderRadius: "16px", overflow: "hidden", bgcolor: "#fff" }}>
+        <Box component="iframe" key={JSON.stringify(page)} src={src} title="Thank-you page preview" sx={{ width: "100%", height: "100%", border: 0, display: "block" }} />
+      </Box>
+    </Section>
   );
 }
 

@@ -26,6 +26,8 @@ import VideoPlayer, { canPlayVideo } from "../components/VideoPlayer";
 export default function ThankYouPage() {
   const [params] = useSearchParams();
   const slug = params.get("p");
+  // The dashboard's preview (Forms → Thank-you page): everything shows, nothing is saved or tracked.
+  const preview = params.get("preview") === "1";
   // No name (e.g. from a Facebook instant form's end button): "Thanks!", not "Thanks there!".
   const nameParam = (params.get("n") || "").trim();
   const name = nameParam.toLowerCase() === "there" ? "" : nameParam;
@@ -55,8 +57,8 @@ export default function ThankYouPage() {
   // shares, and it is skipped for weak leads. Firing Lead here as well counted
   // every lead twice and told Meta weak leads converted.
   useEffect(() => {
-    if (page?.fbPixelId) initPixel(page.fbPixelId);
-  }, [page?.fbPixelId]);
+    if (page?.fbPixelId && !preview) initPixel(page.fbPixelId);
+  }, [page?.fbPixelId, preview]);
 
   if (!slug) return <GenericThankYou />;
 
@@ -79,7 +81,7 @@ export default function ThankYouPage() {
   const giftUrl = !gift ? "" : planToken ? `/plan/${planToken}?from=thanks` : gift.kind === "pdf" ? gift.pdfUrl ?? "" : `/plan/general/${page.slug}`;
   // Asking for a call time needs to know who they are (their private code).
   // When it's on, it is the main button and the lead magnet becomes a line.
-  const askCall = !!planToken && page.thankYouAskCall === true;
+  const askCall = (!!planToken || preview) && page.thankYouAskCall === true;
   const video = page.thankYouVideoUrl && canPlayVideo(page.thankYouVideoUrl) ? page.thankYouVideoUrl : null;
 
   return (
@@ -93,7 +95,7 @@ export default function ThankYouPage() {
           <Box sx={{ border: "1px solid #e0e0e0", borderRadius: "8px", overflow: "hidden", bgcolor: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,.08)" }}>
             <Box sx={{ p: "40px 24px", minHeight: 260, display: "flex", flexDirection: "column" }}>
               <BrandedThankYou page={page} name={name} video={video} showWhatsApp={!gift && !askCall && !video} />
-              {askCall && planToken && <ThankYouCallTime token={planToken} accent={page.accentColor} agentName={page.agentName} question={page.thankYouCallQuestion} />}
+              {askCall && (planToken || preview) && <ThankYouCallTime token={planToken ?? ""} preview={preview} accent={page.accentColor} agentName={page.agentName} question={page.thankYouCallQuestion} />}
               {gift && giftUrl && <MagnetCta page={page} magnet={gift} href={giftUrl} personal={!!planToken} compact={askCall} />}
             </Box>
           </Box>

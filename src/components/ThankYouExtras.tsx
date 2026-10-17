@@ -13,7 +13,7 @@ export const CALL_QUESTION = "When suits you for a quick call?";
 /** "When suits you for a quick call?" with Day and Time, then Confirm. Saved
  *  on the lead with their private code (set_call_time). Only shown when we
  *  know who they are (leads from our own forms). */
-export function ThankYouCallTime({ token, accent, agentName, question }: { token: string; accent: string; agentName: string; question?: string | null }) {
+export function ThankYouCallTime({ token, preview, accent, agentName, question }: { token: string; preview?: boolean; accent: string; agentName: string; question?: string | null }) {
   const agentFirst = (agentName || "").trim().split(/\s+/)[0] || "We";
   const [value, setValue] = useState("");
   const [error, setError] = useState("");
@@ -23,6 +23,10 @@ export function ThankYouCallTime({ token, accent, agentName, question }: { token
   async function confirm() {
     if (!value || callTimeIncomplete(value)) {
       setError(!value ? "Please pick a day and a time." : value.startsWith(",") ? "Please pick a day too." : "Please pick a time too.");
+      return;
+    }
+    if (preview) {
+      setError("Preview only: nothing was saved.");
       return;
     }
     setBusy(true);
