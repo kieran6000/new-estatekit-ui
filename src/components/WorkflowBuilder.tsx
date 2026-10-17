@@ -70,6 +70,7 @@ import { listPath, workflowPath, type BackTo, type Scope } from "../lib/automati
 import { trackActivity } from "../lib/activity";
 import { useSnack } from "../hooks/useSnack";
 import WhatsAppPreview from "./WhatsAppPreview";
+import SendToMobileIcon from "@mui/icons-material/SendToMobile";
 import { PillEditor, type PillEditorHandle } from "./PillEditor";
 import { getAccountVocab } from "../api/accountVocab";
 import LeadTag from "./LeadTag";
@@ -91,13 +92,13 @@ import {
 // engine that runs them is supabase/functions/run-automations/workflows.ts.
 
 const STEP_ICON: Record<StepType, React.ReactNode> = {
-  wait: <ScheduleIcon />, whatsapp_agent: <WhatsAppIcon />, email_lead: <EmailIcon />, branch: <CallSplitIcon />,
+  wait: <ScheduleIcon />, whatsapp_agent: <WhatsAppIcon />, whatsapp_lead: <SendToMobileIcon />, email_lead: <EmailIcon />, branch: <CallSplitIcon />,
   set_stage: <FlagIcon />, reminder: <AlarmIcon />, tag: <LocalOfferIcon />,
 };
 
 // Icon tiles: mid-tone fills with white icons, readable in light and dark.
 const STEP_COLOR: Record<StepType, string> = {
-  wait: "#607d8b", whatsapp_agent: "#1a8f45", email_lead: "#1565c0", branch: "#455a64",
+  wait: "#607d8b", whatsapp_agent: "#1a8f45", whatsapp_lead: "#d84315", email_lead: "#1565c0", branch: "#455a64",
   set_stage: "#6a1b9a", reminder: "#ad1457", tag: "#00796b",
 };
 
@@ -346,8 +347,9 @@ function Sends({ steps }: { steps: Step[] }) {
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 0.25 }}>
       {kinds.has("whatsapp_agent") && <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, fontSize: 13, whiteSpace: "nowrap" }}><WhatsAppIcon sx={{ fontSize: 16, color: "#25d366" }} />WhatsApp to agent</Box>}
+      {kinds.has("whatsapp_lead") && <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, fontSize: 13, whiteSpace: "nowrap" }}><SendToMobileIcon sx={{ fontSize: 16, color: "#d84315" }} />WhatsApp to lead</Box>}
       {kinds.has("email_lead") && <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, fontSize: 13, whiteSpace: "nowrap" }}><EmailIcon sx={{ fontSize: 16, color: tokens.primary }} />Email to lead</Box>}
-      {!kinds.has("whatsapp_agent") && !kinds.has("email_lead") && <Box sx={{ fontSize: 13, color: "text.secondary" }}>No messages</Box>}
+      {!kinds.has("whatsapp_agent") && !kinds.has("whatsapp_lead") && !kinds.has("email_lead") && <Box sx={{ fontSize: 13, color: "text.secondary" }}>No messages</Box>}
     </Box>
   );
 }
@@ -1699,6 +1701,19 @@ function StepEditor({ step, trigger, onChange }: { step: Step; trigger: Trigger;
           </Typography>
         </>
       );
+    case "whatsapp_lead":
+      return (
+        <>
+          <Box sx={{ display: "flex", gap: 1, alignItems: "flex-start", p: "10px 12px", borderRadius: "6px", bgcolor: tokens.amberTint, border: `1px solid ${tokens.amberBorder}`, fontSize: 13.5 }}>
+            <SendToMobileIcon sx={{ fontSize: 18, color: "#d84315", mt: "1px" }} />
+            <span>This goes to the <b>lead</b>, not to you.</span>
+          </Box>
+          <MessageField label="Message to the lead" value={step.text} onChange={(text) => onChange({ text }, "text")} kind="whatsapp_lead" trigger={trigger} minRows={4} />
+          <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
+            Sent from the EstateKit WhatsApp number to the lead&apos;s own. Staff accounts only. Skipped if the lead has no number or asked not to get WhatsApps. Keep it personal and expected: a lead who reports it can get the number blocked.
+          </Typography>
+        </>
+      );
     case "email_lead":
       return (
         <>
@@ -1870,6 +1885,14 @@ function NodePreview({ sel, wf, step }: { sel: Selection; wf: Workflow; step: St
         body = (
           <>
             <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>Arrives on the agent's WhatsApp:</Typography>
+            <WhatsAppPreview lead={SAMPLE_LEAD} text={step.text || " "} sampleFields={sampleFields(wf.trigger)} />
+          </>
+        );
+        break;
+      case "whatsapp_lead":
+        body = (
+          <>
+            <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>Arrives on {first}'s own WhatsApp:</Typography>
             <WhatsAppPreview lead={SAMPLE_LEAD} text={step.text || " "} sampleFields={sampleFields(wf.trigger)} />
           </>
         );

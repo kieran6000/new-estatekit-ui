@@ -172,7 +172,7 @@ export default function ScheduledAutomations() {
       isWhatsApp, sendAt,
       held: quietHoursApply && sendAt.getTime() > Math.max(Date.parse(w.run_at), Date.now()) + 60_000,
       workflow: w.workflow?.name ?? "Workflow",
-      step: step ? (step.type === "whatsapp_agent" ? "WhatsApp message" : step.type === "email_lead" ? "Email to the lead" : stepTitle(step)) : "Finishes the workflow",
+      step: step ? (step.type === "whatsapp_agent" ? "WhatsApp message" : step.type === "whatsapp_lead" ? "WhatsApp to the lead" : step.type === "email_lead" ? "Email to the lead" : stepTitle(step)) : "Finishes the workflow",
       account: allAccounts ? agentName(w.agent_id) : "",
     };
   });

@@ -70,7 +70,7 @@ function describe(e: LeadEvent): string {
     case "call":
       return "Tapped Call";
     case "whatsapp_sent":
-      return "WhatsApp reminder sent";
+      return e.from_value === "to_lead" ? `WhatsApp sent to them (${e.to_value ?? "workflow"})` : "WhatsApp reminder sent";
     case "email_sent":
       return "Confirmation email sent";
     case "email_failed":

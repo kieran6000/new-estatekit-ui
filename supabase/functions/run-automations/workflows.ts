@@ -17,6 +17,8 @@ type Unit = "minutes" | "hours" | "days";
 type Step =
   | { id: string; type: "wait"; amount: number; unit: Unit }
   | { id: string; type: "whatsapp_agent"; text: string }
+  /** To the lead's own WhatsApp, from EstateKit's number: staff accounts only. */
+  | { id: string; type: "whatsapp_lead"; text: string }
   | { id: string; type: "email_lead"; subject: string; body: string }
   | { id: string; type: "set_stage"; stage: string }
   | { id: string; type: "reminder"; label: string; inDays: number }
@@ -56,6 +58,9 @@ interface Lead {
   quality: string | null;
   tags: string[] | null;
   email_opt_out: boolean;
+  /** Asked not to get WhatsApps: "WhatsApp the lead" skips them. */
+  whatsapp_opt_out?: boolean | null;
+  note?: string | null;
   archived: boolean;
   form_answers: unknown;
   plan_token: string | null;
@@ -65,6 +70,8 @@ interface Lead {
 }
 
 interface Profile {
+  /** EstateKit staff: only their own accounts may WhatsApp leads. */
+  is_operator?: boolean | null;
   avatar_url?: string | null;
   display_name: string | null;
   whatsapp_number: string | null;
@@ -167,6 +174,16 @@ export function resolveMagnet(page: PageRow | null, pipelineKind: string | null)
 /** Where {{lead_magnet}} sits in an email body until it's drawn as a box. */
 const MAGNET_MARK = "\u0000MAGNET\u0000";
 const rand = (n: number) => `R${String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, " ")}`;
+/** Their form, one "Question: answer" line each ({{answers}}, {{form_answers}}). */
+function answersText(l: Lead): string {
+  const answers = Array.isArray(l.form_answers) ? (l.form_answers as { q?: string; a?: string }[]) : [];
+  return answers.filter((x) => (x.a || "").trim()).map((x) => `${(x.q || "").trim()}: ${(x.a || "").trim()}`).join("\n") || "No answers";
+}
+/** The lead's note, about 200 characters at most ({{note}}). */
+function noteText(l: Lead): string {
+  const n = (l.note || "").replace(/\s+/g, " ").trim();
+  return n.length > 200 ? `${n.slice(0, 197).trimEnd()}…` : n;
+}
 const fill = (t: string, v: Record<string, string>) => t.replace(/\{\{\s*(\w+)\s*\}\}/g, (m, k: string) => (k in v ? v[k] : m));
 
 /** The step at `pos`, or undefined when the position is past the end of its list. */
@@ -270,7 +287,7 @@ async function processRun(supabase: SupabaseClient, deps: EngineDeps, run: Run) 
 
   const { data: profileRow } = await supabase
     .from("agent_profiles")
-    .select("display_name, whatsapp_number, email, company, automations_paused, deactivated_at, avatar_url")
+    .select("display_name, whatsapp_number, email, company, automations_paused, deactivated_at, avatar_url, is_operator")
     .eq("agent_id", run.agent_id)
     .maybeSingle();
   const profile = profileRow as Profile | null;
@@ -291,7 +308,7 @@ async function processRun(supabase: SupabaseClient, deps: EngineDeps, run: Run) 
   if (run.lead_id) {
     const { data } = await supabase
       .from("leads")
-      .select("id, agent_id, name, phone, email, stage, next_label, pipeline_id, source_page_id, fb_lead_id, quality, tags, email_opt_out, archived, form_answers, plan_token, appointment_at, call_at")
+      .select("id, agent_id, name, phone, email, stage, next_label, pipeline_id, source_page_id, fb_lead_id, quality, tags, email_opt_out, whatsapp_opt_out, note, archived, form_answers, plan_token, appointment_at, call_at")
       .eq("id", run.lead_id)
       .maybeSingle();
     lead = data as Lead | null;
@@ -457,6 +474,8 @@ class Context {
         return { kind: "wait", until: new Date(Date.now() + waitMinutes(step) * 60_000) };
       case "whatsapp_agent":
         return this.whatsApp(step);
+      case "whatsapp_lead":
+        return this.whatsAppLead(step);
       case "email_lead":
         return this.email(step);
       case "set_stage":
@@ -584,7 +603,9 @@ class Context {
         phone: prettyPhone(l.phone || ""), email: (l.email || "").trim() || "no email",
         address: tidyAddress(answers.find((x) => /address/i.test(x.q || ""))?.a || ""),
         form: l.fb_lead_id ? "Facebook form" : (await this.page())?.name || (l.source_page_id ? "Lead page" : "Added by hand"),
-        answers: answers.filter((x) => (x.a || "").trim()).map((x) => `${(x.q || "").trim()}: ${(x.a || "").trim()}`).join("\n") || "No answers",
+        answers: answersText(l),
+        form_answers: answersText(l),
+        note: noteText(l),
         appointment: appointmentLabel(l.appointment_at),
         call_time: callTimeLabel(l.call_at),
         lead_type: leadType(await this.pipelineKind()),
@@ -609,6 +630,67 @@ class Context {
     } else {
       await log(this.supabase, this.run, step.id, "WhatsApp the agent", "Failed", result === "not_configured" ? "WhatsApp sending isn't set up" : "The WhatsApp service didn't accept it");
       await this.deps.logToDiscord?.(`\u{26A0}\u{FE0F} Workflow **${this.wfName}** could NOT send WhatsApp to **${who}**${l ? ` re: ${l.name}` : ""} (${result})`);
+    }
+    return { kind: "done" };
+  }
+
+  /** "WhatsApp the lead": the same rules as "WhatsApp the agent" (quiet
+   *  hours, the send budget, the rate-limit retry, the log), sent to the
+   *  lead's own number. It goes from EstateKit's one WhatsApp number, which
+   *  carries every client's alerts, so it only ever runs in staff accounts.
+   *  Never gets the agent's call-and-log link ({{action_link}}). */
+  private async whatsAppLead(step: Extract<Step, { type: "whatsapp_lead" }>): Promise<Outcome> {
+    const l = this.lead;
+    const what = "WhatsApp the lead";
+    if (!l) return { kind: "done" };
+    if (!this.profile?.is_operator) {
+      await log(this.supabase, this.run, step.id, what, "Skipped", "Only EstateKit staff accounts can WhatsApp leads");
+      return { kind: "done" };
+    }
+    const to = digits(l.phone);
+    if (to.length < 9) {
+      await log(this.supabase, this.run, step.id, what, "Skipped", "The lead has no WhatsApp number");
+      return { kind: "done" };
+    }
+    // Before anything is sent.
+    if (l.whatsapp_opt_out) {
+      await log(this.supabase, this.run, step.id, what, "Skipped", "They asked not to get WhatsApps");
+      return { kind: "done" };
+    }
+    if (this.def.trigger.kind !== "lead_created") {
+      const hold = this.quietHold();
+      if (hold) return hold;
+    }
+
+    const page = await this.page();
+    const answers = Array.isArray(l.form_answers) ? (l.form_answers as { q?: string; a?: string }[]) : [];
+    const fields: Record<string, string> = {
+      first_name: first(l.name) || "there",
+      area: (page?.suburb || "").split(/[,/•|;]/)[0].trim() || "your area",
+      address: tidyAddress(answers.find((x) => /address/i.test(x.q || ""))?.a || "") || "your home",
+      agent_name: (this.profile?.display_name || "").trim() || "Your agent",
+      agent_phone: prettyPhone(page?.phone || this.profile?.whatsapp_number || ""),
+      appointment: appointmentLabel(l.appointment_at),
+      call_time: callTimeLabel(l.call_at),
+      whatsapp_link: `${APP}/w/${l.id}`,
+      note: noteText(l),
+      form_answers: answersText(l),
+    };
+    const text = fill(step.text, fields);
+
+    if (this.deps.budget.sends >= this.deps.maxSends) return { kind: "hold", until: new Date() };
+    this.deps.budget.sends++;
+    const result = await this.deps.sendWhatsApp(to, text);
+    if (result === "rate_limited") return { kind: "hold", until: new Date(Date.now() + RATE_LIMIT_RETRY_MS) };
+    if (result === "sent") {
+      await log(this.supabase, this.run, step.id, what, "Sent", text.slice(0, 300));
+      await this.deps.logToDiscord?.(`\u{2699}\u{FE0F} Workflow **${this.wfName}** sent WhatsApp to the lead **${l.name}**`);
+      await this.supabase.from("lead_events").insert({
+        lead_id: l.id, agent_id: l.agent_id, event_type: "whatsapp_sent", from_value: "to_lead", to_value: this.wfName, source: "automation",
+      });
+    } else {
+      await log(this.supabase, this.run, step.id, what, "Failed", result === "not_configured" ? "WhatsApp sending isn't set up" : "The WhatsApp service didn't accept it");
+      await this.deps.logToDiscord?.(`\u{26A0}\u{FE0F} Workflow **${this.wfName}** could NOT send WhatsApp to the lead **${l.name}** (${result})`);
     }
     return { kind: "done" };
   }
