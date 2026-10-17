@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 // Date ranges for the Accounts pages. All dates are local calendar days;
 // `until` is exclusive (the start of the day after the last day shown).
 
-export type RangeKey = "7d" | "30d" | "90d" | "this_month" | "last_month" | "custom";
+export type RangeKey = "today" | "yesterday" | "7d" | "30d" | "90d" | "this_month" | "last_month" | "all" | "custom";
 
 export interface DateRange {
   key: RangeKey;
@@ -13,13 +13,22 @@ export interface DateRange {
 }
 
 export const RANGE_LABELS: Record<RangeKey, string> = {
+  today: "Today",
+  yesterday: "Yesterday",
   "7d": "Last 7 days",
   "30d": "Last 30 days",
   "90d": "Last 90 days",
   this_month: "This month",
   last_month: "Last month",
+  all: "All time",
   custom: "Custom dates",
 };
+
+/** What each screen offers unless it says otherwise (the Accounts pages:
+ *  ad spend comes from Facebook, which doesn't do "all time"). */
+export const DEFAULT_RANGES: RangeKey[] = ["7d", "30d", "90d", "this_month", "last_month", "custom"];
+/** Everything, for screens counting our own data. */
+export const ALL_RANGES: RangeKey[] = ["today", "yesterday", "7d", "30d", "90d", "this_month", "last_month", "all", "custom"];
 
 const day = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 const addDays = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
@@ -32,6 +41,12 @@ export function resolveRange(r: DateRange): { since: Date; until: Date; label: s
   const today = day(new Date());
   const tomorrow = addDays(today, 1);
   switch (r.key) {
+    case "today":
+      return { since: today, until: tomorrow, label: RANGE_LABELS.today };
+    case "yesterday":
+      return { since: addDays(today, -1), until: today, label: RANGE_LABELS.yesterday };
+    case "all":
+      return { since: new Date(2020, 0, 1), until: tomorrow, label: RANGE_LABELS.all };
     case "7d":
       return { since: addDays(today, -6), until: tomorrow, label: RANGE_LABELS["7d"] };
     case "90d":

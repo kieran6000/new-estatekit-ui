@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Box, Button, CircularProgress, Link, MenuItem, TextField, Typography } from "@mui/material";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
@@ -7,6 +7,7 @@ import { tokens } from "../theme";
 import { saveLeadMagnet } from "../api/leadPages";
 import { uploadPlanPdf } from "../api/agentProfile";
 import { useSnack } from "../hooks/useSnack";
+import { useAutosave } from "../hooks/useAutosave";
 import { trackActivity } from "../lib/activity";
 import { readableOn } from "../lib/contrast";
 import { MAGNET_PRESETS, presetByKey, presetKeyOf, resolveMagnet, type MagnetKind } from "../lib/leadMagnet";
@@ -18,7 +19,8 @@ const MAX_MB = 20;
 /** "Lead magnet": what leads get straight after this form, on the thank-you
  *  page and wherever a workflow email has {{lead_magnet}} (the standard
  *  "New lead — confirmation email" does). Pick a preset, change the words if
- *  you like, upload the PDF. Staff set it; agents see what's set. */
+ *  you like, upload the PDF. Staff set it; agents see what's set. Saves as
+ *  you go (give it key={page.id}). */
 export default function LeadMagnetCard({ page, pipelineKind, canSetUp }: { page: LeadPage; pipelineKind: string | null | undefined; canSetUp: boolean }) {
   const qc = useQueryClient();
   const showSnack = useSnack();
@@ -29,16 +31,10 @@ export default function LeadMagnetCard({ page, pipelineKind, canSetUp }: { page:
   const [draft, setDraft] = useState(saved);
   const [presetKey, setPresetKey] = useState(() => presetKeyOf(page, pipelineKind));
   const [busy, setBusy] = useState(false);
-  // Another form opened (or a save landed): start from what's stored.
-  useEffect(() => {
-    setDraft({ kind: page.magnetKind ?? null, title: page.magnetTitle ?? "", text: page.magnetText ?? "", button: page.magnetButton ?? "", pdfUrl: page.magnetPdfUrl ?? null });
-    setPresetKey(presetKeyOf(page, pipelineKind));
-  }, [page.id, page.magnetKind, page.magnetTitle, page.magnetText, page.magnetButton, page.magnetPdfUrl, pipelineKind]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fields = { magnetKind: draft.kind, magnetTitle: draft.title, magnetText: draft.text, magnetButton: draft.button, magnetPdfUrl: draft.pdfUrl };
   const m = resolveMagnet(fields, pipelineKind);
   const kind: MagnetKind = draft.kind ?? (seller ? "plan" : "none");
-  const changed = JSON.stringify(draft) !== JSON.stringify(saved);
   const needsPdf = kind === "pdf" && !draft.pdfUrl;
   const previewUrl = m.kind === "pdf" ? m.pdfUrl : m.kind === "plan" ? `/plan/sample/${page.agentId}` : null;
 
@@ -56,7 +52,7 @@ export default function LeadMagnetCard({ page, pipelineKind, canSetUp }: { page:
     try {
       const url = await uploadPlanPdf(page.agentId, file);
       setDraft((d) => ({ ...d, pdfUrl: url }));
-      showSnack("PDF uploaded. Save to use it.");
+      showSnack("PDF uploaded.");
     } catch (e) {
       console.error(e);
       showSnack("Couldn't upload the PDF. Try again.");
@@ -66,20 +62,19 @@ export default function LeadMagnetCard({ page, pipelineKind, canSetUp }: { page:
     }
   }
 
-  async function save() {
-    setBusy(true);
-    try {
-      await saveLeadMagnet(page.id, fields);
-      trackActivity("client_details_edited", { agentId: page.agentId, detail: `Lead magnet on ${page.name}: ${m.kind === "none" ? "nothing" : m.title}` });
+  // A PDF lead magnet waits for its PDF before it's saved.
+  useAutosave(
+    draft,
+    saved,
+    async (v) => {
+      const f = { magnetKind: v.kind, magnetTitle: v.title, magnetText: v.text, magnetButton: v.button, magnetPdfUrl: v.pdfUrl };
+      await saveLeadMagnet(page.id, f);
+      const r = resolveMagnet(f, pipelineKind);
+      trackActivity("client_details_edited", { agentId: page.agentId, detail: `Lead magnet on ${page.name}: ${r.kind === "none" ? "nothing" : r.title}` });
       await Promise.all([qc.invalidateQueries({ queryKey: ["leadPages"] }), qc.invalidateQueries({ queryKey: ["publicPageSlug"] })]);
-      showSnack(m.kind === "none" ? "Saved. Leads from this form get no lead magnet." : "Lead magnet saved. New leads get it from now.");
-    } catch (e) {
-      console.error(e);
-      showSnack("Couldn't save. Try again.");
-    } finally {
-      setBusy(false);
-    }
-  }
+    },
+    { ready: canSetUp && !needsPdf && !busy, delay: 1500 },
+  );
 
   const label = { fontSize: 12, fontWeight: 500, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.06em" } as const;
 
@@ -138,10 +133,6 @@ export default function LeadMagnetCard({ page, pipelineKind, canSetUp }: { page:
               </Box>
             </Box>
           )}
-
-          <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
-            <Button variant="contained" disabled={busy || !changed} onClick={() => void save()}>Save</Button>
-          </Box>
         </>
       )}
     </Box>

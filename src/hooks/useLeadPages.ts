@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as leadPagesApi from "../api/leadPages";
 import { trackActivity } from "../lib/activity";
 import type { FormAnswer, LeadPage, PipelineKind } from "../types";
+import { FORM_SAVE_KEY } from "./useAutosave";
 
 const KEY = ["leadPages"] as const;
 
@@ -33,6 +34,8 @@ export function useAddLeadPage() {
 export function useUpdateLeadPage() {
   const qc = useQueryClient();
   return useMutation({
+    // Counts as saving for the form page's "Saving… / All changes saved".
+    mutationKey: FORM_SAVE_KEY,
     mutationFn: async ({ id, patch }: { id: string; patch: Partial<Omit<LeadPage, "id" | "pipelineId">> }) =>
       leadPagesApi.updateLeadPage(id, patch),
     onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),

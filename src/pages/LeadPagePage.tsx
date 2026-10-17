@@ -71,6 +71,8 @@ import FormPresetPicker from "../components/FormPresetPicker";
 import InfoTip from "../components/InfoTip";
 import LeadMagnetCard from "../components/LeadMagnetCard";
 import ThankYouPageCard from "../components/ThankYouPageCard";
+import { useFormSaving } from "../hooks/useAutosave";
+import CheckIcon from "@mui/icons-material/Check";
 import OptionsEditor from "../components/OptionsEditor";
 import { cleanOptions } from "../lib/options";
 import { applyFormPreset, FORM_PRESET_VERSION, presetByKey } from "../lib/formPresets";
@@ -359,17 +361,23 @@ export default function LeadPagePage() {
           )}
         </Menu>
         <PipelineLine page={page} linked={linkedPipeline} pipelines={pipelines} canChange={canSetUp} sx={{ display: { md: "none" } }} />
+        {canSetUp && <SaveStatus sx={{ ml: "auto", display: { md: "none" } }} />}
       </Box>
       <PageTabs tabs={tabs} value={tab} onChange={setTab} />
-      <PipelineLine page={page} linked={linkedPipeline} pipelines={pipelines} canChange={canSetUp} sx={{ ml: "auto", whiteSpace: "nowrap", display: { xs: "none", md: "block" } }} />
+      <Box sx={{ ml: "auto", display: { xs: "none", md: "flex" }, alignItems: "center", gap: 2.5 }}>
+        {canSetUp && <SaveStatus />}
+        <PipelineLine page={page} linked={linkedPipeline} pipelines={pipelines} canChange={canSetUp} sx={{ whiteSpace: "nowrap" }} />
+      </Box>
       </Box>
 
-      {page.sourceType === "fb_form" && tab !== "tracking" ? (
+      {/* Every tab stays loaded and is only hidden, so switching tabs never
+          loses something half-edited. */}
+      {page.sourceType === "fb_form" ? (
         <FbFormSource
           tab={tab}
           extras={<>
-            <ThankYouPageCard page={page} canSetUp={canSetUp} />
-            <LeadMagnetCard page={page} pipelineKind={pipeline.kind} canSetUp={canSetUp} />
+            <ThankYouPageCard key={page.id} page={page} canSetUp={canSetUp} />
+            <LeadMagnetCard key={page.id} page={page} pipelineKind={pipeline.kind} canSetUp={canSetUp} />
           </>}
           page={page}
           pipelineName={pipeline.name}
@@ -378,14 +386,17 @@ export default function LeadPagePage() {
           avatarUrl={profile?.sidebarLogoUrl || null}
         />
       ) : null}
-      {page.sourceType === "fb_form" && tab === "tracking" && (
-        <Box sx={{ maxWidth: 720, mx: "auto", p: 2, display: "flex", flexDirection: "column", gap: 3 }}>
-          {trackingSection}
+      {page.sourceType === "fb_form" && (
+        <Box hidden={tab !== "tracking"}>
+          <Box sx={{ maxWidth: 720, mx: "auto", p: 2, display: "flex", flexDirection: "column", gap: 3 }}>
+            {trackingSection}
+          </Box>
         </Box>
       )}
-      {page.sourceType === "fb_form" ? null : tab === "form" ? (
-        // Phones: preview first, then the settings. Desktop: settings on the
-        // left, the preview sticky on the right.
+      {page.sourceType !== "fb_form" && (<>
+      {/* Phones: preview first, then the settings. Desktop: settings on the
+          left, the preview sticky on the right. */}
+      <Box hidden={tab !== "form"}>
         <Box sx={{ display: "flex", flexDirection: { xs: "column", md: "row" }, gap: 3, p: 2, maxWidth: 1100, mx: "auto" }}>
           <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
             <Section
@@ -548,7 +559,8 @@ export default function LeadPagePage() {
             </Section>
           </Box>
         </Box>
-      ) : tab === "thanks" ? (
+      </Box>
+      <Box hidden={tab !== "thanks"}>
         <Box sx={{ display: "flex", flexDirection: { xs: "column", md: "row" }, gap: 3, p: 2, maxWidth: 1100, mx: "auto" }}>
           <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
             {canSetUp && (
@@ -566,8 +578,8 @@ export default function LeadPagePage() {
               </>
             )}
 
-            <ThankYouPageCard page={page} canSetUp={canSetUp} />
-            <LeadMagnetCard page={page} pipelineKind={pipeline.kind} canSetUp={canSetUp} />
+            <ThankYouPageCard key={page.id} page={page} canSetUp={canSetUp} />
+            <LeadMagnetCard key={page.id} page={page} pipelineKind={pipeline.kind} canSetUp={canSetUp} />
             {canSetUp && (
               <>
               <Section
@@ -589,19 +601,22 @@ export default function LeadPagePage() {
             <ThankYouPreview page={page} />
           </Box>
         </Box>
-      ) : (
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 3, p: 2, maxWidth: tab === "link" ? 720 : 960, mx: "auto" }}>
-          {tab === "link" ? (
-            <ShareSection page={page} onUpdateSlug={canSetUp ? (slug) => updatePage.mutate({ id: page.id, patch: { slug } }) : undefined} />
-          ) : (
-            <>
-              {/* How it's doing first (looked at most), then the pixel settings. */}
-              {isOperator && <LeadPageFunnelStats pageId={page.id} />}
-              {trackingSection}
-            </>
-          )}
+      </Box>
+      <Box hidden={tab !== "link"}>
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 3, p: 2, maxWidth: 720, mx: "auto" }}>
+          <ShareSection page={page} onUpdateSlug={canSetUp ? (slug) => updatePage.mutate({ id: page.id, patch: { slug } }) : undefined} />
+        </Box>
+      </Box>
+      {isOperator && (
+        <Box hidden={tab !== "tracking"}>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 3, p: 2, maxWidth: 960, mx: "auto" }}>
+            {/* The pixel first (it's set up once, and everything else depends on it), then the numbers. */}
+            {trackingSection}
+            <LeadPageFunnelStats pageId={page.id} active={tab === "tracking"} />
+          </Box>
         </Box>
       )}
+      </>)}
 
       <AddPageDialog
         open={addPageOpen}
@@ -723,8 +738,7 @@ function FbFormSource({
 
   const CONTACT = new Set(["FULL_NAME", "EMAIL", "PHONE", "FIRST_NAME", "LAST_NAME", "STREET_ADDRESS", "CITY", "ZIP", "COUNTRY", "PROVINCE", "STATE"]);
 
-  if (tab === "thanks") {
-    return (
+  const thanksView = (
       <Box sx={{ display: "flex", flexDirection: { xs: "column", md: "row" }, gap: 3, p: 2, maxWidth: 1100, mx: "auto" }}>
         <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
           <Section
@@ -747,10 +761,9 @@ function FbFormSource({
           <ThankYouPreview page={page} />
         </Box>
       </Box>
-    );
-  }
+  );
 
-  return (
+  const formView = (
     <Box sx={{ display: "flex", flexDirection: { xs: "column", md: "row" }, gap: 3, p: 2, maxWidth: 1000, mx: "auto", alignItems: "flex-start" }}>
       <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3, width: "100%" }}>
         <Section title="Questions">
@@ -816,9 +829,26 @@ function FbFormSource({
       </Box>
     </Box>
   );
+
+  return (
+    <>
+      <Box hidden={tab !== "form"}>{formView}</Box>
+      <Box hidden={tab !== "thanks"}>{thanksView}</Box>
+    </>
+  );
 }
 
 type PageTab = "form" | "thanks" | "link" | "tracking";
+
+/** Everything on this page saves as you go; this says so. */
+function SaveStatus({ sx }: { sx?: object }) {
+  const saving = useFormSaving();
+  return (
+    <Typography component="div" aria-live="polite" sx={{ display: "flex", alignItems: "center", gap: 0.5, fontSize: 12.5, color: "text.secondary", whiteSpace: "nowrap", ...sx }}>
+      {saving ? <><CircularProgress size={12} sx={{ color: "inherit" }} /> Saving…</> : <><CheckIcon sx={{ fontSize: 16, color: tokens.green }} /> All changes saved</>}
+    </Typography>
+  );
+}
 
 /** "Sends leads to Seller pipeline". Staff can change it (new leads only;
  *  leads already in stay where they are), after a plain confirmation. */

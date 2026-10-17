@@ -1,9 +1,9 @@
 import { Box, MenuItem, TextField } from "@mui/material";
 import CalendarMonthOutlinedIcon from "@mui/icons-material/CalendarMonthOutlined";
-import { RANGE_LABELS, resolveRange, ymd, type DateRange, type RangeKey } from "../lib/range";
+import { DEFAULT_RANGES, RANGE_LABELS, resolveRange, ymd, type DateRange, type RangeKey } from "../lib/range";
 
 /** "Last 30 days ▾" plus two date boxes when "Custom dates" is picked. */
-export default function RangePicker({ value, onChange }: { value: DateRange; onChange: (r: DateRange) => void }) {
+export default function RangePicker({ value, onChange, options = DEFAULT_RANGES }: { value: DateRange; onChange: (r: DateRange) => void; options?: RangeKey[] }) {
   const resolved = resolveRange(value);
   return (
     <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", alignItems: "center" }}>
@@ -21,7 +21,7 @@ export default function RangePicker({ value, onChange }: { value: DateRange; onC
         slotProps={{ input: { startAdornment: <CalendarMonthOutlinedIcon sx={{ fontSize: 18, mr: 1, color: "text.secondary" }} /> } }}
         aria-label="Date range"
       >
-        {(Object.keys(RANGE_LABELS) as RangeKey[]).map((k) => (
+        {options.map((k) => (
           <MenuItem key={k} value={k}>{RANGE_LABELS[k]}</MenuItem>
         ))}
       </TextField>

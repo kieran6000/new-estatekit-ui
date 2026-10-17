@@ -357,22 +357,23 @@ export interface LeadPageFunnel {
   submits: number;
 }
 
-export interface LeadPageEvent { event_type: "view" | "start" | "contact" | "disqualified" | "submit"; source: string | null; session_id: string; created_at: string }
-
-/** Every visitor step on one landing page since a time (once per visitor
- *  per step), for the charts on Forms → Tracking. Operator-only (RLS). */
-export async function getLeadPageEvents(pageId: string, sinceIso: string | null): Promise<LeadPageEvent[]> {
-  const out: LeadPageEvent[] = [];
-  // Pages of 1000 (the API's cap), oldest first, up to 20 000 steps.
-  for (let from = 0; from < 20_000; from += 1000) {
-    let q = supabase.from("lead_page_events").select("event_type, source, session_id, created_at").eq("page_id", pageId).order("created_at").range(from, from + 999);
-    if (sinceIso) q = q.gte("created_at", sinceIso);
-    const { data, error } = await q;
+/** How many visitors reached each step of one website form in [since, until)
+ *  (each step counts once per visitor). Counted by the database, so "All
+ *  time" is as quick as today. Operator-only (RLS). */
+export async function getLeadPageCounts(pageId: string, since: Date, until: Date): Promise<LeadPageFunnel> {
+  const count = async (type: string) => {
+    const { count: n, error } = await supabase
+      .from("lead_page_events")
+      .select("id", { count: "exact", head: true })
+      .eq("page_id", pageId)
+      .eq("event_type", type)
+      .gte("created_at", since.toISOString())
+      .lt("created_at", until.toISOString());
     if (error) throw new Error(error.message);
-    out.push(...((data ?? []) as LeadPageEvent[]));
-    if (!data || data.length < 1000) break;
-  }
-  return out;
+    return n ?? 0;
+  };
+  const [views, starts, contacts, disqualified, submits] = await Promise.all(["view", "start", "contact", "disqualified", "submit"].map(count));
+  return { views, starts, contacts, disqualified, submits };
 }
 
 /** Unique-visitor funnel counts for one landing page. Operator-only (RLS). */
