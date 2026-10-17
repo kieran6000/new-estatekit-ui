@@ -62,28 +62,62 @@ const ICON: Record<Step, ReactNode> = {
 /** Steps with typing (or optional ones) get a Next button; the rest move on when tapped. */
 const NEEDS_NEXT: Step[] = ["suburbs", "agency", "address", "offer", "photos", "contact"];
 
+// Progress is kept on their phone as they go, so someone who gets
+// distracted halfway comes back to the question they were on. Cleared once
+// the form is sent; forgotten after 30 days. Storage can be blocked (private
+// windows): then the form just works without it.
+const DRAFT_KEY = "ek_onboarding_draft";
+const DRAFT_DAYS = 30;
+interface Draft {
+  i: number; campaign: string; city: Place | null; suburbs: string[]; price: string; deals: string; agency: string; website: string;
+  address: string; offer: string; headshot: string; logo: string; name: string; email: string; phone: string; savedAt: number;
+}
+function loadDraft(): Draft | null {
+  try {
+    const d = JSON.parse(localStorage.getItem(DRAFT_KEY) || "null") as Draft | null;
+    if (!d || typeof d.i !== "number" || Date.now() - (d.savedAt || 0) > DRAFT_DAYS * 86_400_000) return null;
+    return d;
+  } catch {
+    return null;
+  }
+}
+function saveDraft(d: Omit<Draft, "savedAt">) {
+  try {
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({ ...d, savedAt: Date.now() }));
+  } catch {
+    // Full or blocked: try again without the pictures (the biggest part).
+    try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ ...d, headshot: "", logo: "", savedAt: Date.now() })); } catch { /* fine */ }
+  }
+}
+function clearDraft() {
+  try { localStorage.removeItem(DRAFT_KEY); } catch { /* fine */ }
+}
+
 const phoneIsValid = (v: string) => { const d = v.replace(/\D/g, ""); return d.length >= 9 && d.length <= 13; };
 const emailIsValid = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
 const toDataUrl = (b: Blob) => new Promise<string>((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = rej; r.readAsDataURL(b); });
 
 export default function OnboardingPage() {
   const navigate = useNavigate();
-  const [phase, setPhase] = useState<"intro" | "steps" | "done" | "failed">("intro");
-  const [i, setI] = useState(0);
-  const [campaign, setCampaign] = useState("");
-  const [city, setCity] = useState<Place | null>(null);
-  const [suburbs, setSuburbs] = useState<string[]>([]);
-  const [price, setPrice] = useState("");
-  const [deals, setDeals] = useState("");
-  const [agency, setAgency] = useState("");
-  const [website, setWebsite] = useState("");
-  const [address, setAddress] = useState("");
-  const [offer, setOffer] = useState("");
-  const [headshot, setHeadshot] = useState("");
-  const [logo, setLogo] = useState("");
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
+  // Came back to a half-done form: straight to the question they were on.
+  const [draft] = useState(loadDraft);
+  const [resumed, setResumed] = useState(!!draft);
+  const [phase, setPhase] = useState<"intro" | "steps" | "done" | "failed">(draft ? "steps" : "intro");
+  const [i, setI] = useState(draft ? Math.min(Math.max(0, draft.i), STEPS.length - 1) : 0);
+  const [campaign, setCampaign] = useState(draft?.campaign ?? "");
+  const [city, setCity] = useState<Place | null>(draft?.city ?? null);
+  const [suburbs, setSuburbs] = useState<string[]>(draft?.suburbs ?? []);
+  const [price, setPrice] = useState(draft?.price ?? "");
+  const [deals, setDeals] = useState(draft?.deals ?? "");
+  const [agency, setAgency] = useState(draft?.agency ?? "");
+  const [website, setWebsite] = useState(draft?.website ?? "");
+  const [address, setAddress] = useState(draft?.address ?? "");
+  const [offer, setOffer] = useState(draft?.offer ?? "");
+  const [headshot, setHeadshot] = useState(draft?.headshot ?? "");
+  const [logo, setLogo] = useState(draft?.logo ?? "");
+  const [name, setName] = useState(draft?.name ?? "");
+  const [email, setEmail] = useState(draft?.email ?? "");
+  const [phone, setPhone] = useState(draft?.phone ?? "");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [account, setAccount] = useState<"created" | "existing" | "failed">("created");
@@ -91,6 +125,20 @@ export default function OnboardingPage() {
   const first = name.trim().split(/\s+/)[0] || "";
 
   useEffect(() => { document.title = "EstateKit onboarding"; }, []);
+
+  // Every answer, as they go.
+  useEffect(() => {
+    if (phase !== "steps") return;
+    saveDraft({ i, campaign, city, suburbs, price, deals, agency, website, address, offer, headshot, logo, name, email, phone });
+  }, [phase, i, campaign, city, suburbs, price, deals, agency, website, address, offer, headshot, logo, name, email, phone]);
+
+  function startOver() {
+    clearDraft();
+    setResumed(false);
+    setI(0); setCampaign(""); setCity(null); setSuburbs([]); setPrice(""); setDeals(""); setAgency(""); setWebsite("");
+    setAddress(""); setOffer(""); setHeadshot(""); setLogo(""); setName(""); setEmail(""); setPhone(""); setError("");
+    setPhase("intro");
+  }
 
   const goTo = (n: number) => { setError(""); setI(Math.max(0, Math.min(n, STEPS.length - 1))); };
   /** Single-choice steps: show the tick, then move on by themselves. */
@@ -115,6 +163,7 @@ export default function OnboardingPage() {
         campaign, city: city?.name ?? "", suburbs, price, deals, offer: offer.trim(), headshot, logo,
       });
       setAccount(r.account);
+      clearDraft();
       setPhase("done");
       // "Got your details", then on to the video.
       setTimeout(() => navigate(`/onboarding/next?t=${r.token}&n=${encodeURIComponent(first)}`), 4000);
@@ -158,6 +207,14 @@ export default function OnboardingPage() {
 
               {phase === "steps" && (
                 <>
+                  {resumed && (
+                    <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1, mb: 1.5, p: "8px 12px", borderRadius: "8px", bgcolor: "#e8f0fe", fontSize: 13.5 }}>
+                      <span>Welcome back! We kept your answers.</span>
+                      <Box component="button" type="button" onClick={startOver} sx={{ border: 0, bgcolor: "transparent", p: 0, font: "inherit", fontSize: 13, color: ACCENT, textDecoration: "underline", cursor: "pointer", whiteSpace: "nowrap" }}>
+                        Start over
+                      </Box>
+                    </Box>
+                  )}
                   <Typography sx={{ fontSize: 11, fontWeight: 600, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.06em" }}>
                     Step {i + 1} of {STEPS.length}
                   </Typography>
