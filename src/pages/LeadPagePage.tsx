@@ -208,7 +208,8 @@ export default function LeadPagePage() {
   const tabs: { value: PageTab; label: string }[] = [
     { value: "form", label: "Form" },
     { value: "thanks", label: "Thank-you page" },
-    ...(!fb ? [{ value: "share" as const, label: "Share" }] : isOperator ? [{ value: "share" as const, label: "Tracking" }] : []),
+    ...(!fb ? [{ value: "link" as const, label: "Link" }] : []),
+    ...(isOperator ? [{ value: "tracking" as const, label: "Tracking" }] : []),
   ];
   const tab: PageTab = tabs.some((t) => t.value === tabParam) ? (tabParam as PageTab) : "form";
 
@@ -297,7 +298,8 @@ export default function LeadPagePage() {
         </Toolbar>
       </AppBar>
 
-      <Box sx={{ display: "flex", alignItems: "center", gap: 1.25, p: "10px 16px", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
+      <Box sx={{ position: "sticky", top: 56, zIndex: 3, display: "flex", flexWrap: { xs: "wrap", md: "nowrap" }, alignItems: "center", columnGap: 3, px: 2, bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1.25, py: 1.25, flex: { xs: "1 1 100%", md: "none" }, minWidth: 0 }}>
         <Box
           component="button"
           onClick={(e) => setPageMenuAnchor(e.currentTarget)}
@@ -356,14 +358,21 @@ export default function LeadPagePage() {
             </MenuItem>
           )}
         </Menu>
-        <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
+        <Typography sx={{ fontSize: 12.5, color: "text.secondary", display: { md: "none" } }}>
           {linkedPipeline
             ? <>Sends leads to <b style={{ color: tokens.ink }}>{pipeline.name}</b> pipeline</>
             : <>This page isn't linked to one of your lists yet</>}
         </Typography>
       </Box>
+      <PageTabs tabs={tabs} value={tab} onChange={setTab} />
+      <Typography sx={{ fontSize: 12.5, color: "text.secondary", ml: "auto", whiteSpace: "nowrap", display: { xs: "none", md: "block" } }}>
+        {linkedPipeline
+          ? <>Sends leads to <b style={{ color: tokens.ink }}>{pipeline.name}</b> pipeline</>
+          : <>This page isn't linked to one of your lists yet</>}
+      </Typography>
+      </Box>
 
-      {page.sourceType === "fb_form" && tab !== "share" ? (
+      {page.sourceType === "fb_form" && tab !== "tracking" ? (
         <FbFormSource
           tab={tab}
           extras={<>
@@ -377,13 +386,11 @@ export default function LeadPagePage() {
           avatarUrl={profile?.sidebarLogoUrl || null}
         />
       ) : null}
-      {page.sourceType === "fb_form" && tab === "share" && (
+      {page.sourceType === "fb_form" && tab === "tracking" && (
         <Box sx={{ maxWidth: 720, mx: "auto", p: 2, display: "flex", flexDirection: "column", gap: 3 }}>
           {trackingSection}
         </Box>
       )}
-      <PageTabs tabs={tabs} value={tab} onChange={setTab} />
-
       {page.sourceType === "fb_form" ? null : tab === "form" ? (
         // Phones: preview first, then the settings. Desktop: settings on the
         // left, the preview sticky on the right.
@@ -592,9 +599,14 @@ export default function LeadPagePage() {
         </Box>
       ) : (
         <Box sx={{ display: "flex", flexDirection: "column", gap: 3, p: 2, maxWidth: 720, mx: "auto" }}>
-          <ShareSection page={page} onUpdateSlug={canSetUp ? (slug) => updatePage.mutate({ id: page.id, patch: { slug } }) : undefined} />
-          {trackingSection}
-          {isOperator && <LeadPageFunnelStats pageId={page.id} />}
+          {tab === "link" ? (
+            <ShareSection page={page} onUpdateSlug={canSetUp ? (slug) => updatePage.mutate({ id: page.id, patch: { slug } }) : undefined} />
+          ) : (
+            <>
+              {trackingSection}
+              {isOperator && <LeadPageFunnelStats pageId={page.id} />}
+            </>
+          )}
         </Box>
       )}
 
@@ -813,21 +825,24 @@ function FbFormSource({
   );
 }
 
-type PageTab = "form" | "thanks" | "share";
+type PageTab = "form" | "thanks" | "link" | "tracking";
 
-/** The page's tabs, under the page picker. Stays put while scrolling. */
+/** The page's tabs, beside the page picker (under it on phones). */
 function PageTabs({ tabs, value, onChange }: { tabs: { value: PageTab; label: string }[]; value: PageTab; onChange: (t: PageTab) => void }) {
   return (
-    <Box sx={{ position: "sticky", top: 56, zIndex: 3, bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
-      <Tabs
-        value={value}
-        onChange={(_, v: PageTab) => onChange(v)}
-        variant="fullWidth"
-        sx={{ maxWidth: 560, mx: "auto", minHeight: 48, "& .MuiTab-root": { minHeight: 48, fontSize: 15, fontWeight: 600, textTransform: "none" } }}
-      >
-        {tabs.map((t) => <Tab key={t.value} value={t.value} label={t.label} />)}
-      </Tabs>
-    </Box>
+    <Tabs
+      value={value}
+      onChange={(_, v: PageTab) => onChange(v)}
+      variant="scrollable"
+      scrollButtons={false}
+      sx={{
+        flex: { xs: "1 1 100%", md: "none" }, mx: { xs: -2, md: 0 }, alignSelf: "stretch", minHeight: 52,
+        "& .MuiTabs-flexContainer": { height: "100%" },
+        "& .MuiTab-root": { minHeight: 52, minWidth: { xs: 0, md: 90 }, flex: { xs: "1 0 auto", md: "none" }, px: { xs: 1.5, md: 2 }, whiteSpace: "nowrap", fontSize: 15, fontWeight: 600, textTransform: "none" },
+      }}
+    >
+      {tabs.map((t) => <Tab key={t.value} value={t.value} label={t.label} />)}
+    </Tabs>
   );
 }
 

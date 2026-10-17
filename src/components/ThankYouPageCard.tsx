@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import VideoPlayer, { canPlayVideo } from "./VideoPlayer";
+import { canPlayVideo } from "./VideoPlayer";
 import { Box, Button, CircularProgress, Switch, TextField, Typography } from "@mui/material";
 import { tokens } from "../theme";
 import { updateLeadPage } from "../api/leadPages";
@@ -55,7 +55,7 @@ export default function ThankYouPageCard({ page, canSetUp }: { page: LeadPage; c
   return (
     <Box sx={{ border: `1px solid ${tokens.divider}`, borderRadius: "8px", bgcolor: "background.paper", p: 2, display: "flex", flexDirection: "column", gap: 2 }}>
       <Box sx={{ display: "flex", alignItems: "center", gap: 0.25 }}>
-        <Typography sx={{ fontSize: 12, fontWeight: 500, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.06em" }}>Thank-you page</Typography>
+        <Typography sx={{ fontSize: 12, fontWeight: 500, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.06em" }}>Video & call time</Typography>
         <InfoTip>What people see straight after this form, as well as the lead magnet.</InfoTip>
       </Box>
 
@@ -63,7 +63,7 @@ export default function ThankYouPageCard({ page, canSetUp }: { page: LeadPage; c
       <Box>
         <Typography sx={{ fontSize: 14, fontWeight: 600 }}>Video</Typography>
         <Typography sx={{ fontSize: 12.5, color: "text.secondary", mb: 1 }}>
-          A short video at the top: who you are and what happens next. Paste a YouTube link or a video-file link (.mp4).
+          A short video under the headline: who you are and what happens next. It shows in the preview once saved. Paste a YouTube link or a video-file link (.mp4).
         </Typography>
         <TextField
           size="small"
@@ -75,11 +75,6 @@ export default function ThankYouPageCard({ page, canSetUp }: { page: LeadPage; c
           error={!playable}
           helperText={!playable ? "That link can't be played. Use a YouTube link or a video-file link (.mp4)." : " "}
         />
-        {url && playable && (
-          <Box sx={{ position: "relative", pt: "56.25%", borderRadius: "8px", overflow: "hidden", bgcolor: "#000", maxWidth: 420 }}>
-            <VideoPlayer url={url} accent={page.accentColor} />
-          </Box>
-        )}
       </Box>
 
       {/* Call time */}
