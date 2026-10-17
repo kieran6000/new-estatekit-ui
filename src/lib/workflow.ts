@@ -27,6 +27,8 @@ export type BranchCheck = "stage_is" | "has_tag" | "opened_last_email" | "has_em
 export type Step =
   | { id: string; type: "wait"; amount: number; unit: Unit }
   | { id: string; type: "whatsapp_agent"; text: string }
+  /** To the lead's own WhatsApp, from EstateKit's number: staff accounts only. */
+  | { id: string; type: "whatsapp_lead"; text: string }
   | { id: string; type: "email_lead"; subject: string; body: string }
   | { id: string; type: "set_stage"; stage: string }
   | { id: string; type: "reminder"; label: string; inDays: number }
@@ -85,6 +87,8 @@ export interface AccountVocab {
   pipelines: { id: string; name: string; kind: PipelineKind }[];
   forms: { id: string; name: string }[];
   tags: string[];
+  /** An EstateKit staff account: only these can WhatsApp leads. */
+  staff?: boolean;
 }
 let vocab: AccountVocab | null = null;
 export function setAccountVocab(v: AccountVocab | null): void {
@@ -193,6 +197,7 @@ export const TRIGGERS: { kind: TriggerKind; label: string; help: string }[] = [
 export const STEP_TYPES: { type: StepType; label: string; help: string }[] = [
   { type: "wait", label: "Wait", help: "Pause before the next step" },
   { type: "whatsapp_agent", label: "WhatsApp the agent", help: "A nudge about this lead, with the call link" },
+  { type: "whatsapp_lead", label: "WhatsApp the lead", help: "To the lead's own WhatsApp, from EstateKit's number (staff accounts only)" },
   { type: "email_lead", label: "Email the lead", help: "From the agent's name; replies go to the agent" },
   { type: "branch", label: "If / else", help: "Two paths, on a yes/no check" },
   { type: "set_stage", label: "Move stage", help: "Change the lead's stage" },
@@ -233,18 +238,22 @@ export const EXITS: { kind: ExitKind; label: string }[] = [
  *  {{lead_type}} is "seller lead" or "buyer lead" by the lead's pipeline, else "lead".
  *  In a daily summary there's no lead: {{first_name}} is the agent's. */
 export const FIELDS = {
-  whatsapp_agent: ["first_name", "name", "lead_type", "phone", "email", "address", "form", "answers", "appointment", "call_time", "stage", "next_label", "action_link"],
+  whatsapp_agent: ["first_name", "name", "lead_type", "phone", "email", "address", "form", "answers", "note", "appointment", "call_time", "stage", "next_label", "action_link"],
+  // Never the call-and-log link: that's the agent's.
+  whatsapp_lead: ["first_name", "area", "address", "form_answers", "note", "appointment", "call_time", "whatsapp_link", "agent_name", "agent_phone"],
   daily: ["first_name", "count", "leads_word", "today", "pipeline", "not_called"],
   email_lead: ["first_name", "area", "address", "appointment", "call_time", "lead_magnet", "recent_sales", "whatsapp_link", "agent_name", "agent_phone", "plan_link"],
 } as const;
 export type FieldSet = keyof typeof FIELDS;
 
 /** The fields a step's message can use under this trigger. */
-export function fieldsFor(step: "whatsapp_agent" | "email_lead", t: Trigger): readonly string[] {
-  return step === "email_lead" ? FIELDS.email_lead : t.kind === "daily_at" ? FIELDS.daily : FIELDS.whatsapp_agent;
-}
+export type MessageKind = "whatsapp_agent" | "whatsapp_lead" | "email_lead";
 
-export type MessageKind = "whatsapp_agent" | "email_lead";
+export function fieldsFor(step: MessageKind, t: Trigger): readonly string[] {
+  if (step === "email_lead") return FIELDS.email_lead;
+  if (step === "whatsapp_lead") return FIELDS.whatsapp_lead;
+  return t.kind === "daily_at" ? FIELDS.daily : FIELDS.whatsapp_agent;
+}
 
 /** What each field is, in plain words, and what it turns into (the example is
  *  also what the previews show). Every field in FIELDS has an entry here. */
@@ -262,6 +271,8 @@ const INFO: Record<string, FieldInfo> = {
   stage: { label: "Stage", example: "No Answer", group: "The lead" },
   next_label: { label: "Next step", example: "Retry today", group: "The lead" },
   form: { label: "Form they filled in", example: "Home Value page", group: "Their form" },
+  form_answers: { label: "Their answers", example: "When are you selling?: In 3 months\nProperty address: 14 Oak Avenue, Bryanston", group: "Their form" },
+  note: { label: "Note on the lead", example: "Wants to sell before December", group: "The lead" },
   answers: { label: "All their answers", example: "When are you selling?: In 3 months\nProperty address: 14 Oak Avenue, Bryanston", group: "Their form" },
   action_link: { label: "Call-and-log link", example: "leads.estatekit.co/l/…", group: "Links" },
   agent_name: { label: "Agent's name", example: "Megan Demo", group: "The agent" },
@@ -335,9 +346,9 @@ export function badFields(text: string, kind: MessageKind, t: Trigger): BadField
     const label = known ? `"${fieldInfo(f, t).label}"` : `{{${f}}}`;
     let why: string;
     if (!known) why = `${label} isn't a field.`;
-    else if (f === "action_link" && kind === "email_lead") why = `${label} is the agent's call link. Don't send it to the lead.`;
+    else if (f === "action_link" && kind !== "whatsapp_agent") why = `${label} is the agent's call link. Don't send it to the lead.`;
     else if (t.kind === "daily_at" && kind === "whatsapp_agent") why = `${label} can't go in a daily summary: it goes to the agent about their whole day, not about one lead.`;
-    else why = `${label} only works in ${kind === "email_lead" ? "a WhatsApp to the agent" : "an email to the lead"}, not here.`;
+    else why = `${label} only works in ${(FIELDS.whatsapp_agent as readonly string[]).includes(f) && kind !== "whatsapp_agent" ? "a WhatsApp to the agent" : "an email to the lead"}, not here.`;
     const close = known ? undefined : allowed.find((x) => distance(x, f.toLowerCase()) <= 2);
     out.push({ field: f, why: close ? `${why} Did you mean "${fieldInfo(close, t).label}"?` : why, suggest: close });
   }
@@ -368,6 +379,7 @@ export function newStep(type: StepType): Step {
   switch (type) {
     case "wait": return { id, type, amount: 1, unit: "days" };
     case "whatsapp_agent": return { id, type, text: "" };
+    case "whatsapp_lead": return { id, type, text: "" };
     case "email_lead": return { id, type, subject: "", body: "" };
     case "set_stage": return { id, type, stage: "Contacted" };
     case "reminder": return { id, type, label: "Follow up", inDays: 1 };
@@ -549,6 +561,7 @@ export function stepSummary(s: Step): string {
   switch (s.type) {
     case "wait": return `Wait ${unitLabel(s.amount, s.unit)}`;
     case "whatsapp_agent": return s.text.split("\n")[0] || "No message yet";
+    case "whatsapp_lead": return s.text.split("\n")[0] || "No message yet";
     case "email_lead": return s.subject || "No subject yet";
     case "set_stage": return `Move to ${valueLabel("stage", s.stage)}`;
     case "reminder": return `${s.label || "Reminder"} · ${s.inDays === 0 ? "due today" : `in ${unitLabel(s.inDays, "days")}`}`;
@@ -593,7 +606,9 @@ export function timeLabel(m: number): string {
 /** Steps the trigger can run. A daily summary isn't about one lead, so it can
  *  only wait and WhatsApp the agent. */
 export function allowedSteps(t: Trigger): StepType[] {
-  return t.kind === "daily_at" ? ["wait", "whatsapp_agent"] : STEP_TYPES.map((x) => x.type);
+  if (t.kind === "daily_at") return ["wait", "whatsapp_agent"];
+  // WhatsApping leads goes from EstateKit's one number: staff accounts only.
+  return STEP_TYPES.map((x) => x.type).filter((x) => x !== "whatsapp_lead" || !vocab || vocab.staff);
 }
 
 /** Every problem, keyed by what it's on: a step id, "trigger", "filters" or "workflow". */
@@ -647,6 +662,11 @@ export function validate(wf: Workflow): Problems {
           actions++;
           if (!s.text.trim()) add(s.id, "Write the message.");
           for (const m of fieldProblems(s.text, "whatsapp_agent", t)) add(s.id, m);
+          break;
+        case "whatsapp_lead":
+          actions++;
+          if (!s.text.trim()) add(s.id, "Write the message.");
+          for (const m of fieldProblems(s.text, "whatsapp_lead", t)) add(s.id, m);
           break;
         case "email_lead":
           actions++;

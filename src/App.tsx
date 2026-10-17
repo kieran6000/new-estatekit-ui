@@ -25,6 +25,8 @@ import ThankYouPage from "./pages/ThankYouPage";
 import UnsubscribePage from "./pages/UnsubscribePage";
 import PrivacyPolicyPage from "./pages/PrivacyPolicyPage";
 import SignupPage from "./pages/SignupPage";
+import OnboardingPage from "./pages/OnboardingPage";
+import OnboardingNextPage from "./pages/OnboardingNextPage";
 import SoldPage from "./pages/SoldPage";
 import PlanPage from "./pages/PlanPage";
 import WeeklyReportPage from "./pages/WeeklyReportPage";
@@ -87,6 +89,8 @@ export default function App() {
       <Route path="/unsubscribe/:leadId/:sig" element={<UnsubscribePage />} />
       <Route path="/privacy" element={<PrivacyPolicyPage />} />
       <Route path="/start" element={<SignupPage />} />
+      <Route path="/onboarding" element={<OnboardingPage />} />
+      <Route path="/onboarding/next" element={<OnboardingNextPage />} />
       <Route path="/sold/:agentId" element={<SoldPage />} />
       <Route path="/plan/sample/:agentId" element={<PlanPage />} />
       <Route path="/plan/general/:slug" element={<PlanPage />} />

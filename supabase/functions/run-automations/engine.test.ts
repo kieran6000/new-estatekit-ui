@@ -25,6 +25,7 @@ let n = 0;
 const id = () => `s${++n}`;
 const wait = (amount: number, unit = "days"): S => ({ id: id(), type: "wait", amount, unit });
 const wa = (text: string): S => ({ id: id(), type: "whatsapp_agent", text });
+const waLead = (text: string): S => ({ id: id(), type: "whatsapp_lead", text });
 const email = (subject: string, body: string): S => ({ id: id(), type: "email_lead", subject, body });
 const stage = (s: string): S => ({ id: id(), type: "set_stage", stage: s });
 const rem = (label: string, inDays: number): S => ({ id: id(), type: "reminder", label, inDays });
@@ -680,6 +681,53 @@ describe("appointments", () => {
     enroll(wf, lead({ stage: "Booked", appointment_at: null }));
     await tick();
     expect(sent[0].text).toBe("At no time set");
+  });
+});
+
+describe("WhatsApp the lead", () => {
+  const staff = () => { db.tables.agent_profiles[0].is_operator = true; };
+
+  it("sends to the lead's own number (as WhatsApp wants it), with their answers and note, and logs it", async () => {
+    staff();
+    const wf = workflow([waLead("Hi {{first_name}}, {{agent_name}} here. You said:\n{{form_answers}}\nNote: {{note}}")]);
+    const l = lead({ phone: "082 555 0199", note: "Wants to sell before December" });
+    const r = enroll(wf, l);
+    await tick();
+    expect(sent).toEqual([{ phone: "27825550199", text: "Hi Thandi, Megan Agent here. You said:\nProperty address: 14 oak avenue\nNote: Wants to sell before December" }]);
+    expect(logOf(r)).toEqual(["WhatsApp the lead: Sent"]);
+    expect(db.rows("lead_events").some((e) => e.event_type === "whatsapp_sent" && e.from_value === "to_lead")).toBe(true);
+  });
+
+  it("is skipped, not failed, for a blank phone, an opt-out, or a client's account", async () => {
+    staff();
+    const wf = workflow([waLead("Hi")]);
+    const blank = enroll(wf, lead({ phone: "" }));
+    const optedOut = enroll(wf, lead({ whatsapp_opt_out: true }));
+    await tick();
+    expect(sent).toEqual([]);
+    expect(logOf(blank)).toEqual(["WhatsApp the lead: Skipped"]);
+    expect(logOf(optedOut)).toEqual(["WhatsApp the lead: Skipped"]);
+    expect(runOf(blank).status).toBe("completed");
+
+    db.tables.agent_profiles[0].is_operator = false;
+    const client = enroll(wf, lead());
+    await tick();
+    expect(sent).toEqual([]);
+    expect(logOf(client)).toEqual(["WhatsApp the lead: Skipped"]);
+  });
+
+  it("waits for quiet hours like the agent's WhatsApp, and never sends the call-and-log link", async () => {
+    staff();
+    quiet = new Date(Date.now() + 3600_000);
+    const wf = workflow([waLead("Hi {{action_link}}")]);
+    const r = enroll(wf, lead());
+    await tick();
+    expect(sent).toEqual([]);
+    expect(runOf(r).status).toBe("pending");
+    quiet = null;
+    timePasses();
+    await tick();
+    expect(sent[0].text).toBe("Hi {{action_link}}");
   });
 });
 

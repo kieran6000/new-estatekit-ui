@@ -41,7 +41,7 @@ import { useRealtimeSubscriptions } from "../hooks/useRealtime";
 import { getMyProfile } from "../api/agentProfile";
 import { listMySoldListings } from "../api/soldListings";
 import { setupProgress } from "../lib/setup";
-import { getActiveAgentIdSync, setActiveAgent } from "../api/_client";
+import { getActiveAgentIdSync, setActiveAgent, supabase } from "../api/_client";
 import { isLightColor } from "../lib/contrast";
 import AccountSwitcher from "./AccountSwitcher";
 import DevTierToggle from "./DevTierToggle";
@@ -81,9 +81,21 @@ export default function AppShell() {
   const showSetup = (!!setup && !setup.complete) || pathname.startsWith("/setup");
   const initial = useMemo(() => (user?.phone || "?")[0].toUpperCase(), [user]);
   // Staff (admins, media buyers) work in clients' accounts: in their own they
-  // only need the admin tabs. Switched into an account (a client's, or the
-  // demo account for testing), they get that account's tabs.
-  const staffMode = !!isOperator && !isManagingOther;
+  // only need the admin tabs, unless their own account gets leads too (e.g.
+  // EstateKit's own, from agents signing up). Switched into an account (a
+  // client's, or the demo account for testing), they get that account's tabs.
+  const { data: ownLeads, isFetched: ownLeadsKnown } = useQuery({
+    queryKey: ["ownLeadCount", user?.id],
+    queryFn: async () => {
+      const { count } = await supabase.from("leads").select("id", { count: "exact", head: true }).eq("agent_id", user!.id);
+      return count ?? 0;
+    },
+    enabled: !!isOperator && !isManagingOther && !!user,
+    staleTime: 5 * 60_000,
+  });
+  const staffMode = !!isOperator && !isManagingOther && ownLeads === 0;
+  // Don't send them away from Leads before we know.
+  const staffModeKnown = !!isOperator && !isManagingOther && ownLeadsKnown;
 
 
   const sidebarBg = profile?.sidebarColor || "#111827";
@@ -99,7 +111,7 @@ export default function AppShell() {
 
   const SZ = 20;
   const agentNav = staffMode ? [] : [
-    ...(showSetup
+    ...(showSetup && !isOperator
       ? [{ key: "setup", label: setup ? `Get set up · ${setup.done}/${setup.total}` : "Get set up", icon: <ChecklistOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <ChecklistIcon sx={{ fontSize: SZ }} />, to: "/setup" }]
       : []),
     ...(import.meta.env.DEV ? [{ key: "home", label: "Dashboard", icon: <HomeOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <HomeIcon sx={{ fontSize: SZ }} />, to: "/home" }] : []),
@@ -140,7 +152,7 @@ export default function AppShell() {
     { key: "account", label: "Account", icon: <AccountCircleOutlinedIcon />, activeIcon: <AccountCircleIcon />, to: "/account" },
   ];
 
-  if (staffMode && ["leads", "mypage", "overview", "home", "setup"].includes(section)) return <Navigate to="/admin/clients" replace />;
+  if (staffMode && staffModeKnown && ["leads", "mypage", "overview", "home", "setup"].includes(section)) return <Navigate to="/admin/clients" replace />;
 
   return (
     <Box sx={{ display: "flex", minHeight: "100vh", bgcolor: "background.default" }}>
