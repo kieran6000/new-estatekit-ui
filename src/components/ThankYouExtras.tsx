@@ -1,5 +1,5 @@
 import { useState } from "react";
-import ReactPlayer from "react-player/lazy";
+import VideoPlayer, { canPlayVideo } from "./VideoPlayer";
 import { Box, ButtonBase, CircularProgress, Typography } from "@mui/material";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import { supabase } from "../api/_client";
@@ -9,26 +9,16 @@ import CallTimeStep, { CALL_TIME_CONFIRM, callTimeIncomplete } from "./CallTimeS
 // The thank-you page's optional extras, set per form (Forms → Thank-you page):
 // a short video ("watch this before we speak") and asking for a call time.
 
-/** A short video. YouTube, Vimeo, Wistia, a Bunny/other direct link or an
- *  .mp4: react-player picks the right player. Plays inline on phones. */
+/** A short video: one we host (a video-file link) or a YouTube link.
+ *  Plays inline on phones. Tracking comes next (VideoPlayer onProgress). */
 export function ThankYouVideo({ url, accent }: { url: string; accent: string }) {
-  if (!ReactPlayer.canPlay(url)) return null;
+  if (!canPlayVideo(url)) return null;
   return (
     <Box sx={{ mt: 3.5, pt: 3, borderTop: "1px solid #eee" }}>
       <Typography sx={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: accent, textAlign: "center", mb: 1.5 }}>
         Watch this before we speak
       </Typography>
-      <Box sx={{ position: "relative", pt: "56.25%", borderRadius: "10px", overflow: "hidden", bgcolor: "#000" }}>
-        <ReactPlayer
-          url={url}
-          width="100%"
-          height="100%"
-          controls
-          playsinline
-          style={{ position: "absolute", top: 0, left: 0 }}
-          config={{ youtube: { playerVars: { rel: 0, modestbranding: 1 } } }}
-        />
-      </Box>
+      <VideoPlayer url={url} />
     </Box>
   );
 }

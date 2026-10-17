@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import ReactPlayer from "react-player/lazy";
+import VideoPlayer, { canPlayVideo } from "./VideoPlayer";
 import { Box, Button, CircularProgress, Switch, TextField, Typography } from "@mui/material";
 import { tokens } from "../theme";
 import { updateLeadPage } from "../api/leadPages";
@@ -30,7 +30,7 @@ export default function ThankYouPageCard({ page, canSetUp }: { page: LeadPage; c
   }, [page.id, page.thankYouVideoUrl, page.thankYouAskCall]);
 
   const url = video.trim();
-  const playable = !url || ReactPlayer.canPlay(url);
+  const playable = !url || canPlayVideo(url);
   const changed = url !== saved.video || askCall !== saved.askCall;
 
   async function save() {
@@ -59,7 +59,7 @@ export default function ThankYouPageCard({ page, canSetUp }: { page: LeadPage; c
       <Box>
         <Typography sx={{ fontSize: 14, fontWeight: 600 }}>Video</Typography>
         <Typography sx={{ fontSize: 12.5, color: "text.secondary", mb: 1 }}>
-          A short video at the top: who you are and what happens next. Paste a YouTube, Vimeo, Wistia or video-file link.
+          A short video at the top: who you are and what happens next. Paste a YouTube link or a video-file link (.mp4).
         </Typography>
         <TextField
           size="small"
@@ -69,11 +69,11 @@ export default function ThankYouPageCard({ page, canSetUp }: { page: LeadPage; c
           disabled={!canSetUp}
           onChange={(e) => setVideo(e.target.value)}
           error={!playable}
-          helperText={!playable ? "That link can't be played. Use a YouTube, Vimeo, Wistia or video-file link." : " "}
+          helperText={!playable ? "That link can't be played. Use a YouTube link or a video-file link (.mp4)." : " "}
         />
         {url && playable && (
           <Box sx={{ position: "relative", pt: "56.25%", borderRadius: "8px", overflow: "hidden", bgcolor: "#000", maxWidth: 420 }}>
-            <ReactPlayer url={url} width="100%" height="100%" controls light style={{ position: "absolute", top: 0, left: 0 }} />
+            <VideoPlayer url={url} />
           </Box>
         )}
       </Box>
