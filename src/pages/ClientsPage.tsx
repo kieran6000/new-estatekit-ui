@@ -50,6 +50,7 @@ import { setupProgress, SETUP_TOTAL } from "../lib/setup";
 import { resolveRange, useDateRange, ymd } from "../lib/range";
 import { timeAgo } from "../lib/timeAgo";
 import SignupRequests from "../components/SignupRequests";
+import OnboardingAdminCard from "../components/OnboardingAdminCard";
 import RangePicker from "../components/RangePicker";
 import FundingChip from "../components/FundingChip";
 
@@ -335,6 +336,7 @@ export default function ClientsPage() {
 
       <Box sx={{ p: { xs: 1.5, md: 2 }, display: "flex", flexDirection: "column", gap: 2 }}>
         <SignupRequests />
+        <OnboardingAdminCard />
 
         {/* Totals for the chosen dates. */}
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, minmax(0, 1fr))", md: "repeat(5, minmax(0, 1fr))" }, gap: 1.5 }}>
