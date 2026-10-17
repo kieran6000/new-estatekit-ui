@@ -238,16 +238,23 @@ export const EXITS: { kind: ExitKind; label: string }[] = [
  *  {{lead_type}} is "seller lead" or "buyer lead" by the lead's pipeline, else "lead".
  *  In a daily summary there's no lead: {{first_name}} is the agent's. */
 export const FIELDS = {
-  whatsapp_agent: ["first_name", "name", "lead_type", "phone", "email", "address", "form", "answers", "note", "appointment", "call_time", "stage", "next_label", "action_link"],
+  whatsapp_agent: ["first_name", "name", "lead_type", "phone", "email", "address", "form", "answers", "form_answers", "note", "appointment", "call_time", "stage", "next_label", "action_link"],
   // Never the call-and-log link: that's the agent's.
   whatsapp_lead: ["first_name", "area", "address", "form_answers", "note", "appointment", "call_time", "whatsapp_link", "agent_name", "agent_phone"],
   daily: ["first_name", "count", "leads_word", "today", "pipeline", "not_called"],
-  email_lead: ["first_name", "area", "address", "appointment", "call_time", "lead_magnet", "recent_sales", "whatsapp_link", "agent_name", "agent_phone", "plan_link"],
+  email_lead: ["first_name", "area", "address", "form_answers", "note", "appointment", "call_time", "lead_magnet", "recent_sales", "whatsapp_link", "agent_name", "agent_phone", "plan_link"],
 } as const;
 export type FieldSet = keyof typeof FIELDS;
 
 /** The fields a step's message can use under this trigger. */
 export type MessageKind = "whatsapp_agent" | "whatsapp_lead" | "email_lead";
+
+/** What each kind of message is called, in a warning. */
+const MESSAGE_NAME: Record<MessageKind, string> = {
+  whatsapp_agent: "a WhatsApp to the agent",
+  whatsapp_lead: "a WhatsApp to the lead",
+  email_lead: "an email to the lead",
+};
 
 export function fieldsFor(step: MessageKind, t: Trigger): readonly string[] {
   if (step === "email_lead") return FIELDS.email_lead;
@@ -348,7 +355,10 @@ export function badFields(text: string, kind: MessageKind, t: Trigger): BadField
     if (!known) why = `${label} isn't a field.`;
     else if (f === "action_link" && kind !== "whatsapp_agent") why = `${label} is the agent's call link. Don't send it to the lead.`;
     else if (t.kind === "daily_at" && kind === "whatsapp_agent") why = `${label} can't go in a daily summary: it goes to the agent about their whole day, not about one lead.`;
-    else why = `${label} only works in ${(FIELDS.whatsapp_agent as readonly string[]).includes(f) && kind !== "whatsapp_agent" ? "a WhatsApp to the agent" : "an email to the lead"}, not here.`;
+    else {
+      const where = (Object.keys(MESSAGE_NAME) as MessageKind[]).filter((k) => k !== kind && (FIELDS[k] as readonly string[]).includes(f)).map((k) => MESSAGE_NAME[k]);
+      why = where.length ? `${label} only works in ${where.join(" or ")}, not here.` : `${label} can't go in this message.`;
+    }
     const close = known ? undefined : allowed.find((x) => distance(x, f.toLowerCase()) <= 2);
     out.push({ field: f, why: close ? `${why} Did you mean "${fieldInfo(close, t).label}"?` : why, suggest: close });
   }

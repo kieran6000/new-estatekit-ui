@@ -5,6 +5,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeDb } from "./fakeSupabase";
 import { callTimeLabel, runWorkflows, type EngineDeps, type SendResult } from "./workflows";
+import { FIELDS, sampleFields } from "../../../src/lib/workflow";
 
 (globalThis as unknown as { Deno: unknown }).Deno = {
   env: { get: (k: string) => ({ SUPABASE_SERVICE_ROLE_KEY: "test-key", RESEND_API_KEY: "re_test" } as Record<string, string>)[k] },
@@ -681,6 +682,34 @@ describe("appointments", () => {
     enroll(wf, lead({ stage: "Booked", appointment_at: null }));
     await tick();
     expect(sent[0].text).toBe("At no time set");
+  });
+});
+
+describe("the builder allows exactly the fields the engine fills in", () => {
+  // Every field the builder knows, each as "key=[{{key}}]". What comes out
+  // still in braces wasn't filled in by the engine for that kind of message.
+  const every = Object.keys(sampleFields());
+  const template = every.map((k) => `${k}=[{{${k}}}]`).join("\n");
+  const filled = (out: string) => every.filter((k) => !out.includes(`{{${k}}}`)).sort();
+
+  it("WhatsApp the agent", async () => {
+    enroll(workflow([wa(template)]), lead({ note: "A note" }));
+    await tick();
+    expect(filled(sent[0].text)).toEqual([...FIELDS.whatsapp_agent].sort());
+  });
+
+  it("WhatsApp the lead", async () => {
+    db.tables.agent_profiles[0].is_operator = true;
+    enroll(workflow([waLead(template)]), lead({ note: "A note" }));
+    await tick();
+    expect(filled(sent[0].text)).toEqual([...FIELDS.whatsapp_lead].sort());
+  });
+
+  it("Email the lead", async () => {
+    db.tables.sold_listings ??= [];
+    enroll(workflow([email("Hi", template)]), lead({ note: "A note" }));
+    await tick();
+    expect(filled(String(emails[0].text))).toEqual([...FIELDS.email_lead].sort());
   });
 });
 
