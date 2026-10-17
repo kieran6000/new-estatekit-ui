@@ -357,6 +357,24 @@ export interface LeadPageFunnel {
   submits: number;
 }
 
+export interface LeadPageEvent { event_type: "view" | "start" | "contact" | "disqualified" | "submit"; source: string | null; session_id: string; created_at: string }
+
+/** Every visitor step on one landing page since a time (once per visitor
+ *  per step), for the charts on Forms → Tracking. Operator-only (RLS). */
+export async function getLeadPageEvents(pageId: string, sinceIso: string | null): Promise<LeadPageEvent[]> {
+  const out: LeadPageEvent[] = [];
+  // Pages of 1000 (the API's cap), oldest first, up to 20 000 steps.
+  for (let from = 0; from < 20_000; from += 1000) {
+    let q = supabase.from("lead_page_events").select("event_type, source, session_id, created_at").eq("page_id", pageId).order("created_at").range(from, from + 999);
+    if (sinceIso) q = q.gte("created_at", sinceIso);
+    const { data, error } = await q;
+    if (error) throw new Error(error.message);
+    out.push(...((data ?? []) as LeadPageEvent[]));
+    if (!data || data.length < 1000) break;
+  }
+  return out;
+}
+
 /** Unique-visitor funnel counts for one landing page. Operator-only (RLS). */
 export async function getLeadPageFunnel(pageId: string, sinceIso: string | null): Promise<LeadPageFunnel> {
   const { data, error } = await supabase.rpc("lead_page_funnel", { p_page_id: pageId, p_since: sinceIso });

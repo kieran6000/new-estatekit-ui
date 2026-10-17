@@ -590,13 +590,14 @@ export default function LeadPagePage() {
           </Box>
         </Box>
       ) : (
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 3, p: 2, maxWidth: 720, mx: "auto" }}>
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 3, p: 2, maxWidth: tab === "link" ? 720 : 960, mx: "auto" }}>
           {tab === "link" ? (
             <ShareSection page={page} onUpdateSlug={canSetUp ? (slug) => updatePage.mutate({ id: page.id, patch: { slug } }) : undefined} />
           ) : (
             <>
-              {trackingSection}
+              {/* How it's doing first (looked at most), then the pixel settings. */}
               {isOperator && <LeadPageFunnelStats pageId={page.id} />}
+              {trackingSection}
             </>
           )}
         </Box>
