@@ -92,7 +92,7 @@ export default function ThankYouPage() {
             <Box sx={{ p: "40px 24px", minHeight: 260, display: "flex", flexDirection: "column" }}>
               <BrandedThankYou page={page} name={name} showWhatsApp={!gift && !askCall} />
               {page.thankYouVideoUrl && <ThankYouVideo url={page.thankYouVideoUrl} accent={page.accentColor} />}
-              {askCall && planToken && <ThankYouCallTime token={planToken} accent={page.accentColor} agentName={page.agentName} />}
+              {askCall && planToken && <ThankYouCallTime token={planToken} accent={page.accentColor} agentName={page.agentName} question={page.thankYouCallQuestion} />}
               {gift && giftUrl && <MagnetCta page={page} magnet={gift} href={giftUrl} personal={!!planToken} compact={askCall} />}
             </Box>
           </Box>

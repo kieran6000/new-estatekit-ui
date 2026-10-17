@@ -23,12 +23,12 @@ export function ThankYouVideo({ url, accent }: { url: string; accent: string }) 
   );
 }
 
-const QUESTION = "When suits you for a quick call?";
+export const CALL_QUESTION = "When suits you for a quick call?";
 
 /** "When suits you for a quick call?" with Day and Time, then Confirm. Saved
  *  on the lead with their private code (set_call_time). Only shown when we
  *  know who they are (leads from our own forms). */
-export function ThankYouCallTime({ token, accent, agentName }: { token: string; accent: string; agentName: string }) {
+export function ThankYouCallTime({ token, accent, agentName, question }: { token: string; accent: string; agentName: string; question?: string | null }) {
   const agentFirst = (agentName || "").trim().split(/\s+/)[0] || "We";
   const [value, setValue] = useState("");
   const [error, setError] = useState("");
@@ -71,7 +71,7 @@ export function ThankYouCallTime({ token, accent, agentName }: { token: string; 
   return (
     <Box sx={{ mt: 3.5, pt: 1.5, borderTop: "1px solid #eee", textAlign: "left" }}>
       <CallTimeStep
-        question={QUESTION}
+        question={question?.trim() || CALL_QUESTION}
         required={false}
         confirmText={CALL_TIME_CONFIRM.replaceAll("{agent}", agentFirst)}
         value={value}

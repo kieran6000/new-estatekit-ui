@@ -235,6 +235,8 @@ export interface LeadPage {
   /** Ask "When suits you for a quick call?" on the thank-you page (leads from
    *  our own forms only). */
   thankYouAskCall?: boolean;
+  /** Its wording; blank = "When suits you for a quick call?". */
+  thankYouCallQuestion?: string | null;
 }
 
 export type FormPresetKey = "most_leads" | "balanced" | "best_quality";

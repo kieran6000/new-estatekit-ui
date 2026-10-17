@@ -39,6 +39,7 @@ interface LeadPageRow {
   magnet_pdf_url?: string | null;
   thank_you_video_url?: string | null;
   thank_you_ask_call?: boolean | null;
+  thank_you_call_question?: string | null;
 }
 
 function rowToPage(r: LeadPageRow): LeadPage {
@@ -76,6 +77,7 @@ function rowToPage(r: LeadPageRow): LeadPage {
     magnetKind: r.magnet_kind ?? null,
     thankYouVideoUrl: r.thank_you_video_url ?? null,
     thankYouAskCall: r.thank_you_ask_call === true,
+    thankYouCallQuestion: r.thank_you_call_question ?? null,
     magnetTitle: r.magnet_title ?? "",
     magnetText: r.magnet_text ?? "",
     magnetButton: r.magnet_button ?? "",
@@ -124,6 +126,7 @@ function patchToRow(
   if (p.magnetPdfUrl !== undefined) m.magnet_pdf_url = p.magnetPdfUrl;
   if (p.thankYouVideoUrl !== undefined) m.thank_you_video_url = p.thankYouVideoUrl;
   if (p.thankYouAskCall !== undefined) m.thank_you_ask_call = p.thankYouAskCall;
+  if (p.thankYouCallQuestion !== undefined) m.thank_you_call_question = p.thankYouCallQuestion;
   return m;
 }
 
