@@ -752,6 +752,8 @@ class Context {
       appointment: appointmentLabel(l.appointment_at),
       call_time: callTimeLabel(l.call_at),
       whatsapp_link: `${APP}/w/${l.id}`,
+      note: noteText(l),
+      form_answers: answersText(l),
     };
     const uses = (f: string) => new RegExp(`\\{\\{\\s*${f}\\s*\\}\\}`).test(`${step.subject}\n${step.body}`);
     if (uses("plan_link")) fields.plan_link = await this.planLink(l);
