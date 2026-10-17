@@ -83,7 +83,7 @@ function SoundBadge({ accent }: { accent: string }) {
     <Box sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
     <Box
       sx={{
-        width: "min(250px, 82%)", py: { xs: 1, sm: 1.5 }, px: 1.5, borderRadius: "10px", border: `2px solid ${ink}`,
+        width: "min(270px, 88%)", py: { xs: 1, sm: 1.5 }, px: 1.5, borderRadius: "10px", border: `2px solid ${ink}`,
         bgcolor: `color-mix(in srgb, ${accent} 85%, transparent)`, color: ink, boxShadow: "0 6px 20px rgba(0,0,0,.3)",
         display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 0.25, textAlign: "center",
         "& .ek-w1": { animation: "ek-w1 1.5s infinite" },
@@ -98,7 +98,7 @@ function SoundBadge({ accent }: { accent: string }) {
         <path className="ek-w1" d="M15.5 8.5a5 5 0 0 1 0 7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
         <path className="ek-w2" d="M18.5 5.5a9.2 9.2 0 0 1 0 13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
       </Box>
-      <Typography sx={{ fontWeight: 800, fontSize: { xs: 13.5, sm: 16 }, lineHeight: 1.3, whiteSpace: "nowrap", color: "inherit" }}>
+      <Typography sx={{ fontWeight: 800, fontSize: { xs: 15, sm: 16 }, lineHeight: 1.3, whiteSpace: "nowrap", color: "inherit" }}>
         Your video is playing
         <br />
         Tap to turn on sound
@@ -367,6 +367,8 @@ function YouTubePlayer({ id, accent, autoplay, endCta, report }: { id: string; a
   };
 
   const showCover = status !== "playing" && !(status === "ended" && endCta);
+  // The phone can pause a silent autoplay by itself (low-power mode): then
+  // it's just Play, which starts it from the beginning with sound.
   const bar = status !== "idle" && status !== "ended" && !teasing && (barShown || status !== "playing");
   const pct = dur ? Math.min(100, (pos / dur) * 100) : 0;
 
@@ -386,7 +388,7 @@ function YouTubePlayer({ id, accent, autoplay, endCta, report }: { id: string; a
         aria-label={teasing ? "Turn on sound" : status === "playing" ? "Pause" : status === "ended" ? "Watch again" : "Play"}
         sx={{ position: "absolute", inset: 0, bottom: bar ? 44 : 0, display: "block", cursor: ready ? "pointer" : "default" }}
       >
-        {teasing && <SoundBadge accent={accent} />}
+        {teasing && status === "playing" && <SoundBadge accent={accent} />}
         {showCover && (
           <Box
             sx={{

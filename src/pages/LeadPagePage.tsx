@@ -71,7 +71,6 @@ import FormPresetPicker from "../components/FormPresetPicker";
 import InfoTip from "../components/InfoTip";
 import LeadMagnetCard from "../components/LeadMagnetCard";
 import ThankYouPageCard from "../components/ThankYouPageCard";
-import PhoneFrame from "../components/PhoneFrame";
 import OptionsEditor from "../components/OptionsEditor";
 import { cleanOptions } from "../lib/options";
 import { applyFormPreset, FORM_PRESET_VERSION, presetByKey } from "../lib/formPresets";
@@ -927,9 +926,9 @@ function ThankYouPreview({ page }: { page: LeadPage }) {
         </Typography>
       }
     >
-      <PhoneFrame accent={page.accentColor}>
+      <Box sx={{ mx: "auto", width: "100%", maxWidth: 400, height: 680, border: `1px solid ${tokens.divider}`, borderRadius: "16px", overflow: "hidden", bgcolor: "#fff" }}>
         <Box component="iframe" key={JSON.stringify(page)} src={src} title="Thank-you page preview" sx={{ width: "100%", height: "100%", border: 0, display: "block" }} />
-      </PhoneFrame>
+      </Box>
     </Section>
   );
 }
@@ -941,17 +940,15 @@ function PreviewAndSubmit({ page, pipelineKind }: { page: LeadPage; pipelineKind
     // Preview only: filling this in on the dashboard must never create a lead
     // or fire tracking — it's the agent checking their own form.
     // Always light: it's the public page as visitors see it.
-    <PhoneFrame accent={page.accentColor}>
-      <Box data-theme="light" sx={{ bgcolor: tokens.bg, minHeight: "100%", p: 1.5 }}>
-        <LeadCaptureForm
-          page={page}
-          pipelineKind={pipelineKind}
-          customQuestions={customQuestions}
-          preview
-          onSubmit={() => showSnack("Preview only — nothing was saved")}
-        />
-      </Box>
-    </PhoneFrame>
+    <Box data-theme="light">
+      <LeadCaptureForm
+        page={page}
+        pipelineKind={pipelineKind}
+        customQuestions={customQuestions}
+        preview
+        onSubmit={() => showSnack("Preview only — nothing was saved")}
+      />
+    </Box>
   );
 }
 
