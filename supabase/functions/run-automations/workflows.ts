@@ -60,6 +60,8 @@ interface Lead {
   form_answers: unknown;
   plan_token: string | null;
   appointment_at: string | null;
+  /** The call time they picked (leads.call_at, from their answer). */
+  call_at: string | null;
 }
 
 interface Profile {
@@ -120,6 +122,22 @@ export function appointmentLabel(iso: string | null | undefined): string {
   const part = (o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Johannesburg", ...o }).format(d);
   return `${part({ weekday: "short" })} ${part({ day: "numeric" })} ${part({ month: "short" })} at ${part({ hour: "2-digit", minute: "2-digit", hour12: false })}`;
 }
+/** The call time they picked, from when the message goes: "today around
+ *  10:00", "tomorrow around 10:00", else "Fri 17 Oct around 10:00". So "I'll
+ *  call you {{call_time}}" reads right whenever it's sent. */
+export function callTimeLabel(iso: string | null | undefined, now = new Date()): string {
+  if (!iso) return "at the time you picked";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "at the time you picked";
+  const fmt = (x: Date, o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Johannesburg", ...o }).format(x);
+  const day = (x: Date) => fmt(x, { year: "numeric", month: "2-digit", day: "2-digit" });
+  const time = fmt(d, { hour: "2-digit", minute: "2-digit", hour12: false });
+  if (day(d) === day(now)) return `today around ${time}`;
+  if (day(d) === day(new Date(now.getTime() + 86_400_000))) return `tomorrow around ${time}`;
+  return `${fmt(d, { weekday: "short" })} ${fmt(d, { day: "numeric" })} ${fmt(d, { month: "short" })} around ${time}`;
+}
+/** Counted from a time (an appointment, or the call time they picked). */
+const countsDown = (kind: string) => kind === "appointment" || kind === "call_time";
 /** A form's lead magnet, as the thank-you page and emails show it.
  *  KEEP IN STEP with src/lib/leadMagnet.ts (MAGNET_PRESETS and resolveMagnet). */
 interface Magnet { title: string; text: string; button: string }
@@ -270,7 +288,7 @@ async function processRun(supabase: SupabaseClient, deps: EngineDeps, run: Run) 
   if (run.lead_id) {
     const { data } = await supabase
       .from("leads")
-      .select("id, agent_id, name, phone, email, stage, next_label, pipeline_id, source_page_id, fb_lead_id, quality, tags, email_opt_out, archived, form_answers, plan_token, appointment_at")
+      .select("id, agent_id, name, phone, email, stage, next_label, pipeline_id, source_page_id, fb_lead_id, quality, tags, email_opt_out, archived, form_answers, plan_token, appointment_at, call_at")
       .eq("id", run.lead_id)
       .maybeSingle();
     lead = data as Lead | null;
@@ -424,8 +442,8 @@ class Context {
 
   private quietHold(): Outcome | null {
     if (!this.def.settings?.quietHours) return null;
-    // A reminder before an appointment is no use after it: always on time.
-    if (this.def.trigger.kind === "appointment" && this.def.trigger.when !== "after") return null;
+    // A reminder before an appointment (or call time) is no use after it: always on time.
+    if (countsDown(this.def.trigger.kind) && this.def.trigger.when !== "after") return null;
     const until = this.deps.quietDeferUntil(new Date());
     return until ? { kind: "hold", until } : null;
   }
@@ -565,6 +583,7 @@ class Context {
         form: l.fb_lead_id ? "Facebook form" : (await this.page())?.name || (l.source_page_id ? "Lead page" : "Added by hand"),
         answers: answers.filter((x) => (x.a || "").trim()).map((x) => `${(x.q || "").trim()}: ${(x.a || "").trim()}`).join("\n") || "No answers",
         appointment: appointmentLabel(l.appointment_at),
+        call_time: callTimeLabel(l.call_at),
         lead_type: leadType(await this.pipelineKind()),
       };
       if (/\{\{\s*action_link\s*\}\}/.test(step.text)) fields.action_link = await this.deps.actionLink(l.id, l.agent_id, this.deps.linkTypeFor(this.wfName));
@@ -646,6 +665,7 @@ class Context {
       agent_name: agentName,
       agent_phone: prettyPhone(page?.phone || this.profile?.whatsapp_number || ""),
       appointment: appointmentLabel(l.appointment_at),
+      call_time: callTimeLabel(l.call_at),
       whatsapp_link: `${APP}/w/${l.id}`,
     };
     const uses = (f: string) => new RegExp(`\\{\\{\\s*${f}\\s*\\}\\}`).test(`${step.subject}\n${step.body}`);
@@ -751,7 +771,10 @@ You're getting this because you asked ${esc(agentName)} about your property. <a 
       return { kind: "done" };
     }
     const label = fill(step.label, { first_name: first(l.name) || l.name, name: l.name }).slice(0, 120);
-    const at = new Date(Date.now() + Math.max(0, step.inDays) * 86_400_000);
+    // From a call time they picked, "due today" means at that time.
+    const callAt = l.call_at ? new Date(l.call_at) : null;
+    const atCall = step.inDays === 0 && (this.def.trigger.kind === "call_time_picked" || this.def.trigger.kind === "call_time") && callAt && callAt.getTime() > Date.now();
+    const at = atCall ? callAt : new Date(Date.now() + Math.max(0, step.inDays) * 86_400_000);
     const { error } = await this.supabase.from("leads").update({ next_label: label, reminder_at: at.toISOString(), due: true }).eq("id", l.id);
     if (error) throw new Error(`reminder: ${error.message}`);
     l.next_label = label;
