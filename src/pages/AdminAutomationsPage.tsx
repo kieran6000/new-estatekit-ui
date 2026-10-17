@@ -67,7 +67,7 @@ function AutomationsAdmin() {
           </AppBar>
           <Tabs value={section} sx={{ bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}`, minHeight: 44, px: 1 }}>
             {SECTIONS.map((s) => (
-              <Tab key={s.key} value={s.key} label={s.label} component={RouterLink} to={`/admin/automations/${s.key}`} sx={{ minHeight: 44, textTransform: "none", fontWeight: 600 }} />
+              <Tab key={s.key} value={s.key} label={s.label} component={RouterLink} to={`/admin/automations/${s.key}`} />
             ))}
           </Tabs>
         </>

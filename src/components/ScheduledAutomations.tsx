@@ -258,7 +258,7 @@ export default function ScheduledAutomations() {
       )}
 
       <Box sx={{ display: "flex", gap: 1.5, mb: 2, flexWrap: "wrap", alignItems: "center" }}>
-        <Tabs value={scope} onChange={(_, v) => setScope(v)} sx={{ minHeight: 40, "& .MuiTab-root": { minHeight: 40, textTransform: "none", fontWeight: 600, px: 1.5, minWidth: 0 } }}>
+        <Tabs value={scope} onChange={(_, v) => setScope(v)} sx={{ minHeight: 40, "& .MuiTab-root": { minHeight: 40, px: 1.5, minWidth: 0 } }}>
           <Tab value="account" label="This account" />
           <Tab value="all" label="All accounts" />
         </Tabs>

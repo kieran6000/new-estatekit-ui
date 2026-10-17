@@ -394,7 +394,7 @@ function WorkflowList({ workflows, scope, counts, onCreate, header }: {
       {header}
       <Box sx={{ display: "flex", gap: 1.5, mb: 2, flexWrap: "wrap", alignItems: "center" }}>
         {!templates && (
-          <Tabs value={filter} onChange={(_, v) => setFilter(v)} sx={{ minHeight: 40, "& .MuiTab-root": { minHeight: 40, textTransform: "none", fontWeight: 600, px: 1.5, minWidth: 0 } }}>
+          <Tabs value={filter} onChange={(_, v) => setFilter(v)} sx={{ minHeight: 40, "& .MuiTab-root": { minHeight: 40, px: 1.5, minWidth: 0 } }}>
             <Tab value="all" label={`All (${workflows.length})`} />
             <Tab value="on" label={`On (${count(true)})`} />
             <Tab value="off" label={`Off (${count(false)})`} />
@@ -762,7 +762,7 @@ function Editor({ initial, isTemplate, backTo, onSave, onCopyToTemplates, onBack
         {([["builder", "Builder"], ["leads", runs.length ? `Leads (${runs.length})` : "Leads"], ["history", "History"], ["settings", "Settings"]] as const)
           .filter(([v]) => !(isTemplate && v === "leads"))
           .map(([v, l]) => (
-            <Tab key={v} value={v} label={l} sx={{ minHeight: 44, textTransform: "none", fontWeight: 600 }} />
+            <Tab key={v} value={v} label={l} />
           ))}
       </Tabs>
 

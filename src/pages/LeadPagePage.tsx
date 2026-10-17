@@ -838,7 +838,7 @@ function PageTabs({ tabs, value, onChange }: { tabs: { value: PageTab; label: st
       sx={{
         flex: { xs: "1 1 100%", md: "none" }, mx: { xs: -2, md: 0 }, alignSelf: "stretch", minHeight: 52,
         "& .MuiTabs-flexContainer": { height: "100%" },
-        "& .MuiTab-root": { minHeight: 52, minWidth: { xs: 0, md: 90 }, flex: { xs: "1 0 auto", md: "none" }, px: { xs: 1.5, md: 2 }, whiteSpace: "nowrap", fontSize: 15, fontWeight: 600, textTransform: "none" },
+        "& .MuiTab-root": { minHeight: 52, minWidth: { xs: 0, md: 90 }, flex: { xs: "1 0 auto", md: "none" }, px: { xs: 1.5, md: 2 }, whiteSpace: "nowrap" },
       }}
     >
       {tabs.map((t) => <Tab key={t.value} value={t.value} label={t.label} />)}
