@@ -101,7 +101,7 @@ export default function ThankYouPage() {
       </Box>
 
       <Box sx={{ display: "flex", justifyContent: "center", p: 2 }}>
-        <Box sx={{ width: "100%", maxWidth: 480, mt: 7 }}>
+        <Box sx={{ width: "100%", maxWidth: 480, mt: video ? 2.5 : 7 }}>
           <Box sx={{ border: "1px solid #e0e0e0", borderRadius: "8px", bgcolor: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,.08)" }}>
             <Box sx={{ p: "40px 24px", minHeight: 260, display: "flex", flexDirection: "column" }}>
               <BrandedThankYou page={page} name={name} video={video} endCta={endCta} onVideoEnd={showNext} showWhatsApp={!gift && !askCall && !video} />
@@ -212,7 +212,9 @@ function BrandedThankYou({ page, name, video, endCta, onVideoEnd, showWhatsApp }
   const size = hasPhoto ? 76 : 96;
   return (
     <Box sx={{ textAlign: "center" }}>
-      {/* Half over the card's top edge (the card has 40px padding). */}
+      {/* Half over the card's top edge (the card has 40px padding). With a
+          video there's no photo: the headline, then the video. */}
+      {!video && (
       <Box sx={{ position: "relative", width: size, height: size, mx: "auto", mt: `-${40 + size / 2}px`, mb: 2 }}>
         <Box
           sx={{
@@ -222,8 +224,6 @@ function BrandedThankYou({ page, name, video, endCta, onVideoEnd, showWhatsApp }
             // WhatsApp green: plants that the next thing is a WhatsApp from the agent.
             border: `2px solid ${WA_GREEN}`,
             opacity: 0.6,
-            // With a video, its sound badge is the page's only animation.
-            display: video ? "none" : "block",
             animation: "ek-call-ring 1.8s cubic-bezier(0,0,0.2,1) infinite",
             "@keyframes ek-call-ring": {
               "0%": { transform: "scale(0.85)", opacity: 0.6 },
@@ -271,6 +271,7 @@ function BrandedThankYou({ page, name, video, endCta, onVideoEnd, showWhatsApp }
           </Box>
         )}
       </Box>
+      )}
       <Typography sx={{ fontSize: 20, fontWeight: 700 }}>{fillNamed(page.thankYouHeadline, name, page.agentName)}</Typography>
       {video ? (
         <Box sx={{ mt: 2.5 }}>
