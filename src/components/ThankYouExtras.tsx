@@ -18,7 +18,7 @@ export function ThankYouVideo({ url, accent }: { url: string; accent: string }) 
       <Typography sx={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: accent, textAlign: "center", mb: 1.5 }}>
         Watch this before we speak
       </Typography>
-      <VideoPlayer url={url} />
+      <VideoPlayer url={url} accent={accent} />
     </Box>
   );
 }

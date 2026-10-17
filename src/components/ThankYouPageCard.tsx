@@ -73,7 +73,7 @@ export default function ThankYouPageCard({ page, canSetUp }: { page: LeadPage; c
         />
         {url && playable && (
           <Box sx={{ position: "relative", pt: "56.25%", borderRadius: "8px", overflow: "hidden", bgcolor: "#000", maxWidth: 420 }}>
-            <VideoPlayer url={url} />
+            <VideoPlayer url={url} accent={page.accentColor} />
           </Box>
         )}
       </Box>
