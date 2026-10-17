@@ -1,27 +1,12 @@
 import { useState } from "react";
-import VideoPlayer, { canPlayVideo } from "./VideoPlayer";
 import { Box, ButtonBase, CircularProgress, Typography } from "@mui/material";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import { supabase } from "../api/_client";
 import { readableOn } from "../lib/contrast";
 import CallTimeStep, { CALL_TIME_CONFIRM, callTimeIncomplete } from "./CallTimeStep";
 
-// The thank-you page's optional extras, set per form (Forms → Thank-you page):
-// a short video ("watch this before we speak") and asking for a call time.
-
-/** A short video: one we host (a video-file link) or a YouTube link.
- *  Plays inline on phones. Tracking comes next (VideoPlayer onProgress). */
-export function ThankYouVideo({ url, accent }: { url: string; accent: string }) {
-  if (!canPlayVideo(url)) return null;
-  return (
-    <Box sx={{ mt: 3.5, pt: 3, borderTop: "1px solid #eee" }}>
-      <Typography sx={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: accent, textAlign: "center", mb: 1.5 }}>
-        Watch this before we speak
-      </Typography>
-      <VideoPlayer url={url} accent={accent} />
-    </Box>
-  );
-}
+// The thank-you page's call-time ask, set per form (Forms → Thank-you page).
+// The video sits under the headline (ThankYouPage).
 
 export const CALL_QUESTION = "When suits you for a quick call?";
 

@@ -20,7 +20,8 @@ import { isPlanToken, recallPlanToken } from "../lib/planToken";
 import { resolveMagnet, type Magnet } from "../lib/leadMagnet";
 import type { LeadPage } from "../types";
 import { getPagePlan } from "../api/pagePlan";
-import { ThankYouCallTime, ThankYouVideo } from "../components/ThankYouExtras";
+import { ThankYouCallTime } from "../components/ThankYouExtras";
+import VideoPlayer, { canPlayVideo } from "../components/VideoPlayer";
 
 export default function ThankYouPage() {
   const [params] = useSearchParams();
@@ -79,6 +80,7 @@ export default function ThankYouPage() {
   // Asking for a call time needs to know who they are (their private code).
   // When it's on, it is the main button and the lead magnet becomes a line.
   const askCall = !!planToken && page.thankYouAskCall === true;
+  const video = page.thankYouVideoUrl && canPlayVideo(page.thankYouVideoUrl) ? page.thankYouVideoUrl : null;
 
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: tokens.bg }}>
@@ -90,8 +92,7 @@ export default function ThankYouPage() {
         <Box sx={{ width: "100%", maxWidth: 480, mt: 2.5 }}>
           <Box sx={{ border: "1px solid #e0e0e0", borderRadius: "8px", overflow: "hidden", bgcolor: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,.08)" }}>
             <Box sx={{ p: "40px 24px", minHeight: 260, display: "flex", flexDirection: "column" }}>
-              <BrandedThankYou page={page} name={name} showWhatsApp={!gift && !askCall} />
-              {page.thankYouVideoUrl && <ThankYouVideo url={page.thankYouVideoUrl} accent={page.accentColor} />}
+              <BrandedThankYou page={page} name={name} video={video} showWhatsApp={!gift && !askCall && !video} />
               {askCall && planToken && <ThankYouCallTime token={planToken} accent={page.accentColor} agentName={page.agentName} question={page.thankYouCallQuestion} />}
               {gift && giftUrl && <MagnetCta page={page} magnet={gift} href={giftUrl} personal={!!planToken} compact={askCall} />}
             </Box>
@@ -189,11 +190,13 @@ function fillNamed(text: string, name: string, agentName: string | null | undefi
 
 const WA_GREEN = "#25D366";
 
-function BrandedThankYou({ page, name, showWhatsApp }: { page: LeadPage; name: string; showWhatsApp: boolean }) {
+/** With a video: photo, headline, then the video straight under it (no
+ *  subtext, label or divider), so nothing stands between them and Play. */
+function BrandedThankYou({ page, name, video, showWhatsApp }: { page: LeadPage; name: string; video: string | null; showWhatsApp: boolean }) {
   const hasPhoto = !!page.profilePhotoDataUrl;
   const size = hasPhoto ? 76 : 96;
   return (
-    <Box sx={{ textAlign: "center", m: "auto 0" }}>
+    <Box sx={{ textAlign: "center", m: video ? 0 : "auto 0" }}>
       <Box sx={{ position: "relative", width: size, height: size, mx: "auto", mb: 2.5 }}>
         <Box
           sx={{
@@ -251,7 +254,13 @@ function BrandedThankYou({ page, name, showWhatsApp }: { page: LeadPage; name: s
         )}
       </Box>
       <Typography sx={{ fontSize: 20, fontWeight: 700 }}>{fillNamed(page.thankYouHeadline, name, page.agentName)}</Typography>
-      <Typography sx={{ fontSize: 14, color: "text.secondary", mt: 1 }}>{fillNamed(page.thankYouSubtext, name, page.agentName)}</Typography>
+      {video ? (
+        <Box sx={{ mt: 2.5 }}>
+          <VideoPlayer url={video} accent={page.accentColor} />
+        </Box>
+      ) : (
+        <Typography sx={{ fontSize: 14, color: "text.secondary", mt: 1 }}>{fillNamed(page.thankYouSubtext, name, page.agentName)}</Typography>
+      )}
 
       {showWhatsApp && (() => {
         const digits = (page.phone || "").replace(/\D/g, "");
