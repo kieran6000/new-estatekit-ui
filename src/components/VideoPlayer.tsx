@@ -77,7 +77,7 @@ type Report = React.MutableRefObject<((p: VideoProgress) => void) | undefined>;
 /** Over a silent autoplay (like Vidalytics): the picture tinted in the
  *  agent's colour, "Your video is playing / Tap to turn on sound", and a
  *  speaker whose sound waves fill in one by one. The page's only animation. */
-function SoundBadge({ accent }: { accent: string }) {
+function SoundBadge({ accent, blocked = false }: { accent: string; blocked?: boolean }) {
   const ink = readableOn(accent);
   return (
     <Box sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -94,14 +94,20 @@ function SoundBadge({ accent }: { accent: string }) {
       }}
     >
       <Box component="svg" viewBox="0 0 24 24" aria-hidden sx={{ width: { xs: 32, sm: 40 }, height: { xs: 32, sm: 40 } }}>
-        <path d="M3 9v6h4l5 5V4L7 9H3z" fill="currentColor" />
-        <path className="ek-w1" d="M15.5 8.5a5 5 0 0 1 0 7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-        <path className="ek-w2" d="M18.5 5.5a9.2 9.2 0 0 1 0 13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        {blocked ? (
+          <path d="M8 5v14l11-7z" fill="currentColor" />
+        ) : (
+          <>
+            <path d="M3 9v6h4l5 5V4L7 9H3z" fill="currentColor" />
+            <path className="ek-w1" d="M15.5 8.5a5 5 0 0 1 0 7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            <path className="ek-w2" d="M18.5 5.5a9.2 9.2 0 0 1 0 13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          </>
+        )}
       </Box>
       <Typography sx={{ fontWeight: 800, fontSize: { xs: 15, sm: 16 }, lineHeight: 1.3, whiteSpace: "nowrap", color: "inherit" }}>
-        Your video is playing
+        {blocked ? "Tap to watch" : "Your video is playing"}
         <br />
-        Tap to turn on sound
+        {blocked ? "with sound" : "Tap to turn on sound"}
       </Typography>
     </Box>
     </Box>
@@ -243,6 +249,14 @@ function YouTubePlayer({ id, accent, autoplay, endCta, report }: { id: string; a
   // Playing silently by itself, waiting for the tap that turns the sound on.
   const teaser = useRef(autoplay);
   const [teasing, setTeasing] = useState(false);
+  // Still not playing a few seconds after it could have: the phone blocked it
+  // (e.g. low-power mode). Then the same box says "Tap to watch with sound".
+  const [startWaited, setStartWaited] = useState(false);
+  useEffect(() => {
+    if (!autoplay) return;
+    const t = window.setTimeout(() => setStartWaited(true), 3000);
+    return () => window.clearTimeout(t);
+  }, [autoplay]);
   // The bar hides itself 2.5 seconds into playing (it covered the captions);
   // a tap or a mouse move brings it back.
   const [barShown, setBarShown] = useState(true);
@@ -276,7 +290,9 @@ function YouTubePlayer({ id, accent, autoplay, endCta, report }: { id: string; a
         height: "100%",
         host: "https://www.youtube-nocookie.com",
         // Everything of YouTube's own switched off: we draw the controls.
-        playerVars: { controls: 0, rel: 0, playsinline: 1, modestbranding: 1, iv_load_policy: 3, fs: 0, disablekb: 1, cc_load_policy: 0 },
+        // iPhones only let a video start by itself if it's created muted and
+        // set to play; muting it after it loads (as we did) is refused there.
+        playerVars: { controls: 0, rel: 0, playsinline: 1, modestbranding: 1, iv_load_policy: 3, fs: 0, disablekb: 1, cc_load_policy: 0, ...(autoplay ? { autoplay: 1, mute: 1 } : {}) },
         events: {
           onReady: () => {
             player.current = p;
@@ -400,9 +416,15 @@ function YouTubePlayer({ id, accent, autoplay, endCta, report }: { id: string; a
               display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 1,
             }}
           >
-            <Box sx={{ width: 72, height: 72, borderRadius: "50%", bgcolor: accent, color: onAccent, display: "grid", placeItems: "center", boxShadow: "0 6px 20px rgba(0,0,0,.35)" }}>
-              {status === "ended" ? <ReplayRoundedIcon sx={{ fontSize: 40 }} /> : <PlayArrowRoundedIcon sx={{ fontSize: 48 }} />}
-            </Box>
+            {autoplay && teaser.current && status !== "ended" ? (
+              // Meant to start by itself: nothing while it's starting, then
+              // (if the phone wouldn't) the same box as the sound badge.
+              startWaited || status === "paused" ? <SoundBadge accent={accent} blocked /> : null
+            ) : (
+              <Box sx={{ width: 72, height: 72, borderRadius: "50%", bgcolor: accent, color: onAccent, display: "grid", placeItems: "center", boxShadow: "0 6px 20px rgba(0,0,0,.35)" }}>
+                {status === "ended" ? <ReplayRoundedIcon sx={{ fontSize: 40 }} /> : <PlayArrowRoundedIcon sx={{ fontSize: 48 }} />}
+              </Box>
+            )}
             {status === "ended" && <Typography sx={{ color: "#fff", fontWeight: 600, fontSize: 15 }}>Watch again</Typography>}
             {status === "idle" && dur > 0 && (
               <Box sx={{ position: "absolute", right: 10, bottom: 10, bgcolor: "rgba(0,0,0,.7)", color: "#fff", fontSize: 12.5, fontWeight: 600, px: 0.75, py: 0.25, borderRadius: "4px" }}>
