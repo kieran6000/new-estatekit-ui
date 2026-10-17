@@ -384,6 +384,13 @@ export async function updateLeadPage(
   if (error) throw new Error(error.message);
 }
 
+/** Which pipeline this form's new leads go to. Leads already in are left
+ *  where they are (each lead has its own pipeline). Staff only (the screen). */
+export async function setLeadPagePipeline(id: string, pipelineId: string): Promise<void> {
+  const { error } = await supabase.from("lead_pages").update({ pipeline_id: pipelineId }).eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
 export async function syncFbLeads(opts?: { agentId?: string; formId?: string }): Promise<{ totalInserted: number }> {
   const { data, error } = await supabase.functions.invoke("sync-fb-leads", {
     body: { agentId: opts?.agentId, formId: opts?.formId },

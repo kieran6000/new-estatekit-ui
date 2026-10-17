@@ -83,7 +83,7 @@ function SoundBadge({ accent }: { accent: string }) {
     <Box sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
     <Box
       sx={{
-        width: { xs: "62%", sm: 250 }, py: { xs: 1, sm: 1.5 }, px: 1.5, borderRadius: "10px", border: `2px solid ${ink}`,
+        width: "min(250px, 82%)", py: { xs: 1, sm: 1.5 }, px: 1.5, borderRadius: "10px", border: `2px solid ${ink}`,
         bgcolor: `color-mix(in srgb, ${accent} 85%, transparent)`, color: ink, boxShadow: "0 6px 20px rgba(0,0,0,.3)",
         display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 0.25, textAlign: "center",
         "& .ek-w1": { animation: "ek-w1 1.5s infinite" },
@@ -98,7 +98,7 @@ function SoundBadge({ accent }: { accent: string }) {
         <path className="ek-w1" d="M15.5 8.5a5 5 0 0 1 0 7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
         <path className="ek-w2" d="M18.5 5.5a9.2 9.2 0 0 1 0 13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
       </Box>
-      <Typography sx={{ fontWeight: 800, fontSize: { xs: 14, sm: 16 }, lineHeight: 1.3, color: "inherit" }}>
+      <Typography sx={{ fontWeight: 800, fontSize: { xs: 13.5, sm: 16 }, lineHeight: 1.3, whiteSpace: "nowrap", color: "inherit" }}>
         Your video is playing
         <br />
         Tap to turn on sound

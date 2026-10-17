@@ -47,7 +47,7 @@ import { tokens } from "../theme";
 import { PIPELINE_KIND_LABEL, type CustomQuestion, type LeadPage, type Pipeline, type PipelineKind, type QuestionType } from "../types";
 import { useAddLeadPage, useDeleteLeadPage, useLeadPages, useUpdateLeadPage } from "../hooks/useLeadPages";
 import { usePipelines } from "../hooks/usePipelines";
-import { getFbForm, listFbForms, listFbPages, type FbForm } from "../api/leadPages";
+import { getFbForm, listFbForms, listFbPages, setLeadPagePipeline, type FbForm } from "../api/leadPages";
 import FbFormPreview from "../components/FbFormPreview";
 import { getMyProfile } from "../api/agentProfile";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -71,6 +71,7 @@ import FormPresetPicker from "../components/FormPresetPicker";
 import InfoTip from "../components/InfoTip";
 import LeadMagnetCard from "../components/LeadMagnetCard";
 import ThankYouPageCard from "../components/ThankYouPageCard";
+import PhoneFrame from "../components/PhoneFrame";
 import OptionsEditor from "../components/OptionsEditor";
 import { cleanOptions } from "../lib/options";
 import { applyFormPreset, FORM_PRESET_VERSION, presetByKey } from "../lib/formPresets";
@@ -358,18 +359,10 @@ export default function LeadPagePage() {
             </MenuItem>
           )}
         </Menu>
-        <Typography sx={{ fontSize: 12.5, color: "text.secondary", display: { md: "none" } }}>
-          {linkedPipeline
-            ? <>Sends leads to <b style={{ color: tokens.ink }}>{pipeline.name}</b> pipeline</>
-            : <>This page isn't linked to one of your lists yet</>}
-        </Typography>
+        <PipelineLine page={page} linked={linkedPipeline} pipelines={pipelines} canChange={canSetUp} sx={{ display: { md: "none" } }} />
       </Box>
       <PageTabs tabs={tabs} value={tab} onChange={setTab} />
-      <Typography sx={{ fontSize: 12.5, color: "text.secondary", ml: "auto", whiteSpace: "nowrap", display: { xs: "none", md: "block" } }}>
-        {linkedPipeline
-          ? <>Sends leads to <b style={{ color: tokens.ink }}>{pipeline.name}</b> pipeline</>
-          : <>This page isn't linked to one of your lists yet</>}
-      </Typography>
+      <PipelineLine page={page} linked={linkedPipeline} pipelines={pipelines} canChange={canSetUp} sx={{ ml: "auto", whiteSpace: "nowrap", display: { xs: "none", md: "block" } }} />
       </Box>
 
       {page.sourceType === "fb_form" && tab !== "tracking" ? (
@@ -827,6 +820,75 @@ function FbFormSource({
 
 type PageTab = "form" | "thanks" | "link" | "tracking";
 
+/** "Sends leads to Seller pipeline". Staff can change it (new leads only;
+ *  leads already in stay where they are), after a plain confirmation. */
+function PipelineLine({ page, linked, pipelines, canChange, sx }: { page: LeadPage; linked: Pipeline | undefined; pipelines: Pipeline[]; canChange: boolean; sx?: object }) {
+  const qc = useQueryClient();
+  const showSnack = useSnack();
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const [pick, setPick] = useState<Pipeline | null>(null);
+  const [busy, setBusy] = useState(false);
+  async function move() {
+    if (!pick) return;
+    setBusy(true);
+    try {
+      await setLeadPagePipeline(page.id, pick.id);
+      await qc.invalidateQueries({ queryKey: ["leadPages"] });
+      showSnack(`New leads from this form now go to ${pick.name}.`);
+      setPick(null);
+    } catch (e) {
+      console.error(e);
+      showSnack("Couldn't change it. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  const name = linked ? linked.name : "a pipeline";
+  return (
+    <>
+      <Typography component="div" sx={{ fontSize: 12.5, color: "text.secondary", ...sx }}>
+        {canChange ? (
+          <>
+            {linked ? "Sends leads to " : "Not linked yet: "}
+            <Box
+              component="button"
+              onClick={(e: React.MouseEvent<HTMLElement>) => setAnchor(e.currentTarget)}
+              sx={{ display: "inline-flex", alignItems: "center", border: 0, bgcolor: "transparent", p: 0, font: "inherit", fontWeight: 700, color: tokens.ink, cursor: "pointer", "&:hover": { textDecoration: "underline" } }}
+            >
+              {linked ? linked.name : "Pick a pipeline"}
+              <ArrowDropDownIcon fontSize="small" />
+            </Box>
+            {linked ? " pipeline" : ""}
+          </>
+        ) : linked ? (
+          <>Sends leads to <b style={{ color: tokens.ink }}>{linked.name}</b> pipeline</>
+        ) : (
+          <>This page isn't linked to one of your lists yet</>
+        )}
+      </Typography>
+      <Menu anchorEl={anchor} open={!!anchor} onClose={() => setAnchor(null)}>
+        {pipelines.map((p) => (
+          <MenuItem key={p.id} selected={p.id === linked?.id} onClick={() => { setAnchor(null); if (p.id !== linked?.id) setPick(p); }}>
+            {p.name}
+          </MenuItem>
+        ))}
+      </Menu>
+      <Dialog open={!!pick} onClose={() => !busy && setPick(null)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontSize: 16, fontWeight: 600 }}>Send new leads to {pick?.name}?</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ fontSize: 14, color: "text.secondary" }}>
+            From now on, leads from this form go to the {pick?.name} pipeline. Leads already in {name} stay where they are.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPick(null)} disabled={busy}>Cancel</Button>
+          <Button variant="contained" onClick={move} disabled={busy}>Change it</Button>
+        </DialogActions>
+      </Dialog>
+    </>
+  );
+}
+
 /** The page's tabs, beside the page picker (under it on phones). */
 function PageTabs({ tabs, value, onChange }: { tabs: { value: PageTab; label: string }[]; value: PageTab; onChange: (t: PageTab) => void }) {
   return (
@@ -865,9 +927,9 @@ function ThankYouPreview({ page }: { page: LeadPage }) {
         </Typography>
       }
     >
-      <Box sx={{ mx: "auto", width: "100%", maxWidth: 400, height: 680, border: `1px solid ${tokens.divider}`, borderRadius: "16px", overflow: "hidden", bgcolor: "#fff" }}>
+      <PhoneFrame accent={page.accentColor}>
         <Box component="iframe" key={JSON.stringify(page)} src={src} title="Thank-you page preview" sx={{ width: "100%", height: "100%", border: 0, display: "block" }} />
-      </Box>
+      </PhoneFrame>
     </Section>
   );
 }
@@ -879,15 +941,17 @@ function PreviewAndSubmit({ page, pipelineKind }: { page: LeadPage; pipelineKind
     // Preview only: filling this in on the dashboard must never create a lead
     // or fire tracking — it's the agent checking their own form.
     // Always light: it's the public page as visitors see it.
-    <Box data-theme="light">
-      <LeadCaptureForm
-        page={page}
-        pipelineKind={pipelineKind}
-        customQuestions={customQuestions}
-        preview
-        onSubmit={() => showSnack("Preview only — nothing was saved")}
-      />
-    </Box>
+    <PhoneFrame accent={page.accentColor}>
+      <Box data-theme="light" sx={{ bgcolor: tokens.bg, minHeight: "100%", p: 1.5 }}>
+        <LeadCaptureForm
+          page={page}
+          pipelineKind={pipelineKind}
+          customQuestions={customQuestions}
+          preview
+          onSubmit={() => showSnack("Preview only — nothing was saved")}
+        />
+      </Box>
+    </PhoneFrame>
   );
 }
 
