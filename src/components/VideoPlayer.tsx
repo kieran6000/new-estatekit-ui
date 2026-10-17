@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Box, ButtonBase, IconButton, Typography } from "@mui/material";
+import { Box, Button, ButtonBase, IconButton, Typography } from "@mui/material";
+import ArrowDownwardRoundedIcon from "@mui/icons-material/ArrowDownwardRounded";
+import ArrowForwardRoundedIcon from "@mui/icons-material/ArrowForwardRounded";
 import PlayArrowRoundedIcon from "@mui/icons-material/PlayArrowRounded";
 import PauseRoundedIcon from "@mui/icons-material/PauseRounded";
 import ReplayRoundedIcon from "@mui/icons-material/ReplayRounded";
@@ -57,14 +59,17 @@ const clock = (s: number) => {
   return h ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`;
 };
 
-export default function VideoPlayer({ url, accent = "#1a73e8", autoplay = false, onProgress }: { url: string; accent?: string; autoplay?: boolean; onProgress?: (p: VideoProgress) => void }) {
+/** The next step, shown over the video when it ends ("Pick a time for our call"). */
+export interface EndCta { label: string; onClick: () => void; /** The step is further down the page (an arrow down, not across). */ below?: boolean }
+
+export default function VideoPlayer({ url, accent = "#1a73e8", autoplay = false, endCta, onProgress }: { url: string; accent?: string; autoplay?: boolean; endCta?: EndCta; onProgress?: (p: VideoProgress) => void }) {
   const kind = videoKind(url);
   const report = useRef(onProgress);
   report.current = onProgress;
   if (!kind) return null;
 
-  if (kind.type === "youtube") return <YouTubePlayer key={kind.id} id={kind.id} accent={accent} autoplay={autoplay} report={report} />;
-  return <FilePlayer key={kind.src} src={kind.src} accent={accent} autoplay={autoplay} report={report} />;
+  if (kind.type === "youtube") return <YouTubePlayer key={kind.id} id={kind.id} accent={accent} autoplay={autoplay} endCta={endCta} report={report} />;
+  return <FilePlayer key={kind.src} src={kind.src} accent={accent} autoplay={autoplay} endCta={endCta} report={report} />;
 }
 
 type Report = React.MutableRefObject<((p: VideoProgress) => void) | undefined>;
@@ -89,9 +94,30 @@ function SoundBadge({ accent }: { accent: string }) {
   );
 }
 
-function FilePlayer({ src, accent, autoplay, report }: { src: string; accent: string; autoplay: boolean; report: Report }) {
+/** When it ends: the next step as the one big button, "Watch again" small under it. */
+function EndOverlay({ accent, cta, onReplay }: { accent: string; cta: EndCta; onReplay: () => void }) {
+  return (
+    <Box sx={{ position: "absolute", inset: 0, zIndex: 2, bgcolor: "rgba(0,0,0,.65)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1, p: 2 }}>
+      <Button
+        variant="contained"
+        size="large"
+        onClick={cta.onClick}
+        endIcon={cta.below ? <ArrowDownwardRoundedIcon /> : <ArrowForwardRoundedIcon />}
+        sx={{ bgcolor: accent, color: readableOn(accent), maxWidth: "100%", "&:hover": { bgcolor: accent, filter: "brightness(0.9)" } }}
+      >
+        {cta.label}
+      </Button>
+      <Button size="small" onClick={onReplay} startIcon={<ReplayRoundedIcon />} sx={{ color: "#fff", textTransform: "none", fontSize: 13.5 }}>
+        Watch again
+      </Button>
+    </Box>
+  );
+}
+
+function FilePlayer({ src, accent, autoplay, endCta, report }: { src: string; accent: string; autoplay: boolean; endCta?: EndCta; report: Report }) {
   const video = useRef<HTMLVideoElement>(null);
   const [teasing, setTeasing] = useState(false);
+  const [ended, setEnded] = useState(false);
   useEffect(() => {
     const el = video.current;
     if (!autoplay || !el) return;
@@ -117,8 +143,12 @@ function FilePlayer({ src, accent, autoplay, report }: { src: string; accent: st
         preload="metadata"
         onTimeUpdate={(e) => send({ position: e.currentTarget.currentTime, duration: e.currentTarget.duration || 0, playing: !e.currentTarget.paused })}
         onPause={(e) => send({ position: e.currentTarget.currentTime, duration: e.currentTarget.duration || 0, playing: false })}
-        onEnded={(e) => { send({ position: e.currentTarget.duration, duration: e.currentTarget.duration, playing: false, ended: true }); setTeasing(false); }}
+        onPlay={() => setEnded(false)}
+        onEnded={(e) => { send({ position: e.currentTarget.duration, duration: e.currentTarget.duration, playing: false, ended: true }); if (!teasing) setEnded(true); setTeasing(false); }}
       />
+      {ended && endCta && (
+        <EndOverlay accent={accent} cta={endCta} onReplay={() => { const el = video.current; if (!el) return; el.currentTime = 0; void el.play().catch(() => {}); }} />
+      )}
       {teasing && (
         <ButtonBase onClick={soundOn} aria-label="Turn on sound" sx={{ position: "absolute", inset: 0, display: "block" }}>
           <SoundBadge accent={accent} />
@@ -128,10 +158,11 @@ function FilePlayer({ src, accent, autoplay, report }: { src: string; accent: st
   );
 }
 
-function Frame({ children, frameRef }: { children: React.ReactNode; frameRef?: React.Ref<HTMLDivElement> }) {
+function Frame({ children, frameRef, onPointerMove }: { children: React.ReactNode; frameRef?: React.Ref<HTMLDivElement>; onPointerMove?: React.PointerEventHandler<HTMLDivElement> }) {
   return (
     <Box
       ref={frameRef}
+      onPointerMove={onPointerMove}
       sx={{
         position: "relative", pt: "56.25%", borderRadius: "10px", overflow: "hidden", bgcolor: "#000",
         "& iframe, & video": { position: "absolute", inset: 0, width: "100%", height: "100%", border: 0 },
@@ -186,7 +217,7 @@ function loadYouTube(): Promise<YTNamespace> {
 
 type Status = "idle" | "playing" | "paused" | "ended";
 
-function YouTubePlayer({ id, accent, autoplay, report }: { id: string; accent: string; autoplay: boolean; report: Report }) {
+function YouTubePlayer({ id, accent, autoplay, endCta, report }: { id: string; accent: string; autoplay: boolean; endCta?: EndCta; report: Report }) {
   const frame = useRef<HTMLDivElement>(null);
   const holder = useRef<HTMLDivElement>(null);
   const player = useRef<YTPlayer | null>(null);
@@ -198,6 +229,23 @@ function YouTubePlayer({ id, accent, autoplay, report }: { id: string; accent: s
   // Playing silently by itself, waiting for the tap that turns the sound on.
   const teaser = useRef(autoplay);
   const [teasing, setTeasing] = useState(false);
+  // The bar hides itself 2.5 seconds into playing (it covered the captions);
+  // a tap or a mouse move brings it back.
+  const [barShown, setBarShown] = useState(true);
+  const barTimer = useRef<number | undefined>(undefined);
+  const wake = () => {
+    setBarShown(true);
+    window.clearTimeout(barTimer.current);
+    barTimer.current = window.setTimeout(() => setBarShown(false), 2500);
+  };
+  useEffect(() => {
+    if (status === "playing") wake();
+    else {
+      window.clearTimeout(barTimer.current);
+      setBarShown(true);
+    }
+    return () => window.clearTimeout(barTimer.current);
+  }, [status]); // eslint-disable-line react-hooks/exhaustive-deps
   const onAccent = readableOn(accent);
 
   useEffect(() => {
@@ -279,6 +327,12 @@ function YouTubePlayer({ id, accent, autoplay, report }: { id: string; accent: s
     p.playVideo();
   };
   const toggle = () => (status === "playing" && !teasing ? player.current?.pauseVideo() : play());
+  // A tap on the picture while the bar is hidden only brings the bar back
+  // (as on YouTube); with it showing, the tap pauses.
+  const tapPicture = () => {
+    if (status === "playing" && !teasing && !barShown) wake();
+    else toggle();
+  };
   const seek = (fraction: number) => {
     if (!player.current || !dur) return;
     const s = Math.max(0, Math.min(dur, fraction * dur));
@@ -298,11 +352,12 @@ function YouTubePlayer({ id, accent, autoplay, report }: { id: string; accent: s
     else void f.requestFullscreen?.().catch(() => {});
   };
 
-  const showCover = status !== "playing";
+  const showCover = status !== "playing" && !(status === "ended" && endCta);
+  const bar = status !== "idle" && status !== "ended" && !teasing && (barShown || status !== "playing");
   const pct = dur ? Math.min(100, (pos / dur) * 100) : 0;
 
   return (
-    <Frame frameRef={frame}>
+    <Frame frameRef={frame} onPointerMove={(e) => { if (e.pointerType === "mouse" && status === "playing") wake(); }}>
       {/* YouTube pins its title bar, "AI" button, "More videos" strip and logo
           to the top and bottom edges of its own frame. Making that frame twice
           as tall as the box (centred) keeps the video exactly filling the box,
@@ -312,10 +367,10 @@ function YouTubePlayer({ id, accent, autoplay, report }: { id: string; accent: s
       {/* Our layer over YouTube's: taps go to us, so YouTube's own menus,
           title and suggested videos never appear. */}
       <ButtonBase
-        onClick={toggle}
+        onClick={tapPicture}
         disabled={!ready}
         aria-label={teasing ? "Turn on sound" : status === "playing" ? "Pause" : status === "ended" ? "Watch again" : "Play"}
-        sx={{ position: "absolute", inset: 0, bottom: status === "idle" || teasing ? 0 : 44, display: "block", cursor: ready ? "pointer" : "default" }}
+        sx={{ position: "absolute", inset: 0, bottom: bar ? 44 : 0, display: "block", cursor: ready ? "pointer" : "default" }}
       >
         {teasing && <SoundBadge accent={accent} />}
         {showCover && (
@@ -342,9 +397,16 @@ function YouTubePlayer({ id, accent, autoplay, report }: { id: string; accent: s
         )}
       </ButtonBase>
 
+      {status === "ended" && endCta && <EndOverlay accent={accent} cta={endCta} onReplay={play} />}
+
+      {/* While the bar is hidden: a thin line for how far in they are. */}
+      {status === "playing" && !teasing && !bar && (
+        <Box sx={{ position: "absolute", left: 0, bottom: 0, height: 3, width: `${pct}%`, bgcolor: accent, pointerEvents: "none" }} />
+      )}
+
       {/* Slim bar: play/pause, progress (tap to jump), time, sound, full screen. */}
-      {status !== "idle" && !teasing && (
-        <Box sx={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 44, display: "flex", alignItems: "center", gap: 0.5, px: 0.5, bgcolor: "rgba(0,0,0,.75)", color: "#fff" }}>
+      {bar && (
+        <Box onPointerDown={wake} sx={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 44, display: "flex", alignItems: "center", gap: 0.5, px: 0.5, bgcolor: "rgba(0,0,0,.75)", color: "#fff" }}>
           <IconButton size="small" onClick={toggle} aria-label={status === "playing" ? "Pause" : "Play"} sx={{ color: "#fff" }}>
             {status === "playing" ? <PauseRoundedIcon /> : <PlayArrowRoundedIcon />}
           </IconButton>

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useLocation, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Box, Button, Skeleton, Typography } from "@mui/material";
@@ -21,7 +21,7 @@ import { resolveMagnet, type Magnet } from "../lib/leadMagnet";
 import type { LeadPage } from "../types";
 import { getPagePlan } from "../api/pagePlan";
 import { ThankYouCallTime } from "../components/ThankYouExtras";
-import VideoPlayer, { canPlayVideo } from "../components/VideoPlayer";
+import VideoPlayer, { canPlayVideo, type EndCta } from "../components/VideoPlayer";
 
 export default function ThankYouPage() {
   const [params] = useSearchParams();
@@ -36,6 +36,10 @@ export default function ThankYouPage() {
   // some other way) is the tab's saved copy used.
   const state = useLocation().state as { planToken?: string | null } | null;
   const planToken = state && "planToken" in state ? (isPlanToken(state.planToken) ? state.planToken : null) : slug ? recallPlanToken(slug) : null;
+
+  // The step after the video (call time, or the lead magnet): the end of the
+  // video points to it and brings it into view.
+  const nextRef = useRef<HTMLDivElement>(null);
 
   const { data: page, isLoading } = useQuery({
     queryKey: ["publicPageSlug", slug],
@@ -83,6 +87,12 @@ export default function ThankYouPage() {
   // When it's on, it is the main button and the lead magnet becomes a line.
   const askCall = (!!planToken || preview) && page.thankYouAskCall === true;
   const video = page.thankYouVideoUrl && canPlayVideo(page.thankYouVideoUrl) ? page.thankYouVideoUrl : null;
+  const showNext = () => nextRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  const endCta: EndCta | undefined = askCall
+    ? { label: "Pick a time for our call", onClick: showNext, below: true }
+    : gift && giftUrl
+      ? { label: gift.button, onClick: () => window.open(giftUrl, "_blank", "noopener") }
+      : undefined;
 
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: tokens.bg }}>
@@ -91,12 +101,14 @@ export default function ThankYouPage() {
       </Box>
 
       <Box sx={{ display: "flex", justifyContent: "center", p: 2 }}>
-        <Box sx={{ width: "100%", maxWidth: 480, mt: 2.5 }}>
-          <Box sx={{ border: "1px solid #e0e0e0", borderRadius: "8px", overflow: "hidden", bgcolor: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,.08)" }}>
+        <Box sx={{ width: "100%", maxWidth: 480, mt: 7 }}>
+          <Box sx={{ border: "1px solid #e0e0e0", borderRadius: "8px", bgcolor: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,.08)" }}>
             <Box sx={{ p: "40px 24px", minHeight: 260, display: "flex", flexDirection: "column" }}>
-              <BrandedThankYou page={page} name={name} video={video} showWhatsApp={!gift && !askCall && !video} />
-              {askCall && (planToken || preview) && <ThankYouCallTime token={planToken ?? ""} preview={preview} accent={page.accentColor} agentName={page.agentName} question={page.thankYouCallQuestion} />}
-              {gift && giftUrl && <MagnetCta page={page} magnet={gift} href={giftUrl} personal={!!planToken} compact={askCall} />}
+              <BrandedThankYou page={page} name={name} video={video} endCta={endCta} onVideoEnd={showNext} showWhatsApp={!gift && !askCall && !video} />
+              <Box ref={nextRef}>
+                {askCall && (planToken || preview) && <ThankYouCallTime token={planToken ?? ""} preview={preview} accent={page.accentColor} agentName={page.agentName} question={page.thankYouCallQuestion} />}
+                {gift && giftUrl && <MagnetCta page={page} magnet={gift} href={giftUrl} personal={!!planToken} compact={askCall} />}
+              </Box>
             </Box>
           </Box>
           <SoldListingsSection agentId={page.agentId} />
@@ -195,12 +207,13 @@ const WA_GREEN = "#25D366";
 
 /** With a video: photo, headline, then the video straight under it (no
  *  subtext, label or divider), so nothing stands between them and Play. */
-function BrandedThankYou({ page, name, video, showWhatsApp }: { page: LeadPage; name: string; video: string | null; showWhatsApp: boolean }) {
+function BrandedThankYou({ page, name, video, endCta, onVideoEnd, showWhatsApp }: { page: LeadPage; name: string; video: string | null; endCta?: EndCta; onVideoEnd: () => void; showWhatsApp: boolean }) {
   const hasPhoto = !!page.profilePhotoDataUrl;
   const size = hasPhoto ? 76 : 96;
   return (
-    <Box sx={{ textAlign: "center", m: video ? 0 : "auto 0" }}>
-      <Box sx={{ position: "relative", width: size, height: size, mx: "auto", mb: 2.5 }}>
+    <Box sx={{ textAlign: "center" }}>
+      {/* Half over the card's top edge (the card has 40px padding). */}
+      <Box sx={{ position: "relative", width: size, height: size, mx: "auto", mt: `-${40 + size / 2}px`, mb: 2 }}>
         <Box
           sx={{
             position: "absolute",
@@ -259,7 +272,7 @@ function BrandedThankYou({ page, name, video, showWhatsApp }: { page: LeadPage; 
       <Typography sx={{ fontSize: 20, fontWeight: 700 }}>{fillNamed(page.thankYouHeadline, name, page.agentName)}</Typography>
       {video ? (
         <Box sx={{ mt: 2.5 }}>
-          <VideoPlayer url={video} accent={page.accentColor} autoplay />
+          <VideoPlayer url={video} accent={page.accentColor} autoplay endCta={endCta} onProgress={(p) => { if (p.ended) window.setTimeout(onVideoEnd, 1200); }} />
         </Box>
       ) : (
         <Typography sx={{ fontSize: 14, color: "text.secondary", mt: 1 }}>{fillNamed(page.thankYouSubtext, name, page.agentName)}</Typography>
