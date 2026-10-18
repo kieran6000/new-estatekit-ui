@@ -181,7 +181,15 @@ Deno.serve(async (req) => {
         ["Website", f.website], ["Business address", f.address],
         ["Submitted", new Date().toLocaleDateString("en-ZA", { timeZone: "Africa/Johannesburg", day: "numeric", month: "short", year: "numeric" })],
       ].filter(([, a]) => a).map(([q, a]) => ({ q, a }));
-      const { error: dosErr } = await admin.from("client_dossiers").upsert({ agent_id: agentId, data: { onboarding: answers }, updated_at: new Date().toISOString() });
+      // The whole record's shape (src/api/clients.ts ClientDossier), not just the answers.
+      const { error: dosErr } = await admin.from("client_dossiers").upsert({
+        agent_id: agentId,
+        data: {
+          contact: { phones: [f.phone], emails: [f.email], contactPerson: null, team: null, socials: null },
+          billing: null, package: null, audit: null, onboarding: answers, onboardingExtra: null, oldDashboard: null,
+        },
+        updated_at: new Date().toISOString(),
+      });
       if (dosErr) console.error("dossier", dosErr.message);
       account = profErr ? "failed" : "created";
     } else if (/already|registered|exists/i.test(createErr?.message || "")) {
