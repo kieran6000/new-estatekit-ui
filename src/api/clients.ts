@@ -186,6 +186,23 @@ export function cplLabel(spend: number | null | undefined, leads: number): strin
   return "R" + (spend / leads).toFixed(spend / leads < 100 ? 2 : 0);
 }
 
+/** A stored record with every section there. Records aren't all made the
+ *  same way (the /onboarding form writes only its answers), and the client
+ *  page reads every section, so a missing one is filled in empty here
+ *  rather than breaking the page. */
+function withDefaults(d: Partial<ClientDossier>): ClientDossier {
+  return {
+    ...d,
+    contact: { phones: [], emails: [], contactPerson: null, team: null, socials: null, ...(d.contact ?? {}) },
+    billing: d.billing ?? null,
+    package: d.package ?? null,
+    audit: d.audit ?? null,
+    onboarding: Array.isArray(d.onboarding) ? d.onboarding : [],
+    onboardingExtra: d.onboardingExtra ?? null,
+    oldDashboard: d.oldDashboard ?? null,
+  };
+}
+
 export async function getClient(agentId: string): Promise<{ profile: ClientProfile; live: ClientLive | null; dossier: ClientDossier | null; dossierUpdatedAt: string | null }> {
   const [profile, live, dossier] = await Promise.all([
     supabase.from("agent_profiles").select(PROFILE_COLS).eq("agent_id", agentId).maybeSingle(),
@@ -197,7 +214,7 @@ export async function getClient(agentId: string): Promise<{ profile: ClientProfi
   return {
     profile: profile.data as ClientProfile,
     live: ((live.data ?? []) as ClientLive[]).find((r) => r.agent_id === agentId) ?? null,
-    dossier: (dossier.data?.data as ClientDossier | undefined) ?? null,
+    dossier: dossier.data?.data ? withDefaults(dossier.data.data as Partial<ClientDossier>) : null,
     dossierUpdatedAt: dossier.data?.updated_at ?? null,
   };
 }
