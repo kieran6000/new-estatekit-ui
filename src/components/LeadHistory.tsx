@@ -89,6 +89,9 @@ function describe(e: LeadEvent): string {
       return "Tapped WhatsApp in the email";
     case "call_time_set":
       return `Picked a call time: ${e.to_value ?? ""}`;
+    case "resubmitted":
+      // Their new answers are in to_value; from_value is the name they gave, if different.
+      return `Filled in the form again${e.from_value ? ` (as ${e.from_value})` : ""}${e.to_value ? `: ${e.to_value.replace(/\n/g, " · ")}` : ""}`;
     case "plan_opened":
       // Newer rows name the lead magnet and where it was opened.
       if (e.from_value && e.to_value?.startsWith("Opened ") && !e.to_value.startsWith("Opened their selling plan")) return e.to_value;

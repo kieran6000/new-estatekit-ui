@@ -1841,6 +1841,7 @@ function NodePreview({ sel, wf, step }: { sel: Selection; wf: Workflow; step: St
     const event =
       t.kind === "stage_changed" ? <>Agent moves {first} to <StageChip stage={t.stage ?? ""} /></>
         : t.kind === "lead_created" ? <>{SAMPLE_LEAD.name} fills in the form on your ad</>
+        : t.kind === "came_back" ? <>{SAMPLE_LEAD.name}, already in your leads, fills in your form again</>
           : t.kind === "no_answer_times" ? <>Agent logs "No answer" for {first} the {ordinal(t.count ?? 1)} time</>
             : t.kind === "not_contacted_for" ? <>{first} hasn't been called or moved for {unitLabel(t.days ?? 14, "days")}</>
               : t.kind === "plan_opened" ? <>{first} opens the Marketing Plan link</>
@@ -1853,7 +1854,7 @@ function NodePreview({ sel, wf, step }: { sel: Selection; wf: Workflow; step: St
       <>
         <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap", fontSize: 13.5 }}><BoltIcon sx={{ fontSize: 18, color: tokens.primary }} />{event}</Box>
         <Arrow label={t.kind === "daily_at" ? "This workflow runs once for each agent" : "This workflow starts for that lead"} />
-        {t.kind !== "daily_at" && <LeadRowMock stage={t.kind === "stage_changed" ? t.stage ?? "New Lead" : t.kind === "no_answer_times" ? "No Answer" : t.kind === "lead_created" || t.kind === "call_time_picked" || t.kind === "call_time" ? "New Lead" : t.kind === "appointment" ? "Booked" : "Contacted"} highlight={t.kind === "stage_changed" ? "stage" : undefined} />}
+        {t.kind !== "daily_at" && <LeadRowMock stage={t.kind === "stage_changed" ? t.stage ?? "New Lead" : t.kind === "no_answer_times" ? "No Answer" : t.kind === "lead_created" || t.kind === "came_back" || t.kind === "call_time_picked" || t.kind === "call_time" ? "New Lead" : t.kind === "appointment" ? "Booked" : "Contacted"} highlight={t.kind === "stage_changed" ? "stage" : undefined} />}
       </>
     );
   } else if (sel?.kind === "filters") {

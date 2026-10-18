@@ -108,8 +108,11 @@ export function sortLeadsForList(leads: LeadRow[]): LeadRow[] {
   return [...leads].sort((a, b) => {
     const r = rank(a) - rank(b);
     if (r !== 0) return r;
-    if (a.due === b.due) return 0;
-    return a.due ? -1 : 1;
+    if (a.due !== b.due) return a.due ? -1 : 1;
+    // Then whoever got in touch most recently: came in, or came back (filled
+    // in a form again). For everyone else that's the usual newest-first.
+    const at = (l: LeadRow) => (l.came_back_at && l.came_back_at > l.created_at ? l.came_back_at : l.created_at);
+    return at(b).localeCompare(at(a));
   });
 }
 

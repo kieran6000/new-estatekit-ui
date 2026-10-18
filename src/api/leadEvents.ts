@@ -18,7 +18,8 @@ export type LeadEventType =
   | "tagged"
   | "email_unsubscribed"
   | "capi_reported"
-  | "call_time_set";
+  | "call_time_set"
+  | "resubmitted";
 
 export type LeadEventSource =
   | "dashboard" | "action_link" | "automation" | "facebook" | "website" | "system" | "backfill";

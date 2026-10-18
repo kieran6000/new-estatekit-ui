@@ -566,8 +566,8 @@ class Context {
 
   private async whatsApp(step: Extract<Step, { type: "whatsapp_agent" }>): Promise<Outcome> {
     const l = this.lead;
-    // New-lead alerts are time-critical; everything else respects quiet hours.
-    if (this.def.trigger.kind !== "lead_created") {
+    // New-lead (and came-back) alerts are time-critical; everything else respects quiet hours.
+    if (this.def.trigger.kind !== "lead_created" && this.def.trigger.kind !== "came_back") {
       const hold = this.quietHold();
       if (hold) return hold;
     }

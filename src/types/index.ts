@@ -81,6 +81,8 @@ export interface LeadRow {
   commission: number | null;
   created_at: string;
   updated_at: string;
+  /** When they last filled in a form again (one lead per person: see merge_repeat_lead). */
+  came_back_at?: string | null;
   /** Archived leads are kept but hidden from the working list. */
   archived?: boolean;
   /** When the commission was actually banked. Null means the money is still
