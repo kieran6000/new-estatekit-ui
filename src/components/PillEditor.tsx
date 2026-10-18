@@ -14,6 +14,11 @@ import { tokens } from "../theme";
 export interface PillEditorHandle {
   /** Add a field where the cursor is (or at the end when the box was never focused). */
   insertField: (field: string, token?: string) => void;
+  /** Puts WhatsApp's marks around the selected text ("*" = bold), or a pair
+   *  with the cursor between them when nothing is selected. */
+  wrap: (mark: string) => void;
+  /** Text (an emoji) where the cursor is. */
+  insertText: (text: string) => void;
 }
 
 interface Props {
@@ -25,6 +30,8 @@ interface Props {
   /** Fields that can't go in this message: their pills are red. */
   isBad?: (field: string) => boolean;
   minRows?: number;
+  /** A WhatsApp message: Ctrl+B / Ctrl+I / Ctrl+Shift+X add WhatsApp's marks. */
+  waMarks?: boolean;
 }
 
 const FIELD_RE = /\{\{\s*(\w+)\s*\}\}/g;
@@ -50,7 +57,7 @@ function serialize(root: Node): string {
   return out.replace(/ /g, " ").replace(/​/g, "");
 }
 
-export const PillEditor = forwardRef<PillEditorHandle, Props>(function PillEditor({ label, value, onChange, pillLabel, isBad, minRows = 4 }, ref) {
+export const PillEditor = forwardRef<PillEditorHandle, Props>(function PillEditor({ label, value, onChange, pillLabel, isBad, minRows = 4, waMarks = false }, ref) {
   const box = useRef<HTMLDivElement | null>(null);
   const shown = useRef<string | null>(null); // the value the DOM currently shows
   const saved = useRef<Range | null>(null); // the cursor, kept while a field button is tapped
@@ -125,7 +132,36 @@ export const PillEditor = forwardRef<PillEditorHandle, Props>(function PillEdito
     emit();
   };
 
+  const wrap = (mark: string) => {
+    const el = box.current;
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    const r = saved.current && inBox(saved.current) ? saved.current : null;
+    if (!r || r.collapsed) {
+      // Nothing selected: the pair, with the cursor in the middle.
+      const t = document.createTextNode(mark + mark);
+      insertNodes([t], r);
+      const c = document.createRange();
+      c.setStart(t, mark.length);
+      c.collapse(true);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(c);
+      saved.current = c.cloneRange();
+      return;
+    }
+    const inner = r.cloneContents();
+    insertNodes([document.createTextNode(mark), ...Array.from(inner.childNodes), document.createTextNode(mark)], r);
+  };
+
   useImperativeHandle(ref, () => ({
+    wrap,
+    insertText(text) {
+      const el = box.current;
+      if (!el) return;
+      el.focus({ preventScroll: true });
+      insertNodes([document.createTextNode(text)], saved.current && inBox(saved.current) ? saved.current : null);
+    },
     insertField(field, token) {
       const el = box.current;
       if (!el) return;
@@ -171,6 +207,19 @@ export const PillEditor = forwardRef<PillEditorHandle, Props>(function PillEdito
         onInput={emit}
         onBlur={() => { emit(); render(shown.current ?? ""); }}
         onKeyDown={(e: React.KeyboardEvent) => {
+          // WhatsApp Web's shortcuts: Ctrl+B bold, Ctrl+I italic, Ctrl+Shift+X
+          // strikethrough, as WhatsApp's marks (the browser's own bold would
+          // never reach WhatsApp). WhatsApp messages only.
+          if (waMarks && (e.ctrlKey || e.metaKey) && !e.altKey) {
+            const k = e.key.toLowerCase();
+            const mark = k === "b" ? "*" : k === "i" ? "_" : e.shiftKey && k === "x" ? "~" : null;
+            if (mark) {
+              e.preventDefault();
+              remember();
+              wrap(mark);
+              return;
+            }
+          }
           // A plain "\n" instead of the browser's own <div>/<br>.
           if (e.key === "Enter") {
             e.preventDefault();

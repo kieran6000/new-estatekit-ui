@@ -71,6 +71,15 @@ import { trackActivity } from "../lib/activity";
 import { useSnack } from "../hooks/useSnack";
 import WhatsAppPreview from "./WhatsAppPreview";
 import SendToMobileIcon from "@mui/icons-material/SendToMobile";
+import FormatBoldIcon from "@mui/icons-material/FormatBold";
+import FormatItalicIcon from "@mui/icons-material/FormatItalic";
+import StrikethroughSIcon from "@mui/icons-material/StrikethroughS";
+import CodeIcon from "@mui/icons-material/Code";
+import InsertEmoticonIcon from "@mui/icons-material/InsertEmoticon";
+import ImageOutlinedIcon from "@mui/icons-material/ImageOutlined";
+import PictureAsPdfOutlinedIcon from "@mui/icons-material/PictureAsPdfOutlined";
+import { MAX_WA_FILE_MB, uploadWhatsAppFile } from "../api/workflowFiles";
+import type { Attachment } from "../lib/workflow";
 import { PillEditor, type PillEditorHandle } from "./PillEditor";
 import { getAccountVocab } from "../api/accountVocab";
 import LeadTag from "./LeadTag";
@@ -1612,7 +1621,8 @@ function MessageField({ label, value, onChange, kind, trigger, minRows }: { labe
   const daily = trigger.kind === "daily_at";
   return (
     <>
-      <PillEditor ref={editor} label={label} value={value} onChange={onChange} pillLabel={pillLabel} isBad={isBad} minRows={minRows} />
+      {kind !== "email_lead" && <WaToolbar editor={editor} />}
+      <PillEditor ref={editor} label={label} value={value} onChange={onChange} pillLabel={pillLabel} isBad={isBad} minRows={minRows} waMarks={kind !== "email_lead"} />
       {bad.length > 0 && (
         <Box sx={{ mt: -1, display: "flex", flexDirection: "column", gap: 0.75 }}>
           {bad.map((b) => (
@@ -1675,6 +1685,89 @@ function MessageField({ label, value, onChange, kind, trigger, minRows }: { labe
   );
 }
 
+/** WhatsApp's formatting and emojis: buttons for what Ctrl+B / Ctrl+I do. */
+const EMOJIS = ["😊", "👋", "🙏", "👍", "🎉", "✅", "🔥", "⭐", "🏡", "🏠", "🔑", "📍", "📅", "📞", "💬", "💰", "📈", "👉", "⚠️", "❤️"];
+function WaToolbar({ editor }: { editor: React.MutableRefObject<PillEditorHandle | null> }) {
+  const [emojiAt, setEmojiAt] = useState<HTMLElement | null>(null);
+  // A tap mustn't take the cursor out of the box first.
+  const keep = (e: React.MouseEvent) => e.preventDefault();
+  const tool = (label: string, icon: React.ReactNode, mark: string) => (
+    <Tooltip title={label}>
+      <IconButton size="small" aria-label={label} onMouseDown={keep} onClick={() => editor.current?.wrap(mark)}>{icon}</IconButton>
+    </Tooltip>
+  );
+  return (
+    <Box sx={{ display: "flex", alignItems: "center", gap: 0.25, mb: -0.5, flexWrap: "wrap" }}>
+      {tool("Bold (Ctrl+B)", <FormatBoldIcon fontSize="small" />, "*")}
+      {tool("Italic (Ctrl+I)", <FormatItalicIcon fontSize="small" />, "_")}
+      {tool("Strikethrough (Ctrl+Shift+X)", <StrikethroughSIcon fontSize="small" />, "~")}
+      {tool("Monospace", <CodeIcon fontSize="small" />, "```")}
+      <Tooltip title="Emoji">
+        <IconButton size="small" aria-label="Emoji" onMouseDown={keep} onClick={(e) => setEmojiAt(e.currentTarget)}><InsertEmoticonIcon fontSize="small" /></IconButton>
+      </Tooltip>
+      {/* Opens without taking the focus out of the message, so the emoji goes where the cursor is. */}
+      <Menu anchorEl={emojiAt} open={!!emojiAt} onClose={() => setEmojiAt(null)} autoFocus={false} disableAutoFocusItem disableAutoFocus disableEnforceFocus disableRestoreFocus slotProps={{ list: { sx: { display: "grid", gridTemplateColumns: "repeat(5, 40px)", p: 0.5 } } }}>
+        {EMOJIS.map((em) => (
+          <MenuItem key={em} onMouseDown={keep} onClick={() => { editor.current?.insertText(em); setEmojiAt(null); }} sx={{ justifyContent: "center", fontSize: 20, minHeight: 40, p: 0 }}>{em}</MenuItem>
+        ))}
+      </Menu>
+      <Typography sx={{ fontSize: 11.5, color: "text.secondary", ml: 0.5 }}>Select words, then tap. Any emoji you type works too.</Typography>
+    </Box>
+  );
+}
+
+/** "Add a picture" / "Add a PDF" for a WhatsApp step; one at a time. */
+function AttachmentPicker({ value, onChange }: { value: Attachment | null | undefined; onChange: (a: Attachment | null) => void }) {
+  const input = useRef<HTMLInputElement>(null);
+  const [want, setWant] = useState<"image" | "pdf">("image");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  function pick(kind: "image" | "pdf") {
+    setWant(kind);
+    setErr("");
+    setTimeout(() => input.current?.click(), 0);
+  }
+  async function upload(file: File | undefined) {
+    if (!file) return;
+    const pdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
+    if (want === "pdf" ? !pdf : !file.type.startsWith("image/")) return setErr(want === "pdf" ? "That isn't a PDF." : "That isn't a picture.");
+    if (file.size > MAX_WA_FILE_MB * 1024 * 1024) return setErr(`That's over ${MAX_WA_FILE_MB} MB. Choose a smaller file.`);
+    setBusy(true);
+    try {
+      onChange(await uploadWhatsAppFile(file));
+    } catch (e) {
+      console.error(e);
+      setErr("Couldn't upload it. Try again.");
+    } finally {
+      setBusy(false);
+      if (input.current) input.current.value = "";
+    }
+  }
+  return (
+    <Box>
+      <Typography sx={{ fontSize: 13, fontWeight: 600, mb: 0.75 }}>Send with it (optional)</Typography>
+      {value ? (
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1, p: "6px 8px", border: `1px solid ${tokens.divider}`, borderRadius: "6px" }}>
+          {value.kind === "image"
+            ? <Box component="img" src={value.url} alt="" sx={{ width: 40, height: 40, objectFit: "cover", borderRadius: "4px" }} />
+            : <PictureAsPdfOutlinedIcon sx={{ color: "#e53935" }} />}
+          <Typography sx={{ flex: 1, minWidth: 0, fontSize: 13.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value.name}</Typography>
+          <Button size="small" color="error" onClick={() => onChange(null)}>Remove</Button>
+        </Box>
+      ) : (
+        <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+          <Button size="small" variant="outlined" disabled={busy} startIcon={busy && want === "image" ? <CircularProgress size={14} /> : <ImageOutlinedIcon />} onClick={() => pick("image")}>Add a picture</Button>
+          <Button size="small" variant="outlined" disabled={busy} startIcon={busy && want === "pdf" ? <CircularProgress size={14} /> : <PictureAsPdfOutlinedIcon />} onClick={() => pick("pdf")}>Add a PDF</Button>
+        </Box>
+      )}
+      <input ref={input} type="file" hidden accept={want === "pdf" ? "application/pdf,.pdf" : "image/jpeg,image/png,image/gif,image/*"} onChange={(e) => void upload(e.target.files?.[0])} />
+      <Typography sx={{ fontSize: 12, color: err ? tokens.red : "text.secondary", mt: 0.5 }}>
+        {err || "A picture goes with the message as its caption; a PDF is sent with it as a document."}
+      </Typography>
+    </Box>
+  );
+}
+
 function StepEditor({ step, trigger, onChange }: { step: Step; trigger: Trigger; onChange: (p: Partial<Step>, key?: string) => void }) {
   switch (step.type) {
     case "wait":
@@ -1695,6 +1788,7 @@ function StepEditor({ step, trigger, onChange }: { step: Step; trigger: Trigger;
       return (
         <>
           <MessageField label="Message to the agent" value={step.text} onChange={(text) => onChange({ text }, "text")} kind="whatsapp_agent" trigger={trigger} minRows={4} />
+          <AttachmentPicker value={step.attachment} onChange={(attachment) => onChange({ attachment })} />
           <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
             Sent from the EstateKit WhatsApp number to the agent's own.
             {trigger.kind === "daily_at" ? " It's about their whole day, not one lead." : " Add the Call-and-log link so they can call the lead and log it in one tap."}
@@ -1709,6 +1803,7 @@ function StepEditor({ step, trigger, onChange }: { step: Step; trigger: Trigger;
             <span>This goes to the <b>lead</b>, not to you.</span>
           </Box>
           <MessageField label="Message to the lead" value={step.text} onChange={(text) => onChange({ text }, "text")} kind="whatsapp_lead" trigger={trigger} minRows={4} />
+          <AttachmentPicker value={step.attachment} onChange={(attachment) => onChange({ attachment })} />
           <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
             Sent from the EstateKit WhatsApp number to the lead&apos;s own. Staff accounts only. Skipped if the lead has no number or asked not to get WhatsApps. Keep it personal and expected: a lead who reports it can get the number blocked.
           </Typography>
@@ -1886,7 +1981,7 @@ function NodePreview({ sel, wf, step }: { sel: Selection; wf: Workflow; step: St
         body = (
           <>
             <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>Arrives on the agent's WhatsApp:</Typography>
-            <WhatsAppPreview lead={SAMPLE_LEAD} text={step.text || " "} sampleFields={sampleFields(wf.trigger)} />
+            <WhatsAppPreview lead={SAMPLE_LEAD} text={step.text || " "} sampleFields={sampleFields(wf.trigger)} attachment={step.attachment} />
           </>
         );
         break;
@@ -1894,7 +1989,7 @@ function NodePreview({ sel, wf, step }: { sel: Selection; wf: Workflow; step: St
         body = (
           <>
             <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>Arrives on {first}'s own WhatsApp:</Typography>
-            <WhatsAppPreview lead={SAMPLE_LEAD} text={step.text || " "} sampleFields={sampleFields(wf.trigger)} />
+            <WhatsAppPreview lead={SAMPLE_LEAD} text={step.text || " "} sampleFields={sampleFields(wf.trigger)} attachment={step.attachment} />
           </>
         );
         break;

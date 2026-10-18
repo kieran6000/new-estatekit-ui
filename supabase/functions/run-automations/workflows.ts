@@ -14,11 +14,13 @@
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 
 type Unit = "minutes" | "hours" | "days";
+/** A picture or a PDF sent with a WhatsApp step (a public link). */
+interface Attachment { url: string; name: string; kind: "image" | "pdf" }
 type Step =
   | { id: string; type: "wait"; amount: number; unit: Unit }
-  | { id: string; type: "whatsapp_agent"; text: string }
+  | { id: string; type: "whatsapp_agent"; text: string; attachment?: Attachment | null }
   /** To the lead's own WhatsApp, from EstateKit's number: staff accounts only. */
-  | { id: string; type: "whatsapp_lead"; text: string }
+  | { id: string; type: "whatsapp_lead"; text: string; attachment?: Attachment | null }
   | { id: string; type: "email_lead"; subject: string; body: string }
   | { id: string; type: "set_stage"; stage: string }
   | { id: string; type: "reminder"; label: string; inDays: number }
@@ -84,7 +86,7 @@ interface Profile {
 export type SendResult = "sent" | "rate_limited" | "failed" | "not_configured";
 
 export interface EngineDeps {
-  sendWhatsApp: (phone: string, text: string) => Promise<SendResult>;
+  sendWhatsApp: (phone: string, text: string, media?: { image?: string; document?: string }) => Promise<SendResult>;
   actionLink: (leadId: string, agentId: string, linkType: string) => Promise<string>;
   linkTypeFor: (name: string) => string;
   quietDeferUntil: (now: Date) => Date | null;
@@ -184,6 +186,15 @@ function noteText(l: Lead): string {
   const n = (l.note || "").replace(/\s+/g, " ").trim();
   return n.length > 200 ? `${n.slice(0, 197).trimEnd()}…` : n;
 }
+/** What a WhatsApp step sends with its text: nothing (as always), a
+ *  picture with the text as its caption, or a PDF. */
+function mediaOf(step: { attachment?: Attachment | null }): { image?: string; document?: string } | undefined {
+  const a = step.attachment;
+  if (!a || !/^https:\/\/\S+$/.test(a.url || "")) return undefined;
+  return a.kind === "pdf" ? { document: a.url } : { image: a.url };
+}
+const withWhat = (step: { attachment?: Attachment | null }) => (mediaOf(step) ? ` (with ${step.attachment!.kind === "pdf" ? "PDF" : "picture"} ${step.attachment!.name})` : "");
+
 const fill = (t: string, v: Record<string, string>) => t.replace(/\{\{\s*(\w+)\s*\}\}/g, (m, k: string) => (k in v ? v[k] : m));
 
 /** The step at `pos`, or undefined when the position is past the end of its list. */
@@ -616,11 +627,12 @@ class Context {
 
     if (this.deps.budget.sends >= this.deps.maxSends) return { kind: "hold", until: new Date() };
     this.deps.budget.sends++;
-    const result = await this.deps.sendWhatsApp(phone, text);
+    const media = mediaOf(step);
+    const result = media ? await this.deps.sendWhatsApp(phone, text, media) : await this.deps.sendWhatsApp(phone, text);
     if (result === "rate_limited") return { kind: "hold", until: new Date(Date.now() + RATE_LIMIT_RETRY_MS) };
     const who = this.profile?.display_name || phone;
     if (result === "sent") {
-      await log(this.supabase, this.run, step.id, "WhatsApp the agent", "Sent", text.slice(0, 300));
+      await log(this.supabase, this.run, step.id, "WhatsApp the agent", "Sent", `${text.slice(0, 300)}${withWhat(step)}`);
       await this.deps.logToDiscord?.(`\u{2699}\u{FE0F} Workflow **${this.wfName}** sent WhatsApp to **${who}**${l ? ` re: ${l.name}` : ""}`);
       if (l) {
         await this.supabase.from("lead_events").insert({
@@ -680,10 +692,11 @@ class Context {
 
     if (this.deps.budget.sends >= this.deps.maxSends) return { kind: "hold", until: new Date() };
     this.deps.budget.sends++;
-    const result = await this.deps.sendWhatsApp(to, text);
+    const media = mediaOf(step);
+    const result = media ? await this.deps.sendWhatsApp(to, text, media) : await this.deps.sendWhatsApp(to, text);
     if (result === "rate_limited") return { kind: "hold", until: new Date(Date.now() + RATE_LIMIT_RETRY_MS) };
     if (result === "sent") {
-      await log(this.supabase, this.run, step.id, what, "Sent", text.slice(0, 300));
+      await log(this.supabase, this.run, step.id, what, "Sent", `${text.slice(0, 300)}${withWhat(step)}`);
       await this.deps.logToDiscord?.(`\u{2699}\u{FE0F} Workflow **${this.wfName}** sent WhatsApp to the lead **${l.name}**`);
       await this.supabase.from("lead_events").insert({
         lead_id: l.id, agent_id: l.agent_id, event_type: "whatsapp_sent", from_value: "to_lead", to_value: this.wfName, source: "automation",

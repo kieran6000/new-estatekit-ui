@@ -71,7 +71,10 @@ type SendResult = "sent" | "rate_limited" | "failed" | "not_configured";
 
 let lastSendAt = 0;
 
-async function sendWhatsApp(phone: string, text: string): Promise<SendResult> {
+/** A picture (sent with the text as its caption) or a PDF, by public link. */
+type Media = { image?: string; document?: string };
+
+async function sendWhatsApp(phone: string, text: string, media?: Media): Promise<SendResult> {
   const apiKey = Deno.env.get("TEXTMEBOT_API_KEY");
   if (!apiKey) {
     console.error("TEXTMEBOT_API_KEY not configured — skipping send to", phone);
@@ -82,7 +85,11 @@ async function sendWhatsApp(phone: string, text: string): Promise<SendResult> {
   lastSendAt = Date.now();
 
   const digits = phone.replace(/[^0-9]/g, "");
-  const url = `${TEXTMEBOT_URL}?recipient=${digits}&apikey=${apiKey}&text=${encodeURIComponent(text)}`;
+  // Without media this is exactly the URL every message has always used.
+  let url = `${TEXTMEBOT_URL}?recipient=${digits}&apikey=${apiKey}`;
+  if (!media || text) url += `&text=${encodeURIComponent(text)}`;
+  if (media?.image) url += `&file=${encodeURIComponent(media.image)}`;
+  if (media?.document) url += `&document=${encodeURIComponent(media.document)}`;
   const res = await fetch(url);
   if (res.ok) return "sent";
   const body = await res.text();
