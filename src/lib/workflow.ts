@@ -24,11 +24,15 @@ export interface Trigger { kind: TriggerKind; stage?: string; count?: number; da
 
 export type BranchCheck = "stage_is" | "has_tag" | "opened_last_email" | "has_email" | "source_is" | "pipeline_is";
 
+/** A picture or a PDF sent with a WhatsApp step (a public link). Optional:
+ *  steps without one send exactly as they always have. */
+export interface Attachment { url: string; name: string; kind: "image" | "pdf" }
+
 export type Step =
   | { id: string; type: "wait"; amount: number; unit: Unit }
-  | { id: string; type: "whatsapp_agent"; text: string }
+  | { id: string; type: "whatsapp_agent"; text: string; attachment?: Attachment | null }
   /** To the lead's own WhatsApp, from EstateKit's number: staff accounts only. */
-  | { id: string; type: "whatsapp_lead"; text: string }
+  | { id: string; type: "whatsapp_lead"; text: string; attachment?: Attachment | null }
   | { id: string; type: "email_lead"; subject: string; body: string }
   | { id: string; type: "set_stage"; stage: string }
   | { id: string; type: "reminder"; label: string; inDays: number }

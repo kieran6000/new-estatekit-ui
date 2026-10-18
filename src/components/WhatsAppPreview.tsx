@@ -36,6 +36,25 @@ function fillTemplate(text: string, lead: PreviewLead, extra?: Record<string, st
   return text.replace(/\{\{(\w+)\}\}/g, (m, key: string) => (key === "action_link" ? m : fields[key] ?? m));
 }
 
+/** WhatsApp's own formatting: *bold*, _italic_, ~strike~, ```mono```. */
+function formatWa(text: string): React.ReactNode[] {
+  const out: React.ReactNode[] = [];
+  const re = /(```[\s\S]+?```|\*[^*\n]+\*|_[^_\n]+_|~[^~\n]+~)/g;
+  let at = 0;
+  let n = 0;
+  for (const m of text.matchAll(re)) {
+    if (m.index! > at) out.push(text.slice(at, m.index));
+    const t = m[0];
+    if (t.startsWith("```")) out.push(<Box key={n++} component="span" sx={{ fontFamily: "monospace" }}>{t.slice(3, -3)}</Box>);
+    else if (t[0] === "*") out.push(<b key={n++}>{t.slice(1, -1)}</b>);
+    else if (t[0] === "_") out.push(<i key={n++}>{t.slice(1, -1)}</i>);
+    else out.push(<s key={n++}>{t.slice(1, -1)}</s>);
+    at = m.index! + t.length;
+  }
+  if (at < text.length) out.push(text.slice(at));
+  return out;
+}
+
 export default function WhatsAppPreview({
   lead,
   text,
@@ -43,7 +62,10 @@ export default function WhatsAppPreview({
   editable = false,
   onSave,
   sampleFields,
+  attachment,
 }: {
+  /** A picture (shown above the text, like WhatsApp's caption) or a PDF. */
+  attachment?: { url: string; name: string; kind: "image" | "pdf" } | null;
   lead: PreviewLead | undefined;
   text: string | null;
   /** Timestamp shown on the bubble — defaults to now. */
@@ -129,10 +151,20 @@ export default function WhatsAppPreview({
               sx={{ fontSize: 13.5, color: "var(--wa-ink)", lineHeight: 1.35, p: 0 }}
             />
           ) : (
+            <>
+            {attachment?.kind === "image" && (
+              <Box component="img" src={attachment.url} alt="" sx={{ display: "block", maxWidth: "100%", maxHeight: 240, borderRadius: "6px", mb: 0.75 }} />
+            )}
+            {attachment?.kind === "pdf" && (
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1, p: "8px 10px", mb: 0.75, borderRadius: "6px", bgcolor: "rgba(0,0,0,.06)" }}>
+                <Box sx={{ fontSize: 11, fontWeight: 700, color: "#fff", bgcolor: "#e53935", borderRadius: "3px", px: 0.5 }}>PDF</Box>
+                <Typography sx={{ fontSize: 13, color: "var(--wa-ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{attachment.name}</Typography>
+              </Box>
+            )}
             <Typography sx={{ fontSize: 13.5, color: "var(--wa-ink)", whiteSpace: "pre-wrap", lineHeight: 1.35, wordBreak: "break-word" }}>
               {parts.map((part, i) => (
                 <span key={i}>
-                  {part}
+                  {formatWa(part)}
                   {i < parts.length - 1 && (
                     <Box component="a" href={`/l/${lead.id}`} target="_blank" rel="noopener" sx={{ color: "var(--wa-link)" }}>
                       {link}
@@ -141,6 +173,7 @@ export default function WhatsAppPreview({
                 </span>
               ))}
             </Typography>
+            </>
           )}
           <Box sx={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 0.4, mt: 0.5 }}>
             <Typography sx={{ fontSize: 10.5, color: "var(--wa-meta)" }}>

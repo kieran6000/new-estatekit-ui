@@ -13,7 +13,7 @@ import { FIELDS, sampleFields } from "../../../src/lib/workflow";
 
 const AGENT = "agent-1";
 let db: FakeDb;
-let sent: { phone: string; text: string }[];
+let sent: { phone: string; text: string; media?: { image?: string; document?: string } }[];
 let emails: Record<string, unknown>[];
 let discord: string[];
 let sendResults: SendResult[];
@@ -88,7 +88,7 @@ beforeEach(() => {
   };
   sent = []; emails = []; discord = []; sendResults = []; emailOk = true; quiet = null;
   deps = {
-    sendWhatsApp: async (phone, text) => { sent.push({ phone, text }); return sendResults.shift() ?? "sent"; },
+    sendWhatsApp: async (phone, text, media) => { sent.push(media ? { phone, text, media } : { phone, text }); return sendResults.shift() ?? "sent"; },
     actionLink: async (leadId) => `https://leads.estatekit.co/l/x${leadId.slice(-4)}`,
     linkTypeFor: () => "first_touch",
     quietDeferUntil: () => quiet,
@@ -710,6 +710,33 @@ describe("the builder allows exactly the fields the engine fills in", () => {
     enroll(workflow([email("Hi", template)]), lead({ note: "A note" }));
     await tick();
     expect(filled(String(emails[0].text))).toEqual([...FIELDS.email_lead].sort());
+  });
+});
+
+describe("pictures and PDFs on WhatsApp steps", () => {
+  it("a step without one sends exactly as before (no media at all)", async () => {
+    enroll(workflow([wa("Hi")]), lead());
+    await tick();
+    expect(sent).toEqual([{ phone: "+27820000000", text: "Hi" }]);
+    expect("media" in sent[0]).toBe(false);
+  });
+
+  it("a picture goes with the text; a PDF as a document; both noted in the log", async () => {
+    const img = { ...wa("Look at this"), attachment: { url: "https://cdn.example.com/a.jpg", name: "a.jpg", kind: "image" } };
+    const pdf = { ...wa("Your guide"), attachment: { url: "https://cdn.example.com/guide.pdf", name: "guide.pdf", kind: "pdf" } };
+    const r = enroll(workflow([img, pdf]), lead());
+    await tick();
+    expect(sent).toEqual([
+      { phone: "+27820000000", text: "Look at this", media: { image: "https://cdn.example.com/a.jpg" } },
+      { phone: "+27820000000", text: "Your guide", media: { document: "https://cdn.example.com/guide.pdf" } },
+    ]);
+    expect(db.rows("workflow_log").filter((x) => x.run_id === r.id).map((x) => String(x.detail))).toEqual(["Look at this (with picture a.jpg)", "Your guide (with PDF guide.pdf)"]);
+  });
+
+  it("a link that isn't a web link is ignored: the text still goes", async () => {
+    enroll(workflow([{ ...wa("Hi"), attachment: { url: "data:image/png;base64,AAAA", name: "x.png", kind: "image" } }]), lead());
+    await tick();
+    expect(sent).toEqual([{ phone: "+27820000000", text: "Hi" }]);
   });
 });
 
