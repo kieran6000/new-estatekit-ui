@@ -21,7 +21,8 @@ import { resolveMagnet, type Magnet } from "../lib/leadMagnet";
 import type { LeadPage } from "../types";
 import { getPagePlan } from "../api/pagePlan";
 import { ThankYouCallTime } from "../components/ThankYouExtras";
-import VideoPlayer, { canPlayVideo, type EndCta } from "../components/VideoPlayer";
+import VideoPlayer, { canPlayVideo, type EndCta, type VideoProgress } from "../components/VideoPlayer";
+import { supabase } from "../api/_client";
 
 export default function ThankYouPage() {
   const [params] = useSearchParams();
@@ -40,6 +41,8 @@ export default function ThankYouPage() {
   // The step after the video (call time, or the lead magnet): the end of the
   // video points to it and brings it into view.
   const nextRef = useRef<HTMLDivElement>(null);
+  // The furthest point already reported for the video (see onVideoProgress).
+  const reported = useRef(0);
 
   const { data: page, isLoading } = useQuery({
     queryKey: ["publicPageSlug", slug],
@@ -88,6 +91,17 @@ export default function ThankYouPage() {
   const askCall = (!!planToken || preview) && page.thankYouAskCall === true;
   const video = page.thankYouVideoUrl && canPlayVideo(page.thankYouVideoUrl) ? page.thankYouVideoUrl : null;
   const showNext = () => nextRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  // How far they watched (with the sound on), in their lead's history: the
+  // start, 25%, 50%, 75% and the end. Only for someone who just sent the
+  // form (their private code); never the preview.
+  const onVideoProgress = (p: VideoProgress) => {
+    if (!planToken || preview || !p.duration) return;
+    const pct = p.ended ? 100 : (p.position / p.duration) * 100;
+    const step = [100, 75, 50, 25, 1].find((m) => pct >= m - 0.01) ?? 0;
+    if (!step || step <= reported.current) return;
+    reported.current = step;
+    void supabase.rpc("log_video_watch", { p_token: planToken, p_percent: step === 1 ? 0 : step, p_seconds: Math.round(p.ended ? p.duration : p.position) }).then(() => {}, () => {});
+  };
   const endCta: EndCta | undefined = askCall
     ? { label: "Pick a time for our call", onClick: showNext, below: true }
     : gift && giftUrl
@@ -104,7 +118,7 @@ export default function ThankYouPage() {
         <Box sx={{ width: "100%", maxWidth: 480, mt: video ? 2.5 : 7 }}>
           <Box sx={{ border: "1px solid #e0e0e0", borderRadius: "8px", bgcolor: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,.08)" }}>
             <Box sx={{ p: "40px 24px", minHeight: 260, display: "flex", flexDirection: "column" }}>
-              <BrandedThankYou page={page} name={name} video={video} endCta={endCta} onVideoEnd={showNext} showWhatsApp={!gift && !askCall && !video} />
+              <BrandedThankYou page={page} name={name} video={video} endCta={endCta} onVideoEnd={showNext} onVideoProgress={onVideoProgress} showWhatsApp={!gift && !askCall && !video} />
               <Box ref={nextRef}>
                 {askCall && (planToken || preview) && <ThankYouCallTime token={planToken ?? ""} preview={preview} accent={page.accentColor} agentName={page.agentName} question={page.thankYouCallQuestion} />}
                 {gift && giftUrl && <MagnetCta page={page} magnet={gift} href={giftUrl} personal={!!planToken} compact={askCall} still={!!video} />}
@@ -207,7 +221,7 @@ const WA_GREEN = "#25D366";
 
 /** With a video: photo, headline, then the video straight under it (no
  *  subtext, label or divider), so nothing stands between them and Play. */
-function BrandedThankYou({ page, name, video, endCta, onVideoEnd, showWhatsApp }: { page: LeadPage; name: string; video: string | null; endCta?: EndCta; onVideoEnd: () => void; showWhatsApp: boolean }) {
+function BrandedThankYou({ page, name, video, endCta, onVideoEnd, onVideoProgress, showWhatsApp }: { page: LeadPage; name: string; video: string | null; endCta?: EndCta; onVideoEnd: () => void; onVideoProgress: (p: VideoProgress) => void; showWhatsApp: boolean }) {
   const hasPhoto = !!page.profilePhotoDataUrl;
   const size = hasPhoto ? 76 : 96;
   return (
@@ -275,7 +289,7 @@ function BrandedThankYou({ page, name, video, endCta, onVideoEnd, showWhatsApp }
       <Typography sx={{ fontSize: 20, fontWeight: 700 }}>{fillNamed(page.thankYouHeadline, name, page.agentName)}</Typography>
       {video ? (
         <Box sx={{ mt: 2.5 }}>
-          <VideoPlayer url={video} accent={page.accentColor} autoplay endCta={endCta} onProgress={(p) => { if (p.ended) window.setTimeout(onVideoEnd, 1200); }} />
+          <VideoPlayer url={video} accent={page.accentColor} autoplay endCta={endCta} onProgress={(p) => { onVideoProgress(p); if (p.ended) window.setTimeout(onVideoEnd, 1200); }} />
         </Box>
       ) : (
         <Typography sx={{ fontSize: 14, color: "text.secondary", mt: 1 }}>{fillNamed(page.thankYouSubtext, name, page.agentName)}</Typography>
