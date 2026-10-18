@@ -53,13 +53,21 @@ type LeadSortKey = (typeof LEAD_SORT_KEYS)[number];
 /** "NEW" badge: still on New Lead and came in within the last 24 hours.
  *  Older untouched leads say how long they've waited in the Next column. */
 function isFreshLead(l: LeadRow): boolean {
-  return l.stage === "New Lead" && Date.now() - Date.parse(l.created_at) < 86_400_000;
+  return l.stage === "New Lead" && Date.now() - Date.parse(l.created_at) < 86_400_000 && !cameBack(l);
 }
+
+/** "CAME BACK" badge: filled in a form again in the last 7 days. */
+function cameBack(l: LeadRow): boolean {
+  return !!l.came_back_at && Date.now() - Date.parse(l.came_back_at) < 7 * 86_400_000;
+}
+/** Latest time they reached out: when they came in, or came back. */
+const lastIn = (l: LeadRow) => (l.came_back_at && l.came_back_at > l.created_at ? l.came_back_at : l.created_at);
+const CameBackBadge = () => <Box component="span" sx={{ fontSize: 10, fontWeight: 700, color: tokens.orange, ml: 0.75 }}>CAME BACK</Box>;
 
 /** What each sortable leads column sorts by ("stage" groups instead). */
 function leadSortValue(l: LeadRow, k: LeadSortKey): string | number {
   if (k === "name") return l.name;
-  if (k === "came") return l.created_at;
+  if (k === "came") return lastIn(l);
   // Next: most urgent first. Due before not due, then the earliest reminder
   // (or, with no reminder, the longest-waiting lead); Lost/Invalid last.
   const at = Date.parse(l.reminder_at ?? l.created_at);
@@ -1162,14 +1170,15 @@ function LeadsTable({
           <Box component="span" onClick={selectable ? undefined : () => onOpen(l.id)} sx={{ fontWeight: 500, fontSize: 15, color: tokens.primaryDark, cursor: selectable ? "inherit" : "pointer" }}>
             {l.name}
             {isFreshLead(l) && <Box component="span" sx={{ fontSize: 10, fontWeight: 700, color: tokens.green, ml: 0.75 }}>NEW</Box>}
+            {cameBack(l) && <CameBackBadge />}
             <LeadTags lead={l} sx={{ ml: 0.75 }} />
           </Box>
           <Typography sx={{ color: "text.secondary", fontSize: 13, display: "block" }}>
             {canSeeFullPhone ? l.phone : maskPhone(l.phone)}
           </Typography>
         </TableCell>
-        <TableCell sx={{ fontSize: 13, color: "text.secondary", whiteSpace: "nowrap" }} title={new Date(l.created_at).toLocaleString("en-ZA")}>
-          {timeAgo(l.created_at)}
+        <TableCell sx={{ fontSize: 13, color: "text.secondary", whiteSpace: "nowrap" }} title={`Came in ${new Date(l.created_at).toLocaleString("en-ZA")}${l.came_back_at ? ` · came back ${new Date(l.came_back_at).toLocaleString("en-ZA")}` : ""}`}>
+          {cameBack(l) ? `came back ${timeAgo(l.came_back_at!)}` : timeAgo(l.created_at)}
         </TableCell>
         <TableCell>
           <StageMenu current={l.stage} stages={allStages} kind={kind} onPick={(s) => onStagePick(l.id, s)}>
@@ -1324,12 +1333,13 @@ function MobileLeadsList({
       <Box onClick={selectable ? undefined : () => onOpen(l.id)} sx={{ fontWeight: 500, fontSize: 15, color: tokens.primaryDark, cursor: selectable ? "inherit" : "pointer" }}>
         {l.name}
         {isFreshLead(l) && <Box component="span" sx={{ fontSize: 10, fontWeight: 700, color: tokens.green, ml: 0.75 }}>NEW</Box>}
+        {cameBack(l) && <CameBackBadge />}
             <LeadTags lead={l} sx={{ ml: 0.75 }} />
       </Box>
       <Typography sx={{ color: "text.secondary", fontSize: 13 }}>
         {canSeeFullPhone ? l.phone : maskPhone(l.phone)}
         <Box component="span" sx={{ color: "text.disabled", mx: 0.75 }}>·</Box>
-        {timeAgo(l.created_at)}
+        {cameBack(l) ? `came back ${timeAgo(l.came_back_at!)}` : timeAgo(l.created_at)}
       </Typography>
       <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mt: 0.75 }}>
         <StageMenu current={l.stage} stages={stages} kind={kind} onPick={(s) => onStagePick(l.id, s)}>

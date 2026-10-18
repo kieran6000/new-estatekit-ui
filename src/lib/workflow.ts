@@ -15,7 +15,7 @@ import { PIPELINE_STAGES, stageLabel, type PipelineKind, type Stage } from "../t
 export type TriggerKind =
   | "lead_created" | "stage_changed" | "no_answer_times" | "not_contacted_for"
   | "reminder_due" | "plan_opened" | "daily_at" | "appointment"
-  | "call_time_picked" | "call_time";
+  | "call_time_picked" | "call_time" | "came_back";
 
 export type Unit = "minutes" | "hours" | "days";
 
@@ -187,6 +187,7 @@ export const TRIGGERS: { kind: TriggerKind; label: string; help: string }[] = [
   { kind: "no_answer_times", label: "No answer, a number of times", help: "After the agent logs \"No answer\" this many times." },
   { kind: "not_contacted_for", label: "Lead goes quiet", help: "No call or stage change for this many days." },
   { kind: "appointment", label: "Before or after an appointment", help: "A set time before (or after) a Booked or Viewing Booked appointment: 1 day, 1 hour, 30 minutes... Moves when the appointment moves; stops if it's cancelled." },
+  { kind: "came_back", label: "Lead fills in a form again", help: "Someone already in your leads sends one of your forms again (same phone number). Their lead re-opens with \"Came back\" instead of a second one." },
   { kind: "call_time_picked", label: "Lead picks a call time", help: "When they choose a day and time for a call, on your form or on the thank-you page. Again if they pick a new time." },
   { kind: "call_time", label: "Before or after their call time", help: "A set time before (or after) the call time they picked: 15 minutes, 2 hours... Moves if they pick a new time." },
   { kind: "reminder_due", label: "A follow-up reminder is due", help: "When a reminder's time arrives." },
@@ -828,6 +829,19 @@ export const TEMPLATES: { name: string; blurb: string; make: () => Workflow }[] 
       ...blankWorkflow(), name: "After the appointment: log it",
       trigger: { kind: "appointment", amount: 2, unit: "hours", when: "after" },
       steps: [{ id: newId(), type: "whatsapp_agent", text: "How did it go with {{first_name}}? Log it: {{action_link}}" }],
+    }),
+  },
+  {
+    name: "Came back: tell the agent",
+    blurb: "Someone already in your leads fills in a form again: the agent gets a WhatsApp straight away and a reminder to call them.",
+    make: () => ({
+      ...blankWorkflow(), name: "Came back: tell the agent",
+      trigger: { kind: "came_back" },
+      settings: { ...defaultSettings(), quietHours: false },
+      steps: [
+        { id: newId(), type: "whatsapp_agent", text: "{{name}} filled in your form again just now. They're keen: call them now.\n{{phone}}\n\nCall and log it: {{action_link}}" },
+        { id: newId(), type: "reminder", label: "Call {{first_name}}: they came back", inDays: 0 },
+      ],
     }),
   },
   {

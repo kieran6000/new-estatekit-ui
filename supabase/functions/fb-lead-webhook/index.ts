@@ -161,6 +161,18 @@ Deno.serve(async (req) => {
               a: f.values?.[0] || "",
             }));
 
+          // Already a lead for this agent (same number, any format): back to
+          // that lead instead of a second one (merge_repeat_lead).
+          const { data: repeatId, error: repeatErr } = await supabase.rpc("merge_repeat_lead", {
+            p_agent: agentId, p_phone: phone, p_name: name, p_email: email || null,
+            p_answers: formAnswers, p_source: "facebook", p_fb_lead_id: String(leadgenId),
+          });
+          if (repeatErr) console.error(`merge_repeat_lead: ${repeatErr.message}`);
+          if (repeatId) {
+            console.log(`Lead ${leadgenId} is ${name} again: back to their lead ${repeatId}`);
+            continue;
+          }
+
           const { error } = await supabase.from("leads").insert({
             agent_id: agentId,
             name,

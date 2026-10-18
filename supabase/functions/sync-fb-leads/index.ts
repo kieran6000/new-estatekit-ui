@@ -146,8 +146,25 @@ async function knownIds(ids: string[]): Promise<Set<string>> {
   for (let i = 0; i < ids.length; i += 200) {
     const { data } = await supabase.from("leads").select("fb_lead_id").in("fb_lead_id", ids.slice(i, i + 200));
     for (const r of data ?? []) if (r.fb_lead_id) known.add(r.fb_lead_id as string);
+    // Repeats already folded into someone's existing lead.
+    const { data: rep } = await supabase.from("lead_fb_repeats").select("fb_lead_id").in("fb_lead_id", ids.slice(i, i + 200));
+    for (const r of rep ?? []) known.add(r.fb_lead_id as string);
   }
   return known;
+}
+
+/** Someone already a lead for this agent (same number, any format) comes
+ *  back to that lead (merge_repeat_lead) instead of becoming a second one;
+ *  that counts as "dup" here (no new-lead alert: the "came back" workflow
+ *  tells the agent). If the check fails, the lead is saved as new. */
+async function insertOrMerge(row: Record<string, unknown>): Promise<{ id: string } | "dup" | "err"> {
+  const { data: repeatId, error } = await supabase.rpc("merge_repeat_lead", {
+    p_agent: row.agent_id, p_phone: row.phone ?? "", p_name: row.name ?? "", p_email: row.email ?? null,
+    p_answers: row.form_answers ?? [], p_source: "facebook", p_fb_lead_id: row.fb_lead_id ?? null,
+  });
+  if (error) console.error("merge_repeat_lead", error.message);
+  if (repeatId) return "dup";
+  return insertLead(row);
 }
 
 async function insertLead(row: Record<string, unknown>): Promise<{ id: string } | "dup" | "err"> {
@@ -236,7 +253,7 @@ Deno.serve(async (req) => {
       for (const l of leads) {
         if (known.has(l.id)) continue;
         const { name, phone, email, answers } = extract(l.field_data || []);
-        const r = await insertLead({ agent_id: page.agent_id, name, phone, email, stage: "New Lead", next_label: "Just came in", due: true, form_answers: answers, pipeline_id: page.pipeline_id, source_page_id: page.id, fb_lead_id: l.id, created_at: l.created_time || undefined });
+        const r = await insertOrMerge({ agent_id: page.agent_id, name, phone, email, stage: "New Lead", next_label: "Just came in", due: true, form_answers: answers, pipeline_id: page.pipeline_id, source_page_id: page.id, fb_lead_id: l.id, created_at: l.created_time || undefined });
         if (r === "dup") { if (l.created_time) await supabase.from("leads").update({ created_at: l.created_time }).eq("fb_lead_id", l.id); }
         else if (r !== "err") { inserted++; const address = answers.find((a) => /address/i.test(a.q))?.a; await maybeNotify(page.agent_id, { id: r.id, name, phone, address, pipeline: pipelineName, source: "Facebook form" }, l.created_time, silent); }
       }
@@ -303,7 +320,7 @@ Deno.serve(async (req) => {
           for (const l of leads) {
             if (known.has(l.id)) continue;
             const { name, phone, email, answers } = extract(l.field_data || []);
-            const r = await insertLead({ agent_id: a.agent_id, name, phone, email, stage: "New Lead", next_label: "Just came in", due: true, form_answers: answers, pipeline_id: pipelineId, fb_lead_id: l.id, created_at: l.created_time || undefined });
+            const r = await insertOrMerge({ agent_id: a.agent_id, name, phone, email, stage: "New Lead", next_label: "Just came in", due: true, form_answers: answers, pipeline_id: pipelineId, fb_lead_id: l.id, created_at: l.created_time || undefined });
             if (r === "dup") { if (l.created_time) await supabase.from("leads").update({ created_at: l.created_time }).eq("fb_lead_id", l.id); }
             else if (r !== "err") { inserted++; const address = answers.find((x) => /address/i.test(x.q))?.a; await maybeNotify(a.agent_id, { id: r.id, name, phone, address, source: "Facebook form" }, l.created_time, silent); }
           }
