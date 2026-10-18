@@ -89,6 +89,8 @@ function describe(e: LeadEvent): string {
       return "Tapped WhatsApp in the email";
     case "call_time_set":
       return `Picked a call time: ${e.to_value ?? ""}`;
+    case "video_watched":
+      return e.to_value ?? "Watched the thank-you video";
     case "resubmitted":
       // Their new answers are in to_value; from_value is the name they gave, if different.
       return `Filled in the form again${e.from_value ? ` (as ${e.from_value})` : ""}${e.to_value ? `: ${e.to_value.replace(/\n/g, " · ")}` : ""}`;
