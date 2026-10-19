@@ -378,6 +378,7 @@ type Outcome = { kind: "done" } | { kind: "goto"; pos: (number | string)[] } | {
 class Context {
   private pageCache: PageRow | null | undefined;
   private kindCache: string | null | undefined;
+  private pipelineNameCache: string | null = null;
 
   constructor(
     private supabase: SupabaseClient,
@@ -400,12 +401,26 @@ class Context {
     return this.pageCache;
   }
 
+  /** {{form}}: the form they filled in, by the name it has in EstateKit (an
+   *  agent running several Facebook forms needs to know which one), then the
+   *  pipeline it went to unless the form's name already says it:
+   *  "Wierda Park cluster (Wierda Park pipeline)" → "Wierda Park cluster". */
+  private async formLabel(): Promise<string> {
+    const l = this.lead!;
+    const page = await this.page();
+    const form = (page?.name || "").trim() || (l.fb_lead_id ? "Facebook form" : l.source_page_id ? "Lead page" : "Added by hand");
+    await this.pipelineKind();
+    const pipe = this.pipelineNameCache;
+    return pipe && !form.toLowerCase().includes(pipe.toLowerCase()) ? `${form} (${pipe} pipeline)` : form;
+  }
+
   private async pipelineKind(): Promise<string | null> {
     if (this.kindCache === undefined) {
       this.kindCache = null;
       if (this.lead?.pipeline_id) {
-        const { data } = await this.supabase.from("pipelines").select("kind").eq("id", this.lead.pipeline_id).maybeSingle();
+        const { data } = await this.supabase.from("pipelines").select("kind, name").eq("id", this.lead.pipeline_id).maybeSingle();
         this.kindCache = data?.kind ?? null;
+        this.pipelineNameCache = (data?.name as string | undefined)?.trim() || null;
       }
     }
     return this.kindCache ?? null;
@@ -613,7 +628,7 @@ class Context {
         first_name: first(l.name) || l.name, name: l.name, stage: l.stage, next_label: l.next_label ?? "",
         phone: prettyPhone(l.phone || ""), email: (l.email || "").trim() || "no email",
         address: tidyAddress(answers.find((x) => /address/i.test(x.q || ""))?.a || ""),
-        form: l.fb_lead_id ? "Facebook form" : (await this.page())?.name || (l.source_page_id ? "Lead page" : "Added by hand"),
+        form: await this.formLabel(),
         answers: answersText(l),
         form_answers: answersText(l),
         note: noteText(l),

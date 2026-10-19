@@ -282,7 +282,7 @@ const INFO: Record<string, FieldInfo> = {
   lead_type: { label: "Seller or buyer lead", example: "seller lead", group: "The lead" },
   stage: { label: "Stage", example: "No Answer", group: "The lead" },
   next_label: { label: "Next step", example: "Retry today", group: "The lead" },
-  form: { label: "Form they filled in", example: "Home Value page", group: "Their form" },
+  form: { label: "Form they filled in", example: "Cluster homes ad (Wierda Park pipeline)", group: "Their form" },
   form_answers: { label: "Their answers", example: "When are you selling?: In 3 months\nProperty address: 14 Oak Avenue, Bryanston", group: "Their form" },
   note: { label: "Note on the lead", example: "Wants to sell before December", group: "The lead" },
   answers: { label: "All their answers", example: "When are you selling?: In 3 months\nProperty address: 14 Oak Avenue, Bryanston", group: "Their form" },
