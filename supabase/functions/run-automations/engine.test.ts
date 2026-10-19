@@ -127,7 +127,8 @@ describe("steps in order", () => {
     for (const l of db.rows("leads")) enroll(wf, l as never);
     await tick();
     expect(sent[0].text).toBe("Thandi Mokoena | 082 555 0199 | thandi@example.com | 14 Oak Avenue | Home Value page\nWhen are you selling?: In 3 months\nProperty address: 14 oak avenue");
-    expect(sent[1].text).toBe("Thandi Mokoena | 082 555 0199 | no email |  | Facebook form\nNo answers");
+    // A Facebook lead shows the form's name in EstateKit (agents run several), not just "Facebook form".
+    expect(sent[1].text).toBe("Thandi Mokoena | 082 555 0199 | no email |  | Home Value page\nNo answers");
   });
 
   it("waits, then carries on from the right step", async () => {
@@ -710,6 +711,25 @@ describe("the builder allows exactly the fields the engine fills in", () => {
     enroll(workflow([email("Hi", template)]), lead({ note: "A note" }));
     await tick();
     expect(filled(String(emails[0].text))).toEqual([...FIELDS.email_lead].sort());
+  });
+});
+
+describe("{{form}} says which form and pipeline", () => {
+  it("a Facebook lead: the form's name in EstateKit, then its pipeline", async () => {
+    db.tables.pipelines.push({ id: "pWP", kind: "seller", name: "Wierda Park" });
+    db.tables.lead_pages.push({ id: "pgFB", name: "Cluster homes ad", suburb: "", phone: "" });
+    enroll(workflow([wa("From {{form}}")]), lead({ fb_lead_id: "fb1", source_page_id: "pgFB", pipeline_id: "pWP" }));
+    await tick();
+    expect(sent[0].text).toBe("From Cluster homes ad (Wierda Park pipeline)");
+  });
+
+  it("no doubling up when the form's name already says the pipeline; plain Facebook form when unnamed", async () => {
+    db.tables.pipelines.push({ id: "pWP", kind: "seller", name: "Wierda Park" });
+    db.tables.lead_pages.push({ id: "pgWP", name: "Wierda Park sellers", suburb: "", phone: "" });
+    enroll(workflow([wa("From {{form}}")]), lead({ fb_lead_id: "fb2", source_page_id: "pgWP", pipeline_id: "pWP" }));
+    enroll(workflow([wa("From {{form}}")]), lead({ fb_lead_id: "fb3", source_page_id: null, pipeline_id: "pWP" }));
+    await tick();
+    expect(sent.map((x) => x.text).sort()).toEqual(["From Facebook form (Wierda Park pipeline)", "From Wierda Park sellers"]);
   });
 });
 
