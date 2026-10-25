@@ -55,3 +55,34 @@ export function overdue(items: CalItem[], now = new Date()): CalItem[] {
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   return items.filter((it) => it.kind === "followup" && it.at < today);
 }
+
+/** How long each kind shows for, in minutes (Google-style blocks). */
+export const DURATION: Record<CalKind, number> = { appointment: 60, viewing: 60, call: 15, followup: 30 };
+
+export interface Placed { it: CalItem; start: number; end: number; lane: number; lanes: number }
+
+/** One day's blocks, side by side where they overlap (like Google Calendar):
+ *  start/end are minutes from midnight; lane of lanes says which slice. */
+export function layoutDay(items: CalItem[]): Placed[] {
+  const blocks = items
+    .map((it) => {
+      const start = it.at.getHours() * 60 + it.at.getMinutes();
+      return { it, start, end: Math.min(24 * 60, start + DURATION[it.kind]), lane: 0, lanes: 1 };
+    })
+    .sort((a, b) => a.start - b.start || b.end - a.end);
+  // Groups of blocks that overlap each other share the width.
+  let group: Placed[] = [];
+  let groupEnd = -1;
+  const close = () => { const n = Math.max(1, ...group.map((g) => g.lane + 1)); group.forEach((g) => { g.lanes = n; }); group = []; };
+  for (const b of blocks) {
+    if (b.start >= groupEnd) { close(); groupEnd = -1; }
+    const used = new Set(group.filter((g) => g.end > b.start).map((g) => g.lane));
+    let lane = 0;
+    while (used.has(lane)) lane++;
+    b.lane = lane;
+    group.push(b);
+    groupEnd = Math.max(groupEnd, b.end);
+  }
+  close();
+  return blocks;
+}

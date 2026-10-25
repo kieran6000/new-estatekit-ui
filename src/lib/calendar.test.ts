@@ -44,3 +44,13 @@ describe("the Calendar tab", () => {
     expect(weekDays(items, weekStart(new Date(2026, 9, 27))).find((d) => d.items.length)!.day.getDate()).toBe(27);
   });
 });
+
+describe("calendar blocks", () => {
+  it("overlapping blocks sit side by side; the next free time starts full width again", async () => {
+    const { layoutDay } = await import("./calendar");
+    const at = (h: number, m = 0) => new Date(2026, 9, 28, h, m);
+    const mk = (kind: "appointment" | "call", d: Date) => ({ lead: lead({}), kind, at: d, label: "" });
+    const placed = layoutDay([mk("appointment", at(10)), mk("call", at(10, 30)), mk("appointment", at(14))]);
+    expect(placed.map((p) => `${p.start}-${p.end} ${p.lane}/${p.lanes}`)).toEqual(["600-660 0/2", "630-645 1/2", "840-900 0/1"]);
+  });
+});
