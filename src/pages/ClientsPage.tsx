@@ -233,6 +233,7 @@ export default function ClientsPage() {
           email: c.email,
           avatarUrl: c.avatar_url,
           salesCount: c.sales_count,
+          googleCalendarEmail: c.google_calendar_email,
         }).done,
       };
     });

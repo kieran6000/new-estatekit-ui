@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AppBar,
@@ -28,6 +29,10 @@ import { useSnack } from "../hooks/useSnack";
 import { trackActivity } from "../lib/activity";
 import { isCellphone, isEmail, isFullName, SALES_TARGET, setupDone, setupProgress } from "../lib/setup";
 import RecentSalesEditor from "../components/RecentSalesEditor";
+import EventAvailableOutlinedIcon from "@mui/icons-material/EventAvailableOutlined";
+import { connectGoogleCalendar, disconnectGoogleCalendar } from "../api/googleCalendar";
+import { getActiveAgentIdSync } from "../api/_client";
+import { useAuth } from "../hooks/useAuth";
 import { MAX_IMAGE_BYTES, uploadImage } from "../lib/image";
 
 type SaveState = "saving" | "saved" | "error" | null;
@@ -39,6 +44,42 @@ type SaveState = "saving" | "saved" | "error" | null;
 export default function SetupPage() {
   const qc = useQueryClient();
   const showSnack = useSnack();
+  const { user } = useAuth();
+  // Staff switched into an agent's account: the agent connects their own Google.
+  const managingOther = !!getActiveAgentIdSync() && getActiveAgentIdSync() !== user?.id;
+  const [calBusy, setCalBusy] = useState(false);
+  const [params, setParams] = useSearchParams();
+  // Back from Google's page.
+  useEffect(() => {
+    const r = params.get("calendar");
+    if (!r) return;
+    showSnack(r === "connected" ? "Google Calendar connected. Your appointments will show there." : r === "cancelled" ? "Google Calendar wasn't connected." : "Couldn't connect Google Calendar. Try again.");
+    void qc.invalidateQueries({ queryKey: ["myProfile"] });
+    setParams((p) => { const n = new URLSearchParams(p); n.delete("calendar"); return n; }, { replace: true });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  async function connectCalendar() {
+    setCalBusy(true);
+    try {
+      await connectGoogleCalendar("/setup");
+    } catch (e) {
+      console.error(e);
+      showSnack((e as Error).message === "not_configured" ? "Google Calendar isn't switched on yet. EstateKit is setting it up." : "Couldn't open Google. Try again.");
+      setCalBusy(false);
+    }
+  }
+  async function disconnectCalendar() {
+    setCalBusy(true);
+    try {
+      await disconnectGoogleCalendar();
+      await qc.invalidateQueries({ queryKey: ["myProfile"] });
+      showSnack("Google Calendar disconnected.");
+    } catch (e) {
+      console.error(e);
+      showSnack("Couldn't disconnect. Try again.");
+    } finally {
+      setCalBusy(false);
+    }
+  }
   const { data: profile, isLoading } = useQuery({ queryKey: ["myProfile"], queryFn: getMyProfile });
   const { data: sales = [] } = useQuery({ queryKey: ["mySold"], queryFn: listMySoldListings });
   const [saveState, setSaveState] = useState<SaveState>(null);
@@ -98,6 +139,7 @@ export default function SetupPage() {
     email: profile.email,
     avatarUrl: profile.avatarUrl,
     salesCount: sales.length,
+    googleCalendarEmail: profile.googleCalendarEmail,
   };
   const done = setupDone(input);
   const progress = setupProgress(input);
@@ -189,6 +231,26 @@ export default function SetupPage() {
 
         <Item n={6} done={done.agency} title="Your agency" why="Shown under your name, e.g. RE/MAX Midrand, or Independent.">
           <AutoSaveField label="Agency" value={profile.company} onSave={(v) => save({ company: v })} />
+        </Item>
+
+        <Item n={7} done={done.calendar} title="Connect your Google Calendar" why="Your appointments and the call times leads pick go straight into your Google Calendar, and move by themselves if they change.">
+          {done.calendar ? (
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, flexWrap: "wrap" }}>
+              <Typography sx={{ fontSize: 14.5, flex: 1, minWidth: 180 }}>
+                Connected{profile.googleCalendarEmail && profile.googleCalendarEmail.includes("@") ? <> to <b>{profile.googleCalendarEmail}</b></> : ""}.
+              </Typography>
+              {!managingOther && <Button onClick={disconnectCalendar} disabled={calBusy}>Disconnect</Button>}
+            </Box>
+          ) : managingOther ? (
+            <Typography sx={{ fontSize: 14, color: "text.secondary" }}>
+              {profile.displayName || "The agent"} connects this from their own login: it uses their Google account.
+            </Typography>
+          ) : (
+            <Button variant="contained" size="large" onClick={connectCalendar} disabled={calBusy}
+              startIcon={calBusy ? <CircularProgress size={16} sx={{ color: "inherit" }} /> : <EventAvailableOutlinedIcon />}>
+              Connect Google Calendar
+            </Button>
+          )}
         </Item>
       </Box>
 

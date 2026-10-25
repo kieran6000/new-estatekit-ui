@@ -1,4 +1,6 @@
-// "Get set up": the six things sellers see, and how complete an agent is.
+// "Get set up": the six things sellers see, plus connecting their Google
+// Calendar (appointments and picked call times go into it), and how complete
+// an agent is.
 // Used by the Get set up page, the menu (shown until it's all done) and the
 // Clients list (so operators know who to help on the onboarding call).
 // Everything else (brief, suburbs, budget, Facebook) is asked on /start or on
@@ -6,10 +8,10 @@
 
 export const SALES_TARGET = 3;
 
-/** photo, sales, name, whatsapp, email, agency */
-export const SETUP_TOTAL = 6;
+/** photo, sales, name, whatsapp, email, agency, calendar */
+export const SETUP_TOTAL = 7;
 
-export type SetupKey = "photo" | "sales" | "name" | "whatsapp" | "email" | "agency";
+export type SetupKey = "photo" | "sales" | "name" | "whatsapp" | "email" | "agency" | "calendar";
 
 export interface SetupInput {
   displayName: string | null | undefined;
@@ -18,6 +20,8 @@ export interface SetupInput {
   email: string | null | undefined;
   avatarUrl: string | null | undefined;
   salesCount: number;
+  /** The connected Google account, if any. */
+  googleCalendarEmail?: string | null;
 }
 
 const digits = (s: string) => {
@@ -46,6 +50,7 @@ export function setupDone(p: SetupInput): Record<SetupKey, boolean> {
     whatsapp: isCellphone(p.whatsappNumber),
     email: isEmail(p.email),
     agency: !!(p.company || "").trim(),
+    calendar: !!(p.googleCalendarEmail || "").trim(),
   };
 }
 

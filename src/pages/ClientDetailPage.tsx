@@ -238,6 +238,7 @@ function Header({ data }: { data: Data }) {
     email: p.email,
     avatarUrl: p.avatar_url,
     salesCount: sales.length,
+    googleCalendarEmail: p.google_calendar_email,
   });
 
   function openDashboard() {
@@ -923,6 +924,7 @@ const SETUP_LABELS: Record<SetupKey, string> = {
   whatsapp: "WhatsApp cellphone",
   email: "Reply email",
   agency: "Agency",
+  calendar: "Google Calendar connected",
 };
 
 function SetupSection({ data }: { data: Data }) {
@@ -935,6 +937,7 @@ function SetupSection({ data }: { data: Data }) {
     email: p.email,
     avatarUrl: p.avatar_url,
     salesCount: sales.length,
+    googleCalendarEmail: p.google_calendar_email,
   });
   const n = Object.values(done).filter(Boolean).length;
   return (

@@ -99,6 +99,8 @@ export interface AgentProfile {
   /** The agent's face. Kept separate from sidebarLogoUrl so a real agency logo
    *  can live there without losing the person's photo. */
   avatarUrl: string | null;
+  /** The Google account whose calendar gets their appointments (null = not connected). */
+  googleCalendarEmail: string | null;
   onboarded: boolean;
   /** Email each new lead a confirmation in this agent's name. Off by default. */
   leadConfirmationEmail: boolean;
@@ -123,6 +125,7 @@ interface ProfileRow {
   sidebar_color: string;
   sidebar_logo_url: string | null;
   avatar_url: string | null;
+  google_calendar_email?: string | null;
   onboarded: boolean;
   lead_confirmation_email: boolean | null;
   lead_email_body: string | null;
@@ -146,6 +149,7 @@ function rowToProfile(r: ProfileRow): AgentProfile {
     sidebarColor: r.sidebar_color || "#111827",
     sidebarLogoUrl: r.sidebar_logo_url,
     avatarUrl: r.avatar_url ?? null,
+    googleCalendarEmail: r.google_calendar_email ?? null,
     onboarded: r.onboarded,
     leadConfirmationEmail: r.lead_confirmation_email === true,
     leadEmailBody: r.lead_email_body ?? null,
