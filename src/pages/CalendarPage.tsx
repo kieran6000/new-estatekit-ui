@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { AppBar, Box, Button, Dialog, Drawer, IconButton, MenuItem, Popover, Select, Skeleton, Toolbar, Typography, useMediaQuery } from "@mui/material";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
@@ -23,6 +23,9 @@ import { calendarItems, DURATION, layoutDay, overdue, weekStart, type CalItem, t
 //            day, Today top right. A block opens a bottom sheet with a big
 //            Call button. Overdue follow-ups sit in a bar at the bottom.
 // The same dates go into Google Calendar when it's connected (Get set up).
+// It keeps its place: the day, Week/Day and the overdue list live in the URL
+// (?d=2026-10-27&v=day&late=1) and the scroll in this tab's session, so the
+// back arrow on a lead lands where they found it, with that lead highlighted.
 
 // Google Calendar's own event colours (Peacock, Grape, Basil, Tomato).
 const KIND: Record<CalKind, { color: string; word: string }> = {
@@ -37,18 +40,45 @@ const hourLabel = (h: number) => (h === 0 ? "" : h < 12 ? `${h} AM` : h === 12 ?
 const sameDay = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 const addDays = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
 const minutes = (d: Date) => d.getHours() * 60 + d.getMinutes();
+const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const parseYmd = (v: string | null) => {
+  const m = v && /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
+  return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
+};
+// Where they were scrolled and which lead they opened (this tab only).
+const MEMO = "ek.calendar.memo";
+type Memo = { key: string; top: number; lead?: string };
+const readMemo = (): Memo | null => { try { return JSON.parse(sessionStorage.getItem(MEMO) || "null"); } catch { return null; } };
+const writeMemo = (m: Memo) => { try { sessionStorage.setItem(MEMO, JSON.stringify(m)); } catch { /* private mode */ } };
 
 export default function CalendarPage() {
   const navigate = useNavigate();
   const phone = useMediaQuery("(max-width:639px)");
   const { data: leads = [], isLoading } = useLeads();
   const canSeeFullPhone = useCanSeeFullPhone();
-  const [weekView, setWeekView] = useState(true); // desktop only; phones always show a day
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const [anchor, setAnchor] = useState(today); // the day picked / a day in the week shown
+  const [params, setParams] = useSearchParams();
+  const anchor = parseYmd(params.get("d")) ?? today; // the day picked / a day in the week shown
+  const weekView = params.get("v") !== "day"; // desktop only; phones always show a day
+  const showLate = params.get("late") === "1";
+  // Replace, not push: moving around the calendar isn't a page of its own.
+  const setParam = (k: string, v: string | null) => setParams((prev) => {
+    const n = new URLSearchParams(prev);
+    if (v == null) n.delete(k); else n.set(k, v);
+    return n;
+  }, { replace: true });
+  const setAnchor = (next: Date | ((a: Date) => Date)) => {
+    const d = typeof next === "function" ? next(anchor) : next;
+    setParam("d", sameDay(d, today) ? null : ymd(d));
+  };
+  const setWeekView = (w: boolean) => setParam("v", w ? null : "day");
+  const setShowLate = (v: boolean) => setParam("late", v ? "1" : null);
   const [open, setOpen] = useState<{ el: HTMLElement; it: CalItem } | null>(null);
-  const [showLate, setShowLate] = useState(false);
+  const [memo] = useState(readMemo); // what they had when they left (read once)
+  const [flash, setFlash] = useState<string | undefined>(memo?.lead);
+  // Used once: opening Calendar from the menu later starts fresh.
+  useEffect(() => { try { sessionStorage.removeItem(MEMO); } catch { /* private mode */ } }, []);
   const body = useRef<HTMLDivElement>(null);
   const touch = useRef<{ x: number; y: number } | null>(null);
 
@@ -72,10 +102,25 @@ export default function CalendarPage() {
   const firstAt = shownItems.length ? Math.min(...shownItems.map((it) => minutes(it.at))) : null;
   const scrollTo = firstAt != null ? firstAt - 60 : days.some((d) => sameDay(d, today)) ? minutes(now) - 60 : 8 * 60;
   const dayKey = days[0].toDateString() + days.length;
+  // Coming back to the same day: put them back exactly where they were.
+  const restored = useRef(false);
   useEffect(() => {
-    if (body.current) body.current.scrollTop = Math.max(0, (scrollTo / 60) * HOUR);
+    if (!body.current || isLoading) return;
+    if (!restored.current && memo && memo.key === dayKey) body.current.scrollTop = memo.top;
+    else body.current.scrollTop = Math.max(0, (scrollTo / 60) * HOUR);
+    restored.current = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dayKey, isLoading, HOUR]);
+  // The lead they came back from glows for a moment, then settles.
+  useEffect(() => {
+    if (!flash) return;
+    const t = setTimeout(() => setFlash(undefined), 2400);
+    return () => clearTimeout(t);
+  }, [flash]);
+  const openLead = (id: string) => {
+    writeMemo({ key: dayKey, top: body.current?.scrollTop ?? 0, lead: id });
+    navigate(`/leads/${id}`);
+  };
 
   // Swipe left / right = next / previous (phones), like the Google Calendar app.
   const onTouchStart = (e: React.TouchEvent) => { touch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; };
@@ -92,7 +137,7 @@ export default function CalendarPage() {
       it={open.it}
       phone={phone}
       canSeeFullPhone={canSeeFullPhone}
-      onOpen={() => navigate(`/leads/${open.it.lead.id}`)}
+      onOpen={() => openLead(open.it.lead.id)}
       onClose={() => setOpen(null)}
     />
   );
@@ -195,7 +240,8 @@ export default function CalendarPage() {
                           left: `calc(${(p.lane / p.lanes) * 100}% + 2px)`, width: `calc(${100 / p.lanes}% - 6px)`,
                           bgcolor: k.color, color: "#fff", border: 0, borderRadius: "6px", px: 0.75, py: roomy ? 0.5 : 0.15,
                           textAlign: "left", font: "inherit", fontSize: phone ? 13.5 : 12, lineHeight: 1.25, overflow: "hidden", cursor: "pointer",
-                          boxShadow: "0 0 0 1px rgba(255,255,255,.35)", "&:hover": { filter: "brightness(1.08)" },
+                          boxShadow: flash === p.it.lead.id ? `0 0 0 2px #fff, 0 0 0 5px ${k.color}` : "0 0 0 1px rgba(255,255,255,.35)",
+                          transition: "box-shadow .6s ease", "&:hover": { filter: "brightness(1.08)" },
                         }}
                       >
                         <Box sx={{ fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -244,8 +290,8 @@ export default function CalendarPage() {
           <IconButton aria-label="Close" onClick={() => setShowLate(false)} sx={{ width: 48, height: 48, mr: -1 }}><CloseIcon /></IconButton>
         </Box>
         {late.map((it) => (
-          <Box key={`${it.lead.id}-${it.kind}`} sx={{ display: "flex", alignItems: "center", gap: 1, py: 1, "& + &": { borderTop: `1px solid ${tokens.divider2}` } }}>
-            <Box component="button" type="button" onClick={() => navigate(`/leads/${it.lead.id}`)}
+          <Box key={`${it.lead.id}-${it.kind}`} sx={{ display: "flex", alignItems: "center", gap: 1, py: 1, px: 1, mx: -1, borderRadius: "8px", transition: "background-color .6s ease", bgcolor: flash === it.lead.id ? tokens.divider2 : "transparent", "& + &": { borderTop: `1px solid ${tokens.divider2}` } }}>
+            <Box component="button" type="button" onClick={() => openLead(it.lead.id)}
               sx={{ flex: 1, minWidth: 0, minHeight: 48, textAlign: "left", font: "inherit", bgcolor: "transparent", border: 0, p: 0, cursor: "pointer" }}>
               <Typography sx={{ fontSize: 16, fontWeight: 500, color: tokens.primaryDark }}>{it.lead.name}</Typography>
               <Typography sx={{ fontSize: 13.5, color: "text.secondary" }}>
