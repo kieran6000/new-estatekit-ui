@@ -59,7 +59,8 @@ import { setActiveAgent, supabase } from "../api/_client";
 import { getEmailStats } from "../api/leadEvents";
 import { listSoldListingsForAgent } from "../api/soldListings";
 import { listSignupRequests } from "../api/signup";
-import { setupDone, setupProgress, SALES_TARGET, SETUP_TOTAL, type SetupKey } from "../lib/setup";
+import { setupDone, setupProgress, SALES_TARGET, type SetupKey } from "../lib/setup";
+import { useCalendarReady } from "../hooks/useCalendarReady";
 import { BRIEF_FIELDS, BRIEF_QUESTIONS, buildBrief, type BriefSource } from "../lib/brief";
 import { resolveRange, useDateRange, ymd } from "../lib/range";
 import { useAuth } from "../hooks/useAuth";
@@ -231,7 +232,9 @@ function Header({ data }: { data: Data }) {
   const name = p.display_name || p.whatsapp_number || "Unnamed account";
   const phone = p.whatsapp_number || d?.contact.phones[0] || "";
   const email = p.email || d?.contact.emails[0] || "";
+  const calendarReady = useCalendarReady();
   const setup = setupProgress({
+    calendarReady,
     displayName: p.display_name,
     company: p.company,
     whatsappNumber: p.whatsapp_number,
@@ -290,7 +293,7 @@ function Header({ data }: { data: Data }) {
             <Box sx={{ display: "flex", gap: 0.75, flexWrap: "wrap", mt: 1 }}>
               <Chip
                 size="small"
-                label={setup.complete ? "Set up: done" : `Set up: ${setup.done}/${SETUP_TOTAL}`}
+                label={setup.complete ? "Set up: done" : `Set up: ${setup.done}/${setup.total}`}
                 color={setup.complete ? "success" : "default"}
                 variant="outlined"
               />
@@ -930,6 +933,7 @@ const SETUP_LABELS: Record<SetupKey, string> = {
 function SetupSection({ data }: { data: Data }) {
   const { profile: p } = data;
   const { data: sales = [] } = useQuery({ queryKey: ["sold", p.agent_id], queryFn: () => listSoldListingsForAgent(p.agent_id) });
+  const calendarReady = useCalendarReady();
   const done = setupDone({
     displayName: p.display_name,
     company: p.company,
@@ -939,11 +943,12 @@ function SetupSection({ data }: { data: Data }) {
     salesCount: sales.length,
     googleCalendarEmail: p.google_calendar_email,
   });
-  const n = Object.values(done).filter(Boolean).length;
+  const keys = (Object.keys(SETUP_LABELS) as SetupKey[]).filter((k) => k !== "calendar" || calendarReady);
+  const n = keys.filter((k) => done[k]).length;
   return (
-    <Section title={n === SETUP_TOTAL ? "All done" : `${n} of ${SETUP_TOTAL} done`}>
+    <Section title={n === keys.length ? "All done" : `${n} of ${keys.length} done`}>
       <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
-        {(Object.keys(SETUP_LABELS) as SetupKey[]).map((k) => (
+        {keys.map((k) => (
           <Box key={k} sx={{ display: "flex", alignItems: "center", gap: 1 }}>
             {done[k] ? <CheckCircleIcon sx={{ fontSize: 20, color: "success.main" }} /> : <RadioButtonUncheckedIcon sx={{ fontSize: 20, color: tokens.ink3 }} />}
             <Typography sx={{ fontSize: 13.5, color: done[k] ? tokens.ink : tokens.ink2 }}>

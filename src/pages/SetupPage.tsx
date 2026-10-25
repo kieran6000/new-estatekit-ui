@@ -33,6 +33,7 @@ import EventAvailableOutlinedIcon from "@mui/icons-material/EventAvailableOutlin
 import { connectGoogleCalendar, disconnectGoogleCalendar } from "../api/googleCalendar";
 import { getActiveAgentIdSync } from "../api/_client";
 import { useAuth } from "../hooks/useAuth";
+import { useCalendarReady } from "../hooks/useCalendarReady";
 import { MAX_IMAGE_BYTES, uploadImage } from "../lib/image";
 
 type SaveState = "saving" | "saved" | "error" | null;
@@ -48,6 +49,7 @@ export default function SetupPage() {
   // Staff switched into an agent's account: the agent connects their own Google.
   const managingOther = !!getActiveAgentIdSync() && getActiveAgentIdSync() !== user?.id;
   const [calBusy, setCalBusy] = useState(false);
+  const calendarReady = useCalendarReady();
   const [params, setParams] = useSearchParams();
   // Back from Google's page.
   useEffect(() => {
@@ -140,6 +142,7 @@ export default function SetupPage() {
     avatarUrl: profile.avatarUrl,
     salesCount: sales.length,
     googleCalendarEmail: profile.googleCalendarEmail,
+    calendarReady,
   };
   const done = setupDone(input);
   const progress = setupProgress(input);
@@ -233,7 +236,7 @@ export default function SetupPage() {
           <AutoSaveField label="Agency" value={profile.company} onSave={(v) => save({ company: v })} />
         </Item>
 
-        <Item n={7} done={done.calendar} title="Connect your Google Calendar" why="Your appointments and the call times leads pick go straight into your Google Calendar, and move by themselves if they change.">
+        {calendarReady && <Item n={7} done={done.calendar} title="Connect your Google Calendar" why="Your appointments and the call times leads pick go straight into your Google Calendar, and move by themselves if they change.">
           {done.calendar ? (
             <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, flexWrap: "wrap" }}>
               <Typography sx={{ fontSize: 14.5, flex: 1, minWidth: 180 }}>
@@ -251,7 +254,7 @@ export default function SetupPage() {
               Connect Google Calendar
             </Button>
           )}
-        </Item>
+        </Item>}
       </Box>
 
       <Dialog open={!!waConfirm} onClose={() => { setWaConfirm(null); setWaKey((k) => k + 1); }}>

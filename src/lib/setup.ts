@@ -8,8 +8,11 @@
 
 export const SALES_TARGET = 3;
 
-/** photo, sales, name, whatsapp, email, agency, calendar */
+/** photo, sales, name, whatsapp, email, agency, calendar. The calendar only
+ *  counts once Google Calendar can be connected (calendarReady): until then
+ *  it's the first six. */
 export const SETUP_TOTAL = 7;
+export const setupTotal = (calendarReady?: boolean) => (calendarReady ? SETUP_TOTAL : SETUP_TOTAL - 1);
 
 export type SetupKey = "photo" | "sales" | "name" | "whatsapp" | "email" | "agency" | "calendar";
 
@@ -22,6 +25,8 @@ export interface SetupInput {
   salesCount: number;
   /** The connected Google account, if any. */
   googleCalendarEmail?: string | null;
+  /** Google Calendar can be connected yet (google_calendar_ready). */
+  calendarReady?: boolean;
 }
 
 const digits = (s: string) => {
@@ -55,7 +60,8 @@ export function setupDone(p: SetupInput): Record<SetupKey, boolean> {
 }
 
 export function setupProgress(p: SetupInput): { done: number; total: number; complete: boolean } {
-  const flags = Object.values(setupDone(p));
+  const all = setupDone(p);
+  const flags = (Object.keys(all) as SetupKey[]).filter((k) => k !== "calendar" || p.calendarReady).map((k) => all[k]);
   const done = flags.filter(Boolean).length;
   return { done, total: flags.length, complete: done === flags.length };
 }

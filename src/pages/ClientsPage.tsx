@@ -46,7 +46,8 @@ import {
   type LastActivity,
 } from "../api/clients";
 import { getFbAdAccount } from "../api/agentProfile";
-import { setupProgress, SETUP_TOTAL } from "../lib/setup";
+import { setupProgress, setupTotal } from "../lib/setup";
+import { useCalendarReady } from "../hooks/useCalendarReady";
 import { resolveRange, useDateRange, ymd } from "../lib/range";
 import { timeAgo } from "../lib/timeAgo";
 import SignupRequests from "../components/SignupRequests";
@@ -152,6 +153,9 @@ function ActiveLabel({ a }: { a: LastActivity | null }) {
  *  chosen dates, how they pay for ads, their latest sign of life, and a way
  *  into their Ads Manager. A table on a computer, cards on a phone. */
 export default function ClientsPage() {
+  // Get set up: 7 things once Google Calendar can be connected, else 6.
+  const calendarReady = useCalendarReady();
+  const setupN = setupTotal(calendarReady);
   const navigate = useNavigate();
   const wide = useMediaQuery("(min-width:1000px)");
   const [range, setRange] = useDateRange("estatekit_accounts_range");
@@ -227,6 +231,7 @@ export default function ClientsPage() {
         activity: act,
         last: c.live?.last_lead_at ? new Date(c.live.last_lead_at).getTime() : null,
         setup: setupProgress({
+          calendarReady,
           displayName: c.display_name,
           company: c.company,
           whatsappNumber: c.whatsapp_number,
@@ -239,7 +244,7 @@ export default function ClientsPage() {
     });
     // metaKey stands in for the Meta query results, which are new arrays each render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clients, view, counts, activity, metaKey, sinceDay, untilDay, rangeDays]);
+  }, [clients, view, counts, activity, metaKey, sinceDay, untilDay, rangeDays, calendarReady]);
 
   const shown = useMemo(() => {
     const list = rows.filter((r) => matches(r.c, search.trim()));
@@ -263,7 +268,7 @@ export default function ClientsPage() {
 
   const spendCell = (r: Row) => (r.spend === undefined ? <Skeleton width={50} sx={{ ml: "auto" }} /> : r.spend == null ? "—" : money(r.spend));
   const cplCell = (r: Row) => (r.cpl === undefined ? <Skeleton width={44} sx={{ ml: "auto" }} /> : cplLabel(r.spend, r.leads));
-  const setupCell = (r: Row) => (r.setup === SETUP_TOTAL ? "Done" : `${r.setup}/${SETUP_TOTAL}`);
+  const setupCell = (r: Row) => (r.setup === setupN ? "Done" : `${r.setup}/${setupN}`);
   const adsLink = (r: Row) =>
     r.c.fb_ad_account_id ? (
       <Tooltip title="Open Ads Manager">
@@ -436,7 +441,7 @@ export default function ClientsPage() {
                     <TableCell align="right" sx={{ whiteSpace: "nowrap", color: r.last ? tokens.ink : tokens.ink3 }}>
                       {r.c.live?.last_lead_at ? timeAgo(r.c.live.last_lead_at) : "never"}
                     </TableCell>
-                    <TableCell align="right" sx={{ whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums", color: r.setup === SETUP_TOTAL ? "success.main" : tokens.ink }}>
+                    <TableCell align="right" sx={{ whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums", color: r.setup === setupN ? "success.main" : tokens.ink }}>
                       {setupCell(r)}
                     </TableCell>
                     <TableCell align="center" sx={{ py: "2px !important" }}>{adsLink(r)}</TableCell>
@@ -497,7 +502,7 @@ export default function ClientsPage() {
                     {r.funding && <FundingChip type={r.fundingType} label={r.fundingLabel} balance={r.owed} problem={r.problem} status={r.accountStatus} showLabel />}
                     <span>Active <ActiveLabel a={r.activity} /></span>
                     <span>Last lead {r.c.live?.last_lead_at ? timeAgo(r.c.live.last_lead_at) : "never"}</span>
-                    <Box component="span" sx={{ color: r.setup === SETUP_TOTAL ? "success.main" : undefined }}>Set up {setupCell(r)}</Box>
+                    <Box component="span" sx={{ color: r.setup === setupN ? "success.main" : undefined }}>Set up {setupCell(r)}</Box>
                   </Box>
                 </ButtonBase>
               ))}
