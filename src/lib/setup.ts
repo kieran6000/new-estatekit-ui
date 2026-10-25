@@ -1,4 +1,6 @@
-// "Get set up": the six things sellers see, and how complete an agent is.
+// "Get set up": the six things sellers see, plus connecting their Google
+// Calendar (appointments and picked call times go into it), and how complete
+// an agent is.
 // Used by the Get set up page, the menu (shown until it's all done) and the
 // Clients list (so operators know who to help on the onboarding call).
 // Everything else (brief, suburbs, budget, Facebook) is asked on /start or on
@@ -6,10 +8,13 @@
 
 export const SALES_TARGET = 3;
 
-/** photo, sales, name, whatsapp, email, agency */
-export const SETUP_TOTAL = 6;
+/** photo, sales, name, whatsapp, email, agency, calendar. The calendar only
+ *  counts once Google Calendar can be connected (calendarReady): until then
+ *  it's the first six. */
+export const SETUP_TOTAL = 7;
+export const setupTotal = (calendarReady?: boolean) => (calendarReady ? SETUP_TOTAL : SETUP_TOTAL - 1);
 
-export type SetupKey = "photo" | "sales" | "name" | "whatsapp" | "email" | "agency";
+export type SetupKey = "photo" | "sales" | "name" | "whatsapp" | "email" | "agency" | "calendar";
 
 export interface SetupInput {
   displayName: string | null | undefined;
@@ -18,6 +23,10 @@ export interface SetupInput {
   email: string | null | undefined;
   avatarUrl: string | null | undefined;
   salesCount: number;
+  /** The connected Google account, if any. */
+  googleCalendarEmail?: string | null;
+  /** Google Calendar can be connected yet (google_calendar_ready). */
+  calendarReady?: boolean;
 }
 
 const digits = (s: string) => {
@@ -46,11 +55,13 @@ export function setupDone(p: SetupInput): Record<SetupKey, boolean> {
     whatsapp: isCellphone(p.whatsappNumber),
     email: isEmail(p.email),
     agency: !!(p.company || "").trim(),
+    calendar: !!(p.googleCalendarEmail || "").trim(),
   };
 }
 
 export function setupProgress(p: SetupInput): { done: number; total: number; complete: boolean } {
-  const flags = Object.values(setupDone(p));
+  const all = setupDone(p);
+  const flags = (Object.keys(all) as SetupKey[]).filter((k) => k !== "calendar" || p.calendarReady).map((k) => all[k]);
   const done = flags.filter(Boolean).length;
   return { done, total: flags.length, complete: done === flags.length };
 }

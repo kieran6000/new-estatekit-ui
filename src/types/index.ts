@@ -83,6 +83,10 @@ export interface LeadRow {
   updated_at: string;
   /** When they last filled in a form again (one lead per person: see merge_repeat_lead). */
   came_back_at?: string | null;
+  /** A Booked / Viewing Booked appointment's time (kept in step with the reminder). */
+  appointment_at?: string | null;
+  /** The call time they picked on the form or thank-you page. */
+  call_at?: string | null;
   /** Archived leads are kept but hidden from the working list. */
   archived?: boolean;
   /** When the commission was actually banked. Null means the money is still

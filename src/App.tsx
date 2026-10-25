@@ -10,6 +10,7 @@ import LoginPage from "./pages/LoginPage";
 import WelcomePage from "./pages/WelcomePage";
 import LeadsPage from "./pages/LeadsPage";
 import LeadDetailPage from "./pages/LeadDetailPage";
+import CalendarPage from "./pages/CalendarPage";
 import OverviewPage from "./pages/OverviewPage";
 import HomePage from "./pages/HomePage";
 import LeadPagePage from "./pages/LeadPagePage";
@@ -111,6 +112,7 @@ export default function App() {
           <Route element={<OnboardingGate><AppShell /></OnboardingGate>}>
             <Route path="/leads" element={<LeadsPage />} />
             <Route path="/leads/:id" element={<LeadDetailPage />} />
+            <Route path="/calendar" element={<CalendarPage />} />
             <Route path="/overview" element={<OperatorOnly><OverviewPage /></OperatorOnly>} />
             {import.meta.env.DEV && <Route path="/home" element={<HomePage />} />}
             <Route path="/lead-page" element={<LeadPagePage />} />

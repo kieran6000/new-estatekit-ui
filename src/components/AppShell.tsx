@@ -19,6 +19,8 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import ContactsIcon from "@mui/icons-material/Contacts";
 import ContactsOutlinedIcon from "@mui/icons-material/ContactsOutlined";
+import CalendarMonthOutlinedIcon from "@mui/icons-material/CalendarMonthOutlined";
+import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
 import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
 import HomeIcon from "@mui/icons-material/Home";
 import WebOutlinedIcon from "@mui/icons-material/WebOutlined";
@@ -41,6 +43,7 @@ import { useRealtimeSubscriptions } from "../hooks/useRealtime";
 import { getMyProfile } from "../api/agentProfile";
 import { listMySoldListings } from "../api/soldListings";
 import { setupProgress } from "../lib/setup";
+import { useCalendarReady } from "../hooks/useCalendarReady";
 import { getActiveAgentIdSync, setActiveAgent, supabase } from "../api/_client";
 import { isLightColor } from "../lib/contrast";
 import AccountSwitcher from "./AccountSwitcher";
@@ -59,6 +62,7 @@ function activeSection(pathname: string): string {
   if (pathname.startsWith("/admin")) return "automations";
   if (pathname.startsWith("/account")) return "account";
   if (pathname.startsWith("/setup")) return "setup";
+  if (pathname.startsWith("/calendar")) return "calendar";
   return "leads";
 }
 
@@ -77,7 +81,8 @@ export default function AppShell() {
   const { data: profile } = useQuery({ queryKey: ["myProfile"], queryFn: getMyProfile, enabled: !!user, staleTime: 5 * 60_000 });
   const { data: sales } = useQuery({ queryKey: ["mySold"], queryFn: listMySoldListings, enabled: !!user, staleTime: 5 * 60_000 });
   // "Get set up" sits in the menu until the account is complete (or while on it).
-  const setup = profile && sales ? setupProgress({ ...profile, salesCount: sales.length }) : null;
+  const calendarReady = useCalendarReady();
+  const setup = profile && sales ? setupProgress({ ...profile, salesCount: sales.length, calendarReady }) : null;
   const showSetup = (!!setup && !setup.complete) || pathname.startsWith("/setup");
   const initial = useMemo(() => (user?.phone || "?")[0].toUpperCase(), [user]);
   // Staff (admins, media buyers) work in clients' accounts: in their own they
@@ -116,6 +121,7 @@ export default function AppShell() {
       : []),
     ...(import.meta.env.DEV ? [{ key: "home", label: "Dashboard", icon: <HomeOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <HomeIcon sx={{ fontSize: SZ }} />, to: "/home" }] : []),
     { key: "leads", label: "Leads", icon: <ContactsOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <ContactsIcon sx={{ fontSize: SZ }} />, to: "/leads" },
+    { key: "calendar", label: "Calendar", icon: <CalendarMonthOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <CalendarMonthIcon sx={{ fontSize: SZ }} />, to: "/calendar" },
     { key: "mypage", label: "Forms", icon: <WebOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <WebIcon sx={{ fontSize: SZ }} />, to: "/lead-page" },
   ];
 
@@ -142,6 +148,7 @@ export default function AppShell() {
   ] : [
     ...(showSetup && !isOperator ? [{ key: "setup", label: "Set up", icon: <ChecklistOutlinedIcon />, activeIcon: <ChecklistIcon />, to: "/setup" }] : []),
     { key: "leads", label: "Leads", icon: <ContactsOutlinedIcon />, activeIcon: <ContactsIcon />, to: "/leads" },
+    { key: "calendar", label: "Calendar", icon: <CalendarMonthOutlinedIcon />, activeIcon: <CalendarMonthIcon />, to: "/calendar" },
     { key: "mypage", label: "Forms", icon: <WebOutlinedIcon />, activeIcon: <WebIcon />, to: "/lead-page" },
     ...(isOperator
       ? [
@@ -152,7 +159,7 @@ export default function AppShell() {
     { key: "account", label: "Account", icon: <AccountCircleOutlinedIcon />, activeIcon: <AccountCircleIcon />, to: "/account" },
   ];
 
-  if (staffMode && staffModeKnown && ["leads", "mypage", "overview", "home", "setup"].includes(section)) return <Navigate to="/admin/clients" replace />;
+  if (staffMode && staffModeKnown && ["leads", "calendar", "mypage", "overview", "home", "setup"].includes(section)) return <Navigate to="/admin/clients" replace />;
 
   return (
     <Box sx={{ display: "flex", minHeight: "100vh", bgcolor: "background.default" }}>
