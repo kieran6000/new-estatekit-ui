@@ -19,8 +19,9 @@ import { calendarItems, DURATION, layoutDay, overdue, weekStart, type CalItem, t
 // follow-up a coloured block at its time.
 //   Desktop  Today, ‹ ›, the month, Week / Day. Click a block for a card.
 //   Phone    one day at a time under a row of the week's dates (dots = days
-//            with something on), swipe left / right for the next / previous
-//            day, Today top right. A block opens a bottom sheet with a big
+//            with something on). ‹ › by the month, or a swipe on the dates,
+//            change the week; a swipe on the hours changes the day. Today
+//            top right. A block opens a bottom sheet with a big
 //            Call button. Overdue follow-ups sit in a bar at the bottom.
 // The same dates go into Google Calendar when it's connected (Get set up).
 // It keeps its place: the day, Week/Day and the overdue list live in the URL
@@ -122,15 +123,17 @@ export default function CalendarPage() {
     navigate(`/leads/${id}`);
   };
 
-  // Swipe left / right = next / previous (phones), like the Google Calendar app.
+  // Swipe left / right = next / previous, like the Google Calendar app: on
+  // the hours by `step` (a day on phones), on the row of dates by a week.
   const onTouchStart = (e: React.TouchEvent) => { touch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; };
-  const onTouchEnd = (e: React.TouchEvent) => {
+  const swipe = (by: number) => (e: React.TouchEvent) => {
     const t = touch.current; touch.current = null;
     if (!t) return;
     const dx = e.changedTouches[0].clientX - t.x;
     const dy = e.changedTouches[0].clientY - t.y;
-    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) setAnchor((a) => addDays(a, dx < 0 ? step : -step));
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) setAnchor((a) => addDays(a, dx < 0 ? by : -by));
   };
+  const onTouchEnd = swipe(step);
 
   const card = open && (
     <EventCard
@@ -146,8 +149,10 @@ export default function CalendarPage() {
     <Box sx={{ height: "calc(100dvh - var(--ek-nav-h, 0px))", display: "flex", flexDirection: "column" }}>
       <AppBar position="sticky">
         {phone ? (
-          <Toolbar sx={{ height: 56, minHeight: "56px !important", px: 2, gap: 1 }}>
-            <Typography sx={{ fontSize: 20, fontWeight: 500, flex: 1 }}>{title}</Typography>
+          <Toolbar sx={{ height: 56, minHeight: "56px !important", pl: 2, pr: 1.5, gap: 0.5 }}>
+            <Typography sx={{ fontSize: 20, fontWeight: 500, flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</Typography>
+            <IconButton aria-label="Previous week" onClick={() => setAnchor((a) => addDays(a, -7))} sx={{ color: "inherit", width: 48, height: 48 }}><ChevronLeftIcon /></IconButton>
+            <IconButton aria-label="Next week" onClick={() => setAnchor((a) => addDays(a, 7))} sx={{ color: "inherit", width: 48, height: 48, mr: 0.5 }}><ChevronRightIcon /></IconButton>
             <TodayButton onClick={() => setAnchor(today)} />
           </Toolbar>
         ) : (
@@ -170,7 +175,7 @@ export default function CalendarPage() {
         )}
       </AppBar>
 
-      {phone && <WeekStrip anchor={anchor} today={today} items={items} onPick={setAnchor} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} />}
+      {phone && <WeekStrip anchor={anchor} today={today} items={items} onPick={setAnchor} onTouchStart={onTouchStart} onTouchEnd={swipe(7)} />}
 
       {isLoading ? (
         <Box sx={{ p: 2 }}><Skeleton variant="rounded" height={480} /></Box>
@@ -316,7 +321,7 @@ function TodayButton({ onClick }: { onClick: () => void }) {
 }
 
 /** Phones: the week's dates in a row, M T W T F S S, a dot under days with
- *  something on. Tap a date to see it; swipe for the next / previous day. */
+ *  something on. Tap a date to see it; swipe for the next / previous week. */
 function WeekStrip({ anchor, today, items, onPick, onTouchStart, onTouchEnd }: {
   anchor: Date; today: Date; items: CalItem[]; onPick: (d: Date) => void;
   onTouchStart: (e: React.TouchEvent) => void; onTouchEnd: (e: React.TouchEvent) => void;
