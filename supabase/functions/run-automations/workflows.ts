@@ -77,6 +77,8 @@ interface Profile {
   avatar_url?: string | null;
   display_name: string | null;
   whatsapp_number: string | null;
+  /** Extra people who get the lead alerts too (e.g. a team member). */
+  alert_contacts?: AlertContact[] | null;
   email: string | null;
   company: string | null;
   automations_paused: boolean | null;
@@ -84,6 +86,24 @@ interface Profile {
 }
 
 export type SendResult = "sent" | "rate_limited" | "failed" | "not_configured";
+
+export interface AlertContact { name?: string | null; phone: string }
+
+const digitsOf = (p: string) => p.replace(/[^0-9]/g, "");
+
+/** The account's extra alert numbers, without blanks, repeats or the main
+ *  number itself. */
+export function extraAlertContacts(profile: Pick<Profile, "whatsapp_number" | "alert_contacts"> | null): AlertContact[] {
+  const seen = new Set([digitsOf(profile?.whatsapp_number || "")]);
+  const out: AlertContact[] = [];
+  for (const c of Array.isArray(profile?.alert_contacts) ? profile!.alert_contacts! : []) {
+    const d = digitsOf(c?.phone || "");
+    if (d.length < 9 || seen.has(d)) continue;
+    seen.add(d);
+    out.push({ name: (c.name || "").trim() || null, phone: c.phone });
+  }
+  return out;
+}
 
 export interface EngineDeps {
   sendWhatsApp: (phone: string, text: string, media?: { image?: string; document?: string }) => Promise<SendResult>;
@@ -298,7 +318,7 @@ async function processRun(supabase: SupabaseClient, deps: EngineDeps, run: Run) 
 
   const { data: profileRow } = await supabase
     .from("agent_profiles")
-    .select("display_name, whatsapp_number, email, company, automations_paused, deactivated_at, avatar_url, is_operator")
+    .select("display_name, whatsapp_number, alert_contacts, email, company, automations_paused, deactivated_at, avatar_url, is_operator")
     .eq("agent_id", run.agent_id)
     .maybeSingle();
   const profile = profileRow as Profile | null;
@@ -640,22 +660,40 @@ class Context {
       text = fill(step.text, fields);
     }
 
+    // Messages about a lead also go to the account's extra people (a team
+    // member who works its leads). Daily summaries are the owner's own to-do
+    // list: those go to the main number only.
+    const extras = l ? extraAlertContacts(this.profile) : [];
+    // Room for all of them this minute, or wait for the next (a lone message
+    // always goes, so a long list can't hold forever).
+    const need = 1 + extras.length;
+    if (this.deps.budget.sends > 0 && this.deps.budget.sends + need > this.deps.maxSends) return { kind: "hold", until: new Date() };
     if (this.deps.budget.sends >= this.deps.maxSends) return { kind: "hold", until: new Date() };
     this.deps.budget.sends++;
     const media = mediaOf(step);
     const result = media ? await this.deps.sendWhatsApp(phone, text, media) : await this.deps.sendWhatsApp(phone, text);
     if (result === "rate_limited") return { kind: "hold", until: new Date(Date.now() + RATE_LIMIT_RETRY_MS) };
     const who = this.profile?.display_name || phone;
+    // Then each extra person, once. A failure there is logged, never retried:
+    // retrying would send the main number the same message twice.
+    const alsoSent: string[] = [];
+    const alsoFailed: string[] = [];
+    for (const c of extras) {
+      this.deps.budget.sends++;
+      const r = media ? await this.deps.sendWhatsApp(c.phone, text, media) : await this.deps.sendWhatsApp(c.phone, text);
+      (r === "sent" ? alsoSent : alsoFailed).push(c.name || c.phone);
+    }
+    const also = (alsoSent.length ? ` · Also sent to ${alsoSent.join(", ")}` : "") + (alsoFailed.length ? ` · Couldn't send to ${alsoFailed.join(", ")}` : "");
     if (result === "sent") {
-      await log(this.supabase, this.run, step.id, "WhatsApp the agent", "Sent", `${text.slice(0, 300)}${withWhat(step)}`);
-      await this.deps.logToDiscord?.(`\u{2699}\u{FE0F} Workflow **${this.wfName}** sent WhatsApp to **${who}**${l ? ` re: ${l.name}` : ""}`);
+      await log(this.supabase, this.run, step.id, "WhatsApp the agent", "Sent", `${text.slice(0, 300)}${withWhat(step)}${also}`);
+      await this.deps.logToDiscord?.(`\u{2699}\u{FE0F} Workflow **${this.wfName}** sent WhatsApp to **${[who, ...alsoSent].join(", ")}**${l ? ` re: ${l.name}` : ""}`);
       if (l) {
         await this.supabase.from("lead_events").insert({
           lead_id: l.id, agent_id: l.agent_id, event_type: "whatsapp_sent", to_value: this.wfName, source: "automation",
         });
       }
     } else {
-      await log(this.supabase, this.run, step.id, "WhatsApp the agent", "Failed", result === "not_configured" ? "WhatsApp sending isn't set up" : "The WhatsApp service didn't accept it");
+      await log(this.supabase, this.run, step.id, "WhatsApp the agent", "Failed", (result === "not_configured" ? "WhatsApp sending isn't set up" : "The WhatsApp service didn't accept it") + also);
       await this.deps.logToDiscord?.(`\u{26A0}\u{FE0F} Workflow **${this.wfName}** could NOT send WhatsApp to **${who}**${l ? ` re: ${l.name}` : ""} (${result})`);
     }
     return { kind: "done" };

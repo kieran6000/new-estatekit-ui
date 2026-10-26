@@ -59,7 +59,11 @@ export interface ClientProfile {
   deactivated_by_name: string | null;
   /** Their Google Calendar is connected (the account's email), or null. */
   google_calendar_email: string | null;
+  /** Extra people who get the lead alerts too (e.g. a team member). */
+  alert_contacts: AlertContact[] | null;
 }
+
+export interface AlertContact { name?: string | null; phone: string }
 
 export interface ClientCardRow extends ClientProfile {
   live: ClientLive | null;
@@ -68,7 +72,7 @@ export interface ClientCardRow extends ClientProfile {
 }
 
 const PROFILE_COLS =
-  "agent_id, display_name, whatsapp_number, email, area, company, avatar_url, sidebar_logo_url, sidebar_color, fb_page_id, fb_ad_account_id, is_operator, onboarded, automations_paused, lead_confirmation_email, tier, renewal_date, contract_pdf_url, deactivated_at, deactivated_reason, deactivated_by_name, google_calendar_email";
+  "agent_id, display_name, whatsapp_number, email, area, company, avatar_url, sidebar_logo_url, sidebar_color, fb_page_id, fb_ad_account_id, is_operator, onboarded, automations_paused, lead_confirmation_email, tier, renewal_date, contract_pdf_url, deactivated_at, deactivated_reason, deactivated_by_name, google_calendar_email, alert_contacts";
 
 /** Everything the grid needs, in two small reads. */
 export async function listClients(): Promise<ClientCardRow[]> {
@@ -222,7 +226,7 @@ export async function getClient(agentId: string): Promise<{ profile: ClientProfi
 }
 
 export type ClientProfilePatch = Partial<
-  Pick<ClientProfile, "display_name" | "whatsapp_number" | "email" | "area" | "company" | "avatar_url" | "fb_page_id" | "fb_ad_account_id" | "automations_paused" | "lead_confirmation_email" | "renewal_date" | "contract_pdf_url" | "tier">
+  Pick<ClientProfile, "display_name" | "whatsapp_number" | "email" | "area" | "company" | "avatar_url" | "fb_page_id" | "fb_ad_account_id" | "automations_paused" | "lead_confirmation_email" | "renewal_date" | "contract_pdf_url" | "tier" | "alert_contacts">
 >;
 
 /** Operator edit of a client's account row. Throws if nothing was saved

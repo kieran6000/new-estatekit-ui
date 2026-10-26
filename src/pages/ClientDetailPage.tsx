@@ -78,6 +78,13 @@ const digits = (s: string) => {
 // Lists are typed with ";" between items, the same as form answer options.
 const splitList = (s: string) => s.split(/[;\n]/).map((x) => x.trim()).filter(Boolean);
 const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+// "Stanley 063 152 5310" ⇄ { name: "Stanley", phone: "+27631525310" }.
+const contactText = (c: { name?: string | null; phone: string }) => [c.name, c.phone].filter(Boolean).join(" ");
+const parseContact = (entry: string) => {
+  const phone = digits(entry.replace(/[^\d+]/g, ""));
+  const name = entry.replace(/[+\d()\-.\s]{6,}/g, " ").replace(/\s+/g, " ").trim();
+  return { name: name || null, phone: phone ? "+" + phone : "" };
+};
 const money = (n: number) => "R" + Math.round(n).toLocaleString("en-ZA");
 
 // Onboarding answers already shown in Contact or the section header.
@@ -1098,6 +1105,7 @@ function ContactSection({ data }: { data: Data }) {
           rows={[
             ["WhatsApp", p.whatsapp_number],
             ["Other numbers", phones.map((x) => "+" + x).join(", ")],
+            ["Lead alerts also go to", (p.alert_contacts ?? []).map(contactText).join(", ")],
             ["Email", p.email],
             ["Other emails", emails.join(", ")],
             ["Contact person", d?.contact.contactPerson],
@@ -1110,6 +1118,13 @@ function ContactSection({ data }: { data: Data }) {
       }
       fields={[
         { key: "whatsapp", label: "WhatsApp number", value: p.whatsapp_number || "", helper: "Where their lead alerts go. Their login number doesn't change." },
+        {
+          key: "alerts",
+          label: "Also send lead alerts to",
+          value: (p.alert_contacts ?? []).map(contactText).join("; "),
+          placeholder: "Stanley 063 152 5310",
+          helper: "Name and WhatsApp number. Separate people with ;. They get every lead alert, not the daily summaries.",
+        },
         { key: "email", label: "Email", value: p.email || "" },
         { key: "phones", label: "Other numbers", value: phones.map((x) => "+" + x).join("; "), helper: "Separate with ;" },
         { key: "emails", label: "Other emails", value: emails.join("; "), helper: "Separate with ;" },
@@ -1125,9 +1140,12 @@ function ContactSection({ data }: { data: Data }) {
         if (v.email && !isEmail(v.email)) return "That email address doesn't look right.";
         const otherEmails = splitList(v.emails);
         if (otherEmails.some((e) => !isEmail(e))) return "One of the other emails doesn't look right.";
+        const alerts = splitList(v.alerts).map(parseContact);
+        if (alerts.some((c) => c.phone.length < 12)) return "One of the lead alert numbers looks too short.";
         const profilePatch: ClientProfilePatch = {};
         const newWa = v.whatsapp ? "+" + wa : "";
         if (newWa !== (p.whatsapp_number || "")) profilePatch.whatsapp_number = newWa;
+        if (alerts.map(contactText).join("; ") !== (p.alert_contacts ?? []).map(contactText).join("; ")) profilePatch.alert_contacts = alerts;
         if (v.email !== (p.email || "")) profilePatch.email = v.email;
         const ok = await save(async () => {
           if (Object.keys(profilePatch).length) await updateClientProfile(p.agent_id, profilePatch);
