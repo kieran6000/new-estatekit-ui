@@ -38,6 +38,7 @@ import ChecklistOutlinedIcon from "@mui/icons-material/ChecklistRtl";
 import { tokens } from "../theme";
 import { useAuth } from "../hooks/useAuth";
 import { useIsOperator } from "../hooks/useAutomations";
+import { useIsTeamLead } from "../hooks/useIsTeamLead";
 import { usePageviewTracking } from "../hooks/usePageviewTracking";
 import { useRealtimeSubscriptions } from "../hooks/useRealtime";
 import { getMyProfile } from "../api/agentProfile";
@@ -73,6 +74,9 @@ export default function AppShell() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const { data: isOperator } = useIsOperator();
+  // Staff switch into any account; a team lead into their members' (only).
+  const isTeamLead = useIsTeamLead();
+  const canSwitch = !!isOperator || isTeamLead;
   const section = activeSection(pathname);
   const activeAgentId = getActiveAgentIdSync();
   const isManagingOther = !!activeAgentId && activeAgentId !== user?.id;
@@ -183,9 +187,9 @@ export default function AppShell() {
             <Box component="img" src={logoSrc} alt="EstateKit" sx={{ height: 24, display: "block", maxWidth: "100%", objectFit: "contain", marginX: "auto" }} />
           </Box>
 
-          {isOperator && (
+          {canSwitch && (
             <Box sx={{ px: 1.25 }}>
-              <AccountSwitcher />
+              <AccountSwitcher staff={!!isOperator} />
             </Box>
           )}
 
@@ -307,9 +311,9 @@ export default function AppShell() {
       )}
 
       <Box component="main" sx={{ flex: 1, minWidth: 0, pb: "var(--ek-nav-h)" }}>
-        {!isDesktop && isOperator && (
+        {!isDesktop && canSwitch && (
           <Box sx={{ px: 1.5, py: 1, bgcolor: isManagingOther ? tokens.amberTint : "background.paper", borderBottom: `1px solid ${isManagingOther ? tokens.amberBorder : tokens.divider}` }}>
-            <AccountSwitcher variant="light" />
+            <AccountSwitcher variant="light" staff={!!isOperator} />
           </Box>
         )}
         <Outlet />

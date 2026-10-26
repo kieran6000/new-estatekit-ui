@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { getActiveAgentIdSync, listAgentProfiles, setActiveAgent } from "../api/_client";
 import { useAuth } from "./useAuth";
 import { useIsOperator } from "./useAutomations";
+import { useIsTeamLead } from "./useIsTeamLead";
 import { useSnack } from "./useSnack";
 
 /**
@@ -10,7 +11,8 @@ import { useSnack } from "./useSnack";
  * link in Discord or on the automations screen) are switched into that
  * client's account, so "View all my leads" and the lead page show that
  * client's leads instead of "Lead not found" in whoever they were managing.
- * Agents are never switched: they only ever see their own leads.
+ * A team lead is switched the same way into a member's account (they can only
+ * load their members' leads). Other agents only ever see their own leads.
  */
 export function useFollowLeadAccount(lead: { agent_id: string } | null | undefined) {
   useFollowAccount(lead, "lead");
@@ -21,12 +23,14 @@ export function useFollowLeadAccount(lead: { agent_id: string } | null | undefin
 export function useFollowAccount(item: { agent_id: string } | null | undefined, what: "lead" | "workflow" | "account") {
   const { user } = useAuth();
   const { data: isOperator } = useIsOperator();
+  const isTeamLead = useIsTeamLead();
+  const canSwitch = isOperator === true || isTeamLead;
   const qc = useQueryClient();
   const showSnack = useSnack();
   const done = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!user || isOperator !== true || !item?.agent_id) return;
+    if (!user || !canSwitch || !item?.agent_id) return;
     const current = getActiveAgentIdSync() ?? user.id;
     if (item.agent_id === current || done.current === item.agent_id) return;
     done.current = item.agent_id;
@@ -37,5 +41,5 @@ export function useFollowAccount(item: { agent_id: string } | null | undefined, 
       .then((profiles) => profiles.find((p) => p.agent_id === to)?.display_name)
       .catch(() => null)
       .then((name) => showSnack(name ? `Switched to ${name}'s account` : what === "account" ? "Switched account" : `Switched to this ${what}'s account`));
-  }, [user, isOperator, item?.agent_id, qc, showSnack, what]);
+  }, [user, canSwitch, item?.agent_id, qc, showSnack, what]);
 }

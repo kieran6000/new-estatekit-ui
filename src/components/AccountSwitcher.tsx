@@ -40,7 +40,9 @@ function adsManagerUrl(adAccountId: string): string {
   return `https://adsmanager.facebook.com/adsmanager/manage/campaigns?act=${adAccountId}`;
 }
 
-export default function AccountSwitcher({ variant = "dark" }: { variant?: "dark" | "light" }) {
+/** Staff see every account (with an Ads Manager shortcut); a team lead sees
+ *  themselves and their members: the list is whatever profiles they can read. */
+export default function AccountSwitcher({ variant = "dark", staff = true }: { variant?: "dark" | "light"; staff?: boolean }) {
   const { user } = useAuth();
   // A mouse/trackpad exists → safe to auto-focus search. On touch it isn't.
   const canHover = useMediaQuery("(hover: hover) and (pointer: fine)");
@@ -173,7 +175,7 @@ export default function AccountSwitcher({ variant = "dark" }: { variant?: "dark"
                     secondary: { sx: { fontSize: 12 } },
                   }}
                 />
-                {p.fb_ad_account_id && (
+                {staff && p.fb_ad_account_id && (
                   <Tooltip title="Open in Ads Manager">
                     <IconButton
                       size="small"
