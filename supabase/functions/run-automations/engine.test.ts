@@ -368,6 +368,42 @@ describe("sending limits and failures", () => {
     expect(runs.every((r) => runOf(r).status === "completed")).toBe(true);
   });
 
+  it("lead alerts also go to the account's extra people; repeats and the main number are skipped", async () => {
+    db.tables.agent_profiles[0].alert_contacts = [
+      { name: "Stanley", phone: "+27631525310" },
+      { name: "Again", phone: "27631525310" },
+      { name: "Main", phone: "+27 82 000 0000" },
+      { name: "Blank", phone: "" },
+    ];
+    const wf = workflow([wa("New lead: {{name}}")], { trigger: { kind: "lead_created" } });
+    const r = enroll(wf, lead({ name: "Thandi" }));
+    await tick();
+    expect(sent.map((s) => `${s.phone} ${s.text}`)).toEqual(["+27820000000 New lead: Thandi", "+27631525310 New lead: Thandi"]);
+    expect(String(db.rows("workflow_log").find((x) => x.run_id === r.id)?.detail)).toContain("Also sent to Stanley");
+  });
+
+  it("daily summaries go to the main number only", async () => {
+    db.tables.agent_profiles[0].alert_contacts = [{ name: "Stanley", phone: "+27631525310" }];
+    const wf = workflow([wa("Hi {{first_name}}, {{count}} {{leads_word}} to update")], { trigger: { kind: "daily_at", time: "16:00" } });
+    lead({ stage: "New Lead", created_at: new Date().toISOString() });
+    enroll(wf, null);
+    await tick();
+    expect(sent.map((s) => s.phone)).toEqual(["+27820000000"]);
+  });
+
+  it("an extra person's failed send is logged, not retried (the agent never gets it twice)", async () => {
+    db.tables.agent_profiles[0].alert_contacts = [{ name: "Stanley", phone: "+27631525310" }];
+    sendResults = ["sent", "failed"];
+    const wf = workflow([wa("hello"), tag("after")]);
+    const l = lead();
+    const r = enroll(wf, l);
+    await tick();
+    timePasses(); await tick();
+    expect(sent.map((s) => s.phone)).toEqual(["+27820000000", "+27631525310"]);
+    expect(runOf(r).status).toBe("completed");
+    expect(String(db.rows("workflow_log").find((x) => x.run_id === r.id)?.detail)).toContain("Couldn't send to Stanley");
+  });
+
   it("a rate-limited send is retried, not lost or doubled", async () => {
     sendResults = ["rate_limited"];
     const wf = workflow([wa("hello"), tag("after")]);
