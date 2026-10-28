@@ -14,15 +14,12 @@ import { trackPageEvent } from "../lib/pageTracking";
 import { fillMessage } from "../lib/format";
 import type { CustomQuestion, LeadPage, PipelineKind } from "../types";
 import CallTimeStep, { CALL_TIME_CONFIRM, callTimeIncomplete } from "./CallTimeStep";
+import { formatLeadPhone, leadPhoneMessage, leadPhoneProblem } from "../lib/leadPhone";
 
 type Phase = "intro" | "steps" | "done";
 type StepDef = { kind: "question"; question: CustomQuestion } | { kind: "contact" };
 type FieldErrors = Partial<Record<"question" | "name" | "email" | "phone", string>>;
 
-function phoneIsValid(v: string): boolean {
-  const digits = v.replace(/[^\d]/g, "");
-  return digits.length >= 9 && digits.length <= 13;
-}
 function emailIsValid(v: string): boolean {
   return /^\S+@\S+\.\S+$/.test(v);
 }
@@ -183,7 +180,8 @@ export default function LeadCaptureForm({
       const nextErrors: FieldErrors = {};
       if (name.trim().length < 2) nextErrors.name = "Please enter your full name.";
       if (page.collectEmail && !emailIsValid(email.trim())) nextErrors.email = "Please enter a valid email address.";
-      if (!phoneIsValid(phone)) nextErrors.phone = "Please enter a valid WhatsApp number.";
+      const phoneProblem = leadPhoneProblem(phone);
+      if (phoneProblem) nextErrors.phone = leadPhoneMessage(phoneProblem);
       if (Object.keys(nextErrors).length) {
         setErrors(nextErrors);
         return;
@@ -317,8 +315,16 @@ export default function LeadCaptureForm({
                     <TextField
                       placeholder="082 000 0000"
                       value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
+                      // Spaced as they type, only while typing at the end, so
+                      // fixing a digit mid-number doesn't throw the cursor.
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setPhone(e.target.selectionStart === v.length ? formatLeadPhone(v) : v);
+                        if (errors.phone) setErrors((x) => ({ ...x, phone: undefined }));
+                      }}
                       fullWidth
+                      inputMode="tel"
+                      autoComplete="tel"
                       error={!!errors.phone}
                       helperText={errors.phone}
                       slotProps={{ input: { startAdornment: <InputAdornment position="start"><WhatsAppIcon fontSize="small" sx={{ color: "text.disabled" }} /></InputAdornment> } }}
