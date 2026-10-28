@@ -1,78 +1,91 @@
 import { useState } from "react";
-import { Autocomplete, Avatar, Box, Chip, Divider, FormControlLabel, Checkbox, TextField, Typography } from "@mui/material";
+import { Autocomplete, Avatar, Box, Divider, TextField, Typography } from "@mui/material";
 import UnfoldMoreIcon from "@mui/icons-material/UnfoldMore";
 import CheckIcon from "@mui/icons-material/Check";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { listAgentProfiles } from "../api/_client";
+import { setTeamLead } from "../api/clients";
+import { useSnack } from "../hooks/useSnack";
 import { tokens } from "../theme";
 
 // Teams: a team lead (e.g. Bennie) gets the account switcher and can work
-// inside their members' accounts (e.g. Naudé), the way operators can today.
-//
-// UI ONLY FOR NOW: nothing here saves. Backend plan (add-only):
-//   - agent_profiles.team_lead_id uuid null references agent_profiles(agent_id)
-//   - can_manage(agent) = is_operator() or agent = auth.uid()
-//       or exists (member with team_lead_id = auth.uid())
-//   - RLS on leads, lead_pages, pipelines, agent_profiles, sold_listings:
-//     swap "agent_id = auth.uid() or is_operator()" for can_manage(agent_id)
-//   - AppShell shows <AccountSwitcher /> when isOperator OR the user leads a team;
-//     the switcher already lists whatever profiles RLS lets you read.
-// Team leads never see billing, contract or other clients.
-
-// Known teams, until this is stored: Bennie Bell leads Naudé Kritzinger.
-const BENNIE = "d5bd1eea-d3d5-4daa-9e15-ab3c621192eb";
-const NAUDE = "0eba9b17-2e1a-4bc9-91bc-096e33cf39e1";
-const KNOWN_TEAMS: Record<string, string> = { [NAUDE]: BENNIE };
+// inside their members' accounts (e.g. Naudé, Hendrik), the way staff can,
+// but only theirs. Stored as agent_profiles.team_lead_id on each member; what
+// a team lead may do there is set in the database (manages_agent() and the
+// "Team leads …" policies, 20261027_0001_team_leads.sql). Saves on change.
 
 type Profile = Awaited<ReturnType<typeof listAgentProfiles>>[number];
 
 const initials = (n: string | null) => (n ?? "?").split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase();
 
-const PERMISSIONS = [
-  { k: "leads", label: "See and update their leads", on: true },
-  { k: "pages", label: "Edit their lead pages and forms", on: true },
-  { k: "results", label: "See their results and weekly report", on: true },
-  { k: "settings", label: "Change their WhatsApp number and profile", on: false },
-] as const;
+// What a team lead can do in a member's account (fixed: see the policies).
+const CAN = ["See and update their leads, and log calls", "Edit their forms, lead pages and pipelines", "See their results and recent sales"];
+const CANNOT = "Their profile and settings, billing, workflows and other agents always stay hidden.";
 
 export default function TeamSection({ agentId, name }: { agentId: string; name: string }) {
+  const qc = useQueryClient();
+  const showSnack = useSnack();
+  const [busy, setBusy] = useState(false);
   const { data: profiles = [] } = useQuery({ queryKey: ["agentProfiles"], queryFn: listAgentProfiles });
   const others = profiles.filter((p) => p.agent_id !== agentId);
-  const [leadId, setLeadId] = useState<string | null>(KNOWN_TEAMS[agentId] ?? null);
-  const [memberIds, setMemberIds] = useState<string[]>(() => Object.entries(KNOWN_TEAMS).filter(([, l]) => l === agentId).map(([m]) => m));
-  const [perms, setPerms] = useState<Record<string, boolean>>(() => Object.fromEntries(PERMISSIONS.map((p) => [p.k, p.on])));
-
-  const byId = (id: string | null) => profiles.find((p) => p.agent_id === id);
-  const lead = byId(leadId);
-  const members = memberIds.map(byId).filter(Boolean) as Profile[];
+  const byId = (id: string | null | undefined) => profiles.find((p) => p.agent_id === id);
+  const me = byId(agentId);
+  const lead = byId(me?.team_lead_id);
+  const members = profiles.filter((p) => p.team_lead_id === agentId);
   const first = name.split(/\s+/)[0] || "They";
+
+  async function save(changes: { member: string; lead: string | null }[], done: string) {
+    if (!changes.length) return;
+    setBusy(true);
+    try {
+      for (const c of changes) await setTeamLead(c.member, c.lead);
+      showSnack(done);
+    } catch {
+      showSnack("Not saved. Try again.");
+    } finally {
+      setBusy(false);
+      void qc.invalidateQueries({ queryKey: ["agentProfiles"] });
+    }
+  }
 
   return (
     <Box sx={{ bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "8px", overflow: "hidden", minWidth: 0 }}>
       <Box sx={{ px: 2, pt: 1.5, pb: 1, display: "flex", alignItems: "center", gap: 1, minHeight: 44 }}>
         <Typography sx={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: tokens.ink2, flex: 1 }}>Team</Typography>
-        <Chip size="small" label="Preview · not saved" color="warning" variant="outlined" sx={{ height: 20, fontSize: 11 }} />
       </Box>
       <Box sx={{ px: 2, pb: 2, display: "flex", flexDirection: "column", gap: 2 }}>
-        <Autocomplete
-          size="small"
-          options={others}
-          value={lead ?? null}
-          onChange={(_, v) => { setLeadId(v?.agent_id ?? null); if (v) setMemberIds([]); }}
-          getOptionLabel={(p) => p.display_name ?? "Unnamed"}
-          isOptionEqualToValue={(a, b) => a.agent_id === b.agent_id}
-          renderInput={(p) => <TextField {...p} label={`${first} is in the team of`} placeholder="No team lead" helperText={lead ? `${lead.display_name} can switch into ${first}'s account.` : "Leave empty if they work on their own or lead a team."} />}
-        />
+        {/* A team lead isn't also in someone else's team. */}
+        {members.length === 0 && (
+          <Autocomplete
+            size="small"
+            disabled={busy}
+            options={others.filter((p) => !p.team_lead_id)}
+            value={lead ?? null}
+            onChange={(_, v) => save([{ member: agentId, lead: v?.agent_id ?? null }], v ? `${first} is now in ${v.display_name}'s team` : `${first} is no longer in a team`)}
+            getOptionLabel={(p) => p.display_name ?? "Unnamed"}
+            isOptionEqualToValue={(a, b) => a.agent_id === b.agent_id}
+            renderInput={(p) => <TextField {...p} label={`${first} is in the team of`} placeholder="No team lead" helperText={lead ? `${lead.display_name} can switch into ${first}'s account.` : "Leave empty if they work on their own or lead a team."} />}
+          />
+        )}
 
         {!lead && (
           <>
-            <Divider />
+            {members.length === 0 && <Divider />}
             <Autocomplete
               multiple
               size="small"
-              options={others.filter((p) => KNOWN_TEAMS[p.agent_id] === undefined || KNOWN_TEAMS[p.agent_id] === agentId)}
+              disabled={busy}
+              options={others.filter((p) => (!p.team_lead_id || p.team_lead_id === agentId) && !profiles.some((x) => x.team_lead_id === p.agent_id))}
               value={members}
-              onChange={(_, v) => setMemberIds(v.map((p) => p.agent_id))}
+              onChange={(_, v) => {
+                const ids = v.map((p) => p.agent_id);
+                const added = ids.filter((id) => !members.some((m) => m.agent_id === id));
+                const removed = members.filter((m) => !ids.includes(m.agent_id)).map((m) => m.agent_id);
+                void save(
+                  [...added.map((member) => ({ member, lead: agentId })), ...removed.map((member) => ({ member, lead: null }))],
+                  added.length ? `${byId(added[0])?.display_name ?? "They"} added to ${first}'s team` : `Removed from ${first}'s team`,
+                );
+              }}
               getOptionLabel={(p) => p.display_name ?? "Unnamed"}
               isOptionEqualToValue={(a, b) => a.agent_id === b.agent_id}
               renderInput={(p) => <TextField {...p} label={`${first}'s team members`} placeholder={members.length ? "" : "Add an agent"} />}
@@ -81,17 +94,14 @@ export default function TeamSection({ agentId, name }: { agentId: string; name: 
               <>
                 <Box>
                   <Typography sx={{ fontSize: 13, fontWeight: 500, mb: 0.5 }}>Inside a member's account, {first} can:</Typography>
-                  {PERMISSIONS.map((p) => (
-                    <FormControlLabel
-                      key={p.k}
-                      sx={{ display: "flex", ml: -0.5, "& .MuiFormControlLabel-label": { fontSize: 13.5 } }}
-                      control={<Checkbox size="small" checked={perms[p.k]} onChange={(e) => setPerms({ ...perms, [p.k]: e.target.checked })} />}
-                      label={p.label}
-                    />
+                  {CAN.map((c) => (
+                    <Box key={c} sx={{ display: "flex", alignItems: "center", gap: 1, fontSize: 13.5, py: 0.25 }}>
+                      <CheckIcon sx={{ fontSize: 16, color: tokens.green }} />{c}
+                    </Box>
                   ))}
-                  <Typography sx={{ fontSize: 12, color: "text.secondary", mt: 0.5 }}>Billing, contracts and other clients always stay hidden.</Typography>
+                  <Typography sx={{ fontSize: 12, color: "text.secondary", mt: 0.5 }}>{CANNOT}</Typography>
                 </Box>
-                <SwitcherPreview leadName={name} lead={byId(agentId)} members={members} />
+                <SwitcherPreview leadName={name} lead={me} members={members} />
               </>
             )}
           </>
@@ -107,7 +117,7 @@ function SwitcherPreview({ leadName, lead, members }: { leadName: string; lead: 
   const rows = [{ id: "me", name: leadName, sub: "You", avatar: lead?.avatar_url }, ...members.map((m) => ({ id: m.agent_id, name: m.display_name ?? "Unnamed", sub: m.company ?? "", avatar: m.avatar_url }))];
   return (
     <Box>
-      <Typography sx={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: tokens.ink2, mb: 1 }}>What {leadName.split(/\s+/)[0]} will see</Typography>
+      <Typography sx={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: tokens.ink2, mb: 1 }}>What {leadName.split(/\s+/)[0]} sees</Typography>
       <Box sx={{ bgcolor: tokens.railBg, borderRadius: "8px", p: 1.25, maxWidth: 280 }}>
         <Box sx={{ display: "flex", alignItems: "center", gap: 1, bgcolor: tokens.railHover, borderRadius: "6px", px: 1, py: 0.75, color: "#fff" }}>
           <Avatar src={lead?.avatar_url ?? undefined} sx={{ width: 26, height: 26, fontSize: 11 }}>{initials(leadName)}</Avatar>
