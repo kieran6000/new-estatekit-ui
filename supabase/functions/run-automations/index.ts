@@ -91,6 +91,11 @@ async function sendWhatsApp(phone: string, text: string, media?: Media): Promise
   if (media?.image) url += `&file=${encodeURIComponent(media.image)}`;
   if (media?.document) url += `&document=${encodeURIComponent(media.document)}`;
   const res = await fetch(url);
+  // TextMeBot counts its 5 seconds from when it finished the last message,
+  // not when we started it, so the gap is measured from here. (Measured from
+  // the start, a second message to Stanley landed inside the window and was
+  // refused every time.)
+  lastSendAt = Date.now();
   if (res.ok) return "sent";
   const body = await res.text();
   console.error("TextMeBot send failed", phone, res.status, body);

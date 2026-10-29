@@ -717,13 +717,17 @@ class Context {
     const result = media ? await this.deps.sendWhatsApp(phone, text, media) : await this.deps.sendWhatsApp(phone, text);
     if (result === "rate_limited") return { kind: "hold", until: new Date(Date.now() + RATE_LIMIT_RETRY_MS) };
     const who = this.profile?.display_name || phone;
-    // Then each extra person, once. A failure there is logged, never retried:
-    // retrying would send the main number the same message twice.
+    // Then each extra person. A rate-limited copy was never sent, so it is
+    // tried again for that person alone (sendWhatsApp waits out the gap) and
+    // can never reach the main number twice. Any other failure is logged and
+    // left: retrying it could.
     const alsoSent: string[] = [];
     const alsoFailed: string[] = [];
     for (const c of extras) {
       this.deps.budget.sends++;
-      const r = media ? await this.deps.sendWhatsApp(c.phone, text, media) : await this.deps.sendWhatsApp(c.phone, text);
+      const send = () => (media ? this.deps.sendWhatsApp(c.phone, text, media) : this.deps.sendWhatsApp(c.phone, text));
+      let r = await send();
+      for (let tries = 0; tries < 3 && r === "rate_limited"; tries++) r = await send();
       (r === "sent" ? alsoSent : alsoFailed).push(c.name || c.phone);
     }
     const also = (alsoSent.length ? ` · Also sent to ${alsoSent.join(", ")}` : "") + (alsoFailed.length ? ` · Couldn't send to ${alsoFailed.join(", ")}` : "");

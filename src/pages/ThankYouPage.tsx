@@ -88,7 +88,10 @@ export default function ThankYouPage() {
   const giftUrl = !gift ? "" : planToken ? `/plan/${planToken}?from=thanks` : gift.kind === "pdf" ? gift.pdfUrl ?? "" : `/plan/general/${page.slug}`;
   // Asking for a call time needs to know who they are (their private code).
   // When it's on, it is the main button and the lead magnet becomes a line.
-  const askCall = (!!planToken || preview) && page.thankYouAskCall === true;
+  // From a Facebook instant form's end button we don't know who they are, so
+  // they type their number once (ThankYouCallTime byPhone).
+  const byPhone = !planToken && page.sourceType === "fb_form";
+  const askCall = (!!planToken || preview || byPhone) && page.thankYouAskCall === true;
   const video = page.thankYouVideoUrl && canPlayVideo(page.thankYouVideoUrl) ? page.thankYouVideoUrl : null;
   const showNext = () => nextRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
   // How far they watched (with the sound on), in their lead's history: the
@@ -120,7 +123,7 @@ export default function ThankYouPage() {
             <Box sx={{ p: "40px 24px", minHeight: 260, display: "flex", flexDirection: "column" }}>
               <BrandedThankYou page={page} name={name} video={video} endCta={endCta} onVideoEnd={showNext} onVideoProgress={onVideoProgress} showWhatsApp={!gift && !askCall && !video} />
               <Box ref={nextRef}>
-                {askCall && (planToken || preview) && <ThankYouCallTime token={planToken ?? ""} preview={preview} accent={page.accentColor} agentName={page.agentName} question={page.thankYouCallQuestion} />}
+                {askCall && <ThankYouCallTime token={planToken ?? ""} slug={page.slug} byPhone={byPhone} preview={preview} accent={page.accentColor} agentName={page.agentName} question={page.thankYouCallQuestion} />}
                 {gift && giftUrl && <MagnetCta page={page} magnet={gift} href={giftUrl} personal={!!planToken} compact={askCall} still={!!video} />}
               </Box>
             </Box>
