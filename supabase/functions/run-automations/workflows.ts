@@ -605,8 +605,8 @@ class Context {
       today: `Today: ${plural(newToday, "new lead")} came in and you updated ${plural(updatedToday, "lead")}.`,
       pipeline: stages.map((st) => `• ${st}: ${byStage.get(st)}`).join("\n") || "• Nothing open",
       not_called: waiting.length
-        ? `${waiting.length === 1 ? "1 lead hasn't" : `${waiting.length} leads haven't`} been called yet${days >= 1 ? ` (the oldest came in ${days === 1 ? "yesterday" : `${days} days ago`})` : ""}. Call them first tomorrow.`
-        : "Every new lead has been called. Nice work.",
+        ? `${waiting.length === 1 ? "1 new lead is" : `${waiting.length} new leads are`} still waiting for you${days >= 1 ? ` (the oldest came in ${days === 1 ? "yesterday" : `${days} days ago`})` : ""}. Get to them first tomorrow.`
+        : "No new leads are waiting. Nice work.",
     };
   }
 
@@ -627,7 +627,7 @@ class Context {
     const lastTouch = (r: Row) => r.updated_at || r.created_at;
     const lines: [(r: Row) => boolean, (n: number) => string][] = [
       [(r) => r.stage === "New Lead" && r.created_at >= since && r.created_at < iso(now - 3600_000),
-        (n) => `${n} new ${n === 1 ? "lead" : "leads"} not called yet`],
+        (n) => `${n} new ${n === 1 ? "lead" : "leads"} waiting for you`],
       [(r) => !!r.due && !!r.reminder_at && r.reminder_at >= since && r.reminder_at <= endOfToday,
         (n) => `${n} follow-up${n === 1 ? "" : "s"} due`],
       [(r) => r.stage === "No Answer" && lastTouch(r) >= since,

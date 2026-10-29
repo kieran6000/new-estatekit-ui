@@ -651,7 +651,7 @@ describe("the weekday summary", () => {
     enroll(wf, null);
     await tick();
     expect(sent.map((s) => s.text)).toEqual([
-      "Hi Megan\nToday: 1 new lead came in and you updated 1 lead.\n• New Lead: 2\n• No Answer: 1\n• Booked: 1\n1 lead hasn't been called yet (the oldest came in 3 days ago). Call them first tomorrow.",
+      "Hi Megan\nToday: 1 new lead came in and you updated 1 lead.\n• New Lead: 2\n• No Answer: 1\n• Booked: 1\n1 new lead is still waiting for you (the oldest came in 3 days ago). Get to them first tomorrow.",
     ]);
   });
 
@@ -665,7 +665,7 @@ describe("the weekday summary", () => {
     const wf2 = workflow([wa("{{not_called}}")], { trigger: { kind: "daily_at", time: "17:00" } });
     enroll(wf2, null);
     await tick();
-    expect(sent.map((s) => s.text)).toEqual(["Every new lead has been called. Nice work."]);
+    expect(sent.map((s) => s.text)).toEqual(["No new leads are waiting. Nice work."]);
   });
 
   it("the morning follow-up list: one message, each lead counted once, last 14 days only", async () => {
@@ -684,7 +684,7 @@ describe("the weekday summary", () => {
     enroll(wf, null);
     await tick();
     expect(sent.map((s) => s.text)).toEqual([
-      "Morning Megan. 5 leads to follow up:\n• 2 new leads not called yet\n• 1 follow-up due\n• 1 to try again (no answer last time)\n• 1 to check in with (no word for 2+ days)",
+      "Morning Megan. 5 leads to follow up:\n• 2 new leads waiting for you\n• 1 follow-up due\n• 1 to try again (no answer last time)\n• 1 to check in with (no word for 2+ days)",
     ]);
   });
 

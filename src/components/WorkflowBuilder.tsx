@@ -1861,7 +1861,7 @@ function StepEditor({ step, trigger, onChange }: { step: Step; trigger: Trigger;
           <AttachmentPicker value={step.attachment} onChange={(attachment) => onChange({ attachment })} />
           <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
             Sent from the EstateKit WhatsApp number to the agent's own.
-            {trigger.kind === "daily_at" ? " It's about their whole day, not one lead." : " Add the Call-and-log link so they can call the lead and log it in one tap."}
+            {trigger.kind === "daily_at" ? " It's about their whole day, not one lead." : " Add the Lead link so they can open the lead and call in one tap."}
           </Typography>
         </>
       );
