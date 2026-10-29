@@ -85,13 +85,12 @@ import { MAX_WA_FILE_MB, uploadWhatsAppFile } from "../api/workflowFiles";
 import type { Attachment } from "../lib/workflow";
 import { PillEditor, type PillEditorHandle } from "./PillEditor";
 import { getAccountVocab } from "../api/accountVocab";
-import LeadTag from "./LeadTag";
 import { PlainHead, SortHead, sortRows, useTableSort } from "./SortHead";
 import {
   BRANCH_CHECKS, EXITS, FILTER_FIELDS, STEP_TYPES, TEMPLATES, TRIGGERS,
-  allowedSteps, badFields, branchLabel, checkKind, optionsFor, setAccountVocab, valueLabel, defaultBranchValue, fieldGroups, fieldInfo, fieldToken, fieldsFor, filterSummary, findStep,
-  insertStep, locate, moveStep, newStep, ordinal, stepAtPos, rememberTags, tagsIn, problemCount, removeStep, stepSummary, stepTitle, timeLabel, timeline,
-  replaceField, sampleFields, triggerOfKind, triggerSummary, unitLabel, updateStep, usedFields, validate, waitMinutes,
+  allowedSteps, badFields, branchLabel, checkKind, optionsFor, setAccountVocab, defaultBranchValue, fieldGroups, fieldInfo, fieldToken, fieldsFor, filterSummary, findStep,
+  insertStep, locate, moveStep, newStep, stepAtPos, rememberTags, tagsIn, problemCount, removeStep, stepSummary, stepTitle, timeLabel, timeline,
+  replaceField, sampleFields, triggerOfKind, triggerSummary, updateStep, usedFields, validate,
   type BranchCheck, type Exit, type Filter, type MessageKind, type Path, type Problems, type Settings, type Step, type StepType, type Trigger,
   type Unit, type Workflow,
 } from "../lib/workflow";
@@ -790,7 +789,7 @@ function Editor({ initial, isTemplate, backTo, onSave, onCopyToTemplates, onBack
       canMoveUp={!!position && position.index > 0}
       canMoveDown={!!position && position.index < position.length - 1}
     >
-      <NodePreview sel={sel} wf={wf} step={selectedStep} />
+      <NodePreview wf={wf} step={selectedStep} />
       {sel?.kind === "trigger" && <TriggerEditor t={wf.trigger} onChange={(trigger) => update({ trigger }, "trigger")} />}
       {sel?.kind === "filters" && <FiltersEditor filters={wf.filters} onChange={(filters) => update({ filters }, "filters")} />}
       {sel?.kind === "exits" && <ExitsEditor exits={wf.exits} onChange={(exits) => update({ exits })} />}
@@ -1929,59 +1928,7 @@ function StepEditor({ step, trigger, onChange }: { step: Step; trigger: Trigger;
   }
 }
 
-// ── Previews: what each node actually does, on a sample lead ─────────────
-
-const STAGE_COLOR: Record<string, string> = {
-  "New Lead": tokens.primary, "No Answer": tokens.orange, Contacted: tokens.purple, Booked: tokens.green, "Viewing Booked": tokens.green,
-  "Offer Made": tokens.teal, "Mandate Signed": tokens.greenDark, Bought: tokens.greenDark, Lost: tokens.ink3, "Invalid Number": tokens.ink3,
-};
-
-function StageChip({ stage, glow }: { stage: string; glow?: boolean }) {
-  const c = STAGE_COLOR[stage] ?? tokens.ink2;
-  return (
-    <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, fontSize: 12.5, fontWeight: 500, px: 1, py: 0.25, borderRadius: "999px", color: c, bgcolor: `color-mix(in srgb, ${c} 9%, transparent)`, border: `1px solid color-mix(in srgb, ${c} 35%, transparent)`, boxShadow: glow ? `0 0 0 3px color-mix(in srgb, ${c} 22%, transparent)` : "none", whiteSpace: "nowrap" }}>
-      <Box component="span" sx={{ width: 7, height: 7, borderRadius: "50%", bgcolor: c }} />{stage || "…"}
-    </Box>
-  );
-}
-
-/** A lead as it appears in the leads list, so the change is obvious. */
-function LeadRowMock({ stage, next, nextDue, tags = [], newTag, highlight }: { stage: string; next?: string; nextDue?: string; tags?: string[]; newTag?: string; highlight?: "stage" | "next" | "tag" }) {
-  const hl = (on: boolean) => (on ? { bgcolor: tokens.amberTint, outline: "2px solid #ffb300", outlineOffset: 2, borderRadius: "4px" } : {});
-  return (
-    <Box sx={{ border: `1px solid ${tokens.divider}`, borderRadius: "4px", bgcolor: "background.paper", p: 1.25, display: "grid", gap: 0.75 }}>
-      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-        <Box sx={{ width: 32, height: 32, borderRadius: "50%", bgcolor: tokens.primaryBg, color: "primary.main", display: "grid", placeItems: "center", fontSize: 12, fontWeight: 700, flex: "none" }}>TM</Box>
-        <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Typography sx={{ fontSize: 14, fontWeight: 500 }}>{SAMPLE_LEAD.name}</Typography>
-          <Typography sx={{ fontSize: 12, color: "text.secondary" }}>{SAMPLE_LEAD.phone} · Bryanston</Typography>
-        </Box>
-        <Box sx={hl(highlight === "stage")}><StageChip stage={stage} glow={highlight === "stage"} /></Box>
-      </Box>
-      {(next || nextDue) && (
-        <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, fontSize: 13, color: nextDue ? tokens.orange : "text.secondary", ...hl(highlight === "next"), px: highlight === "next" ? 0.5 : 0 }}>
-          {nextDue && <AlarmIcon sx={{ fontSize: 15 }} />}
-          <span>Next: {next}</span>
-          {nextDue && <Box component="span" sx={{ color: "text.secondary" }}>· {nextDue}</Box>}
-        </Box>
-      )}
-      {(tags.length > 0 || newTag !== undefined) && (
-        <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap" }}>
-          {tags.map((t) => <LeadTag key={t} label={t} />)}
-          {newTag !== undefined && <LeadTag label={newTag} highlight={highlight === "tag"} />}
-        </Box>
-      )}
-    </Box>
-  );
-}
-
-function Arrow({ label }: { label: string }) {
-  return (
-    <Box sx={{ display: "flex", alignItems: "center", gap: 1, color: "text.secondary", fontSize: 12.5, pl: 2 }}>
-      <Box sx={{ width: 2, height: 18, bgcolor: tokens.line }} />{label}
-    </Box>
-  );
-}
+// ── Previews: what a message step sends, on a sample lead ────────────────
 
 const when = (d: Date) => d.toLocaleString("en-ZA", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
@@ -1999,141 +1946,25 @@ function EmailPreview({ subject, body, trigger }: { subject: string; body: strin
   );
 }
 
-function NodePreview({ sel, wf, step }: { sel: Selection; wf: Workflow; step: Step | undefined }) {
+/** "What happens", for the steps that send something: the message as it
+ *  arrives. Other steps say what they do on their card already. */
+function NodePreview({ wf, step }: { wf: Workflow; step: Step | undefined }) {
   let body: React.ReactNode = null;
   const first = SAMPLE_LEAD.name.split(" ")[0];
-  if (sel?.kind === "trigger") {
-    const t = wf.trigger;
-    const event =
-      t.kind === "stage_changed" ? <>Agent moves {first} to <StageChip stage={t.stage ?? ""} /></>
-        : t.kind === "lead_created" ? <>{SAMPLE_LEAD.name} fills in the form on your ad</>
-        : t.kind === "came_back" ? <>{SAMPLE_LEAD.name}, already in your leads, fills in your form again</>
-          : t.kind === "no_answer_times" ? <>Agent logs "No answer" for {first} the {ordinal(t.count ?? 1)} time</>
-            : t.kind === "not_contacted_for" ? <>{first} hasn't been called or moved for {unitLabel(t.days ?? 14, "days")}</>
-              : t.kind === "plan_opened" ? <>{first} opens the Marketing Plan link</>
-                : t.kind === "reminder_due" ? <>A reminder for {first} comes due</>
-                  : t.kind === "appointment" ? <>It's {triggerSummary(t)} with {first} ({SAMPLE_FIELDS.appointment})</>
-                  : t.kind === "call_time_picked" ? <>{first} picks a time for a call: {SAMPLE_FIELDS.call_time}</>
-                  : t.kind === "call_time" ? <>It's {triggerSummary(t)} with {first} ({SAMPLE_FIELDS.call_time})</>
-                  : <>It's a weekday and the clock hits {t.time || "16:00"}</>;
+  if (step?.type === "whatsapp_agent" || step?.type === "whatsapp_lead") {
     body = (
       <>
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap", fontSize: 13.5 }}><BoltIcon sx={{ fontSize: 18, color: tokens.primary }} />{event}</Box>
-        <Arrow label={t.kind === "daily_at" ? "This workflow runs once for each agent" : "This workflow starts for that lead"} />
-        {t.kind !== "daily_at" && <LeadRowMock stage={t.kind === "stage_changed" ? t.stage ?? "New Lead" : t.kind === "no_answer_times" ? "No Answer" : t.kind === "lead_created" || t.kind === "came_back" || t.kind === "call_time_picked" || t.kind === "call_time" ? "New Lead" : t.kind === "appointment" ? "Booked" : "Contacted"} highlight={t.kind === "stage_changed" ? "stage" : undefined} />}
+        <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>{step.type === "whatsapp_agent" ? "Arrives on the agent's WhatsApp:" : `Arrives on ${first}'s own WhatsApp:`}</Typography>
+        <WhatsAppPreview lead={SAMPLE_LEAD} text={step.text || " "} sampleFields={sampleFields(wf.trigger)} attachment={step.attachment} />
       </>
     );
-  } else if (sel?.kind === "filters") {
-    body = wf.filters.length ? (
-      <Box sx={{ display: "grid", gap: 0.75 }}>
-        {wf.filters.map((f, i) => (
-          <Box key={i} sx={{ display: "flex", alignItems: "center", gap: 1, fontSize: 13.5 }}>
-            <Box sx={{ width: 20, height: 20, borderRadius: "50%", bgcolor: tokens.greenTint, color: tokens.green, display: "grid", placeItems: "center", fontSize: 13, fontWeight: 700 }}>✓</Box>
-            {filterSummary(f)}
-          </Box>
-        ))}
-        <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>A lead must match all of these to go through. One that misses any is skipped.</Typography>
-      </Box>
-    ) : <Typography sx={{ fontSize: 13.5 }}>No filters: every lead goes through.</Typography>;
-  } else if (sel?.kind === "exits") {
-    const on = wf.exits.filter((x) => x.on);
-    body = on.length ? (
+  } else if (step?.type === "email_lead") {
+    body = (
       <>
-        <LeadRowMock stage="Booked" highlight="stage" />
-        <Arrow label={`${first} booked, so she leaves the workflow`} />
-        <Typography sx={{ fontSize: 13.5 }}>No more messages go to her or about her.</Typography>
+        <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>Lands in {first}'s inbox:</Typography>
+        <EmailPreview subject={step.subject} body={step.body} trigger={wf.trigger} />
       </>
-    ) : <Typography sx={{ fontSize: 13.5, color: tokens.amber }}>Nothing stops it: every step runs, even after she books.</Typography>;
-  } else if (step) {
-    const start = new Date();
-    start.setHours(10, 0, 0, 0);
-    switch (step.type) {
-      case "whatsapp_agent":
-        body = (
-          <>
-            <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>Arrives on the agent's WhatsApp:</Typography>
-            <WhatsAppPreview lead={SAMPLE_LEAD} text={step.text || " "} sampleFields={sampleFields(wf.trigger)} attachment={step.attachment} />
-          </>
-        );
-        break;
-      case "whatsapp_lead":
-        body = (
-          <>
-            <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>Arrives on {first}'s own WhatsApp:</Typography>
-            <WhatsAppPreview lead={SAMPLE_LEAD} text={step.text || " "} sampleFields={sampleFields(wf.trigger)} attachment={step.attachment} />
-          </>
-        );
-        break;
-      case "email_lead":
-        body = (
-          <>
-            <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>Lands in {first}'s inbox:</Typography>
-            <EmailPreview subject={step.subject} body={step.body} trigger={wf.trigger} />
-          </>
-        );
-        break;
-      case "wait": {
-        let next = new Date(start.getTime() + waitMinutes(step) * 60000);
-        const h = next.getHours();
-        const deferred = wf.settings.quietHours && (h >= 20 || h < 8);
-        if (deferred) { next = new Date(next); if (h >= 20) next.setDate(next.getDate() + 1); next.setHours(8, 0, 0, 0); }
-        body = (
-          <Box sx={{ display: "grid", gap: 0.5, fontSize: 13.5 }}>
-            <Box sx={{ display: "flex", gap: 1 }}><Box sx={{ color: "text.secondary", width: 96 }}>Step before</Box><b>{when(start)}</b></Box>
-            <Arrow label={`waits ${unitLabel(step.amount, step.unit)}`} />
-            <Box sx={{ display: "flex", gap: 1 }}><Box sx={{ color: "text.secondary", width: 96 }}>Next step</Box><b>{when(next)}</b></Box>
-            {deferred && <Typography sx={{ fontSize: 12.5, color: tokens.amber }}>Pushed to 08:00 by quiet hours.</Typography>}
-          </Box>
-        );
-        break;
-      }
-      case "set_stage":
-        body = (
-          <>
-            <LeadRowMock stage="New Lead" />
-            <Arrow label={`stage changes to ${step.stage || "…"}`} />
-            <LeadRowMock stage={step.stage} highlight="stage" />
-          </>
-        );
-        break;
-      case "reminder": {
-        const due = new Date(start.getTime() + step.inDays * 86_400_000);
-        body = (
-          <>
-            <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>On the agent's leads list:</Typography>
-            <LeadRowMock stage="No Answer" next={fill(step.label) || "Follow up"} nextDue={step.inDays === 0 ? "due today" : `due ${when(due)}`} highlight="next" />
-          </>
-        );
-        break;
-      }
-      case "tag":
-        body = (
-          <>
-            <LeadRowMock stage="Contacted" />
-            <Arrow label="tag added (staff see it on the lead)" />
-            <LeadRowMock stage="Contacted" newTag={step.tag} highlight="tag" />
-          </>
-        );
-        break;
-      case "branch": {
-        const meta = BRANCH_CHECKS.find((x) => x.check === step.check);
-        const yesLabel = step.check === "opened_last_email" ? "She opened it" : step.check === "has_email" ? "She has an email" : `${meta?.label} ${checkKind(step.check) ? valueLabel(checkKind(step.check)!, step.value) : step.value || "…"}`;
-        body = (
-          <>
-            <Typography sx={{ fontSize: 13.5 }}>The workflow checks {first}: <b>{stepSummary(step)}</b></Typography>
-            <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1 }}>
-              <Box sx={{ border: `1px solid ${tokens.greenBorder}`, bgcolor: tokens.greenTint, borderRadius: "4px", p: 1, fontSize: 12.5 }}>
-                <b style={{ color: tokens.greenDark }}>Yes</b><br />{yesLabel} → the Yes path ({step.yes.length} step{step.yes.length === 1 ? "" : "s"})
-              </Box>
-              <Box sx={{ border: `1px solid ${tokens.divider}`, bgcolor: tokens.surface2, borderRadius: "4px", p: 1, fontSize: 12.5 }}>
-                <b>No</b><br />Otherwise → the No path ({step.no.length} step{step.no.length === 1 ? "" : "s"})
-              </Box>
-            </Box>
-          </>
-        );
-        break;
-      }
-    }
+    );
   }
   if (!body) return null;
   return (
