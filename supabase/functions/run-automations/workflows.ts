@@ -610,6 +610,41 @@ class Context {
     };
   }
 
+  /** The morning follow-up list: one message a day instead of a nudge per
+   *  lead. Each lead counts once, under the first line it fits. Only the last
+   *  14 days, so a long-forgotten pile doesn't turn it into a number nobody
+   *  can act on. null when there's nothing to follow up. */
+  private async followUps(): Promise<{ count: number; list: string } | null> {
+    const now = Date.now();
+    const iso = (ms: number) => new Date(ms).toISOString();
+    const since = iso(now - 14 * 86_400_000);
+    const sastToday = new Date(now + 2 * 3600_000).toISOString().slice(0, 10);
+    const endOfToday = new Date(`${sastToday}T23:59:59+02:00`).toISOString();
+    const { data } = await this.supabase.from("leads").select("id, stage, created_at, updated_at, due, reminder_at")
+      .eq("agent_id", this.run.agent_id).eq("archived", false).limit(5000);
+    type Row = { id: string; stage: string; created_at: string; updated_at?: string | null; due?: boolean | null; reminder_at?: string | null };
+    const rows = ((data ?? []) as Row[]).filter((r) => !SETTLED.includes(r.stage));
+    const lastTouch = (r: Row) => r.updated_at || r.created_at;
+    const lines: [(r: Row) => boolean, (n: number) => string][] = [
+      [(r) => r.stage === "New Lead" && r.created_at >= since && r.created_at < iso(now - 3600_000),
+        (n) => `${n} new ${n === 1 ? "lead" : "leads"} not called yet`],
+      [(r) => !!r.due && !!r.reminder_at && r.reminder_at >= since && r.reminder_at <= endOfToday,
+        (n) => `${n} follow-up${n === 1 ? "" : "s"} due`],
+      [(r) => r.stage === "No Answer" && lastTouch(r) >= since,
+        (n) => `${n} to try again (no answer last time)`],
+      [(r) => r.stage === "Contacted" && lastTouch(r) >= since && lastTouch(r) < iso(now - 2 * 86_400_000),
+        (n) => `${n} to check in with (no word for 2+ days)`],
+    ];
+    const counted = new Set<string>();
+    const out: string[] = [];
+    for (const [fits, label] of lines) {
+      const mine = rows.filter((r) => !counted.has(r.id) && fits(r));
+      mine.forEach((r) => counted.add(r.id));
+      if (mine.length) out.push(`• ${label(mine.length)}`);
+    }
+    return counted.size ? { count: counted.size, list: out.join("\n") } : null;
+  }
+
   private async whatsApp(step: Extract<Step, { type: "whatsapp_agent" }>): Promise<Outcome> {
     const l = this.lead;
     // New-lead (and came-back) alerts are time-critical; everything else respects quiet hours.
@@ -626,7 +661,15 @@ class Context {
     let text: string;
     if (!l) {
       const agentFirst = first(this.profile?.display_name) || "there";
-      if (/\{\{\s*(today|pipeline|not_called)\s*\}\}/.test(step.text)) {
+      if (/\{\{\s*follow_ups\s*\}\}/.test(step.text)) {
+        // Morning follow-up list.
+        const f = await this.followUps();
+        if (!f) {
+          await log(this.supabase, this.run, step.id, "WhatsApp the agent", "Skipped", "Nothing to follow up today");
+          return { kind: "done" };
+        }
+        text = fill(step.text, { first_name: agentFirst, count: String(f.count), leads_word: f.count === 1 ? "lead" : "leads", follow_ups: f.list });
+      } else if (/\{\{\s*(today|pipeline|not_called)\s*\}\}/.test(step.text)) {
         // End-of-day report: sent whenever there's a pipeline to report on.
         const report = await this.dailyReport();
         if (!report) {
