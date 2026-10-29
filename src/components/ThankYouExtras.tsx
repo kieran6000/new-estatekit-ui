@@ -16,7 +16,7 @@ export const CALL_QUESTION = "When suits you for a quick call?";
  *  are (leads from our own forms). From a Facebook instant form's end button
  *  we don't: they type their number once (byPhone) and request_call_time
  *  matches it to their lead, now or when it arrives. */
-export function ThankYouCallTime({ token, slug, byPhone, preview, accent, agentName, question }: { token: string; slug?: string; byPhone?: boolean; preview?: boolean; accent: string; agentName: string; question?: string | null }) {
+export function ThankYouCallTime({ token, slug, byPhone, seller, preview, accent, agentName, question }: { token: string; slug?: string; byPhone?: boolean; seller?: boolean; preview?: boolean; accent: string; agentName: string; question?: string | null }) {
   const agentFirst = (agentName || "").trim().split(/\s+/)[0] || "We";
   const [value, setValue] = useState("");
   const [phone, setPhone] = useState("");
@@ -80,9 +80,9 @@ export function ThankYouCallTime({ token, slug, byPhone, preview, accent, agentN
       />
       {byPhone && (
         <Box sx={{ mt: 2.5 }}>
-          <Typography sx={{ fontSize: 18, fontWeight: 600, mb: 0.5 }}>Last step: lock in your time</Typography>
+          <Typography sx={{ fontSize: 18, fontWeight: 600, mb: 0.5 }}>Last step: where should we send your {seller ? "evaluation details" : "details"}?</Typography>
           <Typography sx={{ fontSize: 14, color: "text.secondary", mb: 1.25 }}>
-            Which WhatsApp number should {agentFirst} call you on? Your slot isn't saved until you add it.
+            Which WhatsApp number should {agentFirst} use to {seller ? "send your home evaluation details and " : ""}call you at the time you picked?
           </Typography>
           <TextField
             placeholder="082 000 0000"
@@ -109,7 +109,7 @@ export function ThankYouCallTime({ token, slug, byPhone, preview, accent, agentN
         startIcon={busy ? <CircularProgress size={18} sx={{ color: "inherit" }} /> : undefined}
         sx={{ mt: 3, bgcolor: accent, color: readableOn(accent), "&:hover": { bgcolor: accent, filter: "brightness(0.9)" }, "&.Mui-disabled": { bgcolor: accent, color: readableOn(accent), opacity: 0.7 } }}
       >
-        {byPhone ? "Lock in my call time" : "Confirm call time"}
+        {byPhone ? (seller ? "Get my evaluation call" : "Confirm my call") : "Confirm call time"}
       </Button>
     </Box>
   );
