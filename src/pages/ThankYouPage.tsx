@@ -17,6 +17,7 @@ import { initPixel } from "../lib/fbPixel";
 import { fillMessage } from "../lib/format";
 import { readableOn } from "../lib/contrast";
 import { isPlanToken, recallPlanToken } from "../lib/planToken";
+import { trackPageEvent } from "../lib/pageTracking";
 import { resolveMagnet, type Magnet } from "../lib/leadMagnet";
 import type { LeadPage } from "../types";
 import { getPagePlan } from "../api/pagePlan";
@@ -73,6 +74,11 @@ export default function ThankYouPage() {
   useEffect(() => {
     if (page?.fbPixelId && !preview) initPixel(page.fbPixelId);
   }, [page?.fbPixelId, preview]);
+
+  // A Facebook form's end-screen taps (its only traffic we can see): Forms → Tracking.
+  useEffect(() => {
+    if (page?.sourceType === "fb_form" && !preview) trackPageEvent(page.id, "view");
+  }, [page?.id, page?.sourceType, preview]);
 
   if (!slug) return <GenericThankYou />;
 

@@ -390,6 +390,7 @@ export default function LeadPagePage() {
       {page.sourceType === "fb_form" && (
         <Box hidden={tab !== "tracking"}>
           <Box sx={{ maxWidth: 720, mx: "auto", p: 2, display: "flex", flexDirection: "column", gap: 3 }}>
+            {isOperator && <LeadPageFunnelStats pageId={page.id} active={tab === "tracking"} fb />}
             {trackingSection}
           </Box>
         </Box>
@@ -1245,6 +1246,7 @@ function AddPageDialog({
     }
   }, [open, pipelines]);
 
+  const [refreshForms, setRefreshForms] = useState(0);
   useEffect(() => {
     if (sourceType !== "fb_form" || !open) return;
     if (!effectivePageId) { setFbForms([]); setFormsProblem(null); return; }
@@ -1253,7 +1255,7 @@ function AddPageDialog({
       setLoadingForms(true);
       setFormsProblem(null);
       try {
-        const { forms, noAccess, rateLimited } = await listFbForms(effectivePageId);
+        const { forms, noAccess, rateLimited } = await listFbForms(effectivePageId, refreshForms > 0);
         if (!cancelled) {
           setFbForms(forms);
           setFormsProblem(noAccess ? "no_access" : rateLimited ? "busy" : null);
@@ -1267,7 +1269,7 @@ function AddPageDialog({
       if (!cancelled) setLoadingForms(false);
     })();
     return () => { cancelled = true; };
-  }, [sourceType, open, effectivePageId]);
+  }, [sourceType, open, effectivePageId, refreshForms]);
 
   const selectedForm = fbForms.find((f) => f.id === fbFormId);
 
@@ -1356,6 +1358,7 @@ function AddPageDialog({
                 <Typography sx={{ fontSize: 13, color: "text.secondary" }}>Loading forms from Facebook...</Typography>
               </Box>
             ) : fbForms.length > 0 ? (
+              <>
               <TextField
                 select
                 label="Select a form"
@@ -1369,6 +1372,10 @@ function AddPageDialog({
                   </MenuItem>
                 ))}
               </TextField>
+              <Button size="small" disabled={loadingForms} onClick={() => setRefreshForms((n) => n + 1)} sx={{ alignSelf: "flex-start", mt: 0.5 }}>
+                Can't see your new form? Refresh the list
+              </Button>
+              </>
             ) : (
               <Box sx={{ py: 1 }}>
                 <Typography sx={{ fontSize: 13, color: "text.secondary", mb: 1 }}>
