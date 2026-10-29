@@ -13,7 +13,11 @@ import type { FormPresetKey, LeadPage } from "../types";
 // ESTATEKIT-SYSTEM-REFERENCE.md, so every client's answers report as one.
 
 // v2 (27 Sep 2026): neutral thank-you message with {agent}; no "my assistant" or value claims.
-export const FORM_PRESET_VERSION = 2;
+// v3 (29 Oct 2026): Higher intent is the one standard every client page runs:
+// address, how soon, main reason. "Not planning to sell" and "just want to
+// know what it's worth" disqualify; no "already listed?" question and no
+// weak timelines. Every client page was moved to it (20261029_0007).
+export const FORM_PRESET_VERSION = 3;
 
 interface PresetQuestion {
   label: string;
@@ -94,7 +98,6 @@ export const FORM_PRESETS: FormPreset[] = [
         type: "multiple_choice",
         options: [...TIMELINE, "Not planning to sell"],
         disqualify: ["Not planning to sell"],
-        lowQuality: WEAK_TIMELINE,
       },
       {
         label: "What's the main reason you're thinking about selling?",
@@ -102,7 +105,6 @@ export const FORM_PRESETS: FormPreset[] = [
         options: [...REASONS, BROWSING],
         disqualify: [BROWSING],
       },
-      LISTED,
     ],
   },
 ];
