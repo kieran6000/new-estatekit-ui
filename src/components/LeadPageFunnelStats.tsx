@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Box, Skeleton, Typography } from "@mui/material";
 import { tokens } from "../theme";
-import { getLeadPageCounts } from "../api/leadPages";
+import { getFbFormCounts, getLeadPageCounts } from "../api/leadPages";
 import { ALL_RANGES, resolveRange, useDateRange } from "../lib/range";
 import RangePicker from "./RangePicker";
 import InfoTip from "./InfoTip";
@@ -13,17 +13,38 @@ import InfoTip from "./InfoTip";
 const pct = (part: number, whole: number) => (whole ? Math.round((part / whole) * 100) : 0);
 const n = (v: number) => v.toLocaleString("en-ZA");
 
-export default function LeadPageFunnelStats({ pageId, active = true }: { pageId: string; active?: boolean }) {
+export default function LeadPageFunnelStats({ pageId, active = true, fb = false }: { pageId: string; active?: boolean; fb?: boolean }) {
   const [range, setRange] = useDateRange("ek_form_stats_range", { key: "30d" });
   const { since, until } = resolveRange(range);
-  const { data: c, isLoading, isError } = useQuery({
+  const { data: c0, isLoading: l0, isError: e0 } = useQuery({
     queryKey: ["leadPageCounts", pageId, since.toISOString(), until.toISOString()],
     queryFn: () => getLeadPageCounts(pageId, since, until),
-    enabled: active,
+    enabled: active && !fb,
     staleTime: 60_000,
   });
+  const { data: f, isLoading: l1, isError: e1 } = useQuery({
+    queryKey: ["fbFormCounts", pageId, since.toISOString(), until.toISOString()],
+    queryFn: () => getFbFormCounts(pageId, since, until),
+    enabled: active && fb,
+    staleTime: 60_000,
+  });
+  const c = fb ? (f ? { views: 0, starts: 0, contacts: 0, disqualified: 0, submits: f.leads } : undefined) : c0;
+  const isLoading = fb ? l1 : l0;
+  const isError = fb ? e1 : e0;
 
-  const tiles = c
+  const tiles = fb && f
+    ? [
+        { label: "Leads", value: n(f.leads), sub: "from this instant form" },
+        {
+          label: "Tapped the end screen", value: n(f.endScreen), sub: f.leads ? `${pct(f.endScreen, f.leads)}% of leads` : "after sending the form",
+          tip: "People who finished the form and tapped its end-screen button, landing on your thank-you page. Low? Check the button's link is set in Facebook.",
+        },
+        {
+          label: "Picked a call time", value: n(f.callTimes), sub: f.leads ? `${pct(f.callTimes, f.leads)}% of leads` : "on the thank-you page",
+          tip: "Needs 'Ask when suits them for a call' on. Their lead can arrive up to 15 minutes after they send the form.",
+        },
+      ]
+    : c
     ? [
         { label: "Visitors", value: n(c.views), sub: "opened the form" },
         {
@@ -54,7 +75,7 @@ export default function LeadPageFunnelStats({ pageId, active = true }: { pageId:
       ) : isLoading || !c ? (
         <Skeleton variant="rounded" height={84} sx={{ borderRadius: "8px" }} />
       ) : (
-        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, 1fr)", md: "repeat(5, 1fr)" }, gap: 1.5 }}>
+        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, 1fr)", md: fb ? "repeat(3, 1fr)" : "repeat(5, 1fr)" }, gap: 1.5 }}>
           {tiles.map((t) => (
             <Box key={t.label} sx={{ border: `1px solid ${tokens.divider2}`, borderRadius: "8px", p: "10px 12px", minWidth: 0 }}>
               <Typography sx={{ fontSize: 22, fontWeight: 600, lineHeight: 1.2 }}>{t.value}</Typography>

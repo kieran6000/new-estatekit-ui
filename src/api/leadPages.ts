@@ -339,9 +339,12 @@ export async function getFbForm(fbPageId: string | null, formId: string): Promis
   };
 }
 
-export async function listFbForms(fbPageId: string): Promise<FbFormsResult> {
+/** force: ask Facebook again instead of using the list kept for up to 24 hours
+ *  (a form made a minute ago isn't in that one). Costs Facebook quota, so only
+ *  on "Refresh". */
+export async function listFbForms(fbPageId: string, force = false): Promise<FbFormsResult> {
   const { data, error } = await supabase.functions.invoke("list-fb-forms", {
-    body: { pageId: fbPageId },
+    body: force ? { pageId: fbPageId, force: true } : { pageId: fbPageId },
   });
   if (error) {
     const message = await functionErrorMessage(error);
@@ -382,6 +385,20 @@ export async function getLeadPageCounts(pageId: string, since: Date, until: Date
   };
   const [views, starts, contacts, disqualified, submits] = await Promise.all(["view", "start", "contact", "disqualified", "submit"].map(count));
   return { views, starts, contacts, disqualified, submits };
+}
+
+export interface FbFormCounts { leads: number; endScreen: number; callTimes: number }
+
+/** A Facebook instant form's numbers in [since, until): leads it brought in,
+ *  people who tapped its end-screen button, and leads who picked a call time.
+ *  (Facebook's own form opens and impressions stay in Ads Manager.) */
+export async function getFbFormCounts(pageId: string, since: Date, until: Date): Promise<FbFormCounts> {
+  const a = since.toISOString(), b = until.toISOString();
+  const leads = await supabase.from("leads").select("id", { count: "exact", head: true }).eq("source_page_id", pageId).gte("created_at", a).lt("created_at", b);
+  const calls = await supabase.from("leads").select("id", { count: "exact", head: true }).eq("source_page_id", pageId).not("call_at", "is", null).gte("created_at", a).lt("created_at", b);
+  const ends = await supabase.from("lead_page_events").select("id", { count: "exact", head: true }).eq("page_id", pageId).eq("event_type", "view").gte("created_at", a).lt("created_at", b);
+  for (const r of [leads, calls, ends]) if (r.error) throw new Error(r.error.message);
+  return { leads: leads.count ?? 0, endScreen: ends.count ?? 0, callTimes: calls.count ?? 0 };
 }
 
 /** Unique-visitor funnel counts for one landing page. Operator-only (RLS). */
