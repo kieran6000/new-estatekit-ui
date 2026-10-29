@@ -180,6 +180,14 @@ export async function addLeadPage(
   // Only stored when it differs from the agent's own page; null keeps the
   // existing "use the profile's page" behaviour.
   if (opts?.fbPageId) row.fb_page_id = opts.fbPageId;
+  // A Facebook-form page has no branding editor: it takes the agent's profile
+  // logo, photo and colour (20261029_0012 did this for the existing ones).
+  if (opts?.sourceType === "fb_form") {
+    const { data: prof } = await supabase.from("agent_profiles").select("sidebar_logo_url, avatar_url, sidebar_color").eq("agent_id", agentId).maybeSingle();
+    if (prof?.sidebar_logo_url) row.logo_data_url = prof.sidebar_logo_url;
+    if (prof?.avatar_url) row.profile_photo_data_url = prof.avatar_url;
+    if (prof?.sidebar_color) row.accent_color = prof.sidebar_color;
+  }
   const { data, error } = await supabase
     .from("lead_pages")
     .insert(row)
