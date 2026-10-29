@@ -66,6 +66,9 @@ export default function FbFormPreview({
   const step = steps[i];
   const total = steps.length;
   const initial = (pageName || "?").trim()[0]?.toUpperCase() ?? "?";
+  // The end screen's button, as it is set in Facebook.
+  const endUrl = form.thank_you_page?.website_url?.trim() || "";
+  const endOk = /\/thank-you\?p=/.test(endUrl);
   const ctaText =
     step.kind === "thanks"
       ? form.thank_you_page?.button_text || "Claim My FREE Evaluation"
@@ -211,7 +214,11 @@ export default function FbFormPreview({
           </Box>
           <Box
             component="button"
-            onClick={() => setI((n) => (n >= total - 1 ? 0 : n + 1))}
+            onClick={() => {
+              // On the end screen the button does what it does in Facebook: opens its link.
+              if (step.kind === "thanks" && endUrl) { window.open(endUrl, "_blank", "noopener"); return; }
+              setI((n) => (n >= total - 1 ? 0 : n + 1));
+            }}
             sx={{
               width: "100%",
               border: 0,
@@ -231,6 +238,14 @@ export default function FbFormPreview({
           </Box>
         </Box>
       </Box>
+
+      {step.kind === "thanks" && (
+        <Box sx={{ maxWidth: 340, mx: "auto", mt: 1, fontSize: 12.5, color: endUrl ? (endOk ? "success.main" : "warning.main") : "error.main", wordBreak: "break-all" }}>
+          {endUrl
+            ? <>{endOk ? "✓ " : "⚠ "}The end button opens: <b>{endUrl}</b>{endOk ? "" : " (not a thank-you page link; copy the link from the End screen link section and set it in Facebook)"}</>
+            : "⚠ This form's end button has no website link set in Facebook, so people can't reach your thank-you page."}
+        </Box>
+      )}
 
       {/* Nav under phone */}
       <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", maxWidth: 340, mx: "auto", mt: 1 }}>
