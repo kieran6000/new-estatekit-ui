@@ -53,6 +53,7 @@ import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import ErrorOutlineIcon from "@mui/icons-material/ErrorOutlined";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import PersonIcon from "@mui/icons-material/Person";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import HistoryIcon from "@mui/icons-material/History";
 import SettingsIcon from "@mui/icons-material/SettingsOutlined";
@@ -775,14 +776,12 @@ function Editor({ initial, isTemplate, backTo, onSave, onCopyToTemplates, onBack
 
   const selectedStep = sel?.kind === "step" ? findStep(wf.steps, sel.id) : undefined;
   const panelOpen = tab === "builder" && !!sel && (sel.kind !== "step" || !!selectedStep);
-  const panelTitle = sel?.kind === "trigger" ? "Trigger" : sel?.kind === "filters" ? "Only run if" : sel?.kind === "exits" ? "Stop early when" : selectedStep ? stepTitle(selectedStep) : "";
   const panelProblems = sel ? problems[sel.kind === "step" ? sel.id : sel.kind] ?? [] : [];
   const position = selectedStep ? locate(wf.steps, selectedStep.id) : null;
 
   const panel = panelOpen && (
     <DetailsPanel
       key={selKey(sel)}
-      title={panelTitle}
       problems={panelProblems}
       onClose={() => setSel(null)}
       onDelete={selectedStep ? () => deleteStep(selectedStep.id) : undefined}
@@ -860,7 +859,7 @@ function Editor({ initial, isTemplate, backTo, onSave, onCopyToTemplates, onBack
             <Chip size="small" color="error" variant="outlined" icon={<ErrorOutlineIcon />} label={`${nProblems} to fix · show me`} onClick={goToFirstProblem} />
           ) : (
             <Typography noWrap sx={{ fontSize: 13, color: "text.secondary", flex: 1, minWidth: 0 }}>
-              {canSave ? "You have changes that aren't saved yet." : "Tap a step to change it."}
+              {canSave ? "You have changes that aren't saved yet." : "Tap Edit on any step to change it."}
             </Typography>
           )}
           <Box sx={{ flex: nProblems > 0 ? 1 : "none" }} />
@@ -937,26 +936,16 @@ function Editor({ initial, isTemplate, backTo, onSave, onCopyToTemplates, onBack
   );
 }
 
-/** A step's editor, opened right under the step: title, move and close on
- *  top, Delete and Done at the foot. Keyed by what's selected, so a
+/** A step's settings, inside its own card once it's opened: the fields,
+ *  then Delete, move up/down and Done. Keyed by what's selected, so a
  *  half-confirmed delete never carries over to another step. */
-function DetailsPanel({ title, problems, onClose, onDelete, deleteLabel, onMove, canMoveUp, canMoveDown, children }: {
-  title: string; problems: string[]; onClose: () => void; onDelete?: () => void; deleteLabel: string;
+function DetailsPanel({ problems, onClose, onDelete, deleteLabel, onMove, canMoveUp, canMoveDown, children }: {
+  problems: string[]; onClose: () => void; onDelete?: () => void; deleteLabel: string;
   onMove?: (dir: -1 | 1) => void; canMoveUp: boolean; canMoveDown: boolean; children: React.ReactNode;
 }) {
   const [confirming, setConfirming] = useState(false);
   return (
-    <Box sx={{ width: "100%", mt: 1, bgcolor: "background.paper", border: `1px solid ${tokens.primary}`, borderRadius: "8px", boxShadow: `0 2px 8px ${tokens.shadow}`, textAlign: "left" }}>
-      <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, pl: 2, pr: 1, height: 48, borderBottom: `1px solid ${tokens.divider}` }}>
-        <Typography sx={{ fontWeight: 600, flex: 1, minWidth: 0 }} noWrap>{title}</Typography>
-        {onMove && (
-          <>
-            <Tooltip title="Move up"><span><IconButton size="small" disabled={!canMoveUp} onClick={() => onMove(-1)} aria-label="Move step up"><ArrowUpwardIcon fontSize="small" /></IconButton></span></Tooltip>
-            <Tooltip title="Move down"><span><IconButton size="small" disabled={!canMoveDown} onClick={() => onMove(1)} aria-label="Move step down"><ArrowDownwardIcon fontSize="small" /></IconButton></span></Tooltip>
-          </>
-        )}
-        <IconButton onClick={onClose} aria-label="Close" size="small"><CloseIcon fontSize="small" /></IconButton>
-      </Box>
+    <Box sx={{ textAlign: "left" }}>
       <Box sx={{ p: 2, display: "flex", flexDirection: "column", gap: 2 }}>
         {problems.length > 0 && (
           <Alert severity="error" sx={{ py: 0.5 }}>
@@ -965,17 +954,26 @@ function DetailsPanel({ title, problems, onClose, onDelete, deleteLabel, onMove,
         )}
         {children}
       </Box>
-      <Box sx={{ display: "flex", alignItems: "center", gap: 1, px: 2, py: 1.25, borderTop: `1px solid ${tokens.divider}` }}>
-        {onDelete && (confirming ? (
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1, px: 2, py: 1.25, borderTop: `1px solid ${tokens.divider}`, bgcolor: tokens.surface2, borderRadius: "0 0 8px 8px" }}>
+        {confirming ? (
           <>
             <Typography sx={{ fontSize: 13, flex: 1 }}>{deleteLabel.startsWith("Delete check") ? "Delete this check and everything under it?" : "Delete this step?"}</Typography>
             <Button size="small" onClick={() => setConfirming(false)}>Keep</Button>
             <Button size="small" color="error" variant="contained" onClick={onDelete}>Delete</Button>
           </>
         ) : (
-          <Button color="error" startIcon={<DeleteOutlinedIcon />} onClick={() => setConfirming(true)} sx={{ textTransform: "none" }}>{deleteLabel}</Button>
-        ))}
-        {!confirming && <><Box sx={{ flex: 1 }} /><Button variant="contained" onClick={onClose}>Done</Button></>}
+          <>
+            {onDelete && <Button color="error" startIcon={<DeleteOutlinedIcon />} onClick={() => setConfirming(true)} sx={{ textTransform: "none" }}>{deleteLabel}</Button>}
+            {onMove && (
+              <>
+                <Tooltip title="Move up"><span><IconButton disabled={!canMoveUp} onClick={() => onMove(-1)} aria-label="Move step up"><ArrowUpwardIcon fontSize="small" /></IconButton></span></Tooltip>
+                <Tooltip title="Move down"><span><IconButton disabled={!canMoveDown} onClick={() => onMove(1)} aria-label="Move step down"><ArrowDownwardIcon fontSize="small" /></IconButton></span></Tooltip>
+              </>
+            )}
+            <Box sx={{ flex: 1 }} />
+            <Button variant="contained" onClick={onClose}>Done</Button>
+          </>
+        )}
       </Box>
     </Box>
   );
@@ -1022,40 +1020,69 @@ function Canvas({ wf, sel, setSel, onAdd, problems, here, onHere, highlight, ban
           <Typography sx={{ fontSize: 13 }}>{wf.note}</Typography>
         </Box>
       )}
-      <Box sx={{ maxWidth: 640, mx: "auto", px: 2, py: 3, display: "flex", flexDirection: "column", gap: 1 }}>
-        <Box data-sel="trigger">
-          <Node color="#1565c0" icon={<BoltIcon />} title="When" text={triggerSummary(wf.trigger)} selected={sel?.kind === "trigger"} error={!!problems.trigger} onClick={() => setSel(sel?.kind === "trigger" ? null : { kind: "trigger" })} />
-          {details({ kind: "trigger" })}
-        </Box>
-        <Box data-sel="filters">
-          <Node
-            color="#546e7a"
-            icon={<FilterAltIcon />}
-            title="Only if"
-            text={wf.filters.length ? wf.filters.map(filterSummary).join(" · ") : "Every lead (no filters)"}
-            selected={sel?.kind === "filters"}
-            error={!!problems.filters}
-            onClick={() => setSel(sel?.kind === "filters" ? null : { kind: "filters" })}
-            dashed={!wf.filters.length}
-          />
-          {details({ kind: "filters" })}
-        </Box>
-        <SectionLabel>Then</SectionLabel>
-        <StepList steps={wf.steps} path="root" ctx={ctx} />
-        <Box data-sel="exits" sx={{ mt: 1.5 }}>
-          <Node
-            color="#b71c1c"
-            icon={<BlockIcon />}
-            title="Stop early if"
-            text={exitsOn.length ? exitsOn.map((x) => EXITS.find((e) => e.kind === x.kind)?.label.replace(/ \(.*\)$/, "")).join(" · ") : "Never: every step always runs"}
-            selected={sel?.kind === "exits"}
-            onClick={() => setSel(sel?.kind === "exits" ? null : { kind: "exits" })}
-            dashed={!exitsOn.length}
-          />
-          {details({ kind: "exits" })}
-        </Box>
-        <Timeline wf={wf} />
+      <Box sx={{ maxWidth: 680, mx: "auto", px: 2, py: 3 }}>
+        <RailItem marker={<BoltIcon sx={{ fontSize: 16 }} />} first>
+          <Box data-sel="trigger">
+            <Node color="#1565c0" icon={<BoltIcon />} title="When" text={triggerSummary(wf.trigger)} selected={sel?.kind === "trigger"} error={!!problems.trigger} onClick={() => setSel(sel?.kind === "trigger" ? null : { kind: "trigger" })}>
+              {details({ kind: "trigger" })}
+            </Node>
+          </Box>
+        </RailItem>
+        <RailItem marker={<FilterAltIcon sx={{ fontSize: 16 }} />}>
+          <Box data-sel="filters">
+            <Node
+              color="#546e7a"
+              icon={<FilterAltIcon />}
+              title="Only if"
+              text={wf.filters.length ? wf.filters.map(filterSummary).join(" · ") : "Every lead (no filters)"}
+              selected={sel?.kind === "filters"}
+              error={!!problems.filters}
+              onClick={() => setSel(sel?.kind === "filters" ? null : { kind: "filters" })}
+            >
+              {details({ kind: "filters" })}
+            </Node>
+          </Box>
+        </RailItem>
+        <StepList steps={wf.steps} path="root" ctx={ctx} continues />
+        <RailItem marker={<BlockIcon sx={{ fontSize: 16 }} />} last>
+          <Box data-sel="exits">
+            <Node
+              color="#b71c1c"
+              icon={<BlockIcon />}
+              title="Stop early if"
+              text={exitsOn.length ? exitsOn.map((x) => EXITS.find((e) => e.kind === x.kind)?.label.replace(/ \(.*\)$/, "")).join(" · ") : "Never: every step always runs"}
+              selected={sel?.kind === "exits"}
+              onClick={() => setSel(sel?.kind === "exits" ? null : { kind: "exits" })}
+            >
+              {details({ kind: "exits" })}
+            </Node>
+          </Box>
+        </RailItem>
+        <Box sx={{ pl: "40px" }}><Timeline wf={wf} /></Box>
       </Box>
+    </Box>
+  );
+}
+
+/** One stop on the line down the left: a marker (icon or step number)
+ *  joined to the ones above and below, and the card beside it. */
+function RailItem({ marker, first, last, dashed, children }: { marker: React.ReactNode; first?: boolean; last?: boolean; dashed?: boolean; children: React.ReactNode }) {
+  const mid = 29; // the marker's centre, level with a card's header
+  return (
+    <Box sx={{ display: "flex", gap: 1.5, position: "relative", pb: last ? 0 : 1.25 }}>
+      <Box
+        aria-hidden
+        sx={{
+          position: "absolute", left: 13, width: 2, bgcolor: tokens.line,
+          top: first ? mid : 0, bottom: last ? `calc(100% - ${mid}px)` : 0,
+        }}
+      />
+      <Box sx={{ width: 28, flex: "none", pt: `${mid - 14}px`, position: "relative", zIndex: 1 }}>
+        <Box sx={{ width: 28, height: 28, borderRadius: "50%", display: "grid", placeItems: "center", fontSize: 12.5, fontWeight: 700, color: tokens.ink2, bgcolor: "background.paper", border: `2px ${dashed ? "dashed" : "solid"} ${tokens.line}` }}>
+          {marker}
+        </Box>
+      </Box>
+      <Box sx={{ flex: 1, minWidth: 0 }}>{children}</Box>
     </Box>
   );
 }
@@ -1072,60 +1099,62 @@ interface StepCtx {
   details: (s: NonNullable<Selection>) => React.ReactNode;
 }
 
-function Node({ color, icon, title, text, selected, onClick, dashed, error, stepId, count = 0, onCount, highlight }: {
-  color: string; icon: React.ReactNode; title: string; text: string; selected: boolean; onClick: () => void; dashed?: boolean; error?: boolean;
+function Node({ color, icon, title, text, selected, onClick, error, count = 0, onCount, highlight, children }: {
+  color: string; icon: React.ReactNode; title: string; text: string; selected: boolean; onClick: () => void; error?: boolean;
   /** Steps only: leads waiting here, and the lead being shown is here. */
-  stepId?: string; count?: number; onCount?: () => void; highlight?: boolean;
+  count?: number; onCount?: () => void; highlight?: boolean;
+  /** Its settings, shown inside the card while it's open. */
+  children?: React.ReactNode;
 }) {
+  const open = selected && !!children;
   const edge = error ? tokens.red : highlight ? tokens.amber : selected ? tokens.primary : tokens.divider;
-  const ring = highlight ? tokens.amber : error ? tokens.red : tokens.primary;
   return (
-    <Box data-step={stepId} sx={{ position: "relative", flex: "none" }}>
-    <Box
-      component="button"
-      type="button"
-      onClick={onClick}
-      aria-label={`${title}: ${text}${error ? " (needs fixing)" : ""}`}
-      sx={{
-        width: "100%", display: "flex", gap: 1.25, alignItems: "center", textAlign: "left", font: "inherit", color: "inherit",
-        bgcolor: "background.paper", borderRadius: "8px", p: 1.25, cursor: "pointer", flex: "none", position: "relative",
-        border: `${highlight ? 2 : 1}px ${dashed && !error ? "dashed" : "solid"} ${edge}`,
-        boxShadow: selected || highlight ? `0 0 0 3px color-mix(in srgb, ${ring} 30%, transparent)` : `0 1px 2px ${tokens.shadow}`,
-        transition: "box-shadow .12s, border-color .12s",
-        "&:hover": { borderColor: error ? tokens.red : selected ? tokens.primary : tokens.ink3 },
-        "&:focus-visible": { outline: "none", boxShadow: `0 0 0 3px color-mix(in srgb, ${tokens.primary} 50%, transparent)` },
-      }}
-    >
-      <Box sx={{ width: 32, height: 32, flex: "none", borderRadius: "6px", bgcolor: color, color: "#fff", display: "grid", placeItems: "center", "& svg": { fontSize: 18 } }}>{icon}</Box>
-      <Box sx={{ minWidth: 0, flex: 1 }}>
-        <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase", color: "text.secondary" }}>{title}</Typography>
-        <Typography sx={{ fontSize: 13.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{text}</Typography>
-      </Box>
-      {error && <ErrorOutlineIcon sx={{ fontSize: 18, color: tokens.red, flex: "none" }} />}
-    </Box>
-    {count > 0 && (
-      <Tooltip title={`${count} lead${count === 1 ? "" : "s"} waiting for this step. Show them`}>
-        <Box
-          component="button"
-          type="button"
-          onClick={onCount}
-          aria-label={`${count} lead${count === 1 ? "" : "s"} waiting for this step`}
-          sx={{
-            position: "absolute", top: -9, right: -9, minWidth: 22, height: 22, px: 0.75, borderRadius: "11px", border: `2px solid ${tokens.bg}`,
-            bgcolor: "primary.main", color: "primary.contrastText", font: "inherit", fontSize: 11.5, fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 0.25,
-            "&:hover, &:focus-visible": { outline: "none", filter: "brightness(1.1)" },
-          }}
-        >
-          <PersonIcon sx={{ fontSize: 13 }} />{count}
+    <Box sx={{ position: "relative", bgcolor: "background.paper", borderRadius: "8px", border: `${highlight || open ? 2 : 1}px solid ${edge}`, boxShadow: open ? `0 4px 14px ${tokens.shadow}` : `0 1px 2px ${tokens.shadow}`, transition: "box-shadow .12s, border-color .12s", "&:hover": { borderColor: error ? tokens.red : selected ? tokens.primary : tokens.ink3 } }}>
+      <Box
+        component="button"
+        type="button"
+        onClick={onClick}
+        aria-expanded={open}
+        aria-label={`${title}: ${text}${error ? " (needs fixing)" : ""}. ${open ? "Close" : "Edit"}`}
+        sx={{
+          width: "100%", display: "flex", gap: 1.25, alignItems: "center", textAlign: "left", font: "inherit", color: "inherit",
+          bgcolor: "transparent", border: 0, borderRadius: "8px", p: 1.25, minHeight: 56, cursor: "pointer",
+          borderBottom: open ? `1px solid ${tokens.divider}` : 0,
+          "&:hover .ek-edit": { color: "primary.main" },
+          "&:focus-visible": { outline: `2px solid ${tokens.primary}`, outlineOffset: 2 },
+        }}
+      >
+        <Box sx={{ width: 32, height: 32, flex: "none", borderRadius: "6px", bgcolor: color, color: "#fff", display: "grid", placeItems: "center", "& svg": { fontSize: 18 } }}>{icon}</Box>
+        <Box sx={{ minWidth: 0, flex: 1 }}>
+          <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase", color: "text.secondary" }}>{title}</Typography>
+          <Typography sx={{ fontSize: 13.5, ...(open ? {} : { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }) }}>{text}</Typography>
         </Box>
-      </Tooltip>
-    )}
+        {error && <ErrorOutlineIcon sx={{ fontSize: 18, color: tokens.red, flex: "none" }} />}
+        <Box className="ek-edit" sx={{ display: "flex", alignItems: "center", gap: 0.25, flex: "none", color: open ? "primary.main" : "text.secondary", fontSize: 13, fontWeight: 500, pl: 0.5 }}>
+          <Box component="span" sx={{ display: { xs: "none", sm: "inline" } }}>{open ? "Close" : "Edit"}</Box>
+          <ExpandMoreIcon sx={{ fontSize: 20, transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }} />
+        </Box>
+      </Box>
+      {open && children}
+      {count > 0 && (
+        <Tooltip title={`${count} lead${count === 1 ? "" : "s"} waiting for this step. Show them`}>
+          <Box
+            component="button"
+            type="button"
+            onClick={onCount}
+            aria-label={`${count} lead${count === 1 ? "" : "s"} waiting for this step`}
+            sx={{
+              position: "absolute", top: -9, right: -9, minWidth: 22, height: 22, px: 0.75, borderRadius: "11px", border: `2px solid ${tokens.bg}`,
+              bgcolor: "primary.main", color: "primary.contrastText", font: "inherit", fontSize: 11.5, fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 0.25,
+              "&:hover, &:focus-visible": { outline: "none", filter: "brightness(1.1)" },
+            }}
+          >
+            <PersonIcon sx={{ fontSize: 13 }} />{count}
+          </Box>
+        </Tooltip>
+      )}
     </Box>
   );
-}
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return <Typography sx={{ fontSize: 12, fontWeight: 600, letterSpacing: ".06em", textTransform: "uppercase", color: "text.secondary", mt: 1.5, px: 0.5 }}>{children}</Typography>;
 }
 
 /** "Add a step", at the foot of a list. Steps then move up or down from
@@ -1156,42 +1185,47 @@ function AddButton({ onPick, allowed }: { onPick: (t: StepType) => void; allowed
   );
 }
 
-/** Steps as a plain list, top to bottom, with "Add a step" at the end. */
-function StepList({ steps, path, ctx }: { steps: Step[]; path: Path; ctx: StepCtx }) {
+/** Steps on the rail, numbered, with "Add a step" as the last stop. `continues`:
+ *  more follows on the same rail (the main list, then "Stop early if"). */
+function StepList({ steps, path, ctx, continues = false }: { steps: Step[]; path: Path; ctx: StepCtx; continues?: boolean }) {
   return (
-    <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-      {steps.map((s) => {
+    <Box>
+      {steps.map((s, i) => {
         const open = ctx.sel?.kind === "step" && ctx.sel.id === s.id;
         return (
-          <Box key={s.id} data-sel={`step:${s.id}`}>
-            <Node
-              color={STEP_COLOR[s.type]}
-              icon={STEP_ICON[s.type]}
-              title={stepTitle(s)}
-              text={stepSummary(s)}
-              selected={open}
-              error={!!ctx.problems[s.id]}
-              onClick={() => ctx.setSel(open ? null : { kind: "step", id: s.id })}
-              stepId={s.id}
-              count={ctx.here[s.id]}
-              onCount={() => ctx.onHere(s.id)}
-              highlight={ctx.highlight === s.id}
-            />
-            {ctx.details({ kind: "step", id: s.id })}
+          <RailItem key={s.id} marker={i + 1} first={!continues && i === 0}>
+            <Box data-sel={`step:${s.id}`}>
+              <Node
+                color={STEP_COLOR[s.type]}
+                icon={STEP_ICON[s.type]}
+                title={stepTitle(s)}
+                text={stepSummary(s)}
+                selected={open}
+                error={!!ctx.problems[s.id]}
+                onClick={() => ctx.setSel(open ? null : { kind: "step", id: s.id })}
+                count={ctx.here[s.id]}
+                onCount={() => ctx.onHere(s.id)}
+                highlight={ctx.highlight === s.id}
+              >
+                {ctx.details({ kind: "step", id: s.id })}
+              </Node>
+            </Box>
             {s.type === "branch" && <BranchPaths step={s} ctx={ctx} />}
-          </Box>
+          </RailItem>
         );
       })}
-      <AddButton onPick={(t) => ctx.onAdd(path, steps.length, t)} allowed={ctx.allowed} />
+      <RailItem marker={<AddIcon sx={{ fontSize: 16 }} />} first={!continues && !steps.length} last={!continues} dashed>
+        <AddButton onPick={(t) => ctx.onAdd(path, steps.length, t)} allowed={ctx.allowed} />
+      </RailItem>
     </Box>
   );
 }
 
-/** An if/else's two paths as two labelled boxes under the check: what
- *  happens if yes, what happens if no. */
+/** An if/else's two paths as two labelled boxes under the check, each with
+ *  its own numbered steps. */
 function BranchPaths({ step, ctx }: { step: Extract<Step, { type: "branch" }>; ctx: StepCtx }) {
   return (
-    <Box sx={{ display: "flex", flexDirection: "column", gap: 1, mt: 1, ml: 2 }}>
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 1, mt: 1 }}>
       {(["yes", "no"] as const).map((side) => (
         <Box key={side} sx={{ border: `1px solid ${side === "yes" ? tokens.greenBorder : tokens.divider}`, bgcolor: side === "yes" ? tokens.greenTint : tokens.surface2, borderRadius: "8px", p: 1.25 }}>
           <Typography sx={{ fontSize: 13, fontWeight: 600, mb: 1, color: side === "yes" ? tokens.greenDark : tokens.ink2 }}>
