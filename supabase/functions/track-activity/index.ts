@@ -152,7 +152,8 @@ async function leadShareLink(leadId: string, agentId: string): Promise<string | 
     agent_id: agentId,
     token,
     link_type: "first_touch",
-    expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    // 90 days: agents open last week's alerts too (20261029_0006).
+    expires_at: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
   });
   if (error) {
     console.error("leadShareLink: token insert failed", error.message);

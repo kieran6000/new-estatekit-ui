@@ -119,7 +119,8 @@ async function generateActionLink(
     agent_id: agentId,
     token,
     link_type: linkType,
-    expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    // 90 days: agents open last week's alerts too (20261029_0006).
+    expires_at: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
   });
   if (error) {
     console.error("Failed to insert share token", error.message);
