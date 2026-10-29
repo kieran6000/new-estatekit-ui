@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Navigate, Link as RouterLink, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Avatar,
@@ -39,7 +39,7 @@ import { timeAgo, whenLabel, isUpcoming } from "../lib/timeAgo";
 import { trackActivity } from "../lib/activity";
 import { armPendingCall, clearPendingCall } from "../lib/pendingCall";
 import { useFollowLeadAccount } from "../hooks/useFollowLeadAccount";
-import { getLeadByToken, logOutcomeByToken, saveNoteByToken } from "../api/leadActions";
+import { getLeadByToken, leadIdForLink, logOutcomeByToken, saveNoteByToken } from "../api/leadActions";
 import { logCallByToken, logLeadCall } from "../api/leadEvents";
 import OutcomeSheet, { OUTCOME_ICONS, outcomeSnack } from "../components/OutcomeSheet";
 import EstateKitLogo from "../components/EstateKitLogo";
@@ -78,6 +78,14 @@ function TokenLeadActionPage({ token, canEdit }: { token: string; canEdit: boole
   });
 
   const lead = data?.lead ?? null;
+  // A link too old to open on its own: which lead it was for. Signed in,
+  // that lead just opens in EstateKit; signed out, a button does.
+  const { data: oldLeadId, isLoading: findingOld } = useQuery({
+    queryKey: ["leadIdForLink", token],
+    queryFn: () => leadIdForLink(token),
+    enabled: !!token && !isLoading && !data,
+  });
+  if (oldLeadId && canEdit) return <Navigate to={`/leads/${oldLeadId}`} replace />;
 
   // Even signed out, the token itself authorises logging this one lead's outcome.
   // pipelineKind comes back with the lead so buyer leads get buyer options even
@@ -85,10 +93,11 @@ function TokenLeadActionPage({ token, canEdit }: { token: string; canEdit: boole
   return (
     <LeadActionUI
       lead={lead}
-      isLoading={isLoading}
+      isLoading={isLoading || (!data && findingOld)}
       canEdit={canEdit}
       token={token}
       kindHint={data?.pipelineKind}
+      oldLeadId={oldLeadId ?? null}
     />
   );
 }
@@ -104,6 +113,7 @@ function LeadActionUI({
   canEdit,
   token,
   kindHint,
+  oldLeadId = null,
 }: {
   lead: LeadRow | null;
   isLoading: boolean;
@@ -114,6 +124,8 @@ function LeadActionUI({
   /** Pipeline kind resolved server-side, for when the pipeline list can't be
    *  loaded (signed-out token view). */
   kindHint?: PipelineKind;
+  /** The lead an old (expired) link was for, to open it in EstateKit. */
+  oldLeadId?: string | null;
 }) {
   // Staff opening another agent's link land in that agent's account, so
   // "View all my leads" shows the right list.
@@ -360,10 +372,27 @@ function LeadActionUI({
         <Box sx={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", p: 3 }}>
           <Box sx={{ textAlign: "center", maxWidth: 320 }}>
             <LinkOffIcon sx={{ fontSize: 48, color: "text.disabled", mb: 2 }} />
-            <Typography sx={{ fontSize: 18, fontWeight: 600, mb: 1 }}>Link not valid</Typography>
-            <Typography sx={{ fontSize: 14, color: "text.secondary", lineHeight: 1.6 }}>
-              This link has expired or isn't valid. Ask your agent for a new one.
-            </Typography>
+            {oldLeadId ? (
+              <>
+                <Typography sx={{ fontSize: 18, fontWeight: 600, mb: 1 }}>This link is too old</Typography>
+                <Typography sx={{ fontSize: 14, color: "text.secondary", lineHeight: 1.6, mb: 2.5 }}>
+                  You can still open the lead in EstateKit. You may need to sign in first.
+                </Typography>
+                <Button component={RouterLink} to={`/leads/${oldLeadId}`} variant="contained" size="large" fullWidth sx={{ minHeight: 52 }}>
+                  Open this lead
+                </Button>
+              </>
+            ) : (
+              <>
+                <Typography sx={{ fontSize: 18, fontWeight: 600, mb: 1 }}>Link not valid</Typography>
+                <Typography sx={{ fontSize: 14, color: "text.secondary", lineHeight: 1.6, mb: 2.5 }}>
+                  This link doesn't work. Your leads are all in EstateKit.
+                </Typography>
+                <Button component={RouterLink} to="/leads" variant="contained" size="large" fullWidth sx={{ minHeight: 52 }}>
+                  Open my leads
+                </Button>
+              </>
+            )}
           </Box>
         </Box>
       ) : (

@@ -47,6 +47,14 @@ export async function getLeadByToken(token: string): Promise<SharedLead | null> 
   return null;
 }
 
+/** The lead an expired link was for (only its id), so the page can open it
+ *  in EstateKit instead of a dead end. null if the link never existed. */
+export async function leadIdForLink(token: string): Promise<string | null> {
+  const { data, error } = await supabase.rpc("lead_id_for_link", { p_token: token });
+  if (error) return null;
+  return (data as string | null) ?? null;
+}
+
 async function getLeadByTokenLegacy(token: string): Promise<SharedLead | null> {
   const { data: tokenRow, error } = await supabase
     .from("lead_share_tokens")

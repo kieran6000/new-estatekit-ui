@@ -153,7 +153,8 @@ Deno.serve(async (req: Request) => {
     agent_id: page.agent_id,
     token,
     link_type: "first_touch",
-    expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    // 90 days: agents open last week's alerts too (20261029_0006).
+    expires_at: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
   });
 
   // Look up the pipeline name for a richer activity card.
