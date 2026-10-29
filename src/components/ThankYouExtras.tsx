@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { Box, Button, CircularProgress, TextField, Typography } from "@mui/material";
+import { useEffect, useState } from "react";
+import { Box, Button, CircularProgress, InputAdornment, TextField, Typography } from "@mui/material";
+import WhatsAppIcon from "@mui/icons-material/WhatsApp";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import { supabase } from "../api/_client";
 import { readableOn } from "../lib/contrast";
@@ -16,7 +17,7 @@ export const CALL_QUESTION = "When suits you for a quick call?";
  *  are (leads from our own forms). From a Facebook instant form's end button
  *  we don't: they type their number once (byPhone) and request_call_time
  *  matches it to their lead, now or when it arrives. */
-export function ThankYouCallTime({ token, slug, byPhone, seller, preview, accent, agentName, question }: { token: string; slug?: string; byPhone?: boolean; seller?: boolean; preview?: boolean; accent: string; agentName: string; question?: string | null }) {
+export function ThankYouCallTime({ token, slug, byPhone, seller, preview, accent, agentName, question, onSaved }: { token: string; slug?: string; byPhone?: boolean; seller?: boolean; preview?: boolean; accent: string; agentName: string; question?: string | null; onSaved?: () => void }) {
   const agentFirst = (agentName || "").trim().split(/\s+/)[0] || "We";
   const [value, setValue] = useState("");
   const [phone, setPhone] = useState("");
@@ -24,6 +25,13 @@ export function ThankYouCallTime({ token, slug, byPhone, seller, preview, accent
   // Two steps from a Facebook form: the time, then the number.
   const [step, setStep] = useState<1 | 2>(1);
   const onNumberStep = !!byPhone && step === 2;
+  // Day and time both picked: straight on to the number, no Next button.
+  useEffect(() => {
+    if (byPhone && step === 1 && value && !callTimeIncomplete(value)) {
+      const t = setTimeout(() => setStep(2), 350);
+      return () => clearTimeout(t);
+    }
+  }, [byPhone, step, value]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState("");
@@ -49,6 +57,7 @@ export function ThankYouCallTime({ token, slug, byPhone, seller, preview, accent
         : await supabase.rpc("set_call_time", { p_token: token, p_value: value });
       if (e || data !== true) throw e ?? new Error("not saved");
       setSaved(value);
+      onSaved?.();
     } catch (err) {
       console.error(err);
       setError("That didn't save. Please try again.");
@@ -89,9 +98,9 @@ export function ThankYouCallTime({ token, slug, byPhone, seller, preview, accent
       />}
       {onNumberStep && (
         <Box sx={{ mt: 2.5 }}>
-          <Typography sx={{ fontSize: 18, fontWeight: 600, mb: 0.5 }}>Last step: where should we send your {seller ? "evaluation details" : "details"}?</Typography>
+          <Typography sx={{ fontSize: 18, fontWeight: 600, mb: 0.5 }}>Where do we send your {seller ? "evaluation" : "details"}?</Typography>
           <Typography sx={{ fontSize: 14, color: "text.secondary", mb: 1.25 }}>
-            Which WhatsApp number should {agentFirst} use to {seller ? "send your home evaluation details and " : ""}call you at the time you picked?
+            Add your WhatsApp number to get it. {agentName ? agentFirst : "We"} will also call you at the time you picked.
           </Typography>
           <TextField
             placeholder="082 000 0000"
@@ -104,12 +113,15 @@ export function ThankYouCallTime({ token, slug, byPhone, seller, preview, accent
             fullWidth
             error={!!phoneError}
             helperText={phoneError || " "}
-            slotProps={{ htmlInput: { inputMode: "tel", autoComplete: "tel" } }}
+            slotProps={{
+              htmlInput: { inputMode: "tel", autoComplete: "tel" },
+              input: { startAdornment: <InputAdornment position="start"><WhatsAppIcon fontSize="small" sx={{ color: "text.disabled" }} /></InputAdornment> },
+            }}
           />
         </Box>
       )}
       {/* The form's own button (LeadCaptureForm), so it looks the same. */}
-      <Button
+      {!(byPhone && step === 1) && <Button
         variant="contained"
         size="large"
         fullWidth
@@ -125,8 +137,8 @@ export function ThankYouCallTime({ token, slug, byPhone, seller, preview, accent
         startIcon={busy ? <CircularProgress size={18} sx={{ color: "inherit" }} /> : undefined}
         sx={{ mt: 3, bgcolor: accent, color: readableOn(accent), "&:hover": { bgcolor: accent, filter: "brightness(0.9)" }, "&.Mui-disabled": { bgcolor: accent, color: readableOn(accent), opacity: 0.7 } }}
       >
-        {byPhone ? (step === 1 ? "Next" : seller ? "Get my evaluation call" : "Confirm my call") : "Confirm call time"}
-      </Button>
+        {byPhone ? (seller ? "Get my evaluation" : "Confirm my call") : "Confirm call time"}
+      </Button>}
     </Box>
   );
 }

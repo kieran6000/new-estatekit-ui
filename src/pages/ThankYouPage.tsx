@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Box, Button, Skeleton, Typography } from "@mui/material";
@@ -41,6 +41,13 @@ export default function ThankYouPage() {
   // The step after the video (call time, or the lead magnet): the end of the
   // video points to it and brings it into view.
   const nextRef = useRef<HTMLDivElement>(null);
+  // Once they've picked a call time, the lead magnet is the next thing to
+  // tap: it scrolls into view and its button draws the eye.
+  const magnetRef = useRef<HTMLDivElement>(null);
+  const [timePicked, setTimePicked] = useState(false);
+  useEffect(() => {
+    if (timePicked) setTimeout(() => magnetRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 500);
+  }, [timePicked]);
   // The furthest point already reported for the video (see onVideoProgress).
   const reported = useRef(0);
 
@@ -123,8 +130,8 @@ export default function ThankYouPage() {
             <Box sx={{ p: "40px 24px", minHeight: 260, display: "flex", flexDirection: "column" }}>
               <BrandedThankYou page={page} name={name} video={video} endCta={endCta} onVideoEnd={showNext} onVideoProgress={onVideoProgress} showWhatsApp={!gift && !askCall && !video} />
               <Box ref={nextRef}>
-                {askCall && <ThankYouCallTime token={planToken ?? ""} slug={page.slug} byPhone={byPhone} seller={pagePlan?.pipeline_kind === "seller"} preview={preview} accent={page.accentColor} agentName={page.agentName} question={page.thankYouCallQuestion} />}
-                {gift && giftUrl && <MagnetCta page={page} magnet={gift} href={giftUrl} personal={!!planToken} compact={askCall} still={!!video} />}
+                {askCall && <ThankYouCallTime token={planToken ?? ""} slug={page.slug} byPhone={byPhone} seller={pagePlan?.pipeline_kind === "seller"} preview={preview} accent={page.accentColor} agentName={page.agentName} question={page.thankYouCallQuestion} onSaved={() => setTimePicked(true)} />}
+                {gift && giftUrl && <Box ref={magnetRef}><MagnetCta page={page} magnet={gift} href={giftUrl} personal={!!planToken} compact={askCall && !timePicked} attract={timePicked || !askCall} still={!!video} /></Box>}
               </Box>
             </Box>
           </Box>
@@ -140,7 +147,18 @@ export default function ThankYouPage() {
  *  line and link as the box in the confirmation email (lib/leadMagnet.ts).
  *  Only shown when the lead page made a code for it, which it does only when
  *  the form has one. */
-function MagnetCta({ page, magnet, href, personal, compact, still }: { page: LeadPage; magnet: Magnet; href: string; personal: boolean; compact?: boolean; still?: boolean }) {
+// The button's "tap me": a wiggle every few seconds and a sweep of light.
+const ATTRACT = {
+  position: "relative", overflow: "hidden",
+  "@media (prefers-reduced-motion: no-preference)": {
+    animation: "ek-wiggle 2.8s ease-in-out infinite",
+    "&::after": { content: '""', position: "absolute", top: 0, left: "-60%", width: "40%", height: "100%", background: "linear-gradient(120deg, transparent, rgba(255,255,255,.5), transparent)", transform: "skewX(-20deg)", animation: "ek-shine 2.8s ease-in-out infinite" },
+  },
+  "@keyframes ek-wiggle": { "0%, 55%, 100%": { transform: "rotate(0) scale(1)" }, "60%": { transform: "rotate(-1.6deg) scale(1.03)" }, "70%": { transform: "rotate(1.6deg) scale(1.03)" }, "80%": { transform: "rotate(-1.2deg) scale(1.02)" }, "90%": { transform: "rotate(0) scale(1)" } },
+  "@keyframes ek-shine": { "0%, 45%": { left: "-60%" }, "85%, 100%": { left: "140%" } },
+} as const;
+
+function MagnetCta({ page, magnet, href, personal, compact, still, attract }: { page: LeadPage; magnet: Magnet; href: string; personal: boolean; compact?: boolean; still?: boolean; attract?: boolean }) {
   const Icon = magnet.kind === "plan" ? AutoStoriesOutlinedIcon : DescriptionOutlinedIcon;
   // Second to the call-time button: one line, not a second big button.
   if (compact) {
@@ -188,7 +206,7 @@ function MagnetCta({ page, magnet, href, personal, compact, still }: { page: Lea
         rel="noopener"
         endIcon={<ArrowForwardIcon />}
         sx={{
-          mt: 2, bgcolor: page.accentColor, color: readableOn(page.accentColor), "&:hover": { bgcolor: page.accentColor, filter: "brightness(0.9)" },
+          mt: 2, ...(attract ? ATTRACT : {}), bgcolor: page.accentColor, color: readableOn(page.accentColor), "&:hover": { bgcolor: page.accentColor, filter: "brightness(0.9)" },
           "& .MuiButton-endIcon": { animation: still ? "none" : "ek-nudge 1.6s ease-in-out infinite" },
           "@keyframes ek-nudge": { "0%, 100%": { transform: "translateX(0)" }, "50%": { transform: "translateX(4px)" } },
           "@media (prefers-reduced-motion: reduce)": { "& .MuiButton-endIcon": { animation: "none" } },
