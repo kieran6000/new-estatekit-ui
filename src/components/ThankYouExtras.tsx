@@ -21,6 +21,9 @@ export function ThankYouCallTime({ token, slug, byPhone, seller, preview, accent
   const [value, setValue] = useState("");
   const [phone, setPhone] = useState("");
   const [phoneError, setPhoneError] = useState("");
+  // Two steps from a Facebook form: the time, then the number.
+  const [step, setStep] = useState<1 | 2>(1);
+  const onNumberStep = !!byPhone && step === 2;
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState("");
@@ -70,15 +73,21 @@ export function ThankYouCallTime({ token, slug, byPhone, seller, preview, accent
 
   return (
     <Box sx={{ mt: 3.5, pt: 1.5, borderTop: "1px solid #eee", textAlign: "left" }}>
-      <CallTimeStep
+      {onNumberStep && (
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1, p: 1.5, mb: 2.5, borderRadius: "10px", bgcolor: "#f1f3f4" }}>
+          <Typography sx={{ flex: 1, fontSize: 15 }}>{value}</Typography>
+          <Button size="small" onClick={() => setStep(1)} sx={{ color: "text.secondary" }}>Change</Button>
+        </Box>
+      )}
+      {!onNumberStep && <CallTimeStep
         question={question?.trim() || CALL_QUESTION}
         required={false}
         confirmText={CALL_TIME_CONFIRM.replaceAll("{agent}", agentFirst)}
         value={value}
         error={error}
         onChange={(v) => { setError(""); setValue(v); }}
-      />
-      {byPhone && (
+      />}
+      {onNumberStep && (
         <Box sx={{ mt: 2.5 }}>
           <Typography sx={{ fontSize: 18, fontWeight: 600, mb: 0.5 }}>Last step: where should we send your {seller ? "evaluation details" : "details"}?</Typography>
           <Typography sx={{ fontSize: 14, color: "text.secondary", mb: 1.25 }}>
@@ -104,12 +113,19 @@ export function ThankYouCallTime({ token, slug, byPhone, seller, preview, accent
         variant="contained"
         size="large"
         fullWidth
-        onClick={confirm}
+        onClick={() => {
+          if (byPhone && step === 1) {
+            if (!value || callTimeIncomplete(value)) { setError(!value ? "Please pick a day and a time." : value.startsWith(",") ? "Please pick a day too." : "Please pick a time too."); return; }
+            setStep(2);
+            return;
+          }
+          void confirm();
+        }}
         disabled={busy}
         startIcon={busy ? <CircularProgress size={18} sx={{ color: "inherit" }} /> : undefined}
         sx={{ mt: 3, bgcolor: accent, color: readableOn(accent), "&:hover": { bgcolor: accent, filter: "brightness(0.9)" }, "&.Mui-disabled": { bgcolor: accent, color: readableOn(accent), opacity: 0.7 } }}
       >
-        {byPhone ? (seller ? "Get my evaluation call" : "Confirm my call") : "Confirm call time"}
+        {byPhone ? (step === 1 ? "Next" : seller ? "Get my evaluation call" : "Confirm my call") : "Confirm call time"}
       </Button>
     </Box>
   );
