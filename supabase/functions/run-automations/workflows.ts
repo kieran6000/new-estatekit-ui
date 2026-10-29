@@ -82,27 +82,12 @@ interface Profile {
   email: string | null;
   company: string | null;
   automations_paused: boolean | null;
-  /** How many WhatsApps they want from us (see allowedByLevel). */
-  message_level?: MessageLevel | null;
   deactivated_at: string | null;
 }
 
 export type SendResult = "sent" | "rate_limited" | "failed" | "not_configured";
 
 export interface AlertContact { name?: string | null; phone: string }
-
-export type MessageLevel = "new_leads" | "morning" | "everything";
-
-/** Whether a "WhatsApp the agent" message goes out at the agent's chosen
- *  level (Account → "WhatsApp messages from EstateKit"). New-lead alerts
- *  always do; the morning follow-up list from "morning" up; the rest
- *  (reminders, reports, check-ups) only for "everything". */
-export function allowedByLevel(level: MessageLevel | null | undefined, trigger: string, text: string): boolean {
-  if (trigger === "lead_created" || trigger === "came_back" || trigger === "call_time_picked") return true;
-  const lvl = level ?? "morning";
-  if (lvl === "everything") return true;
-  return lvl === "morning" && trigger === "daily_at" && /\{\{\s*follow_ups\s*\}\}/.test(text);
-}
 
 const digitsOf = (p: string) => p.replace(/[^0-9]/g, "");
 
@@ -333,7 +318,7 @@ async function processRun(supabase: SupabaseClient, deps: EngineDeps, run: Run) 
 
   const { data: profileRow } = await supabase
     .from("agent_profiles")
-    .select("display_name, whatsapp_number, alert_contacts, email, company, automations_paused, deactivated_at, avatar_url, is_operator, message_level")
+    .select("display_name, whatsapp_number, alert_contacts, email, company, automations_paused, deactivated_at, avatar_url, is_operator")
     .eq("agent_id", run.agent_id)
     .maybeSingle();
   const profile = profileRow as Profile | null;
@@ -662,10 +647,6 @@ class Context {
 
   private async whatsApp(step: Extract<Step, { type: "whatsapp_agent" }>): Promise<Outcome> {
     const l = this.lead;
-    if (!allowedByLevel(this.profile?.message_level, this.def.trigger.kind, step.text)) {
-      await log(this.supabase, this.run, step.id, "WhatsApp the agent", "Skipped", "They chose fewer WhatsApps (Account → WhatsApp messages)");
-      return { kind: "done" };
-    }
     // New-lead (and came-back) alerts are time-critical; everything else respects quiet hours.
     if (this.def.trigger.kind !== "lead_created" && this.def.trigger.kind !== "came_back") {
       const hold = this.quietHold();
