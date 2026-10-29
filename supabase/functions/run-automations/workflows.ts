@@ -82,27 +82,12 @@ interface Profile {
   email: string | null;
   company: string | null;
   automations_paused: boolean | null;
-  /** How many WhatsApps they want from us (see allowedByLevel). */
-  message_level?: MessageLevel | null;
   deactivated_at: string | null;
 }
 
 export type SendResult = "sent" | "rate_limited" | "failed" | "not_configured";
 
 export interface AlertContact { name?: string | null; phone: string }
-
-export type MessageLevel = "new_leads" | "morning" | "everything";
-
-/** Whether a "WhatsApp the agent" message goes out at the agent's chosen
- *  level (Account → "WhatsApp messages from EstateKit"). New-lead alerts
- *  always do; the morning follow-up list from "morning" up; the rest
- *  (reminders, reports, check-ups) only for "everything". */
-export function allowedByLevel(level: MessageLevel | null | undefined, trigger: string, text: string): boolean {
-  if (trigger === "lead_created" || trigger === "came_back" || trigger === "call_time_picked") return true;
-  const lvl = level ?? "morning";
-  if (lvl === "everything") return true;
-  return lvl === "morning" && trigger === "daily_at" && /\{\{\s*follow_ups\s*\}\}/.test(text);
-}
 
 const digitsOf = (p: string) => p.replace(/[^0-9]/g, "");
 
@@ -333,7 +318,7 @@ async function processRun(supabase: SupabaseClient, deps: EngineDeps, run: Run) 
 
   const { data: profileRow } = await supabase
     .from("agent_profiles")
-    .select("display_name, whatsapp_number, alert_contacts, email, company, automations_paused, deactivated_at, avatar_url, is_operator, message_level")
+    .select("display_name, whatsapp_number, alert_contacts, email, company, automations_paused, deactivated_at, avatar_url, is_operator")
     .eq("agent_id", run.agent_id)
     .maybeSingle();
   const profile = profileRow as Profile | null;
@@ -620,8 +605,8 @@ class Context {
       today: `Today: ${plural(newToday, "new lead")} came in and you updated ${plural(updatedToday, "lead")}.`,
       pipeline: stages.map((st) => `• ${st}: ${byStage.get(st)}`).join("\n") || "• Nothing open",
       not_called: waiting.length
-        ? `${waiting.length === 1 ? "1 lead hasn't" : `${waiting.length} leads haven't`} been called yet${days >= 1 ? ` (the oldest came in ${days === 1 ? "yesterday" : `${days} days ago`})` : ""}. Call them first tomorrow.`
-        : "Every new lead has been called. Nice work.",
+        ? `${waiting.length === 1 ? "1 new lead is" : `${waiting.length} new leads are`} still waiting for you${days >= 1 ? ` (the oldest came in ${days === 1 ? "yesterday" : `${days} days ago`})` : ""}. Get to them first tomorrow.`
+        : "No new leads are waiting. Nice work.",
     };
   }
 
@@ -642,7 +627,7 @@ class Context {
     const lastTouch = (r: Row) => r.updated_at || r.created_at;
     const lines: [(r: Row) => boolean, (n: number) => string][] = [
       [(r) => r.stage === "New Lead" && r.created_at >= since && r.created_at < iso(now - 3600_000),
-        (n) => `${n} new ${n === 1 ? "lead" : "leads"} not called yet`],
+        (n) => `${n} new ${n === 1 ? "lead" : "leads"} waiting for you`],
       [(r) => !!r.due && !!r.reminder_at && r.reminder_at >= since && r.reminder_at <= endOfToday,
         (n) => `${n} follow-up${n === 1 ? "" : "s"} due`],
       [(r) => r.stage === "No Answer" && lastTouch(r) >= since,
@@ -662,10 +647,6 @@ class Context {
 
   private async whatsApp(step: Extract<Step, { type: "whatsapp_agent" }>): Promise<Outcome> {
     const l = this.lead;
-    if (!allowedByLevel(this.profile?.message_level, this.def.trigger.kind, step.text)) {
-      await log(this.supabase, this.run, step.id, "WhatsApp the agent", "Skipped", "They chose fewer WhatsApps (Account → WhatsApp messages)");
-      return { kind: "done" };
-    }
     // New-lead (and came-back) alerts are time-critical; everything else respects quiet hours.
     if (this.def.trigger.kind !== "lead_created" && this.def.trigger.kind !== "came_back") {
       const hold = this.quietHold();

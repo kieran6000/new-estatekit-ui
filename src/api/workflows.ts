@@ -133,16 +133,19 @@ export interface WorkflowRunRow {
   run_at: string;
   status: "pending" | "processing" | "paused";
   pos: (number | string)[];
-  workflow: { id: string; name: string; definition: WorkflowRowDb["definition"] } | null;
+  workflow: { id: string; name: string; published: boolean; definition: WorkflowRowDb["definition"] } | null;
   lead: { id: string; name: string; agent_id: string } | null;
   agent_id: string;
 }
 
-/** Workflow runs that are waiting or held, soonest first (Scheduled tab). */
+/** Workflow runs that are waiting or held, soonest first (Automations →
+ *  Coming up). Only switched-on workflows: a switched-off one's runs never
+ *  send (the engine cancels each when it comes due). */
 export async function listScheduledWorkflowRuns(agentId: string | null): Promise<WorkflowRunRow[]> {
   let q = supabase
     .from("workflow_runs")
-    .select("id, run_at, status, pos, agent_id, workflow:workflows(id, name, definition), lead:leads(id, name, agent_id)")
+    .select("id, run_at, status, pos, agent_id, workflow:workflows!inner(id, name, published, definition), lead:leads(id, name, agent_id)")
+    .eq("workflow.published", true)
     .in("status", ["pending", "processing", "paused"]);
   if (agentId) q = q.eq("agent_id", agentId);
   const { data, error } = await q.order("run_at", { ascending: true }).limit(200);
@@ -184,6 +187,21 @@ export async function countLeadsInWorkflows(agentId: string): Promise<Record<str
   if (error) throw new Error(error.message);
   const out: Record<string, number> = {};
   for (const r of data as { workflow_id: string }[]) out[r.workflow_id] = (out[r.workflow_id] ?? 0) + 1;
+  return out;
+}
+
+/** When each of an account's workflows last started for a lead (or a daily
+ *  summary): workflow id → ISO time. Workflows never triggered are absent. */
+export async function lastTriggeredWorkflows(agentId: string): Promise<Record<string, string>> {
+  const { data, error } = await supabase
+    .from("workflow_runs")
+    .select("workflow_id, created_at")
+    .eq("agent_id", agentId)
+    .order("created_at", { ascending: false })
+    .limit(3000);
+  if (error) throw new Error(error.message);
+  const out: Record<string, string> = {};
+  for (const r of data as { workflow_id: string; created_at: string }[]) out[r.workflow_id] ??= r.created_at;
   return out;
 }
 

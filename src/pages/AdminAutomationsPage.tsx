@@ -1,8 +1,8 @@
-import { Link as RouterLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { AppBar, Box, CircularProgress, Tab, Tabs, Toolbar, Typography } from "@mui/material";
+import { Navigate, Route, Routes, useMatch } from "react-router-dom";
+import { Box, CircularProgress, Typography, useMediaQuery } from "@mui/material";
+import BoltIcon from "@mui/icons-material/Bolt";
 import { tokens } from "../theme";
 import { useIsOperator } from "../hooks/useAutomations";
-import ScheduledAutomations from "../components/ScheduledAutomations";
 import { WorkflowEditorPage, WorkflowListPage } from "../components/WorkflowBuilder";
 
 // Every account runs on its own workflows (Oct 2026). The old shared
@@ -36,51 +36,50 @@ export default function AdminAutomationsPage() {
   return <AutomationsAdmin />;
 }
 
-// Three sections, each its own address (see WorkflowBuilder for the
-// workflow ones), so a refresh, Back and a shared link all land in the same
-// place:
-//   /admin/automations/workflows   this account's workflows (+ /<id>)
-//   /admin/automations/scheduled   what's about to happen, every workflow
-//   /admin/automations/templates   the shared library (+ /<id>)
-// Opening a workflow or template is a full-screen editor with its own back
-// button, so the section tabs only show on the lists.
-const SECTIONS = [
-  { key: "workflows", label: "Workflows" },
-  { key: "scheduled", label: "Scheduled" },
-  { key: "templates", label: "Templates" },
-] as const;
-
+// Like a mail app: the sidebar (Automations / Coming up, search, sort, a
+// switch per automation) on the left, the open automation on the right. On
+// a phone the sidebar is the whole screen and an automation opens over it.
+// The Scheduled and Templates tabs went (Oct 2026): "Coming up" replaced
+// Scheduled; templates only seed new accounts.
+//   /admin/automations/workflows        the sidebar (+ "pick one" on a computer)
+//   /admin/automations/workflows/<id>   an automation open
+// Old /scheduled and /templates links land on the list.
 function AutomationsAdmin() {
-  const { pathname } = useLocation();
-  const parts = pathname.replace(/\/+$/, "").split("/").slice(3); // after /admin/automations
-  const section = SECTIONS.find((s) => s.key === parts[0])?.key ?? "workflows";
-  const inEditor = parts.length > 1 && section !== "scheduled";
+  const wide = useMediaQuery("(min-width:900px)");
+  const open = useMatch("/admin/automations/workflows/:id");
+  const selectedId = open?.params.id;
 
-  return (
-    <Box>
-      {!inEditor && (
-        <>
-          <AppBar position="sticky">
-            <Toolbar sx={{ height: 56, minHeight: "56px !important" }}>
-              <Typography sx={{ fontSize: 18, fontWeight: 500 }}>Automations</Typography>
-            </Toolbar>
-          </AppBar>
-          <Tabs value={section} sx={{ bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}`, minHeight: 44, px: 1 }}>
-            {SECTIONS.map((s) => (
-              <Tab key={s.key} value={s.key} label={s.label} component={RouterLink} to={`/admin/automations/${s.key}`} />
-            ))}
-          </Tabs>
-        </>
-      )}
+  if (!wide) {
+    return (
       <Routes>
-        <Route index element={<Navigate to="workflows" replace />} />
-        <Route path="workflows" element={<WorkflowListPage scope="account" />} />
+        <Route path="workflows" element={<Box sx={{ height: "calc(100dvh - var(--ek-nav-h, 0px))" }}><WorkflowListPage scope="account" /></Box>} />
         <Route path="workflows/:id" element={<WorkflowEditorPage scope="account" />} />
-        <Route path="templates" element={<WorkflowListPage key="templates" scope="templates" />} />
-        <Route path="templates/:id" element={<WorkflowEditorPage scope="templates" />} />
-        <Route path="scheduled" element={<ScheduledAutomations />} />
-        <Route path="*" element={<Navigate to="workflows" replace />} />
+        <Route path="*" element={<Navigate to="/admin/automations/workflows" replace />} />
       </Routes>
+    );
+  }
+  return (
+    <Box sx={{ display: "flex", height: "calc(100dvh - var(--ek-nav-h, 0px))" }}>
+      <Box sx={{ width: 380, flex: "none", borderRight: `1px solid ${tokens.divider}`, minHeight: 0 }}>
+        <WorkflowListPage scope="account" selectedId={selectedId} />
+      </Box>
+      <Box sx={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
+        <Routes>
+          <Route path="workflows" element={<PickOne />} />
+          <Route path="workflows/:id" element={<WorkflowEditorPage scope="account" embedded />} />
+          <Route path="*" element={<Navigate to="/admin/automations/workflows" replace />} />
+        </Routes>
+      </Box>
+    </Box>
+  );
+}
+
+function PickOne() {
+  return (
+    <Box sx={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", color: "text.secondary", px: 4 }}>
+      <BoltIcon sx={{ fontSize: 44, color: "text.disabled", mb: 1 }} />
+      <Typography sx={{ fontSize: 16, fontWeight: 500, color: "text.primary" }}>Pick an automation</Typography>
+      <Typography sx={{ fontSize: 14, mt: 0.5, maxWidth: 360 }}>Choose one on the left to see what it sends and change it. Use the switches to turn them on or off.</Typography>
     </Box>
   );
 }

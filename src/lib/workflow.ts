@@ -286,7 +286,7 @@ const INFO: Record<string, FieldInfo> = {
   form_answers: { label: "Their answers", example: "When are you selling?: In 3 months\nProperty address: 14 Oak Avenue, Bryanston", group: "Their form" },
   note: { label: "Note on the lead", example: "Wants to sell before December", group: "The lead" },
   answers: { label: "All their answers", example: "When are you selling?: In 3 months\nProperty address: 14 Oak Avenue, Bryanston", group: "Their form" },
-  action_link: { label: "Call-and-log link", example: "leads.estatekit.co/l/…", group: "Links" },
+  action_link: { label: "Lead link", example: "leads.estatekit.co/l/…", group: "Links" },
   agent_name: { label: "Agent's name", example: "Megan Demo", group: "The agent" },
   agent_phone: { label: "Agent's phone", example: "083 555 0103", group: "The agent" },
   lead_magnet: { label: "Lead magnet box", example: "YOUR MARKETING PLAN IS READY\nHow to sell your home without losing money or time.\nOpen my marketing plan: leads.estatekit.co/plan/…", group: "Extras" },
@@ -295,10 +295,10 @@ const INFO: Record<string, FieldInfo> = {
   plan_link: { label: "Marketing plan link", example: "leads.estatekit.co/plan/…", group: "Links" },
   count: { label: "Leads to call today", example: "7 leads", group: "Their day" },
   leads_word: { label: "\"lead\" or \"leads\"", example: "leads", group: "Their day" },
-  follow_ups: { label: "Follow-up list", example: "• 2 new leads not called yet\n• 3 follow-ups due\n• 1 to try again (no answer last time)", group: "Their day" },
+  follow_ups: { label: "Follow-up list", example: "• 2 new leads waiting for you\n• 3 follow-ups due\n• 1 to try again (no answer last time)", group: "Their day" },
   today: { label: "Today's activity", example: "Today: 3 new leads came in and you updated 5 leads.", group: "Their day" },
   pipeline: { label: "Pipeline by stage", example: "• New Lead: 2\n• No Answer: 4\n• Contacted: 6\n• Booked: 3", group: "Their day" },
-  not_called: { label: "Leads not called yet", example: "2 leads haven't been called yet (the oldest came in 1 day ago). Call them first tomorrow.", group: "Their day" },
+  not_called: { label: "New leads still waiting", example: "2 new leads are still waiting for you (the oldest came in 1 day ago). Get to them first tomorrow.", group: "Their day" },
 };
 
 /** A field's words, for this kind of message. In a daily summary there's no
@@ -828,12 +828,12 @@ export const TEMPLATES: { name: string; blurb: string; make: () => Workflow }[] 
     }),
   },
   {
-    name: "After the appointment: log it",
-    blurb: "2 hours after, ask the agent how it went, with the link to log it.",
+    name: "After the appointment: how did it go?",
+    blurb: "2 hours after, ask the agent how it went, with a link to the lead.",
     make: () => ({
-      ...blankWorkflow(), name: "After the appointment: log it",
+      ...blankWorkflow(), name: "After the appointment: how did it go?",
       trigger: { kind: "appointment", amount: 2, unit: "hours", when: "after" },
-      steps: [{ id: newId(), type: "whatsapp_agent", text: "How did it go with {{first_name}}? Log it: {{action_link}}" }],
+      steps: [{ id: newId(), type: "whatsapp_agent", text: "How did it go with {{first_name}}? Open the lead: {{action_link}}" }],
     }),
   },
   {
@@ -844,7 +844,7 @@ export const TEMPLATES: { name: string; blurb: string; make: () => Workflow }[] 
       trigger: { kind: "came_back" },
       settings: { ...defaultSettings(), quietHours: false },
       steps: [
-        { id: newId(), type: "whatsapp_agent", text: "{{name}} filled in your form again just now. They're keen: call them now.\n{{phone}}\n\nCall and log it: {{action_link}}" },
+        { id: newId(), type: "whatsapp_agent", text: "{{name}} filled in your form again just now. They're keen: call them now.\n{{phone}}\n\nOpen the lead: {{action_link}}" },
         { id: newId(), type: "reminder", label: "Call {{first_name}}: they came back", inDays: 0 },
       ],
     }),
@@ -857,7 +857,7 @@ export const TEMPLATES: { name: string; blurb: string; make: () => Workflow }[] 
       trigger: { kind: "call_time_picked" },
       steps: [
         { id: newId(), type: "reminder", label: "Call {{first_name}}: they picked this time", inDays: 0 },
-        { id: newId(), type: "whatsapp_agent", text: "{{name}} picked a time for your call: {{call_time}}.\n{{phone}}\n\nIt's on your list. Call and log it: {{action_link}}" },
+        { id: newId(), type: "whatsapp_agent", text: "{{name}} picked a time for your call: {{call_time}}.\n{{phone}}\n\nIt's on your list. Open the lead: {{action_link}}" },
       ],
     }),
   },
@@ -868,7 +868,7 @@ export const TEMPLATES: { name: string; blurb: string; make: () => Workflow }[] 
       ...blankWorkflow(), name: "Call time: 15 minutes before",
       trigger: { kind: "call_time", amount: 15, unit: "minutes", when: "before" },
       settings: { ...defaultSettings(), quietHours: false },
-      steps: [{ id: newId(), type: "whatsapp_agent", text: "In 15 minutes: call {{name}} ({{call_time}}).\n{{phone}}\n\nCall and log it: {{action_link}}" }],
+      steps: [{ id: newId(), type: "whatsapp_agent", text: "In 15 minutes: call {{name}} ({{call_time}}).\n{{phone}}\n\nOpen the lead: {{action_link}}" }],
     }),
   },
   {
@@ -891,7 +891,7 @@ export const TEMPLATES: { name: string; blurb: string; make: () => Workflow }[] 
       steps: [
         {
           id: newId(), type: "branch", check: "stage_is", value: "New Lead",
-          yes: [{ id: newId(), type: "whatsapp_agent", text: "{{name}} picked {{call_time}} for your call, and it isn't logged yet. Call now: {{action_link}}" }],
+          yes: [{ id: newId(), type: "whatsapp_agent", text: "{{name}} picked {{call_time}} for your call. If you haven't called yet, call now: {{action_link}}" }],
           no: [{
             id: newId(), type: "branch", check: "stage_is", value: "No Answer",
             yes: [{

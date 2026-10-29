@@ -9,10 +9,11 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  Drawer,
+  Divider,
   IconButton,
   InputAdornment,
   InputBase,
+  ListItemIcon,
   Menu,
   MenuItem,
   Switch,
@@ -47,29 +48,31 @@ import BlockIcon from "@mui/icons-material/Block";
 import CloseIcon from "@mui/icons-material/Close";
 import UndoIcon from "@mui/icons-material/Undo";
 import RedoIcon from "@mui/icons-material/Redo";
-import EditIcon from "@mui/icons-material/Edit";
 import SearchIcon from "@mui/icons-material/Search";
-import ZoomInIcon from "@mui/icons-material/ZoomIn";
-import ZoomOutIcon from "@mui/icons-material/ZoomOut";
-import FitScreenIcon from "@mui/icons-material/FitScreen";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import ErrorOutlineIcon from "@mui/icons-material/ErrorOutlined";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import PersonIcon from "@mui/icons-material/Person";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import MoreVertIcon from "@mui/icons-material/MoreVert";
+import HistoryIcon from "@mui/icons-material/History";
+import SettingsIcon from "@mui/icons-material/SettingsOutlined";
 import { Link as RouterLink, Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { tokens } from "../theme";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../hooks/useAuth";
-import { ACTIVE_AGENT_EVENT, getActiveAgentIdSync } from "../api/_client";
+import { ACTIVE_AGENT_EVENT, getActiveAgentIdSync, listAgentProfiles } from "../api/_client";
 import {
   addStandardWorkflows, countLeadsInWorkflows, deleteWorkflow, getWorkflow, isSaved, listAccountWorkflows, listTemplateWorkflows, listWorkflowLog,
-  listWorkflowRuns, saveWorkflow, type LeadInWorkflow, type OpenedWorkflow,
+  lastTriggeredWorkflows, listWorkflowRuns, saveWorkflow, type LeadInWorkflow, type OpenedWorkflow,
 } from "../api/workflows";
 import { useFollowAccount } from "../hooks/useFollowLeadAccount";
 import { listPath, workflowPath, type BackTo, type Scope } from "../lib/automationsPaths";
 import { trackActivity } from "../lib/activity";
 import { useSnack } from "../hooks/useSnack";
 import WhatsAppPreview from "./WhatsAppPreview";
+import WaitingList from "./WaitingList";
+import { getAccountAutomationsPaused, setAccountAutomationsPaused } from "../api/automations";
 import SendToMobileIcon from "@mui/icons-material/SendToMobile";
 import FormatBoldIcon from "@mui/icons-material/FormatBold";
 import FormatItalicIcon from "@mui/icons-material/FormatItalic";
@@ -82,13 +85,12 @@ import { MAX_WA_FILE_MB, uploadWhatsAppFile } from "../api/workflowFiles";
 import type { Attachment } from "../lib/workflow";
 import { PillEditor, type PillEditorHandle } from "./PillEditor";
 import { getAccountVocab } from "../api/accountVocab";
-import LeadTag from "./LeadTag";
 import { PlainHead, SortHead, sortRows, useTableSort } from "./SortHead";
 import {
   BRANCH_CHECKS, EXITS, FILTER_FIELDS, STEP_TYPES, TEMPLATES, TRIGGERS,
-  allowedSteps, badFields, branchLabel, checkKind, optionsFor, setAccountVocab, valueLabel, cloneSteps, countSteps, defaultBranchValue, fieldGroups, fieldInfo, fieldToken, fieldsFor, filterSummary, findStep,
-  insertStep, locate, moveStep, newId, newStep, ordinal, stepAtPos, rememberTags, tagsIn, problemCount, removeStep, stepSummary, stepTitle, timeLabel, timeline,
-  replaceField, sampleFields, triggerOfKind, triggerSummary, unitLabel, updateStep, usedFields, validate, waitMinutes,
+  allowedSteps, badFields, branchLabel, checkKind, optionsFor, setAccountVocab, defaultBranchValue, fieldGroups, fieldInfo, fieldToken, fieldsFor, filterSummary, findStep,
+  insertStep, locate, moveStep, newStep, stepAtPos, rememberTags, tagsIn, problemCount, removeStep, stepSummary, stepTitle, timeLabel, timeline,
+  replaceField, sampleFields, triggerOfKind, triggerSummary, updateStep, usedFields, validate,
   type BranchCheck, type Exit, type Filter, type MessageKind, type Path, type Problems, type Settings, type Step, type StepType, type Trigger,
   type Unit, type Workflow,
 } from "../lib/workflow";
@@ -157,13 +159,21 @@ function useKnownTags(agentId: string) {
 
 const Loading = () => <Box sx={{ display: "flex", justifyContent: "center", p: 6 }}><CircularProgress /></Box>;
 
-export function WorkflowListPage({ scope }: { scope: Scope }) {
+/** Unsaved edits in the open editor, so the sidebar can ask before it opens
+ *  another automation (the editor's own back button asks the same). */
+let editorDirty = false;
+
+/** The Automations sidebar: "Automations" (search, sort, a switch per row)
+ *  and "Coming up" (everything waiting to go out). On a computer it sits
+ *  left of the open automation; on a phone it's the whole screen. */
+export function WorkflowListPage({ scope, selectedId }: { scope: Scope; selectedId?: string }) {
   const agentId = useAgentId();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const [picker, setPicker] = useState(false);
+  const [pendingNav, setPendingNav] = useState<(() => void) | null>(null);
   useKnownTags(agentId);
-  const vocabReady = useAccountVocab(agentId, scope === "account");
+  const vocabReady = useAccountVocab(agentId, true);
 
   // ?account=<id> (from a client's page): switch to that account first.
   const wanted = params.get("account");
@@ -172,47 +182,50 @@ export function WorkflowListPage({ scope }: { scope: Scope }) {
     if (wanted && wanted === agentId) setParams((p) => { p.delete("account"); return p; }, { replace: true });
   }, [wanted, agentId, setParams]);
 
-  const { data: accountWfs, isLoading: l1, isError: e1 } = useQuery({ queryKey: ["workflows", agentId], queryFn: () => listAccountWorkflows(agentId), enabled: !!agentId && scope === "account" });
-  const { data: templates, isLoading: l2, isError: e2 } = useQuery({ queryKey: ["workflowTemplates"], queryFn: listTemplateWorkflows });
-  const { data: counts = {} } = useQuery({ queryKey: ["workflowLeadCounts", agentId], queryFn: () => countLeadsInWorkflows(agentId), enabled: !!agentId && scope === "account", refetchInterval: 60_000 });
+  const { data: workflows, isLoading, isError } = useQuery({ queryKey: ["workflows", agentId], queryFn: () => listAccountWorkflows(agentId), enabled: !!agentId });
+  const { data: counts = {} } = useQuery({ queryKey: ["workflowLeadCounts", agentId], queryFn: () => countLeadsInWorkflows(agentId), enabled: !!agentId, refetchInterval: 30_000 });
+  const { data: lastRun = {} } = useQuery({ queryKey: ["workflowLastTriggered", agentId], queryFn: () => lastTriggeredWorkflows(agentId), enabled: !!agentId, refetchInterval: 60_000 });
 
+  // Leaving an automation with unsaved edits asks first.
+  const go = (fn: () => void) => (editorDirty ? setPendingNav(() => fn) : fn());
   const create = (w: Workflow) => {
     setPicker(false);
-    navigate(`${listPath(scope)}/new`, { state: { draft: { ...w, published: false } } });
+    go(() => navigate(`${listPath(scope)}/new`, { state: { draft: { ...w, published: false } } }));
   };
 
-  if (!agentId || (scope === "account" && l1) || l2 || !vocabReady) return <Loading />;
-  if (e1 || e2) return <Alert severity="error" sx={{ m: 2 }}>Couldn't load workflows. Refresh to try again.</Alert>;
+  if (!agentId || isLoading || !vocabReady) return <Loading />;
+  if (isError) return <Alert severity="error" sx={{ m: 2 }}>Couldn't load automations. Refresh to try again.</Alert>;
 
   return (
     <>
-      <WorkflowList
-        workflows={(scope === "account" ? accountWfs : templates) ?? []}
-        scope={scope}
-        counts={scope === "account" ? counts : undefined}
+      <Sidebar
+        agentId={agentId}
+        workflows={workflows ?? []}
+        counts={counts}
+        lastRun={lastRun}
+        selectedId={selectedId}
+        onOpen={(id) => go(() => navigate(workflowPath(id)))}
         onCreate={() => setPicker(true)}
-        header={scope === "account" ? <StandardSetBar agentId={agentId} workflows={accountWfs ?? []} /> : null}
       />
       <Dialog open={picker} onClose={() => setPicker(false)} fullWidth maxWidth="sm">
-        <DialogTitle>{scope === "templates" ? "New template" : "Start from a template"}</DialogTitle>
+        <DialogTitle>New automation</DialogTitle>
         <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-          {(templates ?? []).length > 0 && scope === "account" && (
-            <Typography sx={{ fontSize: 12, fontWeight: 600, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.06em", mt: 0.5 }}>Your templates</Typography>
-          )}
-          {scope === "account" && (templates ?? []).map((t) => (
-            <TemplateButton key={t.id} name={t.name} blurb={triggerSummary(t.trigger)} onClick={() => create({ ...t, id: newId(), steps: cloneSteps(t.steps), standard: undefined })} />
-          ))}
-          {scope === "account" && (templates ?? []).length > 0 && (
-            <Typography sx={{ fontSize: 12, fontWeight: 600, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.06em", mt: 1 }}>Starters</Typography>
-          )}
           {TEMPLATES.map((t) => <TemplateButton key={t.name} name={t.name} blurb={t.blurb} onClick={() => create(t.make())} />)}
         </DialogContent>
+      </Dialog>
+      <Dialog open={!!pendingNav} onClose={() => setPendingNav(null)}>
+        <DialogTitle>Leave without saving?</DialogTitle>
+        <DialogContent><Typography sx={{ fontSize: 14 }}>Your changes to this automation will be lost.</Typography></DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPendingNav(null)}>Keep editing</Button>
+          <Button color="error" onClick={() => { const fn = pendingNav; setPendingNav(null); editorDirty = false; fn?.(); }}>Leave</Button>
+        </DialogActions>
       </Dialog>
     </>
   );
 }
 
-export function WorkflowEditorPage({ scope }: { scope: Scope }) {
+export function WorkflowEditorPage({ scope, embedded = false }: { scope: Scope; embedded?: boolean }) {
   const { id = "" } = useParams();
   const agentId = useAgentId();
   const navigate = useNavigate();
@@ -223,7 +236,7 @@ export function WorkflowEditorPage({ scope }: { scope: Scope }) {
   const vocabReady = useAccountVocab(agentId, scope === "account");
   const isNew = id === "new";
   const draft = (location.state as { draft?: Workflow } | null)?.draft;
-  const backTo: BackTo = (location.state as { back?: BackTo } | null)?.back ?? { to: listPath(scope), label: scope === "templates" ? "Templates" : "Workflows" };
+  const backTo: BackTo = (location.state as { back?: BackTo } | null)?.back ?? { to: listPath(scope), label: scope === "templates" ? "Templates" : "Automations" };
 
   const { data: opened, isLoading, isError } = useQuery({ queryKey: ["workflow", id], queryFn: () => getWorkflow(id), enabled: !isNew });
   // A workflow from another account (a link from Scheduled → All accounts,
@@ -277,25 +290,15 @@ export function WorkflowEditorPage({ scope }: { scope: Scope }) {
     }
   }
 
-  async function copyToTemplates(w: Workflow) {
-    try {
-      await saveWorkflow({ ...w, id: newId(), published: false }, null);
-      await qc.invalidateQueries({ queryKey: ["workflowTemplates"] });
-      showSnack(`Saved a copy to Templates`);
-    } catch (e) {
-      console.error(e);
-      showSnack("Couldn't save the template. Try again.");
-    }
-  }
-
   return (
     <Editor
-      key={isNew ? "new" : workflow.id}
+      // Remounts when it's switched on/off from the sidebar.
+      key={isNew ? "new" : `${workflow.id}:${workflow.published}`}
+      embedded={embedded}
       initial={workflow}
       isTemplate={isTemplate}
       backTo={backTo}
       onSave={save}
-      onCopyToTemplates={isTemplate ? undefined : copyToTemplates}
       onBack={() => navigate(backTo.to)}
       onDelete={() => void remove()}
     />
@@ -349,135 +352,240 @@ function StandardSetBar({ agentId, workflows }: { agentId: string; workflows: Wo
   );
 }
 
-function Sends({ steps }: { steps: Step[] }) {
+/** What a workflow sends, in words: "WhatsApp to agent", "Email to lead". */
+function sendsText(steps: Step[]): string {
   const kinds = new Set<StepType>();
   const walk = (list: Step[]) => list.forEach((s) => { kinds.add(s.type); if (s.type === "branch") { walk(s.yes); walk(s.no); } });
   walk(steps);
-  return (
-    <Box sx={{ display: "flex", flexDirection: "column", gap: 0.25 }}>
-      {kinds.has("whatsapp_agent") && <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, fontSize: 13, whiteSpace: "nowrap" }}><WhatsAppIcon sx={{ fontSize: 16, color: "#25d366" }} />WhatsApp to agent</Box>}
-      {kinds.has("whatsapp_lead") && <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, fontSize: 13, whiteSpace: "nowrap" }}><SendToMobileIcon sx={{ fontSize: 16, color: "#d84315" }} />WhatsApp to lead</Box>}
-      {kinds.has("email_lead") && <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, fontSize: 13, whiteSpace: "nowrap" }}><EmailIcon sx={{ fontSize: 16, color: tokens.primary }} />Email to lead</Box>}
-      {!kinds.has("whatsapp_agent") && !kinds.has("whatsapp_lead") && !kinds.has("email_lead") && <Box sx={{ fontSize: 13, color: "text.secondary" }}>No messages</Box>}
-    </Box>
-  );
+  const out = [
+    kinds.has("whatsapp_agent") && "WhatsApp to agent",
+    kinds.has("whatsapp_lead") && "WhatsApp to lead",
+    kinds.has("email_lead") && "Email to lead",
+  ].filter(Boolean);
+  return out.length ? out.join(" + ") : "Updates the lead";
 }
 
-function OnOffChip({ on }: { on: boolean }) {
-  return <Chip size="small" label={on ? "On" : "Off"} color={on ? "success" : "default"} variant={on ? "filled" : "outlined"} sx={{ height: 22, fontSize: 12, fontWeight: 600, minWidth: 44 }} />;
+/** Every word a workflow holds: its messages and emails (subjects and
+ *  bodies), tags, stages, notes. Placeholders count by their plain name too,
+ *  so "first name" finds {{first_name}}. */
+function wordsIn(steps: Step[]): string[] {
+  const out: string[] = [];
+  const walk = (list: Step[]) => list.forEach((s) => {
+    for (const [k, v] of Object.entries(s)) {
+      if (k === "id" || k === "type") continue;
+      if (typeof v === "string" && v.trim()) out.push(v.replace(/\{\{\s*(\w+)\s*\}\}/g, (_m, f: string) => `${f.replace(/_/g, " ")}`));
+    }
+    if (s.type === "branch") { walk(s.yes); walk(s.no); }
+  });
+  walk(steps);
+  return out;
 }
 
-const LIST_KEYS = ["name", "trigger", "steps", "leads", "status"] as const;
-type ListKey = (typeof LIST_KEYS)[number];
+/** Matches when every word typed is somewhere in the workflow. Returns the
+ *  message line it was found in (shown under the row) when the name alone
+ *  wouldn't explain the match, "" when the name does, null for no match. */
+function searchMatch(w: Workflow, query: string): string | null {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return "";
+  const head = `${w.name} ${triggerSummary(w.trigger)} ${sendsText(w.steps)}`.toLowerCase();
+  const texts = wordsIn(w.steps);
+  const all = `${head} ${texts.join(" ")}`.toLowerCase();
+  if (!words.every((x) => all.includes(x))) return null;
+  if (words.every((x) => head.includes(x))) return "";
+  const hit = words.find((x) => !head.includes(x))!;
+  const text = texts.find((t) => t.toLowerCase().includes(hit)) ?? "";
+  const flat = text.replace(/\s+/g, " ");
+  const at = flat.toLowerCase().indexOf(hit);
+  const from = Math.max(0, at - 30);
+  return `${from ? "…" : ""}${flat.slice(from, at + hit.length + 50)}${at + hit.length + 50 < flat.length ? "…" : ""}`;
+}
 
-function WorkflowList({ workflows, scope, counts, onCreate, header }: {
-  workflows: Workflow[]; scope: Scope; counts?: Record<string, number>; onCreate: () => void; header: React.ReactNode;
+function ago(iso: string | undefined): string {
+  if (!iso) return "Never triggered";
+  const mins = Math.round((Date.now() - Date.parse(iso)) / 60_000);
+  if (mins < 2) return "Triggered just now";
+  if (mins < 60) return `Triggered ${mins} min ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `Triggered ${hrs}h ago`;
+  const days = Math.round(hrs / 24);
+  return days < 60 ? `Triggered ${days}d ago` : `Triggered ${Math.round(days / 30)} months ago`;
+}
+
+type SortBy = "on" | "recent" | "name";
+const SORT_LABEL: Record<SortBy, string> = { on: "On first", recent: "Last triggered", name: "A–Z" };
+const SORT_KEY = "ek.automations.sort";
+
+function Sidebar({ agentId, workflows, counts, lastRun, selectedId, onOpen, onCreate }: {
+  agentId: string; workflows: Workflow[]; counts: Record<string, number>; lastRun: Record<string, string>;
+  selectedId?: string; onOpen: (id: string) => void; onCreate: () => void;
 }) {
-  const templates = scope === "templates";
-  const navigate = useNavigate();
-  const onOpen = (id: string) => navigate(workflowPath(id, scope));
-  const inIt = (w: Workflow) => counts?.[w.id] ?? 0;
-  const isDesktop = useMediaQuery("(min-width:900px)");
+  const qc = useQueryClient();
+  const showSnack = useSnack();
+  const [tab, setTab] = useState<"automations" | "coming">("automations");
   const [q, setQ] = useState("");
-  const [filter, setFilter] = useState<"all" | "on" | "off">("all");
-  const { sort, onSort } = useTableSort<ListKey>("estatekit_workflows_sort", { k: "status", dir: "desc" }, LIST_KEYS);
-  const count = (on: boolean) => workflows.filter((w) => w.published === on).length;
-  const needle = q.trim().toLowerCase();
-  const shown = sortRows(
-    workflows.filter((w) => (templates || filter === "all" || (filter === "on") === w.published) && (!needle || `${w.name} ${triggerSummary(w.trigger)}`.toLowerCase().includes(needle))),
-    (w) => (sort.k === "name" ? w.name : sort.k === "trigger" ? triggerSummary(w.trigger) : sort.k === "steps" ? countSteps(w.steps) : sort.k === "leads" ? inIt(w) : Number(w.published)),
-    sort.dir,
-  );
+  const [sortBy, setSortBy] = useState<SortBy>(() => {
+    try { const v = localStorage.getItem(SORT_KEY); return v === "recent" || v === "name" ? v : "on"; } catch { return "on"; }
+  });
+  const pickSort = (v: SortBy) => { setSortBy(v); try { localStorage.setItem(SORT_KEY, v); } catch { /* fine */ } };
+  const [busy, setBusy] = useState<string | null>(null);
+  const [pausing, setPausing] = useState(false);
+  // By id, not "my profile": that one can lag a moment behind an account switch.
+  const { data: profiles = [] } = useQuery({ queryKey: ["agentProfiles"], queryFn: listAgentProfiles, staleTime: 5 * 60_000 });
+  const accountName = profiles.find((x) => x.agent_id === agentId)?.display_name || "This account";
+  const { data: paused = false } = useQuery({ queryKey: ["automationsPaused", agentId], queryFn: () => getAccountAutomationsPaused(agentId) });
+  // A switched-off workflow's queue never sends: the engine cancels each run
+  // when it comes due.
+  const waiting = (w: Workflow) => (w.published ? counts[w.id] ?? 0 : 0);
+  const totalWaiting = workflows.reduce((n, w) => n + waiting(w), 0);
+
+  const matched = workflows.map((w) => ({ w, hit: searchMatch(w, q) })).filter((x) => x.hit !== null);
+  const time = (w: Workflow) => (lastRun[w.id] ? Date.parse(lastRun[w.id]) : 0);
+  matched.sort((a, b) =>
+    sortBy === "name" ? a.w.name.localeCompare(b.w.name)
+    : sortBy === "recent" ? time(b.w) - time(a.w) || a.w.name.localeCompare(b.w.name)
+    : Number(b.w.published) - Number(a.w.published) || a.w.name.localeCompare(b.w.name));
+
+  async function toggle(w: Workflow, next: boolean) {
+    // The open automation holds its own copy: unsaved edits there would be
+    // lost or undo this, so it changes there instead.
+    if (w.id === selectedId && editorDirty) { showSnack("Save or undo your changes to it first."); return; }
+    const key = ["workflows", agentId];
+    setBusy(w.id);
+    qc.setQueryData(key, (old: Workflow[] | undefined) => old?.map((x) => (x.id === w.id ? { ...x, published: next } : x)));
+    try {
+      const saved = await saveWorkflow({ ...w, published: next }, agentId);
+      qc.setQueryData(["workflow", saved.id], { workflow: saved, agentId } satisfies OpenedWorkflow);
+      trackActivity("automation_toggled", { agentId, detail: `Workflow ${next ? "on" : "off"}: ${w.name}` });
+      const n = waiting(w);
+      showSnack(next ? `"${w.name}" is on` : `"${w.name}" is off${n ? `. Its ${n} waiting won't send.` : ""}`);
+    } catch (e) {
+      console.error(e);
+      showSnack("Couldn't change that. Try again.");
+    } finally {
+      setBusy(null);
+      void qc.invalidateQueries({ queryKey: key });
+      void qc.invalidateQueries({ queryKey: ["workflowLeadCounts", agentId] });
+    }
+  }
+
+  async function setPaused(next: boolean) {
+    setPausing(true);
+    try {
+      await setAccountAutomationsPaused(agentId, next);
+      trackActivity("automation_toggled", { agentId, detail: next ? "Paused all automations for this account" : "Turned automations back on for this account" });
+      await qc.invalidateQueries({ queryKey: ["automationsPaused", agentId] });
+      showSnack(next ? "All automations paused for this account" : "Automations back on for this account");
+    } catch (e) {
+      console.error(e);
+      showSnack("Couldn't change that. Try again.");
+    } finally {
+      setPausing(false);
+    }
+  }
 
   return (
-    <Box sx={{ maxWidth: 1100, mx: "auto", p: 2, pb: 6 }}>
-      <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, mb: 2, flexWrap: "wrap" }}>
-        <Box sx={{ flex: 1, minWidth: 200 }}>
-          <Typography sx={{ fontSize: 20, fontWeight: 500 }}>{templates ? "Templates" : "Workflows"}</Typography>
-          <Typography sx={{ fontSize: 13, color: "text.secondary" }}>
-            {templates
-              ? "Shared starting points. Any account can copy one and change its copy; the template stays as it is."
-              : "This account's own workflows. Each one sends messages or updates a lead when something happens."}
+    <Box sx={{ height: "100%", display: "flex", flexDirection: "column", bgcolor: "background.paper", minHeight: 0 }}>
+      {/* Account-wide switch: pauses everything at once, queue included. */}
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1, px: 2, height: 64, flex: "none" }}>
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography component="h1" sx={{ fontSize: 18, fontWeight: 600 }}>Automations</Typography>
+          <Typography noWrap sx={{ fontSize: 12.5, color: paused ? tokens.orange : "text.secondary" }}>
+            {accountName} · {paused ? "All paused" : "Running"}
           </Typography>
         </Box>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={onCreate}>{templates ? "Create template" : "Create workflow"}</Button>
-      </Box>
-      {header}
-      <Box sx={{ display: "flex", gap: 1.5, mb: 2, flexWrap: "wrap", alignItems: "center" }}>
-        {!templates && (
-          <Tabs value={filter} onChange={(_, v) => setFilter(v)} sx={{ minHeight: 40, "& .MuiTab-root": { minHeight: 40, px: 1.5, minWidth: 0 } }}>
-            <Tab value="all" label={`All (${workflows.length})`} />
-            <Tab value="on" label={`On (${count(true)})`} />
-            <Tab value="off" label={`Off (${count(false)})`} />
-          </Tabs>
-        )}
-        <Box sx={{ flex: 1 }} />
-        <TextField
-          size="small"
-          placeholder="Search"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          sx={{ width: { xs: "100%", sm: 260 } }}
-          slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> } }}
-        />
+        <Tooltip title={paused ? "Turn automations back on for this account" : "Pause every automation for this account"}>
+          <Switch checked={!paused} disabled={pausing} onChange={(e) => void setPaused(!e.target.checked)} slotProps={{ input: { "aria-label": "Automations on for this account" } }} />
+        </Tooltip>
       </Box>
 
-      <Box sx={{ border: `1px solid ${tokens.divider}`, borderRadius: "8px", bgcolor: "background.paper", overflow: "hidden" }}>
-        {isDesktop ? (
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <SortHead k="name" label="Name" sort={sort} onSort={onSort} />
-                <SortHead k="trigger" label="Starts when" sort={sort} onSort={onSort} />
-                <PlainHead>Sends</PlainHead>
-                <SortHead k="steps" label="Steps" sort={sort} onSort={onSort} num />
-                {counts && <SortHead k="leads" label="Leads in it" sort={sort} onSort={onSort} num firstDir="desc" />}
-                {!templates && <SortHead k="status" label="Status" sort={sort} onSort={onSort} firstDir="desc" />}
-                <PlainHead sx={{ width: 48 }} />
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {shown.map((w) => (
-                <TableRow key={w.id} hover onClick={() => onOpen(w.id)} sx={{ cursor: "pointer", "&:last-child td": { borderBottom: 0 }, "& td": { py: 1.25 } }}>
-                  <TableCell sx={{ fontWeight: 500, fontSize: 14 }}>
-                    {w.name}
-                    <ListFlags w={w} />
-                  </TableCell>
-                  <TableCell sx={{ fontSize: 13, color: "text.secondary" }}>{triggerSummary(w.trigger)}</TableCell>
-                  <TableCell><Sends steps={w.steps} /></TableCell>
-                  <TableCell align="right" sx={{ fontSize: 13 }}>{countSteps(w.steps)}</TableCell>
-                  {counts && <TableCell align="right" sx={{ fontSize: 13, color: inIt(w) ? "text.primary" : "text.secondary" }}>{inIt(w)}</TableCell>}
-                  {!templates && <TableCell><OnOffChip on={w.published} /></TableCell>}
-                  <TableCell padding="checkbox"><ChevronRightIcon fontSize="small" sx={{ color: "text.disabled" }} /></TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        ) : (
-          shown.map((w, i) => (
-            <Box
-              key={w.id}
-              component="button"
-              type="button"
-              onClick={() => onOpen(w.id)}
-              sx={{ display: "flex", alignItems: "center", gap: 1.5, width: "100%", textAlign: "left", font: "inherit", color: "inherit", bgcolor: "transparent", border: 0, borderTop: i ? `1px solid ${tokens.divider}` : 0, p: "12px 14px", minHeight: 64, cursor: "pointer" }}
+      <Tabs value={tab} onChange={(_, v) => setTab(v)} variant="fullWidth" sx={{ flex: "none", borderBottom: `1px solid ${tokens.divider}`, minHeight: 44, "& .MuiTab-root": { minHeight: 44, textTransform: "none", fontSize: 14 } }}>
+        <Tab value="automations" label={`Automations (${workflows.length})`} />
+        <Tab value="coming" label={`Coming up${totalWaiting ? ` (${totalWaiting})` : ""}`} />
+      </Tabs>
+
+      {tab === "automations" ? (
+        <>
+          <Box sx={{ display: "flex", gap: 1, alignItems: "center", px: 1.5, py: 1.25, flex: "none" }}>
+            <TextField
+              size="small"
+              placeholder="Search names and messages"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              fullWidth
+              slotProps={{ input: {
+                startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment>,
+                endAdornment: q ? <InputAdornment position="end"><IconButton size="small" aria-label="Clear search" onClick={() => setQ("")}><CloseIcon fontSize="small" /></IconButton></InputAdornment> : null,
+              } }}
+            />
+            <Tooltip title="New automation">
+              <IconButton onClick={onCreate} aria-label="New automation" sx={{ flex: "none", width: 40, height: 40, border: `1px solid ${tokens.divider}` }}><AddIcon /></IconButton>
+            </Tooltip>
+          </Box>
+          <Box sx={{ display: "flex", alignItems: "center", px: 2, pb: 0.5, flex: "none" }}>
+            <Typography sx={{ fontSize: 12.5, color: "text.secondary", flex: 1 }}>
+              {q ? `${matched.length} found` : `${workflows.filter((w) => w.published).length} on · ${workflows.filter((w) => !w.published).length} off`}
+            </Typography>
+            <TextField
+              select
+              size="small"
+              variant="standard"
+              value={sortBy}
+              onChange={(e) => pickSort(e.target.value as SortBy)}
+              slotProps={{ input: { disableUnderline: true, "aria-label": "Sort" } }}
+              sx={{ "& .MuiSelect-select": { fontSize: 12.5, py: 0.25 } }}
             >
-              <Box sx={{ flex: 1, minWidth: 0 }}>
-                <Typography sx={{ fontWeight: 500, fontSize: 14.5 }}>{w.name}<ListFlags w={w} /></Typography>
-                <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>{triggerSummary(w.trigger)}</Typography>
-                <Box sx={{ mt: 0.5 }}><Sends steps={w.steps} /></Box>
-                {inIt(w) > 0 && <Typography sx={{ fontSize: 12.5, color: "text.secondary", mt: 0.25 }}>{inIt(w)} lead{inIt(w) === 1 ? "" : "s"} in it</Typography>}
+              {(Object.keys(SORT_LABEL) as SortBy[]).map((k) => <MenuItem key={k} value={k} sx={{ fontSize: 14 }}>Sort: {SORT_LABEL[k]}</MenuItem>)}
+            </TextField>
+          </Box>
+
+          <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", borderTop: `1px solid ${tokens.divider}` }}>
+            <StandardSetBar agentId={agentId} workflows={workflows} />
+            {matched.map(({ w, hit }) => {
+              const n = waiting(w);
+              const problems = problemCount(validate(w));
+              const blocked = !w.published && problems > 0;
+              const selected = w.id === selectedId;
+              return (
+                <Box key={w.id} sx={{ display: "flex", alignItems: "center", borderBottom: `1px solid ${tokens.divider}`, bgcolor: selected ? tokens.primaryBg : "transparent", boxShadow: selected ? `inset 3px 0 0 ${tokens.primary}` : "none", opacity: paused ? 0.6 : 1 }}>
+                  <Box
+                    component="button"
+                    type="button"
+                    onClick={() => onOpen(w.id)}
+                    aria-current={selected ? "page" : undefined}
+                    sx={{ flex: 1, minWidth: 0, alignSelf: "stretch", display: "flex", flexDirection: "column", justifyContent: "center", textAlign: "left", font: "inherit", color: "inherit", bgcolor: "transparent", border: 0, pl: 2, pr: 0.5, py: 1.25, minHeight: 64, cursor: "pointer", "&:hover": { bgcolor: selected ? "transparent" : tokens.hover } }}
+                  >
+                    <Typography sx={{ fontWeight: 500, fontSize: 14.5, lineHeight: 1.35 }}>{w.name}<ListFlags w={w} /></Typography>
+                    <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
+                      {ago(lastRun[w.id])}{n > 0 && <Box component="span" sx={{ color: tokens.primary, fontWeight: 500 }}> · {n} waiting</Box>}
+                    </Typography>
+                    {hit && <Typography sx={{ fontSize: 12.5, color: "text.secondary", fontStyle: "italic", mt: 0.25, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>“{hit}”</Typography>}
+                  </Box>
+                  <Tooltip title={blocked ? `Open it and fix ${problems === 1 ? "1 thing" : `${problems} things`} first` : w.published ? "On" : "Off"}>
+                    <Box component="span" sx={{ flex: "none", pr: 1 }}>
+                      <Switch
+                        checked={w.published}
+                        disabled={busy === w.id || blocked}
+                        onChange={(e) => void toggle(w, e.target.checked)}
+                        slotProps={{ input: { "aria-label": `${w.name}: ${w.published ? "on" : "off"}` } }}
+                      />
+                    </Box>
+                  </Tooltip>
+                </Box>
+              );
+            })}
+            {!matched.length && workflows.length > 0 && (
+              <Box sx={{ textAlign: "center", py: 5, px: 2 }}>
+                <Typography sx={{ color: "text.secondary" }}>Nothing has "{q}" in it.</Typography>
+                <Button onClick={() => setQ("")} sx={{ mt: 1 }}>Clear search</Button>
               </Box>
-              {!templates && <OnOffChip on={w.published} />}
-            </Box>
-          ))
-        )}
-        {!shown.length && (
-          <Typography sx={{ color: "text.secondary", textAlign: "center", py: 6, px: 2 }}>
-            {workflows.length ? "Nothing matches." : templates ? "No templates yet. Create one, or save a copy of a workflow from its editor." : "No workflows on this account yet."}
-          </Typography>
-        )}
-      </Box>
+            )}
+          </Box>
+        </>
+      ) : (
+        <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+          <WaitingList agentId={agentId} />
+        </Box>
+      )}
     </Box>
   );
 }
@@ -526,7 +634,7 @@ function useHistory(initial: Workflow) {
 /** What Save stores: anything else (ids aside) is screen state. */
 const snapshot = (w: Workflow) => JSON.stringify({ n: w.name, p: w.published, t: w.trigger, f: w.filters, s: w.steps, e: w.exits, o: w.settings, d: w.standard });
 
-function Editor({ initial, isTemplate, backTo, onSave, onCopyToTemplates, onBack, onDelete }: {
+function Editor({ initial, isTemplate, backTo, onSave, onCopyToTemplates, onBack, onDelete, embedded = false }: {
   initial: Workflow;
   isTemplate: boolean;
   backTo: BackTo;
@@ -534,14 +642,16 @@ function Editor({ initial, isTemplate, backTo, onSave, onCopyToTemplates, onBack
   onCopyToTemplates?: (w: Workflow) => Promise<void>;
   onBack: () => void;
   onDelete: () => void;
+  /** Beside the Automations sidebar: no back button. */
+  embedded?: boolean;
 }) {
-  const isDesktop = useMediaQuery("(min-width:1000px)");
   const isPhone = useMediaQuery("(max-width:599px)");
   const showSnack = useSnack();
   const { wf, set, undo, redo, canUndo, canRedo } = useHistory(initial);
   // Changed since it was opened or last saved. A new workflow can be saved as
   // it is, but leaving it untouched just drops it, no questions.
   const [savedSnap, setSavedSnap] = useState(() => snapshot(initial));
+  const [savedWf, setSavedWf] = useState(initial);
   const dirty = snapshot(wf) !== savedSnap;
   const canSave = dirty || !isSaved(initial.id);
   const [saving, setSaving] = useState(false);
@@ -553,6 +663,11 @@ function Editor({ initial, isTemplate, backTo, onSave, onCopyToTemplates, onBack
     const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+  // …and so does opening another one from the sidebar.
+  useEffect(() => {
+    editorDirty = dirty;
+    return () => { editorDirty = false; };
   }, [dirty]);
 
   // The tab, the lead being shown (?run=) and the step the Leads tab is
@@ -609,17 +724,6 @@ function Editor({ initial, isTemplate, backTo, onSave, onCopyToTemplates, onBack
   };
   const shiftStep = (id: string, dir: -1 | 1) => set((w) => ({ ...w, steps: moveStep(w.steps, id, dir) }));
 
-  // Turning on is the one place the checks bite: a broken workflow stays off.
-  const setOn = (on: boolean) => {
-    if (on && nProblems) {
-      showSnack(`Fix ${nProblems} thing${nProblems === 1 ? "" : "s"} first`);
-      goToFirstProblem();
-      return;
-    }
-    update({ published: on });
-    showSnack(on ? "Save to switch it on" : "Save to switch it off");
-  };
-
   async function save() {
     if (wf.published && nProblems) {
       showSnack(`Fix ${nProblems} thing${nProblems === 1 ? "" : "s"} first, or switch it off`);
@@ -630,6 +734,7 @@ function Editor({ initial, isTemplate, backTo, onSave, onCopyToTemplates, onBack
     try {
       await onSave(wf);
       setSavedSnap(snapshot(wf));
+      setSavedWf(wf);
       setSavedSteps(wf.steps);
       showSnack(isTemplate ? "Template saved" : wf.published ? "Saved. It's on: new leads go through it from now." : "Saved. It's off.");
     } catch (e) {
@@ -670,14 +775,12 @@ function Editor({ initial, isTemplate, backTo, onSave, onCopyToTemplates, onBack
 
   const selectedStep = sel?.kind === "step" ? findStep(wf.steps, sel.id) : undefined;
   const panelOpen = tab === "builder" && !!sel && (sel.kind !== "step" || !!selectedStep);
-  const panelTitle = sel?.kind === "trigger" ? "Trigger" : sel?.kind === "filters" ? "Only run if" : sel?.kind === "exits" ? "Stop early when" : selectedStep ? stepTitle(selectedStep) : "";
   const panelProblems = sel ? problems[sel.kind === "step" ? sel.id : sel.kind] ?? [] : [];
   const position = selectedStep ? locate(wf.steps, selectedStep.id) : null;
 
   const panel = panelOpen && (
     <DetailsPanel
       key={selKey(sel)}
-      title={panelTitle}
       problems={panelProblems}
       onClose={() => setSel(null)}
       onDelete={selectedStep ? () => deleteStep(selectedStep.id) : undefined}
@@ -686,7 +789,7 @@ function Editor({ initial, isTemplate, backTo, onSave, onCopyToTemplates, onBack
       canMoveUp={!!position && position.index > 0}
       canMoveDown={!!position && position.index < position.length - 1}
     >
-      <NodePreview sel={sel} wf={wf} step={selectedStep} />
+      <NodePreview wf={wf} step={selectedStep} />
       {sel?.kind === "trigger" && <TriggerEditor t={wf.trigger} onChange={(trigger) => update({ trigger }, "trigger")} />}
       {sel?.kind === "filters" && <FiltersEditor filters={wf.filters} onChange={(filters) => update({ filters }, "filters")} />}
       {sel?.kind === "exits" && <ExitsEditor exits={wf.exits} onChange={(exits) => update({ exits })} />}
@@ -698,131 +801,128 @@ function Editor({ initial, isTemplate, backTo, onSave, onCopyToTemplates, onBack
     setEditingName(false);
     if (!wf.name.trim()) update({ name: "Untitled workflow" });
   };
+  // Back to how it was last saved; a new one that was never saved just closes.
+  const discard = () => {
+    if (!isSaved(initial.id)) { onBack(); return; }
+    set(() => savedWf);
+    setSel(null);
+  };
+  const [menu, setMenu] = useState<HTMLElement | null>(null);
+  const pick = (fn: () => void) => () => { setMenu(null); fn(); };
+  const status = [
+    isTemplate ? "Template" : wf.published ? "On" : "Off",
+    !isTemplate && runs.length ? `${runs.length} lead${runs.length === 1 ? "" : "s"} in it` : "",
+  ].filter(Boolean).join(" · ");
+  const dialogTitle = tab === "leads" ? "Who's in it now" : tab === "history" ? "History" : "Settings";
 
   return (
-    // A fixed-height frame: the header and tabs never scroll away, and the
-    // canvas and the details panel each scroll on their own.
+    // A fixed-height frame: the header never scrolls away; the steps scroll
+    // down under it. Its two rows line up with the sidebar's title and tabs.
     <Box sx={{ height: "calc(100dvh - var(--ek-nav-h))", display: "flex", flexDirection: "column", minHeight: 420 }}>
-      <Box sx={{ display: "flex", alignItems: "center", gap: { xs: 0.5, sm: 1 }, px: { xs: 0.5, sm: 1.5 }, height: 56, flex: "none", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
-        {isDesktop ? (
-          <Button startIcon={<ArrowBackIcon />} onClick={back} sx={{ textTransform: "none", color: "text.primary", flex: "none" }} aria-label={`Back to ${backTo.label.toLowerCase()}`}>
-            {backTo.label}
-          </Button>
-        ) : (
-          <IconButton onClick={back} aria-label={`Back to ${backTo.label.toLowerCase()}`} sx={{ flex: "none" }}><ArrowBackIcon /></IconButton>
-        )}
-        <Box sx={{ flex: 1, minWidth: 0, display: "flex", justifyContent: "center", alignItems: "center", gap: 0.5 }}>
-          {editingName ? (
-            <InputBase
-              autoFocus
-              value={wf.name}
-              onChange={(e) => update({ name: e.target.value }, "name")}
-              onBlur={finishName}
-              onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") (e.target as HTMLElement).blur(); }}
-              inputProps={{ "aria-label": "Workflow name", maxLength: 80 }}
-              sx={{ fontWeight: 600, fontSize: 15, borderBottom: "2px solid", borderColor: "primary.main", maxWidth: 420, width: "100%", "& input": { textAlign: "center" } }}
-            />
+      <Box sx={{ flex: "none", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1, height: 64, pl: embedded ? 2 : 0.5, pr: 1 }}>
+          {!embedded && <IconButton onClick={back} aria-label={`Back to ${backTo.label.toLowerCase()}`} sx={{ flex: "none" }}><ArrowBackIcon /></IconButton>}
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            {editingName ? (
+              <InputBase
+                autoFocus
+                value={wf.name}
+                onChange={(e) => update({ name: e.target.value }, "name")}
+                onBlur={finishName}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") (e.target as HTMLElement).blur(); }}
+                inputProps={{ "aria-label": "Automation name", maxLength: 80 }}
+                sx={{ fontWeight: 600, fontSize: 18, width: "100%", borderBottom: "2px solid", borderColor: "primary.main" }}
+              />
+            ) : (
+              <Tooltip title="Rename" placement="bottom-start">
+                <Typography component="button" type="button" onClick={() => setEditingName(true)} noWrap sx={{ display: "block", maxWidth: "100%", font: "inherit", fontSize: 18, fontWeight: 600, color: "inherit", bgcolor: "transparent", border: 0, p: 0, cursor: "text", textAlign: "left", "&:hover": { textDecoration: "underline", textDecorationColor: tokens.line } }}>
+                  {wf.name}
+                </Typography>
+              </Tooltip>
+            )}
+            <Typography noWrap sx={{ fontSize: 12.5, color: wf.published ? "text.secondary" : tokens.ink3 }}>{status}</Typography>
+          </Box>
+          <IconButton onClick={(e) => setMenu(e.currentTarget)} aria-label="More" sx={{ flex: "none" }}><MoreVertIcon /></IconButton>
+          <Menu anchorEl={menu} open={!!menu} onClose={() => setMenu(null)} anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}>
+            {!isTemplate && <MenuItem onClick={pick(() => setTab("leads"))}><ListItemIcon><PersonIcon fontSize="small" /></ListItemIcon>Who's in it{runs.length ? ` (${runs.length})` : ""}</MenuItem>}
+            <MenuItem onClick={pick(() => setTab("history"))}><ListItemIcon><HistoryIcon fontSize="small" /></ListItemIcon>History</MenuItem>
+            <MenuItem onClick={pick(() => setTab("settings"))}><ListItemIcon><SettingsIcon fontSize="small" /></ListItemIcon>Settings</MenuItem>
+            <Divider />
+            <MenuItem disabled={!canUndo} onClick={pick(undo)}><ListItemIcon><UndoIcon fontSize="small" /></ListItemIcon>Undo</MenuItem>
+            <MenuItem disabled={!canRedo} onClick={pick(redo)}><ListItemIcon><RedoIcon fontSize="small" /></ListItemIcon>Redo</MenuItem>
+          </Menu>
+        </Box>
+        {/* Same height as the sidebar's tabs, so the two dividers meet. */}
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1, height: 44, px: 2 }}>
+          {nProblems > 0 ? (
+            <Chip size="small" color="error" variant="outlined" icon={<ErrorOutlineIcon />} label={`${nProblems} to fix · show me`} onClick={goToFirstProblem} />
           ) : (
-            <Box component="button" type="button" onClick={() => setEditingName(true)} sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, minWidth: 0, font: "inherit", color: "inherit", bgcolor: "transparent", border: 0, cursor: "text", p: "6px 8px", borderRadius: "4px", "&:hover": { bgcolor: tokens.hover } }}>
-              <Typography noWrap sx={{ fontWeight: 600, fontSize: 15 }}>{wf.name}</Typography>
-              <EditIcon sx={{ fontSize: 16, color: "text.secondary" }} />
-            </Box>
+            <Typography noWrap sx={{ fontSize: 13, color: "text.secondary", flex: 1, minWidth: 0 }}>
+              {canSave ? "You have changes that aren't saved yet." : "Tap Edit on any step to change it."}
+            </Typography>
+          )}
+          <Box sx={{ flex: nProblems > 0 ? 1 : "none" }} />
+          {canSave && (
+            <>
+              <Button onClick={discard} disabled={saving} sx={{ flex: "none" }}>Discard</Button>
+              <Button variant="contained" onClick={() => void save()} disabled={saving} sx={{ flex: "none" }}>{saving ? "Saving…" : "Save"}</Button>
+            </>
           )}
         </Box>
-        {nProblems > 0 && (
-          <Tooltip title="Show the first one">
-            <Chip
-              size="small"
-              color="error"
-              variant="outlined"
-              icon={<ErrorOutlineIcon />}
-              label={isDesktop ? `${nProblems} to fix` : nProblems}
-              onClick={goToFirstProblem}
-              sx={{ flex: "none" }}
-            />
-          </Tooltip>
-        )}
-        {/* Phones: the name needs the room more than undo does. */}
-        {!isPhone && <Tooltip title="Undo (Ctrl+Z)"><span><IconButton onClick={undo} disabled={!canUndo} aria-label="Undo"><UndoIcon fontSize="small" /></IconButton></span></Tooltip>}
-        {isDesktop && <Tooltip title="Redo (Ctrl+Shift+Z)"><span><IconButton onClick={redo} disabled={!canRedo} aria-label="Redo"><RedoIcon fontSize="small" /></IconButton></span></Tooltip>}
-        {!isTemplate && (
-          <Tooltip title={wf.published ? "On: running for leads" : nProblems ? "Fix the problems to turn it on" : "Off: not running"}>
-            <Box sx={{ display: "flex", alignItems: "center", flex: "none" }}>
-              {isDesktop && <Typography sx={{ fontSize: 13, color: "text.secondary" }}>{wf.published ? "On" : "Off"}</Typography>}
-              <Switch checked={wf.published} onChange={(e) => setOn(e.target.checked)} slotProps={{ input: { "aria-label": "Workflow on" } }} />
-            </Box>
-          </Tooltip>
-        )}
-        <Tooltip title={canSave ? "Save changes" : "Saved"}>
-          <span>
-            <Button variant="contained" size="small" disabled={!canSave || saving} onClick={() => void save()} sx={{ position: "relative", overflow: "visible" }}>
-              {saving ? "Saving…" : "Save"}
-              {canSave && !saving && <Box component="span" sx={{ position: "absolute", top: -4, right: -4, width: 10, height: 10, borderRadius: "50%", bgcolor: tokens.red, border: `2px solid ${tokens.surface}` }} aria-label="Unsaved changes" />}
-            </Button>
-          </span>
-        </Tooltip>
       </Box>
-
-      <Tabs
-        value={tab}
-        onChange={(_, v) => setTab(v)}
-        variant="scrollable"
-        allowScrollButtonsMobile
-        sx={{ flex: "none", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}`, minHeight: 44, "& .MuiTabs-flexContainer": { justifyContent: { md: "center" } } }}
-      >
-        {([["builder", "Builder"], ["leads", runs.length ? `Leads (${runs.length})` : "Leads"], ["history", "History"], ["settings", "Settings"]] as const)
-          .filter(([v]) => !(isTemplate && v === "leads"))
-          .map(([v, l]) => (
-            <Tab key={v} value={v} label={l} />
-          ))}
-      </Tabs>
 
       <Box sx={{ flex: 1, minHeight: 0, display: "flex" }}>
-        {tab === "builder" && (
-          <>
-            <Canvas
-              wf={wf}
-              sel={sel}
-              setSel={setSel}
-              onAdd={addStep}
-              problems={problems}
-              here={here}
-              onHere={(stepId) => setView({ tab: "leads", step: stepId, run: null })}
-              highlight={focusStep?.id ?? null}
-              banner={runId ? (
-                <LeadBanner
-                  run={focusRun}
-                  step={focusStep}
-                  loading={runsLoading}
-                  onClose={() => setView({ run: null })}
-                  onHistory={() => setView({ tab: "history", run: null })}
-                />
-              ) : null}
+        <Canvas
+          wf={wf}
+          sel={sel}
+          setSel={setSel}
+          onAdd={addStep}
+          problems={problems}
+          here={here}
+          onHere={(stepId) => setView({ tab: "leads", step: stepId, run: null })}
+          highlight={focusStep?.id ?? null}
+          details={(s) => (sel && selKey(sel) === selKey(s) ? panel : null)}
+          banner={runId ? (
+            <LeadBanner
+              run={focusRun}
+              step={focusStep}
+              loading={runsLoading}
+              onClose={() => setView({ run: null })}
+              onHistory={() => setView({ tab: "history", run: null })}
             />
-            {isDesktop ? (
-              panelOpen && <Box sx={{ width: 380, flex: "none", borderLeft: `1px solid ${tokens.divider}`, bgcolor: "background.paper", minHeight: 0 }}>{panel}</Box>
-            ) : (
-              <Drawer anchor="bottom" open={panelOpen} onClose={() => setSel(null)} slotProps={{ paper: { sx: { height: "85dvh", borderRadius: "12px 12px 0 0" } } }}>
-                {panel}
-              </Drawer>
-            )}
-          </>
-        )}
-        {tab === "settings" && <SettingsTab wf={wf} isTemplate={isTemplate} onChange={update} onDelete={onDelete} onCopyToTemplates={onCopyToTemplates ? () => void onCopyToTemplates(wf) : undefined} />}
-        {tab === "leads" && (
-          <LeadsTab
-            runs={runs}
-            loading={runsLoading}
-            saved={isSaved(initial.id)}
-            published={initial.published}
-            stepOf={runStep}
-            stepFilter={stepFilter ? findStep(savedSteps, stepFilter) ?? null : null}
-            onClearStep={() => setView({ step: null })}
-            onShow={(id) => setView({ tab: "builder", run: id, step: null })}
-          />
-        )}
-        {tab === "history" && <HistoryTab wf={wf} />}
+          ) : null}
+        />
       </Box>
+
+      {/* Who's in it, History and Settings: one tap from the ⋮ menu, over the steps. */}
+      <Dialog open={tab !== "builder"} onClose={() => setTab("builder")} fullWidth maxWidth="md" fullScreen={isPhone} slotProps={{ paper: { sx: { height: isPhone ? "100%" : "80dvh" } } }}>
+        <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1, pr: 1 }}>
+          <Box sx={{ flex: 1, minWidth: 0 }}>{dialogTitle}</Box>
+          <IconButton aria-label="Close" onClick={() => setTab("builder")}><CloseIcon /></IconButton>
+        </DialogTitle>
+        <DialogContent dividers sx={{ p: 0, display: "flex", minHeight: 0 }}>
+          {tab === "settings" && <SettingsTab wf={wf} isTemplate={isTemplate} onChange={update} onDelete={onDelete} onCopyToTemplates={onCopyToTemplates ? () => void onCopyToTemplates(wf) : undefined} />}
+          {tab === "leads" && (
+            <LeadsTab
+              runs={runs}
+              loading={runsLoading}
+              saved={isSaved(initial.id)}
+              published={initial.published}
+              stepOf={runStep}
+              stepFilter={stepFilter ? findStep(savedSteps, stepFilter) ?? null : null}
+              onClearStep={() => setView({ step: null })}
+              onShow={(id) => setView({ tab: "builder", run: id, step: null })}
+            />
+          )}
+          {tab === "history" && <HistoryTab wf={wf} />}
+        </DialogContent>
+        {tab === "settings" && canSave && (
+          <DialogActions>
+            <Button onClick={() => setTab("builder")}>Done</Button>
+            <Button variant="contained" onClick={() => { void save(); setTab("builder"); }} disabled={saving}>Save</Button>
+          </DialogActions>
+        )}
+      </Dialog>
       <Dialog open={leaving} onClose={() => setLeaving(false)}>
         <DialogTitle>Leave without saving?</DialogTitle>
         <DialogContent><Typography sx={{ fontSize: 14 }}>Your changes to "{wf.name}" will be lost.</Typography></DialogContent>
@@ -835,28 +935,17 @@ function Editor({ initial, isTemplate, backTo, onSave, onCopyToTemplates, onBack
   );
 }
 
-/** The side/bottom sheet: title and close stay pinned at the top, Done,
- *  Move and Delete at the bottom, and only the fields in between scroll.
- *  Keyed by what's selected, so a half-confirmed delete never carries over
- *  to another step. */
-function DetailsPanel({ title, problems, onClose, onDelete, deleteLabel, onMove, canMoveUp, canMoveDown, children }: {
-  title: string; problems: string[]; onClose: () => void; onDelete?: () => void; deleteLabel: string;
+/** A step's settings, inside its own card once it's opened: the fields,
+ *  then Delete, move up/down and Done. Keyed by what's selected, so a
+ *  half-confirmed delete never carries over to another step. */
+function DetailsPanel({ problems, onClose, onDelete, deleteLabel, onMove, canMoveUp, canMoveDown, children }: {
+  problems: string[]; onClose: () => void; onDelete?: () => void; deleteLabel: string;
   onMove?: (dir: -1 | 1) => void; canMoveUp: boolean; canMoveDown: boolean; children: React.ReactNode;
 }) {
   const [confirming, setConfirming] = useState(false);
   return (
-    <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
-      <Box sx={{ display: "flex", alignItems: "center", gap: 1, px: 2, height: 52, flex: "none", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
-        <Typography sx={{ fontWeight: 600, flex: 1, minWidth: 0 }} noWrap>{title}</Typography>
-        {onMove && (
-          <>
-            <Tooltip title="Move up"><span><IconButton size="small" disabled={!canMoveUp} onClick={() => onMove(-1)} aria-label="Move step up"><ArrowUpwardIcon fontSize="small" /></IconButton></span></Tooltip>
-            <Tooltip title="Move down"><span><IconButton size="small" disabled={!canMoveDown} onClick={() => onMove(1)} aria-label="Move step down"><ArrowDownwardIcon fontSize="small" /></IconButton></span></Tooltip>
-          </>
-        )}
-        <IconButton onClick={onClose} aria-label="Close" size="small"><CloseIcon fontSize="small" /></IconButton>
-      </Box>
-      <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", overscrollBehavior: "contain", p: 2, display: "flex", flexDirection: "column", gap: 2, "& > *": { flexShrink: 0 } }}>
+    <Box sx={{ textAlign: "left" }}>
+      <Box sx={{ p: 2, display: "flex", flexDirection: "column", gap: 2 }}>
         {problems.length > 0 && (
           <Alert severity="error" sx={{ py: 0.5 }}>
             {problems.length === 1 ? problems[0] : <Box component="ul" sx={{ m: 0, pl: 2 }}>{problems.map((p) => <li key={p}>{p}</li>)}</Box>}
@@ -864,119 +953,135 @@ function DetailsPanel({ title, problems, onClose, onDelete, deleteLabel, onMove,
         )}
         {children}
       </Box>
-      <Box sx={{ display: "flex", alignItems: "center", gap: 1, px: 2, py: 1.25, pb: "calc(10px + env(safe-area-inset-bottom, 0px))", flex: "none", bgcolor: "background.paper", borderTop: `1px solid ${tokens.divider}` }}>
-        {onDelete && (confirming ? (
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1, px: 2, py: 1.25, borderTop: `1px solid ${tokens.divider}`, bgcolor: tokens.surface2, borderRadius: "0 0 8px 8px" }}>
+        {confirming ? (
           <>
             <Typography sx={{ fontSize: 13, flex: 1 }}>{deleteLabel.startsWith("Delete check") ? "Delete this check and everything under it?" : "Delete this step?"}</Typography>
             <Button size="small" onClick={() => setConfirming(false)}>Keep</Button>
             <Button size="small" color="error" variant="contained" onClick={onDelete}>Delete</Button>
           </>
         ) : (
-          <Button color="error" startIcon={<DeleteOutlinedIcon />} onClick={() => setConfirming(true)} sx={{ textTransform: "none" }}>{deleteLabel}</Button>
-        ))}
-        {!confirming && <><Box sx={{ flex: 1 }} /><Button variant="contained" onClick={onClose}>Done</Button></>}
+          <>
+            {onDelete && <Button color="error" startIcon={<DeleteOutlinedIcon />} onClick={() => setConfirming(true)} sx={{ textTransform: "none" }}>{deleteLabel}</Button>}
+            {onMove && (
+              <>
+                <Tooltip title="Move up"><span><IconButton disabled={!canMoveUp} onClick={() => onMove(-1)} aria-label="Move step up"><ArrowUpwardIcon fontSize="small" /></IconButton></span></Tooltip>
+                <Tooltip title="Move down"><span><IconButton disabled={!canMoveDown} onClick={() => onMove(1)} aria-label="Move step down"><ArrowDownwardIcon fontSize="small" /></IconButton></span></Tooltip>
+              </>
+            )}
+            <Box sx={{ flex: 1 }} />
+            <Button variant="contained" onClick={onClose}>Done</Button>
+          </>
+        )}
       </Box>
     </Box>
   );
 }
 
-// ── Canvas ───────────────────────────────────────────────────────────────
+// ── Steps, top to bottom ─────────────────────────────────────────────────
 
-function Canvas({ wf, sel, setSel, onAdd, problems, here, onHere, highlight, banner }: {
+/** The automation as one column that only scrolls down: trigger, filters,
+ *  steps (an if/else's Yes and No paths stacked, each on a rail), stop
+ *  rules. A step's editor opens right under it, not in a side panel. */
+function Canvas({ wf, sel, setSel, onAdd, problems, here, onHere, highlight, banner, details }: {
   wf: Workflow; sel: Selection; setSel: (s: Selection) => void; onAdd: (path: Path, index: number, t: StepType) => void; problems: Problems;
   /** Leads waiting at each step (by step id), and what clicking the count does. */
   here: Record<string, number>; onHere: (stepId: string) => void;
   /** The step of the lead being shown (?run=), and the strip saying so. */
   highlight: string | null; banner: React.ReactNode;
+  /** The editor for what's selected, drawn under it. */
+  details: (s: NonNullable<Selection>) => React.ReactNode;
 }) {
-  const narrow = useMediaQuery("(max-width:700px)");
-  const [zoom, setZoom] = useState(1);
   const scroller = useRef<HTMLDivElement>(null);
   const exitsOn = wf.exits.filter((x) => x.on);
   const allowed = allowedSteps(wf.trigger);
-  const ctx: StepCtx = { sel, setSel, onAdd, narrow, problems, allowed, here, onHere, highlight };
+  const ctx: StepCtx = { sel, setSel, onAdd, problems, allowed, here, onHere, highlight, details };
 
-  // Bring the shown lead's step into view.
+  // Bring the shown lead's step, or a step just opened, into view. Scrolls
+  // this column only: scrollIntoView would also move the page around it.
+  const focus = highlight ? `step:${highlight}` : sel ? (sel.kind === "step" ? `step:${sel.id}` : sel.kind) : null;
   useEffect(() => {
-    if (!highlight) return;
-    // Scroll the canvas only: scrollIntoView would also scroll the page
-    // around it and push the app's header off a phone screen.
     const box = scroller.current;
-    const el = box?.querySelector<HTMLElement>(`[data-step="${CSS.escape(highlight)}"]`);
-    if (!box || !el) return;
+    if (!box || !focus) return;
+    const el = box.querySelector<HTMLElement>(`[data-sel="${CSS.escape(focus)}"]`);
+    if (!el) return;
     const b = box.getBoundingClientRect(), r = el.getBoundingClientRect();
-    box.scrollTo({ top: box.scrollTop + r.top - b.top - (b.height - r.height) / 2, left: box.scrollLeft + r.left - b.left - (b.width - r.width) / 2, behavior: "smooth" });
-  }, [highlight]);
+    if (r.top >= b.top + 8 && r.bottom <= b.bottom - 8) return;
+    box.scrollTo({ top: box.scrollTop + r.top - b.top - 16, behavior: "smooth" });
+  }, [focus]);
 
   return (
-    <Box sx={{ flex: 1, minWidth: 0, position: "relative", bgcolor: tokens.bg }}>
-      <Box
-        ref={scroller}
-        sx={{
-          position: "absolute", inset: 0, overflow: "auto",
-          // Dot grid, the usual "this is a canvas" cue.
-          backgroundImage: `radial-gradient(circle, ${tokens.line} 1px, transparent 1px)`,
-          backgroundSize: `${20 * zoom}px ${20 * zoom}px`,
-        }}
-      >
-        {banner}
-        {wf.note && (
-          <Box sx={{ position: "sticky", top: 0, left: 0, zIndex: 2, display: "flex", gap: 1, alignItems: "flex-start", bgcolor: tokens.amberTint, borderBottom: `1px solid ${tokens.amberBorder}`, px: 2, py: 1 }}>
-            <WarningAmberIcon sx={{ fontSize: 18, color: tokens.amber, mt: "2px" }} />
-            <Typography sx={{ fontSize: 13 }}>{wf.note}</Typography>
+    <Box ref={scroller} sx={{ flex: 1, minWidth: 0, overflowY: "auto", overflowX: "hidden", bgcolor: tokens.bg }}>
+      {banner}
+      {wf.note && (
+        <Box sx={{ position: "sticky", top: 0, zIndex: 2, display: "flex", gap: 1, alignItems: "flex-start", bgcolor: tokens.amberTint, borderBottom: `1px solid ${tokens.amberBorder}`, px: 2, py: 1 }}>
+          <WarningAmberIcon sx={{ fontSize: 18, color: tokens.amber, mt: "2px" }} />
+          <Typography sx={{ fontSize: 13 }}>{wf.note}</Typography>
+        </Box>
+      )}
+      <Box sx={{ maxWidth: 680, mx: "auto", px: 2, py: 3 }}>
+        <RailItem marker={<BoltIcon sx={{ fontSize: 16 }} />} first>
+          <Box data-sel="trigger">
+            <Node color="#1565c0" icon={<BoltIcon />} title="When" text={triggerSummary(wf.trigger)} selected={sel?.kind === "trigger"} error={!!problems.trigger} onClick={() => setSel(sel?.kind === "trigger" ? null : { kind: "trigger" })}>
+              {details({ kind: "trigger" })}
+            </Node>
           </Box>
-        )}
-        <Box sx={{ zoom, display: "flex", flexDirection: "column", alignItems: "center", py: 4, px: 3, minWidth: "fit-content" }}>
-          <Node color="#1565c0" icon={<BoltIcon />} title="Trigger" text={triggerSummary(wf.trigger)} selected={sel?.kind === "trigger"} error={!!problems.trigger} onClick={() => setSel({ kind: "trigger" })} />
-          <Line />
-          <Node
-            color="#546e7a"
-            icon={<FilterAltIcon />}
-            title="Only if"
-            text={wf.filters.length ? wf.filters.map(filterSummary).join(" · ") : "Every lead (no filters)"}
-            selected={sel?.kind === "filters"}
-            error={!!problems.filters}
-            onClick={() => setSel({ kind: "filters" })}
-            dashed={!wf.filters.length}
-          />
-          <StepList steps={wf.steps} path="root" ctx={ctx} />
-          <Line />
-          <Node
-            color="#b71c1c"
-            icon={<BlockIcon />}
-            title="Stop early when"
-            text={exitsOn.length ? exitsOn.map((x) => EXITS.find((e) => e.kind === x.kind)?.label.replace(/ \(.*\)$/, "")).join(" · ") : "Nothing: every step always runs"}
-            selected={sel?.kind === "exits"}
-            onClick={() => setSel({ kind: "exits" })}
-            dashed={!exitsOn.length}
-          />
-          <Line />
-          <Box sx={{ px: 1.5, py: 0.5, borderRadius: "999px", bgcolor: "#37474f", color: "#fff", fontSize: 11, fontWeight: 700, letterSpacing: ".08em" }}>END</Box>
-          <Timeline wf={wf} />
+        </RailItem>
+        <RailItem marker={<FilterAltIcon sx={{ fontSize: 16 }} />}>
+          <Box data-sel="filters">
+            <Node
+              color="#546e7a"
+              icon={<FilterAltIcon />}
+              title="Only if"
+              text={wf.filters.length ? wf.filters.map(filterSummary).join(" · ") : "Every lead (no filters)"}
+              selected={sel?.kind === "filters"}
+              error={!!problems.filters}
+              onClick={() => setSel(sel?.kind === "filters" ? null : { kind: "filters" })}
+            >
+              {details({ kind: "filters" })}
+            </Node>
+          </Box>
+        </RailItem>
+        <StepList steps={wf.steps} path="root" ctx={ctx} continues />
+        <RailItem marker={<BlockIcon sx={{ fontSize: 16 }} />} last>
+          <Box data-sel="exits">
+            <Node
+              color="#b71c1c"
+              icon={<BlockIcon />}
+              title="Stop early if"
+              text={exitsOn.length ? exitsOn.map((x) => EXITS.find((e) => e.kind === x.kind)?.label.replace(/ \(.*\)$/, "")).join(" · ") : "Never: every step always runs"}
+              selected={sel?.kind === "exits"}
+              onClick={() => setSel(sel?.kind === "exits" ? null : { kind: "exits" })}
+            >
+              {details({ kind: "exits" })}
+            </Node>
+          </Box>
+        </RailItem>
+        <Box sx={{ pl: "40px" }}><Timeline wf={wf} /></Box>
+      </Box>
+    </Box>
+  );
+}
+
+/** One stop on the line down the left: a marker (icon or step number)
+ *  joined to the ones above and below, and the card beside it. */
+function RailItem({ marker, first, last, dashed, children }: { marker: React.ReactNode; first?: boolean; last?: boolean; dashed?: boolean; children: React.ReactNode }) {
+  const mid = 29; // the marker's centre, level with a card's header
+  return (
+    <Box sx={{ display: "flex", gap: 1.5, position: "relative", pb: last ? 0 : 1.25 }}>
+      <Box
+        aria-hidden
+        sx={{
+          position: "absolute", left: 13, width: 2, bgcolor: tokens.line,
+          top: first ? mid : 0, bottom: last ? `calc(100% - ${mid}px)` : 0,
+        }}
+      />
+      <Box sx={{ width: 28, flex: "none", pt: `${mid - 14}px`, position: "relative", zIndex: 1 }}>
+        <Box sx={{ width: 28, height: 28, borderRadius: "50%", display: "grid", placeItems: "center", fontSize: 12.5, fontWeight: 700, color: tokens.ink2, bgcolor: "background.paper", border: `2px ${dashed ? "dashed" : "solid"} ${tokens.line}` }}>
+          {marker}
         </Box>
       </Box>
-
-      <Box sx={{ position: "absolute", left: 12, bottom: 12, display: "flex", alignItems: "center", bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "6px", boxShadow: `0 1px 3px ${tokens.shadow}` }}>
-        <IconButton size="small" onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.1).toFixed(1)))} disabled={zoom <= 0.5} aria-label="Zoom out"><ZoomOutIcon fontSize="small" /></IconButton>
-        <Typography sx={{ fontSize: 12, width: 40, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>{Math.round(zoom * 100)}%</Typography>
-        <IconButton size="small" onClick={() => setZoom((z) => Math.min(1.5, +(z + 0.1).toFixed(1)))} disabled={zoom >= 1.5} aria-label="Zoom in"><ZoomInIcon fontSize="small" /></IconButton>
-        <Tooltip title="Fit to screen">
-          <IconButton
-            size="small"
-            aria-label="Fit to screen"
-            onClick={() => {
-              const el = scroller.current;
-              if (!el) return;
-              const inner = el.lastElementChild as HTMLElement | null;
-              const w = (inner?.scrollWidth ?? el.scrollWidth) / zoom;
-              setZoom(Math.max(0.5, Math.min(1, +((el.clientWidth - 24) / w).toFixed(2))));
-              el.scrollTo({ top: 0, left: 0 });
-            }}
-          >
-            <FitScreenIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-      </Box>
+      <Box sx={{ flex: 1, minWidth: 0 }}>{children}</Box>
     </Box>
   );
 }
@@ -985,86 +1090,85 @@ interface StepCtx {
   sel: Selection;
   setSel: (s: Selection) => void;
   onAdd: (path: Path, index: number, t: StepType) => void;
-  narrow: boolean;
   problems: Problems;
   allowed: StepType[];
   here: Record<string, number>;
   onHere: (stepId: string) => void;
   highlight: string | null;
+  details: (s: NonNullable<Selection>) => React.ReactNode;
 }
 
-function Line({ h = 24 }: { h?: number }) {
-  return <Box sx={{ width: 2, height: h, bgcolor: tokens.line, flex: "none" }} />;
-}
-
-function Node({ color, icon, title, text, selected, onClick, dashed, error, stepId, count = 0, onCount, highlight }: {
-  color: string; icon: React.ReactNode; title: string; text: string; selected: boolean; onClick: () => void; dashed?: boolean; error?: boolean;
+function Node({ color, icon, title, text, selected, onClick, error, count = 0, onCount, highlight, children }: {
+  color: string; icon: React.ReactNode; title: string; text: string; selected: boolean; onClick: () => void; error?: boolean;
   /** Steps only: leads waiting here, and the lead being shown is here. */
-  stepId?: string; count?: number; onCount?: () => void; highlight?: boolean;
+  count?: number; onCount?: () => void; highlight?: boolean;
+  /** Its settings, shown inside the card while it's open. */
+  children?: React.ReactNode;
 }) {
+  const open = selected && !!children;
   const edge = error ? tokens.red : highlight ? tokens.amber : selected ? tokens.primary : tokens.divider;
-  const ring = highlight ? tokens.amber : error ? tokens.red : tokens.primary;
   return (
-    <Box data-step={stepId} sx={{ position: "relative", flex: "none" }}>
-    <Box
-      component="button"
-      type="button"
-      onClick={onClick}
-      aria-label={`${title}: ${text}${error ? " (needs fixing)" : ""}`}
-      sx={{
-        width: 300, maxWidth: "calc(100vw - 48px)", display: "flex", gap: 1.25, alignItems: "center", textAlign: "left", font: "inherit", color: "inherit",
-        bgcolor: "background.paper", borderRadius: "8px", p: 1.25, cursor: "pointer", flex: "none", position: "relative",
-        border: `${highlight ? 2 : 1}px ${dashed && !error ? "dashed" : "solid"} ${edge}`,
-        boxShadow: selected || highlight ? `0 0 0 3px color-mix(in srgb, ${ring} 30%, transparent)` : `0 1px 2px ${tokens.shadow}`,
-        transition: "box-shadow .12s, border-color .12s",
-        "&:hover": { borderColor: error ? tokens.red : selected ? tokens.primary : tokens.ink3 },
-        "&:focus-visible": { outline: "none", boxShadow: `0 0 0 3px color-mix(in srgb, ${tokens.primary} 50%, transparent)` },
-      }}
-    >
-      <Box sx={{ width: 32, height: 32, flex: "none", borderRadius: "6px", bgcolor: color, color: "#fff", display: "grid", placeItems: "center", "& svg": { fontSize: 18 } }}>{icon}</Box>
-      <Box sx={{ minWidth: 0, flex: 1 }}>
-        <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase", color: "text.secondary" }}>{title}</Typography>
-        <Typography sx={{ fontSize: 13.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{text}</Typography>
-      </Box>
-      {error && <ErrorOutlineIcon sx={{ fontSize: 18, color: tokens.red, flex: "none" }} />}
-    </Box>
-    {count > 0 && (
-      <Tooltip title={`${count} lead${count === 1 ? "" : "s"} waiting for this step. Show them`}>
-        <Box
-          component="button"
-          type="button"
-          onClick={onCount}
-          aria-label={`${count} lead${count === 1 ? "" : "s"} waiting for this step`}
-          sx={{
-            position: "absolute", top: -9, right: -9, minWidth: 22, height: 22, px: 0.75, borderRadius: "11px", border: `2px solid ${tokens.bg}`,
-            bgcolor: "primary.main", color: "primary.contrastText", font: "inherit", fontSize: 11.5, fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 0.25,
-            "&:hover, &:focus-visible": { outline: "none", filter: "brightness(1.1)" },
-          }}
-        >
-          <PersonIcon sx={{ fontSize: 13 }} />{count}
+    <Box sx={{ position: "relative", bgcolor: "background.paper", borderRadius: "8px", border: `${highlight || open ? 2 : 1}px solid ${edge}`, boxShadow: open ? `0 4px 14px ${tokens.shadow}` : `0 1px 2px ${tokens.shadow}`, transition: "box-shadow .12s, border-color .12s", "&:hover": { borderColor: error ? tokens.red : selected ? tokens.primary : tokens.ink3 } }}>
+      <Box
+        component="button"
+        type="button"
+        onClick={onClick}
+        aria-expanded={open}
+        aria-label={`${title}: ${text}${error ? " (needs fixing)" : ""}. ${open ? "Close" : "Edit"}`}
+        sx={{
+          width: "100%", display: "flex", gap: 1.25, alignItems: "center", textAlign: "left", font: "inherit", color: "inherit",
+          bgcolor: "transparent", border: 0, borderRadius: "8px", p: 1.25, minHeight: 56, cursor: "pointer",
+          borderBottom: open ? `1px solid ${tokens.divider}` : 0,
+          "&:hover .ek-edit": { color: "primary.main" },
+          "&:focus-visible": { outline: `2px solid ${tokens.primary}`, outlineOffset: 2 },
+        }}
+      >
+        <Box sx={{ width: 32, height: 32, flex: "none", borderRadius: "6px", bgcolor: color, color: "#fff", display: "grid", placeItems: "center", "& svg": { fontSize: 18 } }}>{icon}</Box>
+        <Box sx={{ minWidth: 0, flex: 1 }}>
+          <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase", color: "text.secondary" }}>{title}</Typography>
+          <Typography sx={{ fontSize: 13.5, ...(open ? {} : { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }) }}>{text}</Typography>
         </Box>
-      </Tooltip>
-    )}
+        {error && <ErrorOutlineIcon sx={{ fontSize: 18, color: tokens.red, flex: "none" }} />}
+        <Box className="ek-edit" sx={{ display: "flex", alignItems: "center", gap: 0.25, flex: "none", color: open ? "primary.main" : "text.secondary", fontSize: 13, fontWeight: 500, pl: 0.5 }}>
+          <Box component="span" sx={{ display: { xs: "none", sm: "inline" } }}>{open ? "Close" : "Edit"}</Box>
+          <ExpandMoreIcon sx={{ fontSize: 20, transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }} />
+        </Box>
+      </Box>
+      {open && children}
+      {count > 0 && (
+        <Tooltip title={`${count} lead${count === 1 ? "" : "s"} waiting for this step. Show them`}>
+          <Box
+            component="button"
+            type="button"
+            onClick={onCount}
+            aria-label={`${count} lead${count === 1 ? "" : "s"} waiting for this step`}
+            sx={{
+              position: "absolute", top: -9, right: -9, minWidth: 22, height: 22, px: 0.75, borderRadius: "11px", border: `2px solid ${tokens.bg}`,
+              bgcolor: "primary.main", color: "primary.contrastText", font: "inherit", fontSize: 11.5, fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 0.25,
+              "&:hover, &:focus-visible": { outline: "none", filter: "brightness(1.1)" },
+            }}
+          >
+            <PersonIcon sx={{ fontSize: 13 }} />{count}
+          </Box>
+        </Tooltip>
+      )}
     </Box>
   );
 }
 
+/** "Add a step", at the foot of a list. Steps then move up or down from
+ *  their editor, so there's no "+" between every pair. */
 function AddButton({ onPick, allowed }: { onPick: (t: StepType) => void; allowed: StepType[] }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   return (
     <>
-      <Line h={14} />
-      <Tooltip title="Add a step here">
-        <IconButton
-          size="small"
-          onClick={(e) => setAnchor(e.currentTarget)}
-          aria-label="Add a step here"
-          sx={{ width: 26, height: 26, flex: "none", border: `1px solid ${tokens.line}`, bgcolor: "background.paper", "&:hover": { bgcolor: "primary.main", color: "primary.contrastText", borderColor: "primary.main" } }}
-        >
-          <AddIcon sx={{ fontSize: 16 }} />
-        </IconButton>
-      </Tooltip>
-      <Line h={14} />
+      <Button
+        startIcon={<AddIcon />}
+        onClick={(e) => setAnchor(e.currentTarget)}
+        sx={{ justifyContent: "flex-start", width: "100%", minHeight: 44, textTransform: "none", fontWeight: 500, border: `1px dashed ${tokens.line}`, borderRadius: "8px", color: "text.secondary", "&:hover": { borderColor: "primary.main", color: "primary.main", bgcolor: tokens.hover } }}
+      >
+        Add a step
+      </Button>
       <Menu anchorEl={anchor} open={!!anchor} onClose={() => setAnchor(null)}>
         {STEP_TYPES.filter((t) => allowed.includes(t.type)).map((t) => (
           <MenuItem key={t.type} onClick={() => { setAnchor(null); onPick(t.type); }} sx={{ gap: 1.5, minWidth: 250, py: 1 }}>
@@ -1080,89 +1184,55 @@ function AddButton({ onPick, allowed }: { onPick: (t: StepType) => void; allowed
   );
 }
 
-/** A column of steps. Between every pair (and at both ends) sits an add
- *  button on the line, so a step can go anywhere. */
-function StepList({ steps, path, ctx }: { steps: Step[]; path: Path; ctx: StepCtx }) {
+/** Steps on the rail, numbered, with "Add a step" as the last stop. `continues`:
+ *  more follows on the same rail (the main list, then "Stop early if"). */
+function StepList({ steps, path, ctx, continues = false }: { steps: Step[]; path: Path; ctx: StepCtx; continues?: boolean }) {
   return (
-    <>
-      <AddButton onPick={(t) => ctx.onAdd(path, 0, t)} allowed={ctx.allowed} />
-      {steps.map((s, i) => (
-        <Box key={s.id} sx={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-          <Node
-            color={STEP_COLOR[s.type]}
-            icon={STEP_ICON[s.type]}
-            title={stepTitle(s)}
-            text={stepSummary(s)}
-            selected={ctx.sel?.kind === "step" && ctx.sel.id === s.id}
-            error={!!ctx.problems[s.id]}
-            onClick={() => ctx.setSel({ kind: "step", id: s.id })}
-            stepId={s.id}
-            count={ctx.here[s.id]}
-            onCount={() => ctx.onHere(s.id)}
-            highlight={ctx.highlight === s.id}
-          />
-          {s.type === "branch" && <BranchPaths step={s} ctx={ctx} />}
-          <AddButton onPick={(t) => ctx.onAdd(path, i + 1, t)} allowed={ctx.allowed} />
+    <Box>
+      {steps.map((s, i) => {
+        const open = ctx.sel?.kind === "step" && ctx.sel.id === s.id;
+        return (
+          <RailItem key={s.id} marker={i + 1} first={!continues && i === 0}>
+            <Box data-sel={`step:${s.id}`}>
+              <Node
+                color={STEP_COLOR[s.type]}
+                icon={STEP_ICON[s.type]}
+                title={stepTitle(s)}
+                text={stepSummary(s)}
+                selected={open}
+                error={!!ctx.problems[s.id]}
+                onClick={() => ctx.setSel(open ? null : { kind: "step", id: s.id })}
+                count={ctx.here[s.id]}
+                onCount={() => ctx.onHere(s.id)}
+                highlight={ctx.highlight === s.id}
+              >
+                {ctx.details({ kind: "step", id: s.id })}
+              </Node>
+            </Box>
+            {s.type === "branch" && <BranchPaths step={s} ctx={ctx} />}
+          </RailItem>
+        );
+      })}
+      <RailItem marker={<AddIcon sx={{ fontSize: 16 }} />} first={!continues && !steps.length} last={!continues} dashed>
+        <AddButton onPick={(t) => ctx.onAdd(path, steps.length, t)} allowed={ctx.allowed} />
+      </RailItem>
+    </Box>
+  );
+}
+
+/** An if/else's two paths as two labelled boxes under the check, each with
+ *  its own numbered steps. */
+function BranchPaths({ step, ctx }: { step: Extract<Step, { type: "branch" }>; ctx: StepCtx }) {
+  return (
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 1, mt: 1 }}>
+      {(["yes", "no"] as const).map((side) => (
+        <Box key={side} sx={{ border: `1px solid ${side === "yes" ? tokens.greenBorder : tokens.divider}`, bgcolor: side === "yes" ? tokens.greenTint : tokens.surface2, borderRadius: "8px", p: 1.25 }}>
+          <Typography sx={{ fontSize: 13, fontWeight: 600, mb: 1, color: side === "yes" ? tokens.greenDark : tokens.ink2 }}>
+            {side === "yes" ? "If yes" : "If no"}
+          </Typography>
+          <StepList steps={step[side]} path={`${step.id}:${side}`} ctx={ctx} />
         </Box>
       ))}
-    </>
-  );
-}
-
-/**
- * The fork and the join. Each lane draws half of the horizontal rule at its
- * top and bottom (the first lane its right half, the last its left), so the
- * rules always meet at the lanes' centre lines whatever their widths. A
- * stretching line at the foot of each lane carries the shorter one down to
- * the join.
- */
-function BranchPaths({ step, ctx }: { step: Extract<Step, { type: "branch" }>; ctx: StepCtx }) {
-  const lanes = ["yes", "no"] as const;
-  if (ctx.narrow) {
-    // Side by side doesn't fit a phone: stack Yes above No, each marked by a rail.
-    return (
-      <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-        {lanes.map((side) => (
-          <Box key={side} sx={{ display: "flex", flexDirection: "column", alignItems: "center", borderLeft: `3px solid ${side === "yes" ? tokens.green : tokens.outline}`, pl: 1.5, ml: 1.5, mt: 1 }}>
-            <LaneLabel side={side} />
-            <StepList steps={step[side]} path={`${step.id}:${side}`} ctx={ctx} />
-          </Box>
-        ))}
-      </Box>
-    );
-  }
-  const rule = (i: number) => ({
-    content: '""', position: "absolute", height: 2, bgcolor: tokens.line,
-    left: i === 0 ? "50%" : 0, right: i === lanes.length - 1 ? "50%" : 0,
-  });
-  return (
-    <>
-      <Line h={20} />
-      <Box sx={{ display: "flex", alignItems: "stretch" }}>
-        {lanes.map((side, i) => (
-          <Box
-            key={side}
-            sx={{
-              position: "relative", display: "flex", flexDirection: "column", alignItems: "center", px: 2.5, minWidth: 300,
-              "&::before": { ...rule(i), top: 0 },
-              "&::after": { ...rule(i), bottom: 0 },
-            }}
-          >
-            <Line h={16} />
-            <LaneLabel side={side} />
-            <StepList steps={step[side]} path={`${step.id}:${side}`} ctx={ctx} />
-            <Box sx={{ flex: 1, width: 2, minHeight: 12, bgcolor: tokens.line }} />
-          </Box>
-        ))}
-      </Box>
-    </>
-  );
-}
-
-function LaneLabel({ side }: { side: "yes" | "no" }) {
-  return (
-    <Box sx={{ px: 1.25, py: 0.25, borderRadius: "999px", fontSize: 12, fontWeight: 600, flex: "none", bgcolor: side === "yes" ? tokens.greenTint : tokens.surface2, color: side === "yes" ? tokens.greenDark : tokens.ink2, border: `1px solid ${side === "yes" ? tokens.greenBorder : tokens.divider}` }}>
-      {side === "yes" ? "Yes" : "No"}
     </Box>
   );
 }
@@ -1172,7 +1242,7 @@ function Timeline({ wf }: { wf: Workflow }) {
   const rows = useMemo(() => timeline(wf), [wf]);
   if (!rows.length) return null;
   return (
-    <Box sx={{ width: 420, maxWidth: "calc(100vw - 48px)", mt: 4, bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "8px", p: 1.5 }}>
+    <Box sx={{ width: "100%", mt: 4, bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "8px", p: 1.5 }}>
       <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase", color: "text.secondary", mb: 1 }}>How this plays out for one lead</Typography>
       {rows.map((r, i) => (
         <Box key={i} sx={{ display: "grid", gridTemplateColumns: "96px 1fr", gap: 1, fontSize: 13, py: 0.5, borderTop: i ? `1px solid ${tokens.divider2}` : 0 }}>
@@ -1791,7 +1861,7 @@ function StepEditor({ step, trigger, onChange }: { step: Step; trigger: Trigger;
           <AttachmentPicker value={step.attachment} onChange={(attachment) => onChange({ attachment })} />
           <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
             Sent from the EstateKit WhatsApp number to the agent's own.
-            {trigger.kind === "daily_at" ? " It's about their whole day, not one lead." : " Add the Call-and-log link so they can call the lead and log it in one tap."}
+            {trigger.kind === "daily_at" ? " It's about their whole day, not one lead." : " Add the Lead link so they can open the lead and call in one tap."}
           </Typography>
         </>
       );
@@ -1858,59 +1928,7 @@ function StepEditor({ step, trigger, onChange }: { step: Step; trigger: Trigger;
   }
 }
 
-// ── Previews: what each node actually does, on a sample lead ─────────────
-
-const STAGE_COLOR: Record<string, string> = {
-  "New Lead": tokens.primary, "No Answer": tokens.orange, Contacted: tokens.purple, Booked: tokens.green, "Viewing Booked": tokens.green,
-  "Offer Made": tokens.teal, "Mandate Signed": tokens.greenDark, Bought: tokens.greenDark, Lost: tokens.ink3, "Invalid Number": tokens.ink3,
-};
-
-function StageChip({ stage, glow }: { stage: string; glow?: boolean }) {
-  const c = STAGE_COLOR[stage] ?? tokens.ink2;
-  return (
-    <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, fontSize: 12.5, fontWeight: 500, px: 1, py: 0.25, borderRadius: "999px", color: c, bgcolor: `color-mix(in srgb, ${c} 9%, transparent)`, border: `1px solid color-mix(in srgb, ${c} 35%, transparent)`, boxShadow: glow ? `0 0 0 3px color-mix(in srgb, ${c} 22%, transparent)` : "none", whiteSpace: "nowrap" }}>
-      <Box component="span" sx={{ width: 7, height: 7, borderRadius: "50%", bgcolor: c }} />{stage || "…"}
-    </Box>
-  );
-}
-
-/** A lead as it appears in the leads list, so the change is obvious. */
-function LeadRowMock({ stage, next, nextDue, tags = [], newTag, highlight }: { stage: string; next?: string; nextDue?: string; tags?: string[]; newTag?: string; highlight?: "stage" | "next" | "tag" }) {
-  const hl = (on: boolean) => (on ? { bgcolor: tokens.amberTint, outline: "2px solid #ffb300", outlineOffset: 2, borderRadius: "4px" } : {});
-  return (
-    <Box sx={{ border: `1px solid ${tokens.divider}`, borderRadius: "4px", bgcolor: "background.paper", p: 1.25, display: "grid", gap: 0.75 }}>
-      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-        <Box sx={{ width: 32, height: 32, borderRadius: "50%", bgcolor: tokens.primaryBg, color: "primary.main", display: "grid", placeItems: "center", fontSize: 12, fontWeight: 700, flex: "none" }}>TM</Box>
-        <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Typography sx={{ fontSize: 14, fontWeight: 500 }}>{SAMPLE_LEAD.name}</Typography>
-          <Typography sx={{ fontSize: 12, color: "text.secondary" }}>{SAMPLE_LEAD.phone} · Bryanston</Typography>
-        </Box>
-        <Box sx={hl(highlight === "stage")}><StageChip stage={stage} glow={highlight === "stage"} /></Box>
-      </Box>
-      {(next || nextDue) && (
-        <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, fontSize: 13, color: nextDue ? tokens.orange : "text.secondary", ...hl(highlight === "next"), px: highlight === "next" ? 0.5 : 0 }}>
-          {nextDue && <AlarmIcon sx={{ fontSize: 15 }} />}
-          <span>Next: {next}</span>
-          {nextDue && <Box component="span" sx={{ color: "text.secondary" }}>· {nextDue}</Box>}
-        </Box>
-      )}
-      {(tags.length > 0 || newTag !== undefined) && (
-        <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap" }}>
-          {tags.map((t) => <LeadTag key={t} label={t} />)}
-          {newTag !== undefined && <LeadTag label={newTag} highlight={highlight === "tag"} />}
-        </Box>
-      )}
-    </Box>
-  );
-}
-
-function Arrow({ label }: { label: string }) {
-  return (
-    <Box sx={{ display: "flex", alignItems: "center", gap: 1, color: "text.secondary", fontSize: 12.5, pl: 2 }}>
-      <Box sx={{ width: 2, height: 18, bgcolor: tokens.line }} />{label}
-    </Box>
-  );
-}
+// ── Previews: what a message step sends, on a sample lead ────────────────
 
 const when = (d: Date) => d.toLocaleString("en-ZA", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
@@ -1928,141 +1946,25 @@ function EmailPreview({ subject, body, trigger }: { subject: string; body: strin
   );
 }
 
-function NodePreview({ sel, wf, step }: { sel: Selection; wf: Workflow; step: Step | undefined }) {
+/** "What happens", for the steps that send something: the message as it
+ *  arrives. Other steps say what they do on their card already. */
+function NodePreview({ wf, step }: { wf: Workflow; step: Step | undefined }) {
   let body: React.ReactNode = null;
   const first = SAMPLE_LEAD.name.split(" ")[0];
-  if (sel?.kind === "trigger") {
-    const t = wf.trigger;
-    const event =
-      t.kind === "stage_changed" ? <>Agent moves {first} to <StageChip stage={t.stage ?? ""} /></>
-        : t.kind === "lead_created" ? <>{SAMPLE_LEAD.name} fills in the form on your ad</>
-        : t.kind === "came_back" ? <>{SAMPLE_LEAD.name}, already in your leads, fills in your form again</>
-          : t.kind === "no_answer_times" ? <>Agent logs "No answer" for {first} the {ordinal(t.count ?? 1)} time</>
-            : t.kind === "not_contacted_for" ? <>{first} hasn't been called or moved for {unitLabel(t.days ?? 14, "days")}</>
-              : t.kind === "plan_opened" ? <>{first} opens the Marketing Plan link</>
-                : t.kind === "reminder_due" ? <>A reminder for {first} comes due</>
-                  : t.kind === "appointment" ? <>It's {triggerSummary(t)} with {first} ({SAMPLE_FIELDS.appointment})</>
-                  : t.kind === "call_time_picked" ? <>{first} picks a time for a call: {SAMPLE_FIELDS.call_time}</>
-                  : t.kind === "call_time" ? <>It's {triggerSummary(t)} with {first} ({SAMPLE_FIELDS.call_time})</>
-                  : <>It's a weekday and the clock hits {t.time || "16:00"}</>;
+  if (step?.type === "whatsapp_agent" || step?.type === "whatsapp_lead") {
     body = (
       <>
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap", fontSize: 13.5 }}><BoltIcon sx={{ fontSize: 18, color: tokens.primary }} />{event}</Box>
-        <Arrow label={t.kind === "daily_at" ? "This workflow runs once for each agent" : "This workflow starts for that lead"} />
-        {t.kind !== "daily_at" && <LeadRowMock stage={t.kind === "stage_changed" ? t.stage ?? "New Lead" : t.kind === "no_answer_times" ? "No Answer" : t.kind === "lead_created" || t.kind === "came_back" || t.kind === "call_time_picked" || t.kind === "call_time" ? "New Lead" : t.kind === "appointment" ? "Booked" : "Contacted"} highlight={t.kind === "stage_changed" ? "stage" : undefined} />}
+        <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>{step.type === "whatsapp_agent" ? "Arrives on the agent's WhatsApp:" : `Arrives on ${first}'s own WhatsApp:`}</Typography>
+        <WhatsAppPreview lead={SAMPLE_LEAD} text={step.text || " "} sampleFields={sampleFields(wf.trigger)} attachment={step.attachment} />
       </>
     );
-  } else if (sel?.kind === "filters") {
-    body = wf.filters.length ? (
-      <Box sx={{ display: "grid", gap: 0.75 }}>
-        {wf.filters.map((f, i) => (
-          <Box key={i} sx={{ display: "flex", alignItems: "center", gap: 1, fontSize: 13.5 }}>
-            <Box sx={{ width: 20, height: 20, borderRadius: "50%", bgcolor: tokens.greenTint, color: tokens.green, display: "grid", placeItems: "center", fontSize: 13, fontWeight: 700 }}>✓</Box>
-            {filterSummary(f)}
-          </Box>
-        ))}
-        <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>A lead must match all of these to go through. One that misses any is skipped.</Typography>
-      </Box>
-    ) : <Typography sx={{ fontSize: 13.5 }}>No filters: every lead goes through.</Typography>;
-  } else if (sel?.kind === "exits") {
-    const on = wf.exits.filter((x) => x.on);
-    body = on.length ? (
+  } else if (step?.type === "email_lead") {
+    body = (
       <>
-        <LeadRowMock stage="Booked" highlight="stage" />
-        <Arrow label={`${first} booked, so she leaves the workflow`} />
-        <Typography sx={{ fontSize: 13.5 }}>No more messages go to her or about her.</Typography>
+        <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>Lands in {first}'s inbox:</Typography>
+        <EmailPreview subject={step.subject} body={step.body} trigger={wf.trigger} />
       </>
-    ) : <Typography sx={{ fontSize: 13.5, color: tokens.amber }}>Nothing stops it: every step runs, even after she books.</Typography>;
-  } else if (step) {
-    const start = new Date();
-    start.setHours(10, 0, 0, 0);
-    switch (step.type) {
-      case "whatsapp_agent":
-        body = (
-          <>
-            <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>Arrives on the agent's WhatsApp:</Typography>
-            <WhatsAppPreview lead={SAMPLE_LEAD} text={step.text || " "} sampleFields={sampleFields(wf.trigger)} attachment={step.attachment} />
-          </>
-        );
-        break;
-      case "whatsapp_lead":
-        body = (
-          <>
-            <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>Arrives on {first}'s own WhatsApp:</Typography>
-            <WhatsAppPreview lead={SAMPLE_LEAD} text={step.text || " "} sampleFields={sampleFields(wf.trigger)} attachment={step.attachment} />
-          </>
-        );
-        break;
-      case "email_lead":
-        body = (
-          <>
-            <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>Lands in {first}'s inbox:</Typography>
-            <EmailPreview subject={step.subject} body={step.body} trigger={wf.trigger} />
-          </>
-        );
-        break;
-      case "wait": {
-        let next = new Date(start.getTime() + waitMinutes(step) * 60000);
-        const h = next.getHours();
-        const deferred = wf.settings.quietHours && (h >= 20 || h < 8);
-        if (deferred) { next = new Date(next); if (h >= 20) next.setDate(next.getDate() + 1); next.setHours(8, 0, 0, 0); }
-        body = (
-          <Box sx={{ display: "grid", gap: 0.5, fontSize: 13.5 }}>
-            <Box sx={{ display: "flex", gap: 1 }}><Box sx={{ color: "text.secondary", width: 96 }}>Step before</Box><b>{when(start)}</b></Box>
-            <Arrow label={`waits ${unitLabel(step.amount, step.unit)}`} />
-            <Box sx={{ display: "flex", gap: 1 }}><Box sx={{ color: "text.secondary", width: 96 }}>Next step</Box><b>{when(next)}</b></Box>
-            {deferred && <Typography sx={{ fontSize: 12.5, color: tokens.amber }}>Pushed to 08:00 by quiet hours.</Typography>}
-          </Box>
-        );
-        break;
-      }
-      case "set_stage":
-        body = (
-          <>
-            <LeadRowMock stage="New Lead" />
-            <Arrow label={`stage changes to ${step.stage || "…"}`} />
-            <LeadRowMock stage={step.stage} highlight="stage" />
-          </>
-        );
-        break;
-      case "reminder": {
-        const due = new Date(start.getTime() + step.inDays * 86_400_000);
-        body = (
-          <>
-            <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>On the agent's leads list:</Typography>
-            <LeadRowMock stage="No Answer" next={fill(step.label) || "Follow up"} nextDue={step.inDays === 0 ? "due today" : `due ${when(due)}`} highlight="next" />
-          </>
-        );
-        break;
-      }
-      case "tag":
-        body = (
-          <>
-            <LeadRowMock stage="Contacted" />
-            <Arrow label="tag added (staff see it on the lead)" />
-            <LeadRowMock stage="Contacted" newTag={step.tag} highlight="tag" />
-          </>
-        );
-        break;
-      case "branch": {
-        const meta = BRANCH_CHECKS.find((x) => x.check === step.check);
-        const yesLabel = step.check === "opened_last_email" ? "She opened it" : step.check === "has_email" ? "She has an email" : `${meta?.label} ${checkKind(step.check) ? valueLabel(checkKind(step.check)!, step.value) : step.value || "…"}`;
-        body = (
-          <>
-            <Typography sx={{ fontSize: 13.5 }}>The workflow checks {first}: <b>{stepSummary(step)}</b></Typography>
-            <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1 }}>
-              <Box sx={{ border: `1px solid ${tokens.greenBorder}`, bgcolor: tokens.greenTint, borderRadius: "4px", p: 1, fontSize: 12.5 }}>
-                <b style={{ color: tokens.greenDark }}>Yes</b><br />{yesLabel} → the Yes path ({step.yes.length} step{step.yes.length === 1 ? "" : "s"})
-              </Box>
-              <Box sx={{ border: `1px solid ${tokens.divider}`, bgcolor: tokens.surface2, borderRadius: "4px", p: 1, fontSize: 12.5 }}>
-                <b>No</b><br />Otherwise → the No path ({step.no.length} step{step.no.length === 1 ? "" : "s"})
-              </Box>
-            </Box>
-          </>
-        );
-        break;
-      }
-    }
+    );
   }
   if (!body) return null;
   return (

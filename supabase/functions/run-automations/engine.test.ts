@@ -4,7 +4,7 @@
 // lead, paused or deactivated accounts, archived leads...).
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeDb } from "./fakeSupabase";
-import { allowedByLevel, callTimeLabel, runWorkflows, type EngineDeps, type SendResult } from "./workflows";
+import { callTimeLabel, runWorkflows, type EngineDeps, type SendResult } from "./workflows";
 import { FIELDS, sampleFields } from "../../../src/lib/workflow";
 
 (globalThis as unknown as { Deno: unknown }).Deno = {
@@ -82,7 +82,7 @@ beforeEach(() => {
   db = new FakeDb();
   db.tables = {
     workflows: [], workflow_runs: [], workflow_log: [], workflow_emails: [], lead_events: [], leads: [],
-    agent_profiles: [{ agent_id: AGENT, display_name: "Megan Agent", whatsapp_number: "+27820000000", email: "megan@realty.co.za", company: "Realty", automations_paused: false, deactivated_at: null, message_level: "everything" }],
+    agent_profiles: [{ agent_id: AGENT, display_name: "Megan Agent", whatsapp_number: "+27820000000", email: "megan@realty.co.za", company: "Realty", automations_paused: false, deactivated_at: null }],
     pipelines: [{ id: "pS", kind: "seller" }, { id: "pB", kind: "buyer" }],
     lead_pages: [{ id: "pg1", suburb: "Bryanston, Sandton", fb_pixel_id: "123", phone: "0825550000", magnet_kind: null }, { id: "pg2", suburb: "Fourways", fb_pixel_id: null, phone: null, magnet_kind: "none" }],
   };
@@ -651,7 +651,7 @@ describe("the weekday summary", () => {
     enroll(wf, null);
     await tick();
     expect(sent.map((s) => s.text)).toEqual([
-      "Hi Megan\nToday: 1 new lead came in and you updated 1 lead.\n• New Lead: 2\n• No Answer: 1\n• Booked: 1\n1 lead hasn't been called yet (the oldest came in 3 days ago). Call them first tomorrow.",
+      "Hi Megan\nToday: 1 new lead came in and you updated 1 lead.\n• New Lead: 2\n• No Answer: 1\n• Booked: 1\n1 new lead is still waiting for you (the oldest came in 3 days ago). Get to them first tomorrow.",
     ]);
   });
 
@@ -665,7 +665,7 @@ describe("the weekday summary", () => {
     const wf2 = workflow([wa("{{not_called}}")], { trigger: { kind: "daily_at", time: "17:00" } });
     enroll(wf2, null);
     await tick();
-    expect(sent.map((s) => s.text)).toEqual(["Every new lead has been called. Nice work."]);
+    expect(sent.map((s) => s.text)).toEqual(["No new leads are waiting. Nice work."]);
   });
 
   it("the morning follow-up list: one message, each lead counted once, last 14 days only", async () => {
@@ -684,7 +684,7 @@ describe("the weekday summary", () => {
     enroll(wf, null);
     await tick();
     expect(sent.map((s) => s.text)).toEqual([
-      "Morning Megan. 5 leads to follow up:\n• 2 new leads not called yet\n• 1 follow-up due\n• 1 to try again (no answer last time)\n• 1 to check in with (no word for 2+ days)",
+      "Morning Megan. 5 leads to follow up:\n• 2 new leads waiting for you\n• 1 follow-up due\n• 1 to try again (no answer last time)\n• 1 to check in with (no word for 2+ days)",
     ]);
   });
 
@@ -997,34 +997,5 @@ describe("confirmation-style emails", () => {
     const { r } = await send();
     const rec = db.rows("workflow_emails").find((e) => e.run_id === r.id)!;
     expect(rec.resend_id).toBe("re_1");
-  });
-});
-
-describe("how many WhatsApps the agent chose", () => {
-  const LIST = "{{follow_ups}}";
-  it("new-lead alerts always go; the morning list from 'morning' up; everything else only on 'everything'", () => {
-    for (const level of ["new_leads", "morning", "everything"] as const) {
-      expect(allowedByLevel(level, "lead_created", "New lead: {{name}}")).toBe(true);
-      expect(allowedByLevel(level, "came_back", "x")).toBe(true);
-      expect(allowedByLevel(level, "call_time_picked", "x")).toBe(true);
-    }
-    expect(allowedByLevel("new_leads", "daily_at", LIST)).toBe(false);
-    expect(allowedByLevel("morning", "daily_at", LIST)).toBe(true);
-    expect(allowedByLevel("morning", "daily_at", "{{today}}")).toBe(false);
-    expect(allowedByLevel("morning", "appointment", "In 1 hour: {{name}}")).toBe(false);
-    expect(allowedByLevel("morning", "stage_changed", "Did {{first_name}} sign?")).toBe(false);
-    expect(allowedByLevel("everything", "appointment", "x")).toBe(true);
-    expect(allowedByLevel(null, "daily_at", LIST)).toBe(true); // not set: the default, 'morning'
-    expect(allowedByLevel(null, "call_time", "x")).toBe(false);
-  });
-
-  it("a reminder is skipped (not held) for an agent on 'just new leads', and the run carries on", async () => {
-    db.tables.agent_profiles[0].message_level = "new_leads";
-    const wf = workflow([wa("Did {{first_name}} sign?"), tag("after")], { trigger: { kind: "stage_changed", stage: "Booked" } });
-    const r = enroll(wf, lead());
-    await tick();
-    expect(sent).toHaveLength(0);
-    expect(logOf(r)[0]).toBe("WhatsApp the agent: Skipped");
-    expect(runOf(r).status).toBe("completed");
   });
 });
