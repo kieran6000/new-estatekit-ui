@@ -63,7 +63,7 @@ import { useAuth } from "../hooks/useAuth";
 import { ACTIVE_AGENT_EVENT, getActiveAgentIdSync } from "../api/_client";
 import {
   addStandardWorkflows, countLeadsInWorkflows, deleteWorkflow, getWorkflow, isSaved, listAccountWorkflows, listTemplateWorkflows, listWorkflowLog,
-  listWorkflowRuns, saveWorkflow, type LeadInWorkflow, type OpenedWorkflow,
+  lastTriggeredWorkflows, listWorkflowRuns, saveWorkflow, type LeadInWorkflow, type OpenedWorkflow,
 } from "../api/workflows";
 import { useFollowAccount } from "../hooks/useFollowLeadAccount";
 import { listPath, workflowPath, type BackTo, type Scope } from "../lib/automationsPaths";
@@ -160,11 +160,19 @@ function useKnownTags(agentId: string) {
 
 const Loading = () => <Box sx={{ display: "flex", justifyContent: "center", p: 6 }}><CircularProgress /></Box>;
 
-export function WorkflowListPage({ scope }: { scope: Scope }) {
+/** Unsaved edits in the open editor, so the sidebar can ask before it opens
+ *  another automation (the editor's own back button asks the same). */
+let editorDirty = false;
+
+/** The Automations sidebar: "Automations" (search, sort, a switch per row)
+ *  and "Coming up" (everything waiting to go out). On a computer it sits
+ *  left of the open automation; on a phone it's the whole screen. */
+export function WorkflowListPage({ scope, selectedId }: { scope: Scope; selectedId?: string }) {
   const agentId = useAgentId();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const [picker, setPicker] = useState(false);
+  const [pendingNav, setPendingNav] = useState<(() => void) | null>(null);
   useKnownTags(agentId);
   const vocabReady = useAccountVocab(agentId, true);
 
@@ -177,10 +185,13 @@ export function WorkflowListPage({ scope }: { scope: Scope }) {
 
   const { data: workflows, isLoading, isError } = useQuery({ queryKey: ["workflows", agentId], queryFn: () => listAccountWorkflows(agentId), enabled: !!agentId });
   const { data: counts = {} } = useQuery({ queryKey: ["workflowLeadCounts", agentId], queryFn: () => countLeadsInWorkflows(agentId), enabled: !!agentId, refetchInterval: 30_000 });
+  const { data: lastRun = {} } = useQuery({ queryKey: ["workflowLastTriggered", agentId], queryFn: () => lastTriggeredWorkflows(agentId), enabled: !!agentId, refetchInterval: 60_000 });
 
+  // Leaving an automation with unsaved edits asks first.
+  const go = (fn: () => void) => (editorDirty ? setPendingNav(() => fn) : fn());
   const create = (w: Workflow) => {
     setPicker(false);
-    navigate(`${listPath(scope)}/new`, { state: { draft: { ...w, published: false } } });
+    go(() => navigate(`${listPath(scope)}/new`, { state: { draft: { ...w, published: false } } }));
   };
 
   if (!agentId || isLoading || !vocabReady) return <Loading />;
@@ -188,18 +199,34 @@ export function WorkflowListPage({ scope }: { scope: Scope }) {
 
   return (
     <>
-      <WorkflowList agentId={agentId} workflows={workflows ?? []} counts={counts} onCreate={() => setPicker(true)} />
+      <Sidebar
+        agentId={agentId}
+        workflows={workflows ?? []}
+        counts={counts}
+        lastRun={lastRun}
+        selectedId={selectedId}
+        onOpen={(id) => go(() => navigate(workflowPath(id)))}
+        onCreate={() => setPicker(true)}
+      />
       <Dialog open={picker} onClose={() => setPicker(false)} fullWidth maxWidth="sm">
         <DialogTitle>New automation</DialogTitle>
         <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
           {TEMPLATES.map((t) => <TemplateButton key={t.name} name={t.name} blurb={t.blurb} onClick={() => create(t.make())} />)}
         </DialogContent>
       </Dialog>
+      <Dialog open={!!pendingNav} onClose={() => setPendingNav(null)}>
+        <DialogTitle>Leave without saving?</DialogTitle>
+        <DialogContent><Typography sx={{ fontSize: 14 }}>Your changes to this automation will be lost.</Typography></DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPendingNav(null)}>Keep editing</Button>
+          <Button color="error" onClick={() => { const fn = pendingNav; setPendingNav(null); editorDirty = false; fn?.(); }}>Leave</Button>
+        </DialogActions>
+      </Dialog>
     </>
   );
 }
 
-export function WorkflowEditorPage({ scope }: { scope: Scope }) {
+export function WorkflowEditorPage({ scope, embedded = false }: { scope: Scope; embedded?: boolean }) {
   const { id = "" } = useParams();
   const agentId = useAgentId();
   const navigate = useNavigate();
@@ -266,7 +293,9 @@ export function WorkflowEditorPage({ scope }: { scope: Scope }) {
 
   return (
     <Editor
-      key={isNew ? "new" : workflow.id}
+      // Remounts when it's switched on/off from the sidebar.
+      key={isNew ? "new" : `${workflow.id}:${workflow.published}`}
+      embedded={embedded}
       initial={workflow}
       isTemplate={isTemplate}
       backTo={backTo}
@@ -337,35 +366,96 @@ function sendsText(steps: Step[]): string {
   return out.length ? out.join(" + ") : "Updates the lead";
 }
 
-/** The Automations page: one switch per workflow, On ones first, like a
- *  phone's settings. Tap a name to change what it does; "N waiting" shows
- *  who's queued in it (pause, send now, skip). One master switch pauses the
- *  whole account. */
-function WorkflowList({ agentId, workflows, counts, onCreate }: {
-  agentId: string; workflows: Workflow[]; counts: Record<string, number>; onCreate: () => void;
+/** Every word a workflow holds: its messages and emails (subjects and
+ *  bodies), tags, stages, notes. Placeholders count by their plain name too,
+ *  so "first name" finds {{first_name}}. */
+function wordsIn(steps: Step[]): string[] {
+  const out: string[] = [];
+  const walk = (list: Step[]) => list.forEach((s) => {
+    for (const [k, v] of Object.entries(s)) {
+      if (k === "id" || k === "type") continue;
+      if (typeof v === "string" && v.trim()) out.push(v.replace(/\{\{\s*(\w+)\s*\}\}/g, (_m, f: string) => `${f.replace(/_/g, " ")}`));
+    }
+    if (s.type === "branch") { walk(s.yes); walk(s.no); }
+  });
+  walk(steps);
+  return out;
+}
+
+/** Matches when every word typed is somewhere in the workflow. Returns the
+ *  message line it was found in (shown under the row) when the name alone
+ *  wouldn't explain the match, "" when the name does, null for no match. */
+function searchMatch(w: Workflow, query: string): string | null {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return "";
+  const head = `${w.name} ${triggerSummary(w.trigger)} ${sendsText(w.steps)}`.toLowerCase();
+  const texts = wordsIn(w.steps);
+  const all = `${head} ${texts.join(" ")}`.toLowerCase();
+  if (!words.every((x) => all.includes(x))) return null;
+  if (words.every((x) => head.includes(x))) return "";
+  const hit = words.find((x) => !head.includes(x))!;
+  const text = texts.find((t) => t.toLowerCase().includes(hit)) ?? "";
+  const flat = text.replace(/\s+/g, " ");
+  const at = flat.toLowerCase().indexOf(hit);
+  const from = Math.max(0, at - 30);
+  return `${from ? "…" : ""}${flat.slice(from, at + hit.length + 50)}${at + hit.length + 50 < flat.length ? "…" : ""}`;
+}
+
+function ago(iso: string | undefined): string {
+  if (!iso) return "Never triggered";
+  const mins = Math.round((Date.now() - Date.parse(iso)) / 60_000);
+  if (mins < 2) return "Triggered just now";
+  if (mins < 60) return `Triggered ${mins} min ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `Triggered ${hrs}h ago`;
+  const days = Math.round(hrs / 24);
+  return days < 60 ? `Triggered ${days}d ago` : `Triggered ${Math.round(days / 30)} months ago`;
+}
+
+type SortBy = "on" | "recent" | "name";
+const SORT_LABEL: Record<SortBy, string> = { on: "On first", recent: "Last triggered", name: "A–Z" };
+const SORT_KEY = "ek.automations.sort";
+
+function Sidebar({ agentId, workflows, counts, lastRun, selectedId, onOpen, onCreate }: {
+  agentId: string; workflows: Workflow[]; counts: Record<string, number>; lastRun: Record<string, string>;
+  selectedId?: string; onOpen: (id: string) => void; onCreate: () => void;
 }) {
-  const navigate = useNavigate();
   const qc = useQueryClient();
   const showSnack = useSnack();
-  const isDesktop = useMediaQuery("(min-width:900px)");
+  const [tab, setTab] = useState<"automations" | "coming">("automations");
+  const [q, setQ] = useState("");
+  const [sortBy, setSortBy] = useState<SortBy>(() => {
+    try { const v = localStorage.getItem(SORT_KEY); return v === "recent" || v === "name" ? v : "on"; } catch { return "on"; }
+  });
+  const pickSort = (v: SortBy) => { setSortBy(v); try { localStorage.setItem(SORT_KEY, v); } catch { /* fine */ } };
   const [busy, setBusy] = useState<string | null>(null);
-  const [waiting, setWaiting] = useState<Workflow | null>(null);
+  const [pausing, setPausing] = useState(false);
   const { data: profile } = useQuery({ queryKey: ["myProfile"], queryFn: getMyProfile, staleTime: 5 * 60_000 });
   const { data: paused = false } = useQuery({ queryKey: ["automationsPaused", agentId], queryFn: () => getAccountAutomationsPaused(agentId) });
-  const [pausing, setPausing] = useState(false);
+  // A switched-off workflow's queue never sends: the engine cancels each run
+  // when it comes due.
+  const waiting = (w: Workflow) => (w.published ? counts[w.id] ?? 0 : 0);
+  const totalWaiting = workflows.reduce((n, w) => n + waiting(w), 0);
 
-  const byName = (a: Workflow, b: Workflow) => a.name.localeCompare(b.name);
-  const on = workflows.filter((w) => w.published).sort(byName);
-  const off = workflows.filter((w) => !w.published).sort(byName);
+  const matched = workflows.map((w) => ({ w, hit: searchMatch(w, q) })).filter((x) => x.hit !== null);
+  const time = (w: Workflow) => (lastRun[w.id] ? Date.parse(lastRun[w.id]) : 0);
+  matched.sort((a, b) =>
+    sortBy === "name" ? a.w.name.localeCompare(b.w.name)
+    : sortBy === "recent" ? time(b.w) - time(a.w) || a.w.name.localeCompare(b.w.name)
+    : Number(b.w.published) - Number(a.w.published) || a.w.name.localeCompare(b.w.name));
 
   async function toggle(w: Workflow, next: boolean) {
+    // The open automation holds its own copy: unsaved edits there would be
+    // lost or undo this, so it changes there instead.
+    if (w.id === selectedId && editorDirty) { showSnack("Save or undo your changes to it first."); return; }
     const key = ["workflows", agentId];
     setBusy(w.id);
     qc.setQueryData(key, (old: Workflow[] | undefined) => old?.map((x) => (x.id === w.id ? { ...x, published: next } : x)));
     try {
-      await saveWorkflow({ ...w, published: next }, agentId);
+      const saved = await saveWorkflow({ ...w, published: next }, agentId);
+      qc.setQueryData(["workflow", saved.id], { workflow: saved, agentId } satisfies OpenedWorkflow);
       trackActivity("automation_toggled", { agentId, detail: `Workflow ${next ? "on" : "off"}: ${w.name}` });
-      const n = counts[w.id] ?? 0;
+      const n = waiting(w);
       showSnack(next ? `"${w.name}" is on` : `"${w.name}" is off${n ? `. Its ${n} waiting won't send.` : ""}`);
     } catch (e) {
       console.error(e);
@@ -392,82 +482,109 @@ function WorkflowList({ agentId, workflows, counts, onCreate }: {
     }
   }
 
-  const row = (w: Workflow, i: number) => {
-    // A switched-off workflow's queue never sends: the engine cancels each
-    // run when it comes due.
-    const n = w.published ? counts[w.id] ?? 0 : 0;
-    const problems = problemCount(validate(w));
-    const blocked = !w.published && problems > 0;
-    return (
-      <Box key={w.id} sx={{ display: "flex", alignItems: "center", borderTop: i ? `1px solid ${tokens.divider}` : 0, minHeight: 64, opacity: paused ? 0.6 : 1 }}>
-        <Box
-          component="button"
-          type="button"
-          onClick={() => navigate(workflowPath(w.id))}
-          sx={{ flex: 1, minWidth: 0, alignSelf: "stretch", display: "flex", flexDirection: "column", justifyContent: "center", textAlign: "left", font: "inherit", color: "inherit", bgcolor: "transparent", border: 0, px: 2, py: 1.25, cursor: "pointer", "&:hover": { bgcolor: tokens.hover } }}
-        >
-          <Typography sx={{ fontWeight: 500, fontSize: 15 }}>{w.name}<ListFlags w={w} /></Typography>
-          <Typography sx={{ fontSize: 13, color: "text.secondary" }}>{triggerSummary(w.trigger)} · {sendsText(w.steps)}</Typography>
-        </Box>
-        {n > 0 && (
-          <Button size="small" onClick={() => setWaiting(w)} sx={{ flex: "none", minHeight: 44, whiteSpace: "nowrap" }}>
-            {n} waiting
-          </Button>
-        )}
-        <Tooltip title={blocked ? `Open it and fix ${problems === 1 ? "1 thing" : `${problems} things`} first` : ""}>
-          <Box component="span" sx={{ flex: "none", px: 1 }}>
-            <Switch
-              checked={w.published}
-              disabled={busy === w.id || blocked}
-              onChange={(e) => void toggle(w, e.target.checked)}
-              slotProps={{ input: { "aria-label": `${w.name}: ${w.published ? "on" : "off"}` } }}
-            />
-          </Box>
-        </Tooltip>
-      </Box>
-    );
-  };
-
-  const group = (title: string, list: Workflow[]) => list.length > 0 && (
-    <Box sx={{ mb: 3 }}>
-      <Typography sx={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: "text.secondary", px: 0.5, mb: 1 }}>{title}</Typography>
-      <Box sx={{ border: `1px solid ${tokens.divider}`, borderRadius: "8px", bgcolor: "background.paper", overflow: "hidden" }}>{list.map(row)}</Box>
-    </Box>
-  );
-
   return (
-    <Box sx={{ maxWidth: 760, mx: "auto", p: 2, pb: 6 }}>
-      <Typography component="h1" sx={{ fontSize: 22, fontWeight: 500, mb: 2 }}>Automations</Typography>
-
-      {/* Master switch: pauses everything for this account, queue included. */}
-      <Box sx={{ display: "flex", alignItems: "center", gap: 1, border: `1px solid ${tokens.divider}`, borderRadius: "8px", bgcolor: "background.paper", pl: 2, pr: 1, py: 1, mb: 3, minHeight: 64 }}>
+    <Box sx={{ height: "100%", display: "flex", flexDirection: "column", bgcolor: "background.paper", minHeight: 0 }}>
+      {/* Account-wide switch: pauses everything at once, queue included. */}
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1, px: 2, pt: 1.5, pb: 1, flex: "none" }}>
         <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Typography sx={{ fontWeight: 600, fontSize: 15 }}>{paused ? "Automations are paused" : "Automations are on"}</Typography>
-          <Typography sx={{ fontSize: 13, color: "text.secondary" }}>
-            {paused ? `Nothing sends for ${profile?.displayName || "this account"} until you switch this back on.` : `For ${profile?.displayName || "this account"}. Switch off to pause everything at once.`}
+          <Typography component="h1" sx={{ fontSize: 18, fontWeight: 600 }}>Automations</Typography>
+          <Typography noWrap sx={{ fontSize: 12.5, color: paused ? tokens.orange : "text.secondary" }}>
+            {profile?.displayName || "This account"} · {paused ? "All paused" : "Running"}
           </Typography>
         </Box>
-        <Switch checked={!paused} disabled={pausing} onChange={(e) => void setPaused(!e.target.checked)} slotProps={{ input: { "aria-label": "Automations on for this account" } }} />
+        <Tooltip title={paused ? "Turn automations back on for this account" : "Pause every automation for this account"}>
+          <Switch checked={!paused} disabled={pausing} onChange={(e) => void setPaused(!e.target.checked)} slotProps={{ input: { "aria-label": "Automations on for this account" } }} />
+        </Tooltip>
       </Box>
 
-      <StandardSetBar agentId={agentId} workflows={workflows} />
-      {group(`On (${on.length})`, on)}
-      {group(`Off (${off.length})`, off)}
+      <Tabs value={tab} onChange={(_, v) => setTab(v)} variant="fullWidth" sx={{ flex: "none", borderBottom: `1px solid ${tokens.divider}`, minHeight: 44, "& .MuiTab-root": { minHeight: 44, textTransform: "none", fontSize: 14 } }}>
+        <Tab value="automations" label={`Automations (${workflows.length})`} />
+        <Tab value="coming" label={`Coming up${totalWaiting ? ` (${totalWaiting})` : ""}`} />
+      </Tabs>
 
-      <Button startIcon={<AddIcon />} onClick={onCreate} sx={{ minHeight: 44 }}>New automation</Button>
-
-      <Dialog open={!!waiting} onClose={() => setWaiting(null)} fullWidth maxWidth="sm" fullScreen={!isDesktop}>
-        <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1, pr: 1 }}>
-          <Box sx={{ flex: 1, minWidth: 0 }}>
-            {waiting?.name}
-            <Typography sx={{ fontSize: 13, color: "text.secondary" }}>Waiting to go out, soonest first</Typography>
+      {tab === "automations" ? (
+        <>
+          <Box sx={{ display: "flex", gap: 1, alignItems: "center", px: 1.5, py: 1.25, flex: "none" }}>
+            <TextField
+              size="small"
+              placeholder="Search names and messages"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              fullWidth
+              slotProps={{ input: {
+                startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment>,
+                endAdornment: q ? <InputAdornment position="end"><IconButton size="small" aria-label="Clear search" onClick={() => setQ("")}><CloseIcon fontSize="small" /></IconButton></InputAdornment> : null,
+              } }}
+            />
+            <Tooltip title="New automation">
+              <IconButton onClick={onCreate} aria-label="New automation" sx={{ flex: "none", width: 40, height: 40, border: `1px solid ${tokens.divider}` }}><AddIcon /></IconButton>
+            </Tooltip>
           </Box>
-          <IconButton aria-label="Close" onClick={() => setWaiting(null)} sx={{ width: 44, height: 44 }}><CloseIcon /></IconButton>
-        </DialogTitle>
-        <DialogContent dividers sx={{ p: 0 }}>
-          {waiting && <WaitingList workflowId={waiting.id} agentId={agentId} />}
-        </DialogContent>
-      </Dialog>
+          <Box sx={{ display: "flex", alignItems: "center", px: 2, pb: 0.5, flex: "none" }}>
+            <Typography sx={{ fontSize: 12.5, color: "text.secondary", flex: 1 }}>
+              {q ? `${matched.length} found` : `${workflows.filter((w) => w.published).length} on · ${workflows.filter((w) => !w.published).length} off`}
+            </Typography>
+            <TextField
+              select
+              size="small"
+              variant="standard"
+              value={sortBy}
+              onChange={(e) => pickSort(e.target.value as SortBy)}
+              slotProps={{ input: { disableUnderline: true, "aria-label": "Sort" } }}
+              sx={{ "& .MuiSelect-select": { fontSize: 12.5, py: 0.25 } }}
+            >
+              {(Object.keys(SORT_LABEL) as SortBy[]).map((k) => <MenuItem key={k} value={k} sx={{ fontSize: 14 }}>Sort: {SORT_LABEL[k]}</MenuItem>)}
+            </TextField>
+          </Box>
+
+          <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", borderTop: `1px solid ${tokens.divider}` }}>
+            <StandardSetBar agentId={agentId} workflows={workflows} />
+            {matched.map(({ w, hit }) => {
+              const n = waiting(w);
+              const problems = problemCount(validate(w));
+              const blocked = !w.published && problems > 0;
+              const selected = w.id === selectedId;
+              return (
+                <Box key={w.id} sx={{ display: "flex", alignItems: "center", borderBottom: `1px solid ${tokens.divider}`, bgcolor: selected ? tokens.primaryBg : "transparent", boxShadow: selected ? `inset 3px 0 0 ${tokens.primary}` : "none", opacity: paused ? 0.6 : 1 }}>
+                  <Box
+                    component="button"
+                    type="button"
+                    onClick={() => onOpen(w.id)}
+                    aria-current={selected ? "page" : undefined}
+                    sx={{ flex: 1, minWidth: 0, alignSelf: "stretch", display: "flex", flexDirection: "column", justifyContent: "center", textAlign: "left", font: "inherit", color: "inherit", bgcolor: "transparent", border: 0, pl: 2, pr: 0.5, py: 1.25, minHeight: 64, cursor: "pointer", "&:hover": { bgcolor: selected ? "transparent" : tokens.hover } }}
+                  >
+                    <Typography sx={{ fontWeight: 500, fontSize: 14.5, lineHeight: 1.35 }}>{w.name}<ListFlags w={w} /></Typography>
+                    <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
+                      {ago(lastRun[w.id])}{n > 0 && <Box component="span" sx={{ color: tokens.primary, fontWeight: 500 }}> · {n} waiting</Box>}
+                    </Typography>
+                    {hit && <Typography sx={{ fontSize: 12.5, color: "text.secondary", fontStyle: "italic", mt: 0.25, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>“{hit}”</Typography>}
+                  </Box>
+                  <Tooltip title={blocked ? `Open it and fix ${problems === 1 ? "1 thing" : `${problems} things`} first` : w.published ? "On" : "Off"}>
+                    <Box component="span" sx={{ flex: "none", pr: 1 }}>
+                      <Switch
+                        checked={w.published}
+                        disabled={busy === w.id || blocked}
+                        onChange={(e) => void toggle(w, e.target.checked)}
+                        slotProps={{ input: { "aria-label": `${w.name}: ${w.published ? "on" : "off"}` } }}
+                      />
+                    </Box>
+                  </Tooltip>
+                </Box>
+              );
+            })}
+            {!matched.length && workflows.length > 0 && (
+              <Box sx={{ textAlign: "center", py: 5, px: 2 }}>
+                <Typography sx={{ color: "text.secondary" }}>Nothing has "{q}" in it.</Typography>
+                <Button onClick={() => setQ("")} sx={{ mt: 1 }}>Clear search</Button>
+              </Box>
+            )}
+          </Box>
+        </>
+      ) : (
+        <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+          <WaitingList agentId={agentId} />
+        </Box>
+      )}
     </Box>
   );
 }
@@ -516,7 +633,7 @@ function useHistory(initial: Workflow) {
 /** What Save stores: anything else (ids aside) is screen state. */
 const snapshot = (w: Workflow) => JSON.stringify({ n: w.name, p: w.published, t: w.trigger, f: w.filters, s: w.steps, e: w.exits, o: w.settings, d: w.standard });
 
-function Editor({ initial, isTemplate, backTo, onSave, onCopyToTemplates, onBack, onDelete }: {
+function Editor({ initial, isTemplate, backTo, onSave, onCopyToTemplates, onBack, onDelete, embedded = false }: {
   initial: Workflow;
   isTemplate: boolean;
   backTo: BackTo;
@@ -524,6 +641,8 @@ function Editor({ initial, isTemplate, backTo, onSave, onCopyToTemplates, onBack
   onCopyToTemplates?: (w: Workflow) => Promise<void>;
   onBack: () => void;
   onDelete: () => void;
+  /** Beside the Automations sidebar: no back button. */
+  embedded?: boolean;
 }) {
   const isDesktop = useMediaQuery("(min-width:1000px)");
   const isPhone = useMediaQuery("(max-width:599px)");
@@ -543,6 +662,11 @@ function Editor({ initial, isTemplate, backTo, onSave, onCopyToTemplates, onBack
     const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+  // …and so does opening another one from the sidebar.
+  useEffect(() => {
+    editorDirty = dirty;
+    return () => { editorDirty = false; };
   }, [dirty]);
 
   // The tab, the lead being shown (?run=) and the step the Leads tab is
@@ -694,7 +818,7 @@ function Editor({ initial, isTemplate, backTo, onSave, onCopyToTemplates, onBack
     // canvas and the details panel each scroll on their own.
     <Box sx={{ height: "calc(100dvh - var(--ek-nav-h))", display: "flex", flexDirection: "column", minHeight: 420 }}>
       <Box sx={{ display: "flex", alignItems: "center", gap: { xs: 0.5, sm: 1 }, px: { xs: 0.5, sm: 1.5 }, height: 56, flex: "none", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
-        {isDesktop ? (
+        {embedded ? null : isDesktop ? (
           <Button startIcon={<ArrowBackIcon />} onClick={back} sx={{ textTransform: "none", color: "text.primary", flex: "none" }} aria-label={`Back to ${backTo.label.toLowerCase()}`}>
             {backTo.label}
           </Button>

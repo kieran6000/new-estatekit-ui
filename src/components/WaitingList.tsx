@@ -56,6 +56,8 @@ type Patch = { status?: "pending" | "paused" | "cancelled"; run_at?: string };
 
 interface Row {
   id: string;
+  workflowId: string;
+  workflow: string;
   status: WorkflowRunRow["status"];
   lead: { id: string; name: string };
   isWhatsApp: boolean;
@@ -70,7 +72,9 @@ function StatusChip({ status }: { status: string }) {
   return null;
 }
 
-export default function WaitingList({ workflowId, agentId }: { workflowId: string; agentId: string }) {
+/** One workflow's queue, or (no workflowId) the whole account's, each row
+ *  naming its workflow. */
+export default function WaitingList({ workflowId, agentId }: { workflowId?: string; agentId: string }) {
   const navigate = useNavigate();
   const location = useLocation();
   const qc = useQueryClient();
@@ -102,7 +106,7 @@ export default function WaitingList({ workflowId, agentId }: { workflowId: strin
 
   // A weekday summary has no lead.
   const rows = runs
-    .filter((w) => w.workflow?.id === workflowId)
+    .filter((w) => !workflowId || w.workflow?.id === workflowId)
     .map((w): Row => {
       const step = workflowStepAt(w);
       const isWhatsApp = step?.type === "whatsapp_agent";
@@ -110,7 +114,7 @@ export default function WaitingList({ workflowId, agentId }: { workflowId: strin
       const quietHoursApply = (isWhatsApp && def?.trigger?.kind !== "lead_created" && def?.settings?.quietHours !== false) || (step?.type === "email_lead" && !!def?.settings?.quietHours);
       const sendAt = effectiveSendTime(w.run_at, quietHoursApply);
       return {
-        id: w.id, status: w.status, lead: { id: w.lead?.id ?? "", name: w.lead?.name ?? "Daily summary" }, isWhatsApp, sendAt,
+        id: w.id, workflowId: w.workflow?.id ?? "", workflow: w.workflow?.name ?? "Automation", status: w.status, lead: { id: w.lead?.id ?? "", name: w.lead?.name ?? "Daily summary" }, isWhatsApp, sendAt,
         held: quietHoursApply && sendAt.getTime() > Math.max(Date.parse(w.run_at), Date.now()) + 60_000,
         step: step ? (step.type === "whatsapp_agent" ? "WhatsApp to the agent" : step.type === "whatsapp_lead" ? "WhatsApp to the lead" : step.type === "email_lead" ? "Email to the lead" : stepTitle(step)) : "Finishes the workflow",
       };
@@ -132,7 +136,7 @@ export default function WaitingList({ workflowId, agentId }: { workflowId: strin
       {rows.map((r, i) => (
         <Box
           key={r.id}
-          onClick={() => navigate(`${workflowPath(workflowId)}?run=${r.id}`, { state: { back } })}
+          onClick={() => navigate(`${workflowPath(r.workflowId)}?run=${r.id}`, { state: { back } })}
           sx={{ display: "flex", alignItems: "center", gap: 1, borderTop: i ? `1px solid ${tokens.divider}` : 0, p: "10px 6px 10px 16px", minHeight: 60, cursor: "pointer", opacity: busyId === r.id ? 0.5 : 1, "&:hover": { bgcolor: tokens.hover } }}
         >
           <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -145,7 +149,7 @@ export default function WaitingList({ workflowId, agentId }: { workflowId: strin
             </Typography>
             <Typography component="div" sx={{ fontSize: 12.5, color: "text.secondary", display: "flex", alignItems: "center", gap: 0.5, flexWrap: "wrap" }}>
               {r.isWhatsApp && <WhatsAppIcon sx={{ fontSize: 14 }} />}
-              <span>{r.step} ·</span>
+              <span>{workflowId ? r.step : r.workflow} ·</span>
               <Box component="span" sx={{ color: r.status === "paused" ? "text.secondary" : tokens.primary, fontWeight: 500 }}>
                 {r.status === "processing" ? "Sending now" : relative(r.sendAt)}
               </Box>
@@ -164,7 +168,7 @@ export default function WaitingList({ workflowId, agentId }: { workflowId: strin
           </IconButton>
         </Box>
       ))}
-      {!rows.length && <Typography sx={{ color: "text.secondary", textAlign: "center", py: 5 }}>Nobody is waiting in this one right now.</Typography>}
+      {!rows.length && <Typography sx={{ color: "text.secondary", textAlign: "center", py: 5 }}>{workflowId ? "Nobody is waiting in this one right now." : "Nothing is waiting to go out."}</Typography>}
 
       <Menu anchorEl={menu?.el} open={!!menu} onClose={() => setMenu(null)}>
         {m && (m.status === "paused" ? (
