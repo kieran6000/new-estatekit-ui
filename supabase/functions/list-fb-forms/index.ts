@@ -101,15 +101,21 @@ function messageOf(e: unknown): string {
 }
 
 async function fetchForms(pageId: string, token: string): Promise<FbForm[]> {
-  const res = await fetch(
-    `${GRAPH}/${pageId}/leadgen_forms?fields=id,name,status&limit=200&access_token=${token}`,
-  );
-  const data = await res.json();
-  throwIfRateLimited(data);
-  if (!res.ok || data.error) {
-    throw data.error || { message: `HTTP ${res.status}` };
+  // Facebook may return fewer than asked per page: follow its "next" link
+  // (up to 10 pages) so no form is missing from the list.
+  const out: FbForm[] = [];
+  let url: string | null = `${GRAPH}/${pageId}/leadgen_forms?fields=id,name,status&limit=100&access_token=${token}`;
+  for (let i = 0; url && i < 10; i++) {
+    const res = await fetch(url);
+    const data = await res.json();
+    throwIfRateLimited(data);
+    if (!res.ok || data.error) {
+      throw data.error || { message: `HTTP ${res.status}` };
+    }
+    for (const f of data.data || []) out.push({ id: f.id, name: f.name, status: f.status });
+    url = data.paging?.next ?? null;
   }
-  return (data.data || []).map((f: FbForm) => ({ id: f.id, name: f.name, status: f.status }));
+  return out;
 }
 
 // leadgen_forms needs a PAGE access token. Pages shared through Business
@@ -163,7 +169,8 @@ Deno.serve(async (req) => {
     // See get-fb-form: deliberate one-off override to warm the cache.
     const force = body.force === true;
     const throttled = !force && (await backoffActive());
-    if (cached && (isFresh(cached.fetched_at) || throttled)) {
+    // "Refresh the list" (force) must reach Facebook even when the saved list is recent.
+    if (!force && cached && (isFresh(cached.fetched_at) || throttled)) {
       return json({ ...(cached.payload as Record<string, unknown>), cached: true });
     }
     if (throttled) return json({ error: "rate_limited" }, 503);
