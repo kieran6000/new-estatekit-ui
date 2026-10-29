@@ -246,7 +246,7 @@ export const FIELDS = {
   whatsapp_agent: ["first_name", "name", "lead_type", "phone", "email", "address", "form", "answers", "form_answers", "note", "appointment", "call_time", "stage", "next_label", "action_link"],
   // Never the call-and-log link: that's the agent's.
   whatsapp_lead: ["first_name", "area", "address", "form_answers", "note", "appointment", "call_time", "whatsapp_link", "agent_name", "agent_phone"],
-  daily: ["first_name", "count", "leads_word", "today", "pipeline", "not_called"],
+  daily: ["first_name", "count", "leads_word", "follow_ups", "today", "pipeline", "not_called"],
   email_lead: ["first_name", "area", "address", "form_answers", "note", "appointment", "call_time", "lead_magnet", "recent_sales", "whatsapp_link", "agent_name", "agent_phone", "plan_link"],
 } as const;
 export type FieldSet = keyof typeof FIELDS;
@@ -295,6 +295,7 @@ const INFO: Record<string, FieldInfo> = {
   plan_link: { label: "Marketing plan link", example: "leads.estatekit.co/plan/…", group: "Links" },
   count: { label: "Leads to call today", example: "7 leads", group: "Their day" },
   leads_word: { label: "\"lead\" or \"leads\"", example: "leads", group: "Their day" },
+  follow_ups: { label: "Follow-up list", example: "• 2 new leads not called yet\n• 3 follow-ups due\n• 1 to try again (no answer last time)", group: "Their day" },
   today: { label: "Today's activity", example: "Today: 3 new leads came in and you updated 5 leads.", group: "Their day" },
   pipeline: { label: "Pipeline by stage", example: "• New Lead: 2\n• No Answer: 4\n• Contacted: 6\n• Booked: 3", group: "Their day" },
   not_called: { label: "Leads not called yet", example: "2 leads haven't been called yet (the oldest came in 1 day ago). Call them first tomorrow.", group: "Their day" },

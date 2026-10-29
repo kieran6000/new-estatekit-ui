@@ -106,7 +106,11 @@ export interface AgentProfile {
   leadConfirmationEmail: boolean;
   /** This agent's own wording for the email's main text; null = the standard. */
   leadEmailBody: string | null;
+  /** How many WhatsApps EstateKit sends them (Account → WhatsApp messages). */
+  messageLevel: MessageLevel;
 }
+
+export type MessageLevel = "new_leads" | "morning" | "everything";
 
 interface ProfileRow {
   agent_id: string;
@@ -129,6 +133,7 @@ interface ProfileRow {
   onboarded: boolean;
   lead_confirmation_email: boolean | null;
   lead_email_body: string | null;
+  message_level?: MessageLevel | null;
 }
 
 function rowToProfile(r: ProfileRow): AgentProfile {
@@ -153,6 +158,7 @@ function rowToProfile(r: ProfileRow): AgentProfile {
     onboarded: r.onboarded,
     leadConfirmationEmail: r.lead_confirmation_email === true,
     leadEmailBody: r.lead_email_body ?? null,
+    messageLevel: r.message_level ?? "morning",
   };
 }
 
@@ -212,6 +218,7 @@ export async function upsertProfile(
   if (patch.onboarded !== undefined) row.onboarded = patch.onboarded;
   if (patch.leadConfirmationEmail !== undefined) row.lead_confirmation_email = patch.leadConfirmationEmail;
   if (patch.leadEmailBody !== undefined) row.lead_email_body = patch.leadEmailBody;
+  if (patch.messageLevel !== undefined) row.message_level = patch.messageLevel;
 
   const { error } = await supabase
     .from("agent_profiles")

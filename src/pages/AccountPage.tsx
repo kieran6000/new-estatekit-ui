@@ -34,6 +34,7 @@ import { Link as RouterLink } from "react-router-dom";
 import { trackActivity } from "../lib/activity";
 import AccountSwitcher from "../components/AccountSwitcher";
 import AppearanceSetting from "../components/AppearanceSetting";
+import MessagesSetting from "../components/MessagesSetting";
 import { tokens } from "../theme";
 import { MAX_IMAGE_BYTES, uploadImage } from "../lib/image";
 
@@ -321,6 +322,8 @@ export default function AccountPage() {
                 <TextField label="Company / agency" value={form.company} onChange={(e) => update("company", e.target.value)} fullWidth />
               </CardContent>
             </Card>
+
+            {profile && <MessagesSetting profile={profile} />}
 
             <AppearanceSetting />
 
