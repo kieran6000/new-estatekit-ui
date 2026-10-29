@@ -380,6 +380,7 @@ export default function LeadPagePage() {
             <LeadMagnetCard key={`lm-${page.id}`} page={page} pipelineKind={pipeline.kind} canSetUp={canSetUp} />
           </>}
           page={page}
+          onUpdateSlug={canSetUp ? (slug) => updatePage.mutate({ id: page.id, patch: { slug } }) : undefined}
           pipelineName={pipeline.name}
           fbPageId={profile?.fbPageId || null}
           pageName={[profile?.displayName, profile?.company].filter(Boolean).join(" - ") || page.fbFormName || page.name}
@@ -698,6 +699,7 @@ function FbFormSource({
   tab,
   extras,
   page,
+  onUpdateSlug,
   pipelineName,
   fbPageId,
   pageName,
@@ -706,6 +708,7 @@ function FbFormSource({
   tab: PageTab;
   extras: React.ReactNode;
   page: LeadPage;
+  onUpdateSlug?: (slug: string) => void;
   pipelineName: string;
   fbPageId: string | null;
   pageName: string;
@@ -730,6 +733,17 @@ function FbFormSource({
   // The instant form's end-screen button: people who finish the form land on
   // this form's thank-you page and still get the lead magnet (general version).
   const thanksUrl = `https://leads.estatekit.co/thank-you?p=${page.slug}`;
+  const [editingSlug, setEditingSlug] = useState(false);
+  const [slugDraft, setSlugDraft] = useState(page.slug);
+  function saveSlug() {
+    const clean = slugDraft.toLowerCase().trim().replace(/[^a-z0-9-]+/g, "-").replace(/(^-|-$)/g, "");
+    if (clean && clean !== page.slug) {
+      onUpdateSlug?.(clean);
+      trackActivity("page_link_changed", { agentId: page.agentId, page: { name: page.name, slug: clean }, detail: `thank-you?p=${page.slug} → thank-you?p=${clean}. Update the form's end-screen link in Facebook.` });
+      showSnack("Link renamed. Update the end-screen link in Facebook.");
+    }
+    setEditingSlug(false);
+  }
   function copyThanks() {
     navigator.clipboard.writeText(thanksUrl).then(() => showSnack("Link copied"), () => showSnack("Couldn't copy. Select the link and copy it."));
   }
@@ -749,7 +763,28 @@ function FbFormSource({
               In Facebook, open this form, go to the end screen (Completion) and set the button&apos;s website link to:
             </Typography>
             <Box sx={{ display: "flex", gap: 1, flexDirection: { xs: "column", sm: "row" } }}>
-              <TextField size="small" value={thanksUrl} fullWidth slotProps={{ htmlInput: { readOnly: true, onFocus: (e: React.FocusEvent<HTMLInputElement>) => e.target.select() } }} />
+              {editingSlug ? (
+                <TextField
+                  size="small"
+                  fullWidth
+                  autoFocus
+                  value={slugDraft}
+                  onChange={(e) => setSlugDraft(e.target.value)}
+                  onBlur={saveSlug}
+                  onKeyDown={(e) => { if (e.key === "Enter") saveSlug(); if (e.key === "Escape") setEditingSlug(false); }}
+                  helperText="Enter to save. Anyone using the old link in Facebook needs it updated."
+                  slotProps={{ input: { startAdornment: <InputAdornment position="start" sx={{ mr: 0 }}><Box component="span" sx={{ fontSize: 13, color: "text.disabled" }}>…/thank-you?p=</Box></InputAdornment> } }}
+                />
+              ) : (
+                <TextField
+                  size="small"
+                  value={thanksUrl}
+                  fullWidth
+                  title={onUpdateSlug ? "Click to rename the link" : undefined}
+                  onClick={() => { if (!onUpdateSlug) return; setSlugDraft(page.slug); setEditingSlug(true); }}
+                  slotProps={{ htmlInput: { readOnly: true }, input: { sx: { cursor: onUpdateSlug ? "pointer" : "default" } } }}
+                />
+              )}
               <Button variant="outlined" startIcon={<ContentCopyIcon fontSize="small" />} onClick={copyThanks} sx={{ flexShrink: 0, minHeight: 40 }}>
                 Copy link
               </Button>
