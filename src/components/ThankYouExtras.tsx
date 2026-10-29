@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { Box, Button, CircularProgress, Typography } from "@mui/material";
+import { Box, Button, CircularProgress, TextField, Typography } from "@mui/material";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import { supabase } from "../api/_client";
 import { readableOn } from "../lib/contrast";
 import CallTimeStep, { CALL_TIME_CONFIRM, callTimeIncomplete } from "./CallTimeStep";
+import { formatLeadPhone, leadPhoneMessage, leadPhoneProblem } from "../lib/leadPhone";
 
 // The thank-you page's call-time ask, set per form (Forms → Thank-you page).
 // The video sits under the headline (ThankYouPage).
@@ -11,16 +12,24 @@ import CallTimeStep, { CALL_TIME_CONFIRM, callTimeIncomplete } from "./CallTimeS
 export const CALL_QUESTION = "When suits you for a quick call?";
 
 /** "When suits you for a quick call?" with Day and Time, then Confirm. Saved
- *  on the lead with their private code (set_call_time). Only shown when we
- *  know who they are (leads from our own forms). */
-export function ThankYouCallTime({ token, preview, accent, agentName, question }: { token: string; preview?: boolean; accent: string; agentName: string; question?: string | null }) {
+ *  on the lead with their private code (set_call_time) when we know who they
+ *  are (leads from our own forms). From a Facebook instant form's end button
+ *  we don't: they type their number once (byPhone) and request_call_time
+ *  matches it to their lead, now or when it arrives. */
+export function ThankYouCallTime({ token, slug, byPhone, preview, accent, agentName, question }: { token: string; slug?: string; byPhone?: boolean; preview?: boolean; accent: string; agentName: string; question?: string | null }) {
   const agentFirst = (agentName || "").trim().split(/\s+/)[0] || "We";
   const [value, setValue] = useState("");
+  const [phone, setPhone] = useState("");
+  const [phoneError, setPhoneError] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState("");
 
   async function confirm() {
+    if (byPhone) {
+      const problem = leadPhoneProblem(phone);
+      if (problem) { setPhoneError(leadPhoneMessage(problem)); return; }
+    }
     if (!value || callTimeIncomplete(value)) {
       setError(!value ? "Please pick a day and a time." : value.startsWith(",") ? "Please pick a day too." : "Please pick a time too.");
       return;
@@ -32,7 +41,9 @@ export function ThankYouCallTime({ token, preview, accent, agentName, question }
     setBusy(true);
     setError("");
     try {
-      const { data, error: e } = await supabase.rpc("set_call_time", { p_token: token, p_value: value });
+      const { data, error: e } = byPhone
+        ? await supabase.rpc("request_call_time", { p_slug: slug ?? "", p_phone: phone, p_value: value })
+        : await supabase.rpc("set_call_time", { p_token: token, p_value: value });
       if (e || data !== true) throw e ?? new Error("not saved");
       setSaved(value);
     } catch (err) {
@@ -59,6 +70,24 @@ export function ThankYouCallTime({ token, preview, accent, agentName, question }
 
   return (
     <Box sx={{ mt: 3.5, pt: 1.5, borderTop: "1px solid #eee", textAlign: "left" }}>
+      {byPhone && (
+        <Box sx={{ mb: 2.5 }}>
+          <Typography sx={{ fontSize: 18, fontWeight: 600, mb: 1 }}>The WhatsApp number you gave us</Typography>
+          <TextField
+            placeholder="082 000 0000"
+            value={phone}
+            onChange={(e) => {
+              const v = e.target.value;
+              setPhone(e.target.selectionStart === v.length ? formatLeadPhone(v) : v);
+              setPhoneError("");
+            }}
+            fullWidth
+            error={!!phoneError}
+            helperText={phoneError || "So we can match this time to your details."}
+            slotProps={{ htmlInput: { inputMode: "tel", autoComplete: "tel" } }}
+          />
+        </Box>
+      )}
       <CallTimeStep
         question={question?.trim() || CALL_QUESTION}
         required={false}

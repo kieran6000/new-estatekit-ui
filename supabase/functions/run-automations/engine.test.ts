@@ -391,6 +391,16 @@ describe("sending limits and failures", () => {
     expect(sent.map((s) => s.phone)).toEqual(["+27820000000"]);
   });
 
+  it("an extra person's rate-limited copy is tried again for them alone", async () => {
+    db.tables.agent_profiles[0].alert_contacts = [{ name: "Stanley", phone: "+27631525310" }];
+    sendResults = ["sent", "rate_limited", "sent"];
+    const wf = workflow([wa("hello")], { trigger: { kind: "lead_created" } });
+    const r = enroll(wf, lead());
+    await tick();
+    expect(sent.map((s) => s.phone)).toEqual(["+27820000000", "+27631525310", "+27631525310"]);
+    expect(String(db.rows("workflow_log").find((x) => x.run_id === r.id)?.detail)).toContain("Also sent to Stanley");
+  });
+
   it("an extra person's failed send is logged, not retried (the agent never gets it twice)", async () => {
     db.tables.agent_profiles[0].alert_contacts = [{ name: "Stanley", phone: "+27631525310" }];
     sendResults = ["sent", "failed"];

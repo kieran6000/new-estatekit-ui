@@ -69,16 +69,16 @@ export default function ThankYouPageCard({ page, canSetUp }: { page: LeadPage; c
         <Box>
           <Typography sx={{ fontSize: 14, fontWeight: 600 }}>Ask when suits them for a call</Typography>
           <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
-            {fb
-              ? "Not for Facebook forms: we don't know who is on the thank-you page, so the time can't be saved on their lead."
-              : formAsks
-                ? "This form already asks for a call time, so it isn't asked again."
+            {formAsks
+              ? "This form already asks for a call time, so it isn't asked again."
+              : fb
+                ? "They type their number once, pick a day and a time, then Confirm. We match it to their lead and save it there, even if the lead arrives a few minutes later."
                 : "They pick a day and a time, then Confirm. It's saved on their lead and becomes the main button on the page."}
           </Typography>
         </Box>
-        <Switch checked={askCall && !fb && !formAsks} disabled={!canSetUp || fb || formAsks} onChange={(e) => setAskCall(e.target.checked)} />
+        <Switch checked={askCall && !formAsks} disabled={!canSetUp || formAsks} onChange={(e) => setAskCall(e.target.checked)} />
       </Box>
-      {askCall && !fb && !formAsks && (
+      {askCall && !formAsks && (
         <TextField
           size="small"
           fullWidth
