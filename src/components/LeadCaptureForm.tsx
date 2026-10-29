@@ -172,7 +172,7 @@ export default function LeadCaptureForm({
         return;
       }
       if (step.question.validation === "street_number" && !/\d/.test(answers[step.question.id] ?? "")) {
-        setErrors({ question: "Please include your street number, e.g. 14 Loop Street." });
+        setErrors({ question: "Please include your street number, e.g. 14 Main Road." });
         return;
       }
     }

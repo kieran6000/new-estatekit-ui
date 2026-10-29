@@ -157,13 +157,25 @@ export async function applyFormPreset(page: Pick<LeadPage, "id" | "agentId">, ke
   const { data: old, error: oldErr } = await supabase.from("custom_questions").select("id").eq("page_id", page.id);
   if (oldErr) throw new Error(oldErr.message);
 
+  // The page's own suburb, else the first area on the agent's profile: names
+  // the area in the headline and in the address example.
+  const { data: pg } = await supabase.from("lead_pages").select("suburb").eq("id", page.id).maybeSingle();
+  let area = firstArea(pg?.suburb);
+  let areaFromProfile = false;
+  if (!area) {
+    const { data: prof } = await supabase.from("agent_profiles").select("area").eq("agent_id", page.agentId).maybeSingle();
+    area = firstArea(prof?.area);
+    areaFromProfile = !!area;
+  }
+
   const rows = preset.questions.map((q, i) => ({
     page_id: page.id,
     agent_id: page.agentId,
     label: q.label,
     type: q.type,
     options: q.options ?? null,
-    helper_text: q.helperText ?? null,
+    // "e.g. 14 Main Road, Boksburg": an example from their own area.
+    helper_text: q.type === "address" && area ? `e.g. 14 Main Road, ${area}` : q.helperText ?? null,
     validation: q.validation ?? null,
     required: true,
     is_default: false,
@@ -182,14 +194,7 @@ export async function applyFormPreset(page: Pick<LeadPage, "id" | "agentId">, ke
 
   const patch: Record<string, unknown> = { preset: key, preset_version: FORM_PRESET_VERSION, collect_email: preset.collectEmail };
   if (withCopy) {
-    // The page's own suburb, else the first area on the agent's profile.
-    const { data: pg } = await supabase.from("lead_pages").select("suburb").eq("id", page.id).maybeSingle();
-    let area = firstArea(pg?.suburb);
-    if (!area) {
-      const { data: prof } = await supabase.from("agent_profiles").select("area").eq("agent_id", page.agentId).maybeSingle();
-      area = firstArea(prof?.area);
-      if (area) patch.suburb = area;
-    }
+    if (areaFromProfile) patch.suburb = area;
     Object.assign(patch, COPY_ROW, { headline: presetHeadline(area) });
   }
 
