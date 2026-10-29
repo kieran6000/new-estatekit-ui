@@ -9,10 +9,11 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  Drawer,
+  Divider,
   IconButton,
   InputAdornment,
   InputBase,
+  ListItemIcon,
   Menu,
   MenuItem,
   Switch,
@@ -47,20 +48,19 @@ import BlockIcon from "@mui/icons-material/Block";
 import CloseIcon from "@mui/icons-material/Close";
 import UndoIcon from "@mui/icons-material/Undo";
 import RedoIcon from "@mui/icons-material/Redo";
-import EditIcon from "@mui/icons-material/Edit";
 import SearchIcon from "@mui/icons-material/Search";
-import ZoomInIcon from "@mui/icons-material/ZoomIn";
-import ZoomOutIcon from "@mui/icons-material/ZoomOut";
-import FitScreenIcon from "@mui/icons-material/FitScreen";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import ErrorOutlineIcon from "@mui/icons-material/ErrorOutlined";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import PersonIcon from "@mui/icons-material/Person";
+import MoreVertIcon from "@mui/icons-material/MoreVert";
+import HistoryIcon from "@mui/icons-material/History";
+import SettingsIcon from "@mui/icons-material/SettingsOutlined";
 import { Link as RouterLink, Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { tokens } from "../theme";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../hooks/useAuth";
-import { ACTIVE_AGENT_EVENT, getActiveAgentIdSync } from "../api/_client";
+import { ACTIVE_AGENT_EVENT, getActiveAgentIdSync, listAgentProfiles } from "../api/_client";
 import {
   addStandardWorkflows, countLeadsInWorkflows, deleteWorkflow, getWorkflow, isSaved, listAccountWorkflows, listTemplateWorkflows, listWorkflowLog,
   lastTriggeredWorkflows, listWorkflowRuns, saveWorkflow, type LeadInWorkflow, type OpenedWorkflow,
@@ -71,7 +71,6 @@ import { trackActivity } from "../lib/activity";
 import { useSnack } from "../hooks/useSnack";
 import WhatsAppPreview from "./WhatsAppPreview";
 import WaitingList from "./WaitingList";
-import { getMyProfile } from "../api/agentProfile";
 import { getAccountAutomationsPaused, setAccountAutomationsPaused } from "../api/automations";
 import SendToMobileIcon from "@mui/icons-material/SendToMobile";
 import FormatBoldIcon from "@mui/icons-material/FormatBold";
@@ -430,7 +429,9 @@ function Sidebar({ agentId, workflows, counts, lastRun, selectedId, onOpen, onCr
   const pickSort = (v: SortBy) => { setSortBy(v); try { localStorage.setItem(SORT_KEY, v); } catch { /* fine */ } };
   const [busy, setBusy] = useState<string | null>(null);
   const [pausing, setPausing] = useState(false);
-  const { data: profile } = useQuery({ queryKey: ["myProfile"], queryFn: getMyProfile, staleTime: 5 * 60_000 });
+  // By id, not "my profile": that one can lag a moment behind an account switch.
+  const { data: profiles = [] } = useQuery({ queryKey: ["agentProfiles"], queryFn: listAgentProfiles, staleTime: 5 * 60_000 });
+  const accountName = profiles.find((x) => x.agent_id === agentId)?.display_name || "This account";
   const { data: paused = false } = useQuery({ queryKey: ["automationsPaused", agentId], queryFn: () => getAccountAutomationsPaused(agentId) });
   // A switched-off workflow's queue never sends: the engine cancels each run
   // when it comes due.
@@ -485,11 +486,11 @@ function Sidebar({ agentId, workflows, counts, lastRun, selectedId, onOpen, onCr
   return (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column", bgcolor: "background.paper", minHeight: 0 }}>
       {/* Account-wide switch: pauses everything at once, queue included. */}
-      <Box sx={{ display: "flex", alignItems: "center", gap: 1, px: 2, pt: 1.5, pb: 1, flex: "none" }}>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1, px: 2, height: 64, flex: "none" }}>
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Typography component="h1" sx={{ fontSize: 18, fontWeight: 600 }}>Automations</Typography>
           <Typography noWrap sx={{ fontSize: 12.5, color: paused ? tokens.orange : "text.secondary" }}>
-            {profile?.displayName || "This account"} · {paused ? "All paused" : "Running"}
+            {accountName} · {paused ? "All paused" : "Running"}
           </Typography>
         </Box>
         <Tooltip title={paused ? "Turn automations back on for this account" : "Pause every automation for this account"}>
@@ -644,13 +645,13 @@ function Editor({ initial, isTemplate, backTo, onSave, onCopyToTemplates, onBack
   /** Beside the Automations sidebar: no back button. */
   embedded?: boolean;
 }) {
-  const isDesktop = useMediaQuery("(min-width:1000px)");
   const isPhone = useMediaQuery("(max-width:599px)");
   const showSnack = useSnack();
   const { wf, set, undo, redo, canUndo, canRedo } = useHistory(initial);
   // Changed since it was opened or last saved. A new workflow can be saved as
   // it is, but leaving it untouched just drops it, no questions.
   const [savedSnap, setSavedSnap] = useState(() => snapshot(initial));
+  const [savedWf, setSavedWf] = useState(initial);
   const dirty = snapshot(wf) !== savedSnap;
   const canSave = dirty || !isSaved(initial.id);
   const [saving, setSaving] = useState(false);
@@ -723,17 +724,6 @@ function Editor({ initial, isTemplate, backTo, onSave, onCopyToTemplates, onBack
   };
   const shiftStep = (id: string, dir: -1 | 1) => set((w) => ({ ...w, steps: moveStep(w.steps, id, dir) }));
 
-  // Turning on is the one place the checks bite: a broken workflow stays off.
-  const setOn = (on: boolean) => {
-    if (on && nProblems) {
-      showSnack(`Fix ${nProblems} thing${nProblems === 1 ? "" : "s"} first`);
-      goToFirstProblem();
-      return;
-    }
-    update({ published: on });
-    showSnack(on ? "Save to switch it on" : "Save to switch it off");
-  };
-
   async function save() {
     if (wf.published && nProblems) {
       showSnack(`Fix ${nProblems} thing${nProblems === 1 ? "" : "s"} first, or switch it off`);
@@ -744,6 +734,7 @@ function Editor({ initial, isTemplate, backTo, onSave, onCopyToTemplates, onBack
     try {
       await onSave(wf);
       setSavedSnap(snapshot(wf));
+      setSavedWf(wf);
       setSavedSteps(wf.steps);
       showSnack(isTemplate ? "Template saved" : wf.published ? "Saved. It's on: new leads go through it from now." : "Saved. It's off.");
     } catch (e) {
@@ -812,131 +803,128 @@ function Editor({ initial, isTemplate, backTo, onSave, onCopyToTemplates, onBack
     setEditingName(false);
     if (!wf.name.trim()) update({ name: "Untitled workflow" });
   };
+  // Back to how it was last saved; a new one that was never saved just closes.
+  const discard = () => {
+    if (!isSaved(initial.id)) { onBack(); return; }
+    set(() => savedWf);
+    setSel(null);
+  };
+  const [menu, setMenu] = useState<HTMLElement | null>(null);
+  const pick = (fn: () => void) => () => { setMenu(null); fn(); };
+  const status = [
+    isTemplate ? "Template" : wf.published ? "On" : "Off",
+    !isTemplate && runs.length ? `${runs.length} lead${runs.length === 1 ? "" : "s"} in it` : "",
+  ].filter(Boolean).join(" · ");
+  const dialogTitle = tab === "leads" ? "Who's in it now" : tab === "history" ? "History" : "Settings";
 
   return (
-    // A fixed-height frame: the header and tabs never scroll away, and the
-    // canvas and the details panel each scroll on their own.
+    // A fixed-height frame: the header never scrolls away; the steps scroll
+    // down under it. Its two rows line up with the sidebar's title and tabs.
     <Box sx={{ height: "calc(100dvh - var(--ek-nav-h))", display: "flex", flexDirection: "column", minHeight: 420 }}>
-      <Box sx={{ display: "flex", alignItems: "center", gap: { xs: 0.5, sm: 1 }, px: { xs: 0.5, sm: 1.5 }, height: 56, flex: "none", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
-        {embedded ? null : isDesktop ? (
-          <Button startIcon={<ArrowBackIcon />} onClick={back} sx={{ textTransform: "none", color: "text.primary", flex: "none" }} aria-label={`Back to ${backTo.label.toLowerCase()}`}>
-            {backTo.label}
-          </Button>
-        ) : (
-          <IconButton onClick={back} aria-label={`Back to ${backTo.label.toLowerCase()}`} sx={{ flex: "none" }}><ArrowBackIcon /></IconButton>
-        )}
-        <Box sx={{ flex: 1, minWidth: 0, display: "flex", justifyContent: "center", alignItems: "center", gap: 0.5 }}>
-          {editingName ? (
-            <InputBase
-              autoFocus
-              value={wf.name}
-              onChange={(e) => update({ name: e.target.value }, "name")}
-              onBlur={finishName}
-              onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") (e.target as HTMLElement).blur(); }}
-              inputProps={{ "aria-label": "Workflow name", maxLength: 80 }}
-              sx={{ fontWeight: 600, fontSize: 15, borderBottom: "2px solid", borderColor: "primary.main", maxWidth: 420, width: "100%", "& input": { textAlign: "center" } }}
-            />
+      <Box sx={{ flex: "none", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1, height: 64, pl: embedded ? 2 : 0.5, pr: 1 }}>
+          {!embedded && <IconButton onClick={back} aria-label={`Back to ${backTo.label.toLowerCase()}`} sx={{ flex: "none" }}><ArrowBackIcon /></IconButton>}
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            {editingName ? (
+              <InputBase
+                autoFocus
+                value={wf.name}
+                onChange={(e) => update({ name: e.target.value }, "name")}
+                onBlur={finishName}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") (e.target as HTMLElement).blur(); }}
+                inputProps={{ "aria-label": "Automation name", maxLength: 80 }}
+                sx={{ fontWeight: 600, fontSize: 18, width: "100%", borderBottom: "2px solid", borderColor: "primary.main" }}
+              />
+            ) : (
+              <Tooltip title="Rename" placement="bottom-start">
+                <Typography component="button" type="button" onClick={() => setEditingName(true)} noWrap sx={{ display: "block", maxWidth: "100%", font: "inherit", fontSize: 18, fontWeight: 600, color: "inherit", bgcolor: "transparent", border: 0, p: 0, cursor: "text", textAlign: "left", "&:hover": { textDecoration: "underline", textDecorationColor: tokens.line } }}>
+                  {wf.name}
+                </Typography>
+              </Tooltip>
+            )}
+            <Typography noWrap sx={{ fontSize: 12.5, color: wf.published ? "text.secondary" : tokens.ink3 }}>{status}</Typography>
+          </Box>
+          <IconButton onClick={(e) => setMenu(e.currentTarget)} aria-label="More" sx={{ flex: "none" }}><MoreVertIcon /></IconButton>
+          <Menu anchorEl={menu} open={!!menu} onClose={() => setMenu(null)} anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}>
+            {!isTemplate && <MenuItem onClick={pick(() => setTab("leads"))}><ListItemIcon><PersonIcon fontSize="small" /></ListItemIcon>Who's in it{runs.length ? ` (${runs.length})` : ""}</MenuItem>}
+            <MenuItem onClick={pick(() => setTab("history"))}><ListItemIcon><HistoryIcon fontSize="small" /></ListItemIcon>History</MenuItem>
+            <MenuItem onClick={pick(() => setTab("settings"))}><ListItemIcon><SettingsIcon fontSize="small" /></ListItemIcon>Settings</MenuItem>
+            <Divider />
+            <MenuItem disabled={!canUndo} onClick={pick(undo)}><ListItemIcon><UndoIcon fontSize="small" /></ListItemIcon>Undo</MenuItem>
+            <MenuItem disabled={!canRedo} onClick={pick(redo)}><ListItemIcon><RedoIcon fontSize="small" /></ListItemIcon>Redo</MenuItem>
+          </Menu>
+        </Box>
+        {/* Same height as the sidebar's tabs, so the two dividers meet. */}
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1, height: 44, px: 2 }}>
+          {nProblems > 0 ? (
+            <Chip size="small" color="error" variant="outlined" icon={<ErrorOutlineIcon />} label={`${nProblems} to fix · show me`} onClick={goToFirstProblem} />
           ) : (
-            <Box component="button" type="button" onClick={() => setEditingName(true)} sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, minWidth: 0, font: "inherit", color: "inherit", bgcolor: "transparent", border: 0, cursor: "text", p: "6px 8px", borderRadius: "4px", "&:hover": { bgcolor: tokens.hover } }}>
-              <Typography noWrap sx={{ fontWeight: 600, fontSize: 15 }}>{wf.name}</Typography>
-              <EditIcon sx={{ fontSize: 16, color: "text.secondary" }} />
-            </Box>
+            <Typography noWrap sx={{ fontSize: 13, color: "text.secondary", flex: 1, minWidth: 0 }}>
+              {canSave ? "You have changes that aren't saved yet." : "Tap a step to change it."}
+            </Typography>
+          )}
+          <Box sx={{ flex: nProblems > 0 ? 1 : "none" }} />
+          {canSave && (
+            <>
+              <Button onClick={discard} disabled={saving} sx={{ flex: "none" }}>Discard</Button>
+              <Button variant="contained" onClick={() => void save()} disabled={saving} sx={{ flex: "none" }}>{saving ? "Saving…" : "Save"}</Button>
+            </>
           )}
         </Box>
-        {nProblems > 0 && (
-          <Tooltip title="Show the first one">
-            <Chip
-              size="small"
-              color="error"
-              variant="outlined"
-              icon={<ErrorOutlineIcon />}
-              label={isDesktop ? `${nProblems} to fix` : nProblems}
-              onClick={goToFirstProblem}
-              sx={{ flex: "none" }}
-            />
-          </Tooltip>
-        )}
-        {/* Phones: the name needs the room more than undo does. */}
-        {!isPhone && <Tooltip title="Undo (Ctrl+Z)"><span><IconButton onClick={undo} disabled={!canUndo} aria-label="Undo"><UndoIcon fontSize="small" /></IconButton></span></Tooltip>}
-        {isDesktop && <Tooltip title="Redo (Ctrl+Shift+Z)"><span><IconButton onClick={redo} disabled={!canRedo} aria-label="Redo"><RedoIcon fontSize="small" /></IconButton></span></Tooltip>}
-        {!isTemplate && (
-          <Tooltip title={wf.published ? "On: running for leads" : nProblems ? "Fix the problems to turn it on" : "Off: not running"}>
-            <Box sx={{ display: "flex", alignItems: "center", flex: "none" }}>
-              {isDesktop && <Typography sx={{ fontSize: 13, color: "text.secondary" }}>{wf.published ? "On" : "Off"}</Typography>}
-              <Switch checked={wf.published} onChange={(e) => setOn(e.target.checked)} slotProps={{ input: { "aria-label": "Workflow on" } }} />
-            </Box>
-          </Tooltip>
-        )}
-        <Tooltip title={canSave ? "Save changes" : "Saved"}>
-          <span>
-            <Button variant="contained" size="small" disabled={!canSave || saving} onClick={() => void save()} sx={{ position: "relative", overflow: "visible" }}>
-              {saving ? "Saving…" : "Save"}
-              {canSave && !saving && <Box component="span" sx={{ position: "absolute", top: -4, right: -4, width: 10, height: 10, borderRadius: "50%", bgcolor: tokens.red, border: `2px solid ${tokens.surface}` }} aria-label="Unsaved changes" />}
-            </Button>
-          </span>
-        </Tooltip>
       </Box>
-
-      <Tabs
-        value={tab}
-        onChange={(_, v) => setTab(v)}
-        variant="scrollable"
-        allowScrollButtonsMobile
-        sx={{ flex: "none", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}`, minHeight: 44, "& .MuiTabs-flexContainer": { justifyContent: { md: "center" } } }}
-      >
-        {([["builder", "Builder"], ["leads", runs.length ? `Leads (${runs.length})` : "Leads"], ["history", "History"], ["settings", "Settings"]] as const)
-          .filter(([v]) => !(isTemplate && v === "leads"))
-          .map(([v, l]) => (
-            <Tab key={v} value={v} label={l} />
-          ))}
-      </Tabs>
 
       <Box sx={{ flex: 1, minHeight: 0, display: "flex" }}>
-        {tab === "builder" && (
-          <>
-            <Canvas
-              wf={wf}
-              sel={sel}
-              setSel={setSel}
-              onAdd={addStep}
-              problems={problems}
-              here={here}
-              onHere={(stepId) => setView({ tab: "leads", step: stepId, run: null })}
-              highlight={focusStep?.id ?? null}
-              banner={runId ? (
-                <LeadBanner
-                  run={focusRun}
-                  step={focusStep}
-                  loading={runsLoading}
-                  onClose={() => setView({ run: null })}
-                  onHistory={() => setView({ tab: "history", run: null })}
-                />
-              ) : null}
+        <Canvas
+          wf={wf}
+          sel={sel}
+          setSel={setSel}
+          onAdd={addStep}
+          problems={problems}
+          here={here}
+          onHere={(stepId) => setView({ tab: "leads", step: stepId, run: null })}
+          highlight={focusStep?.id ?? null}
+          details={(s) => (sel && selKey(sel) === selKey(s) ? panel : null)}
+          banner={runId ? (
+            <LeadBanner
+              run={focusRun}
+              step={focusStep}
+              loading={runsLoading}
+              onClose={() => setView({ run: null })}
+              onHistory={() => setView({ tab: "history", run: null })}
             />
-            {isDesktop ? (
-              panelOpen && <Box sx={{ width: 380, flex: "none", borderLeft: `1px solid ${tokens.divider}`, bgcolor: "background.paper", minHeight: 0 }}>{panel}</Box>
-            ) : (
-              <Drawer anchor="bottom" open={panelOpen} onClose={() => setSel(null)} slotProps={{ paper: { sx: { height: "85dvh", borderRadius: "12px 12px 0 0" } } }}>
-                {panel}
-              </Drawer>
-            )}
-          </>
-        )}
-        {tab === "settings" && <SettingsTab wf={wf} isTemplate={isTemplate} onChange={update} onDelete={onDelete} onCopyToTemplates={onCopyToTemplates ? () => void onCopyToTemplates(wf) : undefined} />}
-        {tab === "leads" && (
-          <LeadsTab
-            runs={runs}
-            loading={runsLoading}
-            saved={isSaved(initial.id)}
-            published={initial.published}
-            stepOf={runStep}
-            stepFilter={stepFilter ? findStep(savedSteps, stepFilter) ?? null : null}
-            onClearStep={() => setView({ step: null })}
-            onShow={(id) => setView({ tab: "builder", run: id, step: null })}
-          />
-        )}
-        {tab === "history" && <HistoryTab wf={wf} />}
+          ) : null}
+        />
       </Box>
+
+      {/* Who's in it, History and Settings: one tap from the ⋮ menu, over the steps. */}
+      <Dialog open={tab !== "builder"} onClose={() => setTab("builder")} fullWidth maxWidth="md" fullScreen={isPhone} slotProps={{ paper: { sx: { height: isPhone ? "100%" : "80dvh" } } }}>
+        <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1, pr: 1 }}>
+          <Box sx={{ flex: 1, minWidth: 0 }}>{dialogTitle}</Box>
+          <IconButton aria-label="Close" onClick={() => setTab("builder")}><CloseIcon /></IconButton>
+        </DialogTitle>
+        <DialogContent dividers sx={{ p: 0, display: "flex", minHeight: 0 }}>
+          {tab === "settings" && <SettingsTab wf={wf} isTemplate={isTemplate} onChange={update} onDelete={onDelete} onCopyToTemplates={onCopyToTemplates ? () => void onCopyToTemplates(wf) : undefined} />}
+          {tab === "leads" && (
+            <LeadsTab
+              runs={runs}
+              loading={runsLoading}
+              saved={isSaved(initial.id)}
+              published={initial.published}
+              stepOf={runStep}
+              stepFilter={stepFilter ? findStep(savedSteps, stepFilter) ?? null : null}
+              onClearStep={() => setView({ step: null })}
+              onShow={(id) => setView({ tab: "builder", run: id, step: null })}
+            />
+          )}
+          {tab === "history" && <HistoryTab wf={wf} />}
+        </DialogContent>
+        {tab === "settings" && canSave && (
+          <DialogActions>
+            <Button onClick={() => setTab("builder")}>Done</Button>
+            <Button variant="contained" onClick={() => { void save(); setTab("builder"); }} disabled={saving}>Save</Button>
+          </DialogActions>
+        )}
+      </Dialog>
       <Dialog open={leaving} onClose={() => setLeaving(false)}>
         <DialogTitle>Leave without saving?</DialogTitle>
         <DialogContent><Typography sx={{ fontSize: 14 }}>Your changes to "{wf.name}" will be lost.</Typography></DialogContent>
@@ -949,18 +937,17 @@ function Editor({ initial, isTemplate, backTo, onSave, onCopyToTemplates, onBack
   );
 }
 
-/** The side/bottom sheet: title and close stay pinned at the top, Done,
- *  Move and Delete at the bottom, and only the fields in between scroll.
- *  Keyed by what's selected, so a half-confirmed delete never carries over
- *  to another step. */
+/** A step's editor, opened right under the step: title, move and close on
+ *  top, Delete and Done at the foot. Keyed by what's selected, so a
+ *  half-confirmed delete never carries over to another step. */
 function DetailsPanel({ title, problems, onClose, onDelete, deleteLabel, onMove, canMoveUp, canMoveDown, children }: {
   title: string; problems: string[]; onClose: () => void; onDelete?: () => void; deleteLabel: string;
   onMove?: (dir: -1 | 1) => void; canMoveUp: boolean; canMoveDown: boolean; children: React.ReactNode;
 }) {
   const [confirming, setConfirming] = useState(false);
   return (
-    <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
-      <Box sx={{ display: "flex", alignItems: "center", gap: 1, px: 2, height: 52, flex: "none", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
+    <Box sx={{ width: "100%", mt: 1, bgcolor: "background.paper", border: `1px solid ${tokens.primary}`, borderRadius: "8px", boxShadow: `0 2px 8px ${tokens.shadow}`, textAlign: "left" }}>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, pl: 2, pr: 1, height: 48, borderBottom: `1px solid ${tokens.divider}` }}>
         <Typography sx={{ fontWeight: 600, flex: 1, minWidth: 0 }} noWrap>{title}</Typography>
         {onMove && (
           <>
@@ -970,7 +957,7 @@ function DetailsPanel({ title, problems, onClose, onDelete, deleteLabel, onMove,
         )}
         <IconButton onClick={onClose} aria-label="Close" size="small"><CloseIcon fontSize="small" /></IconButton>
       </Box>
-      <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", overscrollBehavior: "contain", p: 2, display: "flex", flexDirection: "column", gap: 2, "& > *": { flexShrink: 0 } }}>
+      <Box sx={{ p: 2, display: "flex", flexDirection: "column", gap: 2 }}>
         {problems.length > 0 && (
           <Alert severity="error" sx={{ py: 0.5 }}>
             {problems.length === 1 ? problems[0] : <Box component="ul" sx={{ m: 0, pl: 2 }}>{problems.map((p) => <li key={p}>{p}</li>)}</Box>}
@@ -978,7 +965,7 @@ function DetailsPanel({ title, problems, onClose, onDelete, deleteLabel, onMove,
         )}
         {children}
       </Box>
-      <Box sx={{ display: "flex", alignItems: "center", gap: 1, px: 2, py: 1.25, pb: "calc(10px + env(safe-area-inset-bottom, 0px))", flex: "none", bgcolor: "background.paper", borderTop: `1px solid ${tokens.divider}` }}>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1, px: 2, py: 1.25, borderTop: `1px solid ${tokens.divider}` }}>
         {onDelete && (confirming ? (
           <>
             <Typography sx={{ fontSize: 13, flex: 1 }}>{deleteLabel.startsWith("Delete check") ? "Delete this check and everything under it?" : "Delete this step?"}</Typography>
@@ -994,55 +981,54 @@ function DetailsPanel({ title, problems, onClose, onDelete, deleteLabel, onMove,
   );
 }
 
-// ── Canvas ───────────────────────────────────────────────────────────────
+// ── Steps, top to bottom ─────────────────────────────────────────────────
 
-function Canvas({ wf, sel, setSel, onAdd, problems, here, onHere, highlight, banner }: {
+/** The automation as one column that only scrolls down: trigger, filters,
+ *  steps (an if/else's Yes and No paths stacked, each on a rail), stop
+ *  rules. A step's editor opens right under it, not in a side panel. */
+function Canvas({ wf, sel, setSel, onAdd, problems, here, onHere, highlight, banner, details }: {
   wf: Workflow; sel: Selection; setSel: (s: Selection) => void; onAdd: (path: Path, index: number, t: StepType) => void; problems: Problems;
   /** Leads waiting at each step (by step id), and what clicking the count does. */
   here: Record<string, number>; onHere: (stepId: string) => void;
   /** The step of the lead being shown (?run=), and the strip saying so. */
   highlight: string | null; banner: React.ReactNode;
+  /** The editor for what's selected, drawn under it. */
+  details: (s: NonNullable<Selection>) => React.ReactNode;
 }) {
-  const narrow = useMediaQuery("(max-width:700px)");
-  const [zoom, setZoom] = useState(1);
   const scroller = useRef<HTMLDivElement>(null);
   const exitsOn = wf.exits.filter((x) => x.on);
   const allowed = allowedSteps(wf.trigger);
-  const ctx: StepCtx = { sel, setSel, onAdd, narrow, problems, allowed, here, onHere, highlight };
+  const ctx: StepCtx = { sel, setSel, onAdd, problems, allowed, here, onHere, highlight, details };
 
-  // Bring the shown lead's step into view.
+  // Bring the shown lead's step, or a step just opened, into view. Scrolls
+  // this column only: scrollIntoView would also move the page around it.
+  const focus = highlight ? `step:${highlight}` : sel ? (sel.kind === "step" ? `step:${sel.id}` : sel.kind) : null;
   useEffect(() => {
-    if (!highlight) return;
-    // Scroll the canvas only: scrollIntoView would also scroll the page
-    // around it and push the app's header off a phone screen.
     const box = scroller.current;
-    const el = box?.querySelector<HTMLElement>(`[data-step="${CSS.escape(highlight)}"]`);
-    if (!box || !el) return;
+    if (!box || !focus) return;
+    const el = box.querySelector<HTMLElement>(`[data-sel="${CSS.escape(focus)}"]`);
+    if (!el) return;
     const b = box.getBoundingClientRect(), r = el.getBoundingClientRect();
-    box.scrollTo({ top: box.scrollTop + r.top - b.top - (b.height - r.height) / 2, left: box.scrollLeft + r.left - b.left - (b.width - r.width) / 2, behavior: "smooth" });
-  }, [highlight]);
+    if (r.top >= b.top + 8 && r.bottom <= b.bottom - 8) return;
+    box.scrollTo({ top: box.scrollTop + r.top - b.top - 16, behavior: "smooth" });
+  }, [focus]);
 
   return (
-    <Box sx={{ flex: 1, minWidth: 0, position: "relative", bgcolor: tokens.bg }}>
-      <Box
-        ref={scroller}
-        sx={{
-          position: "absolute", inset: 0, overflow: "auto",
-          // Dot grid, the usual "this is a canvas" cue.
-          backgroundImage: `radial-gradient(circle, ${tokens.line} 1px, transparent 1px)`,
-          backgroundSize: `${20 * zoom}px ${20 * zoom}px`,
-        }}
-      >
-        {banner}
-        {wf.note && (
-          <Box sx={{ position: "sticky", top: 0, left: 0, zIndex: 2, display: "flex", gap: 1, alignItems: "flex-start", bgcolor: tokens.amberTint, borderBottom: `1px solid ${tokens.amberBorder}`, px: 2, py: 1 }}>
-            <WarningAmberIcon sx={{ fontSize: 18, color: tokens.amber, mt: "2px" }} />
-            <Typography sx={{ fontSize: 13 }}>{wf.note}</Typography>
-          </Box>
-        )}
-        <Box sx={{ zoom, display: "flex", flexDirection: "column", alignItems: "center", py: 4, px: 3, minWidth: "fit-content" }}>
-          <Node color="#1565c0" icon={<BoltIcon />} title="Trigger" text={triggerSummary(wf.trigger)} selected={sel?.kind === "trigger"} error={!!problems.trigger} onClick={() => setSel({ kind: "trigger" })} />
-          <Line />
+    <Box ref={scroller} sx={{ flex: 1, minWidth: 0, overflowY: "auto", overflowX: "hidden", bgcolor: tokens.bg }}>
+      {banner}
+      {wf.note && (
+        <Box sx={{ position: "sticky", top: 0, zIndex: 2, display: "flex", gap: 1, alignItems: "flex-start", bgcolor: tokens.amberTint, borderBottom: `1px solid ${tokens.amberBorder}`, px: 2, py: 1 }}>
+          <WarningAmberIcon sx={{ fontSize: 18, color: tokens.amber, mt: "2px" }} />
+          <Typography sx={{ fontSize: 13 }}>{wf.note}</Typography>
+        </Box>
+      )}
+      <Box sx={{ maxWidth: 640, mx: "auto", px: 2, py: 3, display: "flex", flexDirection: "column", alignItems: "center" }}>
+        <Box data-sel="trigger" sx={{ width: "100%" }}>
+          <Node color="#1565c0" icon={<BoltIcon />} title="Trigger" text={triggerSummary(wf.trigger)} selected={sel?.kind === "trigger"} error={!!problems.trigger} onClick={() => setSel(sel?.kind === "trigger" ? null : { kind: "trigger" })} />
+          {details({ kind: "trigger" })}
+        </Box>
+        <Line />
+        <Box data-sel="filters" sx={{ width: "100%" }}>
           <Node
             color="#546e7a"
             icon={<FilterAltIcon />}
@@ -1050,46 +1036,28 @@ function Canvas({ wf, sel, setSel, onAdd, problems, here, onHere, highlight, ban
             text={wf.filters.length ? wf.filters.map(filterSummary).join(" · ") : "Every lead (no filters)"}
             selected={sel?.kind === "filters"}
             error={!!problems.filters}
-            onClick={() => setSel({ kind: "filters" })}
+            onClick={() => setSel(sel?.kind === "filters" ? null : { kind: "filters" })}
             dashed={!wf.filters.length}
           />
-          <StepList steps={wf.steps} path="root" ctx={ctx} />
-          <Line />
+          {details({ kind: "filters" })}
+        </Box>
+        <StepList steps={wf.steps} path="root" ctx={ctx} />
+        <Line />
+        <Box data-sel="exits" sx={{ width: "100%" }}>
           <Node
             color="#b71c1c"
             icon={<BlockIcon />}
             title="Stop early when"
             text={exitsOn.length ? exitsOn.map((x) => EXITS.find((e) => e.kind === x.kind)?.label.replace(/ \(.*\)$/, "")).join(" · ") : "Nothing: every step always runs"}
             selected={sel?.kind === "exits"}
-            onClick={() => setSel({ kind: "exits" })}
+            onClick={() => setSel(sel?.kind === "exits" ? null : { kind: "exits" })}
             dashed={!exitsOn.length}
           />
-          <Line />
-          <Box sx={{ px: 1.5, py: 0.5, borderRadius: "999px", bgcolor: "#37474f", color: "#fff", fontSize: 11, fontWeight: 700, letterSpacing: ".08em" }}>END</Box>
-          <Timeline wf={wf} />
+          {details({ kind: "exits" })}
         </Box>
-      </Box>
-
-      <Box sx={{ position: "absolute", left: 12, bottom: 12, display: "flex", alignItems: "center", bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "6px", boxShadow: `0 1px 3px ${tokens.shadow}` }}>
-        <IconButton size="small" onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.1).toFixed(1)))} disabled={zoom <= 0.5} aria-label="Zoom out"><ZoomOutIcon fontSize="small" /></IconButton>
-        <Typography sx={{ fontSize: 12, width: 40, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>{Math.round(zoom * 100)}%</Typography>
-        <IconButton size="small" onClick={() => setZoom((z) => Math.min(1.5, +(z + 0.1).toFixed(1)))} disabled={zoom >= 1.5} aria-label="Zoom in"><ZoomInIcon fontSize="small" /></IconButton>
-        <Tooltip title="Fit to screen">
-          <IconButton
-            size="small"
-            aria-label="Fit to screen"
-            onClick={() => {
-              const el = scroller.current;
-              if (!el) return;
-              const inner = el.lastElementChild as HTMLElement | null;
-              const w = (inner?.scrollWidth ?? el.scrollWidth) / zoom;
-              setZoom(Math.max(0.5, Math.min(1, +((el.clientWidth - 24) / w).toFixed(2))));
-              el.scrollTo({ top: 0, left: 0 });
-            }}
-          >
-            <FitScreenIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
+        <Line />
+        <Box sx={{ px: 1.5, py: 0.5, borderRadius: "999px", bgcolor: "#37474f", color: "#fff", fontSize: 11, fontWeight: 700, letterSpacing: ".08em" }}>END</Box>
+        <Timeline wf={wf} />
       </Box>
     </Box>
   );
@@ -1099,12 +1067,12 @@ interface StepCtx {
   sel: Selection;
   setSel: (s: Selection) => void;
   onAdd: (path: Path, index: number, t: StepType) => void;
-  narrow: boolean;
   problems: Problems;
   allowed: StepType[];
   here: Record<string, number>;
   onHere: (stepId: string) => void;
   highlight: string | null;
+  details: (s: NonNullable<Selection>) => React.ReactNode;
 }
 
 function Line({ h = 24 }: { h?: number }) {
@@ -1126,7 +1094,7 @@ function Node({ color, icon, title, text, selected, onClick, dashed, error, step
       onClick={onClick}
       aria-label={`${title}: ${text}${error ? " (needs fixing)" : ""}`}
       sx={{
-        width: 300, maxWidth: "calc(100vw - 48px)", display: "flex", gap: 1.25, alignItems: "center", textAlign: "left", font: "inherit", color: "inherit",
+        width: "100%", display: "flex", gap: 1.25, alignItems: "center", textAlign: "left", font: "inherit", color: "inherit",
         bgcolor: "background.paper", borderRadius: "8px", p: 1.25, cursor: "pointer", flex: "none", position: "relative",
         border: `${highlight ? 2 : 1}px ${dashed && !error ? "dashed" : "solid"} ${edge}`,
         boxShadow: selected || highlight ? `0 0 0 3px color-mix(in srgb, ${ring} 30%, transparent)` : `0 1px 2px ${tokens.shadow}`,
@@ -1200,76 +1168,46 @@ function StepList({ steps, path, ctx }: { steps: Step[]; path: Path; ctx: StepCt
   return (
     <>
       <AddButton onPick={(t) => ctx.onAdd(path, 0, t)} allowed={ctx.allowed} />
-      {steps.map((s, i) => (
-        <Box key={s.id} sx={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-          <Node
-            color={STEP_COLOR[s.type]}
-            icon={STEP_ICON[s.type]}
-            title={stepTitle(s)}
-            text={stepSummary(s)}
-            selected={ctx.sel?.kind === "step" && ctx.sel.id === s.id}
-            error={!!ctx.problems[s.id]}
-            onClick={() => ctx.setSel({ kind: "step", id: s.id })}
-            stepId={s.id}
-            count={ctx.here[s.id]}
-            onCount={() => ctx.onHere(s.id)}
-            highlight={ctx.highlight === s.id}
-          />
-          {s.type === "branch" && <BranchPaths step={s} ctx={ctx} />}
-          <AddButton onPick={(t) => ctx.onAdd(path, i + 1, t)} allowed={ctx.allowed} />
-        </Box>
-      ))}
+      {steps.map((s, i) => {
+        const open = ctx.sel?.kind === "step" && ctx.sel.id === s.id;
+        return (
+          <Box key={s.id} sx={{ display: "flex", flexDirection: "column", alignItems: "center", width: "100%" }}>
+            <Box data-sel={`step:${s.id}`} sx={{ width: "100%" }}>
+              <Node
+                color={STEP_COLOR[s.type]}
+                icon={STEP_ICON[s.type]}
+                title={stepTitle(s)}
+                text={stepSummary(s)}
+                selected={open}
+                error={!!ctx.problems[s.id]}
+                onClick={() => ctx.setSel(open ? null : { kind: "step", id: s.id })}
+                stepId={s.id}
+                count={ctx.here[s.id]}
+                onCount={() => ctx.onHere(s.id)}
+                highlight={ctx.highlight === s.id}
+              />
+              {ctx.details({ kind: "step", id: s.id })}
+            </Box>
+            {s.type === "branch" && <BranchPaths step={s} ctx={ctx} />}
+            <AddButton onPick={(t) => ctx.onAdd(path, i + 1, t)} allowed={ctx.allowed} />
+          </Box>
+        );
+      })}
     </>
   );
 }
 
-/**
- * The fork and the join. Each lane draws half of the horizontal rule at its
- * top and bottom (the first lane its right half, the last its left), so the
- * rules always meet at the lanes' centre lines whatever their widths. A
- * stretching line at the foot of each lane carries the shorter one down to
- * the join.
- */
+/** An if/else's two paths, Yes above No, each marked by a rail. */
 function BranchPaths({ step, ctx }: { step: Extract<Step, { type: "branch" }>; ctx: StepCtx }) {
-  const lanes = ["yes", "no"] as const;
-  if (ctx.narrow) {
-    // Side by side doesn't fit a phone: stack Yes above No, each marked by a rail.
-    return (
-      <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-        {lanes.map((side) => (
-          <Box key={side} sx={{ display: "flex", flexDirection: "column", alignItems: "center", borderLeft: `3px solid ${side === "yes" ? tokens.green : tokens.outline}`, pl: 1.5, ml: 1.5, mt: 1 }}>
-            <LaneLabel side={side} />
-            <StepList steps={step[side]} path={`${step.id}:${side}`} ctx={ctx} />
-          </Box>
-        ))}
-      </Box>
-    );
-  }
-  const rule = (i: number) => ({
-    content: '""', position: "absolute", height: 2, bgcolor: tokens.line,
-    left: i === 0 ? "50%" : 0, right: i === lanes.length - 1 ? "50%" : 0,
-  });
   return (
-    <>
-      <Line h={20} />
-      <Box sx={{ display: "flex", alignItems: "stretch" }}>
-        {lanes.map((side, i) => (
-          <Box
-            key={side}
-            sx={{
-              position: "relative", display: "flex", flexDirection: "column", alignItems: "center", px: 2.5, minWidth: 300,
-              "&::before": { ...rule(i), top: 0 },
-              "&::after": { ...rule(i), bottom: 0 },
-            }}
-          >
-            <Line h={16} />
-            <LaneLabel side={side} />
-            <StepList steps={step[side]} path={`${step.id}:${side}`} ctx={ctx} />
-            <Box sx={{ flex: 1, width: 2, minHeight: 12, bgcolor: tokens.line }} />
-          </Box>
-        ))}
-      </Box>
-    </>
+    <Box sx={{ display: "flex", flexDirection: "column", width: "100%" }}>
+      {(["yes", "no"] as const).map((side) => (
+        <Box key={side} sx={{ display: "flex", flexDirection: "column", alignItems: "center", borderLeft: `3px solid ${side === "yes" ? tokens.green : tokens.outline}`, pl: 2, ml: 1, mt: 1.5 }}>
+          <LaneLabel side={side} />
+          <StepList steps={step[side]} path={`${step.id}:${side}`} ctx={ctx} />
+        </Box>
+      ))}
+    </Box>
   );
 }
 
@@ -1286,7 +1224,7 @@ function Timeline({ wf }: { wf: Workflow }) {
   const rows = useMemo(() => timeline(wf), [wf]);
   if (!rows.length) return null;
   return (
-    <Box sx={{ width: 420, maxWidth: "calc(100vw - 48px)", mt: 4, bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "8px", p: 1.5 }}>
+    <Box sx={{ width: "100%", mt: 4, bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "8px", p: 1.5 }}>
       <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase", color: "text.secondary", mb: 1 }}>How this plays out for one lead</Typography>
       {rows.map((r, i) => (
         <Box key={i} sx={{ display: "grid", gridTemplateColumns: "96px 1fr", gap: 1, fontSize: 13, py: 0.5, borderTop: i ? `1px solid ${tokens.divider2}` : 0 }}>

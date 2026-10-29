@@ -1,8 +1,7 @@
 import { useState } from "react";
 import { Link as RouterLink, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Box, Chip, IconButton, ListItemIcon, Menu, MenuItem, Skeleton, Tooltip, Typography } from "@mui/material";
-import MoreVertIcon from "@mui/icons-material/MoreVert";
+import { Box, Button, Skeleton, Typography } from "@mui/material";
 import PauseIcon from "@mui/icons-material/PauseCircleOutlineOutlined";
 import PlayIcon from "@mui/icons-material/PlayCircleOutlineOutlined";
 import SendIcon from "@mui/icons-material/SendOutlined";
@@ -11,14 +10,14 @@ import WhatsAppIcon from "@mui/icons-material/WhatsApp";
 import { tokens } from "../theme";
 import { getAccountAutomationsPaused } from "../api/automations";
 import { listScheduledWorkflowRuns, updateWorkflowRun, type WorkflowRunRow } from "../api/workflows";
-import { stepAtPos, stepTitle, type Step } from "../lib/workflow";
+import { fieldInfo, stepAtPos, stepTitle, type Step, type Trigger } from "../lib/workflow";
 import { useSnack } from "../hooks/useSnack";
 import { workflowPath, type BackTo } from "../lib/automationsPaths";
 
-// What one workflow is about to do: its waiting leads, soonest first, each
-// with pause / send now / skip. Opened from "N waiting" on the Automations
-// list (it replaced the Scheduled tab, Oct 2026). Tapping a row opens the
-// workflow at that lead's place; the name opens the lead.
+// What is about to go out: each waiting message, soonest first, with the
+// message itself on the row (the lead's name filled in). Tap a row for all
+// of it and send now / pause / skip. The Automations sidebar's "Coming up"
+// tab (it replaced the Scheduled tab, Oct 2026).
 
 // Mirrors run-automations: follow-up WhatsApps only send 08:00–20:00 SAST
 // (UTC+2). New-lead alerts are exempt there, so callers pass quietHours=false
@@ -63,23 +62,31 @@ interface Row {
   isWhatsApp: boolean;
   sendAt: Date;
   held: boolean;
-  step: string;
+  /** "WhatsApp to the agent", "Email to the lead", or the step's name. */
+  what: string;
+  /** The message as it will go out, the lead's name filled in; "" for steps that send nothing. */
+  message: string;
+  subject: string;
 }
 
-function StatusChip({ status }: { status: string }) {
-  if (status === "paused") return <Chip size="small" label="Paused" variant="outlined" sx={{ height: 22, fontSize: 12, fontWeight: 600 }} />;
-  if (status === "processing") return <Chip size="small" label="Sending" color="primary" sx={{ height: 22, fontSize: 12, fontWeight: 600 }} />;
-  return null;
+/** A message with this lead's name in it; other details by their plain name. */
+function fillFor(text: string, leadName: string | null, trigger: Trigger | undefined): string {
+  return text.replace(/\{\{\s*(\w+)\s*\}\}/g, (_m, f: string) => {
+    if (leadName && f === "first_name") return leadName.split(/\s+/)[0];
+    if (leadName && f === "name") return leadName;
+    return `[${fieldInfo(f, trigger).label}]`;
+  });
 }
 
-/** One workflow's queue, or (no workflowId) the whole account's, each row
- *  naming its workflow. */
+/** One workflow's queue, or (no workflowId) the whole account's. Each row
+ *  shows the message itself; tap it for all of it and send now / pause /
+ *  skip. */
 export default function WaitingList({ workflowId, agentId }: { workflowId?: string; agentId: string }) {
   const navigate = useNavigate();
   const location = useLocation();
   const qc = useQueryClient();
   const showSnack = useSnack();
-  const [menu, setMenu] = useState<{ el: HTMLElement; row: Row } | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const runsKey = ["scheduledWorkflowRuns", agentId];
@@ -89,7 +96,6 @@ export default function WaitingList({ workflowId, agentId }: { workflowId?: stri
   const refresh = () => Promise.all([qc.invalidateQueries({ queryKey: runsKey }), qc.invalidateQueries({ queryKey: ["workflowLeadCounts", agentId] })]);
 
   async function act(row: Row, patch: Patch, message: string, undo?: Patch) {
-    setMenu(null);
     setBusyId(row.id);
     const apply = (p: Patch) => updateWorkflowRun(row.id, p);
     try {
@@ -109,22 +115,28 @@ export default function WaitingList({ workflowId, agentId }: { workflowId?: stri
     .filter((w) => !workflowId || w.workflow?.id === workflowId)
     .map((w): Row => {
       const step = workflowStepAt(w);
-      const isWhatsApp = step?.type === "whatsapp_agent";
+      const isWhatsApp = step?.type === "whatsapp_agent" || step?.type === "whatsapp_lead";
       const def = w.workflow?.definition;
-      const quietHoursApply = (isWhatsApp && def?.trigger?.kind !== "lead_created" && def?.settings?.quietHours !== false) || (step?.type === "email_lead" && !!def?.settings?.quietHours);
+      const trigger = def?.trigger as Trigger | undefined;
+      const quietHoursApply = (step?.type === "whatsapp_agent" && def?.trigger?.kind !== "lead_created" && def?.settings?.quietHours !== false) || (step?.type === "email_lead" && !!def?.settings?.quietHours);
       const sendAt = effectiveSendTime(w.run_at, quietHoursApply);
+      const leadName = w.lead?.name ?? null;
+      const message = step?.type === "whatsapp_agent" || step?.type === "whatsapp_lead" ? fillFor(step.text, leadName, trigger)
+        : step?.type === "email_lead" ? fillFor(step.body, leadName, trigger) : "";
       return {
-        id: w.id, workflowId: w.workflow?.id ?? "", workflow: w.workflow?.name ?? "Automation", status: w.status, lead: { id: w.lead?.id ?? "", name: w.lead?.name ?? "Daily summary" }, isWhatsApp, sendAt,
+        id: w.id, workflowId: w.workflow?.id ?? "", workflow: w.workflow?.name ?? "Automation", status: w.status,
+        lead: { id: w.lead?.id ?? "", name: leadName ?? "Daily summary" }, isWhatsApp, sendAt,
         held: quietHoursApply && sendAt.getTime() > Math.max(Date.parse(w.run_at), Date.now()) + 60_000,
-        step: step ? (step.type === "whatsapp_agent" ? "WhatsApp to the agent" : step.type === "whatsapp_lead" ? "WhatsApp to the lead" : step.type === "email_lead" ? "Email to the lead" : stepTitle(step)) : "Finishes the workflow",
+        what: step ? (step.type === "whatsapp_agent" ? "WhatsApp to the agent" : step.type === "whatsapp_lead" ? "WhatsApp to the lead" : step.type === "email_lead" ? "Email to the lead" : stepTitle(step)) : "Finishes the automation",
+        message,
+        subject: step?.type === "email_lead" ? fillFor(step.subject, leadName, trigger) : "",
       };
     })
     .sort((a, b) => a.sendAt.getTime() - b.sendAt.getTime());
 
   const back: BackTo = { to: `${location.pathname}${location.search}`, label: "Automations" };
-  const m = menu?.row;
 
-  if (isLoading) return <Box sx={{ p: 2 }}>{[0, 1, 2].map((i) => <Skeleton key={i} height={48} />)}</Box>;
+  if (isLoading) return <Box sx={{ p: 2 }}>{[0, 1, 2].map((i) => <Skeleton key={i} height={64} />)}</Box>;
 
   return (
     <Box>
@@ -133,70 +145,70 @@ export default function WaitingList({ workflowId, agentId }: { workflowId?: stri
           Automations are paused for this account. Nothing here sends until they're back on.
         </Typography>
       )}
-      {rows.map((r, i) => (
-        <Box
-          key={r.id}
-          onClick={() => navigate(`${workflowPath(r.workflowId)}?run=${r.id}`, { state: { back } })}
-          sx={{ display: "flex", alignItems: "center", gap: 1, borderTop: i ? `1px solid ${tokens.divider}` : 0, p: "10px 6px 10px 16px", minHeight: 60, cursor: "pointer", opacity: busyId === r.id ? 0.5 : 1, "&:hover": { bgcolor: tokens.hover } }}
-        >
-          <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography sx={{ fontWeight: 500, fontSize: 14.5 }} noWrap>
-              {r.lead.id ? (
-                <Box component={RouterLink} to={`/leads/${r.lead.id}`} onClick={(e: React.MouseEvent) => e.stopPropagation()} sx={{ color: "inherit", textDecorationColor: tokens.line, "&:hover": { textDecorationColor: "inherit" } }}>
-                  {r.lead.name}
-                </Box>
-              ) : r.lead.name}
-            </Typography>
-            <Typography component="div" sx={{ fontSize: 12.5, color: "text.secondary", display: "flex", alignItems: "center", gap: 0.5, flexWrap: "wrap" }}>
-              {r.isWhatsApp && <WhatsAppIcon sx={{ fontSize: 14 }} />}
-              <span>{workflowId ? r.step : r.workflow} ·</span>
-              <Box component="span" sx={{ color: r.status === "paused" ? "text.secondary" : tokens.primary, fontWeight: 500 }}>
-                {r.status === "processing" ? "Sending now" : relative(r.sendAt)}
+      {rows.map((r) => {
+        const expanded = open === r.id;
+        const busy = busyId === r.id;
+        return (
+          <Box key={r.id} sx={{ borderBottom: `1px solid ${tokens.divider}`, bgcolor: expanded ? tokens.hover : "transparent", opacity: busy ? 0.5 : 1 }}>
+            <Box
+              component="button"
+              type="button"
+              aria-expanded={expanded}
+              onClick={() => setOpen(expanded ? null : r.id)}
+              sx={{ display: "block", width: "100%", textAlign: "left", font: "inherit", color: "inherit", bgcolor: "transparent", border: 0, px: 2, py: 1.25, cursor: "pointer", "&:hover": { bgcolor: tokens.hover } }}
+            >
+              <Box sx={{ display: "flex", alignItems: "baseline", gap: 1 }}>
+                <Typography sx={{ fontWeight: 600, fontSize: 14.5, flex: 1, minWidth: 0 }} noWrap>{r.lead.name}</Typography>
+                <Typography sx={{ fontSize: 12.5, fontWeight: 600, flex: "none", color: r.status === "paused" ? "text.secondary" : tokens.primary }}>
+                  {r.status === "paused" ? "Paused" : r.status === "processing" ? "Sending now" : relative(r.sendAt)}
+                </Typography>
               </Box>
-              <span>({whenLabel(r.sendAt)})</span>
-              {r.held && <Tooltip title="Follow-up messages only send 08:00–20:00. This one waits for the morning."><span>· after quiet hours</span></Tooltip>}
-            </Typography>
-          </Box>
-          <StatusChip status={r.status} />
-          <IconButton
-            aria-label={`Pause, send now or skip for ${r.lead.name}`}
-            disabled={busyId === r.id || r.status === "processing"}
-            onClick={(e) => { e.stopPropagation(); setMenu({ el: e.currentTarget, row: r }); }}
-            sx={{ width: 44, height: 44 }}
-          >
-            <MoreVertIcon fontSize="small" />
-          </IconButton>
-        </Box>
-      ))}
-      {!rows.length && <Typography sx={{ color: "text.secondary", textAlign: "center", py: 5 }}>{workflowId ? "Nobody is waiting in this one right now." : "Nothing is waiting to go out."}</Typography>}
+              <Typography sx={{ fontSize: 12.5, color: "text.secondary" }} noWrap>
+                {r.what} · {whenLabel(r.sendAt)}{r.held ? " (after quiet hours)" : ""}
+              </Typography>
+              {r.message ? (
+                <Box sx={{ mt: 0.75, display: "flex", gap: 0.75, alignItems: "flex-start" }}>
+                  {r.isWhatsApp && <WhatsAppIcon sx={{ fontSize: 15, color: "#25d366", mt: "2px", flex: "none" }} />}
+                  <Typography sx={{
+                    fontSize: 13.5, whiteSpace: "pre-wrap", wordBreak: "break-word",
+                    ...(expanded ? {} : { overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }),
+                  }}>
+                    {r.subject && <b>{r.subject}{expanded ? "\n\n" : " · "}</b>}{r.message}
+                  </Typography>
+                </Box>
+              ) : null}
+              {!workflowId && <Typography sx={{ fontSize: 12, color: "text.disabled", mt: 0.5 }} noWrap>From: {r.workflow}</Typography>}
+            </Box>
 
-      <Menu anchorEl={menu?.el} open={!!menu} onClose={() => setMenu(null)}>
-        {m && (m.status === "paused" ? (
-          <MenuItem disabled={accountPaused} onClick={() => act(m, { status: "pending" }, "Resumed")}>
-            <ListItemIcon><PlayIcon fontSize="small" /></ListItemIcon>Resume
-          </MenuItem>
-        ) : (
-          <MenuItem onClick={() => act(m, { status: "paused" }, "Paused", { status: "pending" })}>
-            <ListItemIcon><PauseIcon fontSize="small" /></ListItemIcon>Pause
-          </MenuItem>
-        ))}
-        {m && (
-          <MenuItem
-            disabled={accountPaused}
-            onClick={() => {
-              const later = m.isWhatsApp && effectiveSendTime(new Date().toISOString(), true).getTime() > Date.now() + 60_000;
-              act(m, { status: "pending", run_at: new Date().toISOString() }, later ? "Queued. Sends at 08:00 when quiet hours end" : "Sending within a minute");
-            }}
-          >
-            <ListItemIcon><SendIcon fontSize="small" /></ListItemIcon>Send now
-          </MenuItem>
-        )}
-        {m && (
-          <MenuItem sx={{ color: tokens.red }} onClick={() => act(m, { status: "cancelled" }, "Skipped", { status: m.status === "paused" ? "paused" : "pending" })}>
-            <ListItemIcon><SkipIcon fontSize="small" sx={{ color: tokens.red }} /></ListItemIcon>Skip
-          </MenuItem>
-        )}
-      </Menu>
+            {expanded && (
+              <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1, px: 2, pb: 1.5 }}>
+                <Button
+                  size="small"
+                  variant="contained"
+                  startIcon={<SendIcon />}
+                  disabled={busy || accountPaused || r.status === "processing"}
+                  onClick={() => {
+                    const later = r.isWhatsApp && effectiveSendTime(new Date().toISOString(), true).getTime() > Date.now() + 60_000;
+                    void act(r, { status: "pending", run_at: new Date().toISOString() }, later ? "Queued. Sends at 08:00 when quiet hours end" : "Sending within a minute");
+                  }}
+                >
+                  Send now
+                </Button>
+                {r.status === "paused" ? (
+                  <Button size="small" variant="outlined" startIcon={<PlayIcon />} disabled={busy || accountPaused} onClick={() => void act(r, { status: "pending" }, "Resumed")}>Resume</Button>
+                ) : (
+                  <Button size="small" variant="outlined" startIcon={<PauseIcon />} disabled={busy || r.status === "processing"} onClick={() => void act(r, { status: "paused" }, "Paused", { status: "pending" })}>Pause</Button>
+                )}
+                <Button size="small" variant="outlined" color="error" startIcon={<SkipIcon />} disabled={busy || r.status === "processing"} onClick={() => void act(r, { status: "cancelled" }, "Skipped", { status: r.status === "paused" ? "paused" : "pending" })}>Skip</Button>
+                <Box sx={{ flex: 1 }} />
+                {r.lead.id && <Button size="small" component={RouterLink} to={`/leads/${r.lead.id}`}>Open lead</Button>}
+                {r.workflowId && <Button size="small" onClick={() => navigate(`${workflowPath(r.workflowId)}?run=${r.id}`, { state: { back } })}>Open automation</Button>}
+              </Box>
+            )}
+          </Box>
+        );
+      })}
+      {!rows.length && <Typography sx={{ color: "text.secondary", textAlign: "center", py: 5 }}>{workflowId ? "Nobody is waiting in this one right now." : "Nothing is waiting to go out."}</Typography>}
     </Box>
   );
 }
