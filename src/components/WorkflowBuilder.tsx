@@ -1022,13 +1022,12 @@ function Canvas({ wf, sel, setSel, onAdd, problems, here, onHere, highlight, ban
           <Typography sx={{ fontSize: 13 }}>{wf.note}</Typography>
         </Box>
       )}
-      <Box sx={{ maxWidth: 640, mx: "auto", px: 2, py: 3, display: "flex", flexDirection: "column", alignItems: "center" }}>
-        <Box data-sel="trigger" sx={{ width: "100%" }}>
-          <Node color="#1565c0" icon={<BoltIcon />} title="Trigger" text={triggerSummary(wf.trigger)} selected={sel?.kind === "trigger"} error={!!problems.trigger} onClick={() => setSel(sel?.kind === "trigger" ? null : { kind: "trigger" })} />
+      <Box sx={{ maxWidth: 640, mx: "auto", px: 2, py: 3, display: "flex", flexDirection: "column", gap: 1 }}>
+        <Box data-sel="trigger">
+          <Node color="#1565c0" icon={<BoltIcon />} title="When" text={triggerSummary(wf.trigger)} selected={sel?.kind === "trigger"} error={!!problems.trigger} onClick={() => setSel(sel?.kind === "trigger" ? null : { kind: "trigger" })} />
           {details({ kind: "trigger" })}
         </Box>
-        <Line />
-        <Box data-sel="filters" sx={{ width: "100%" }}>
+        <Box data-sel="filters">
           <Node
             color="#546e7a"
             icon={<FilterAltIcon />}
@@ -1041,22 +1040,20 @@ function Canvas({ wf, sel, setSel, onAdd, problems, here, onHere, highlight, ban
           />
           {details({ kind: "filters" })}
         </Box>
+        <SectionLabel>Then</SectionLabel>
         <StepList steps={wf.steps} path="root" ctx={ctx} />
-        <Line />
-        <Box data-sel="exits" sx={{ width: "100%" }}>
+        <Box data-sel="exits" sx={{ mt: 1.5 }}>
           <Node
             color="#b71c1c"
             icon={<BlockIcon />}
-            title="Stop early when"
-            text={exitsOn.length ? exitsOn.map((x) => EXITS.find((e) => e.kind === x.kind)?.label.replace(/ \(.*\)$/, "")).join(" · ") : "Nothing: every step always runs"}
+            title="Stop early if"
+            text={exitsOn.length ? exitsOn.map((x) => EXITS.find((e) => e.kind === x.kind)?.label.replace(/ \(.*\)$/, "")).join(" · ") : "Never: every step always runs"}
             selected={sel?.kind === "exits"}
             onClick={() => setSel(sel?.kind === "exits" ? null : { kind: "exits" })}
             dashed={!exitsOn.length}
           />
           {details({ kind: "exits" })}
         </Box>
-        <Line />
-        <Box sx={{ px: 1.5, py: 0.5, borderRadius: "999px", bgcolor: "#37474f", color: "#fff", fontSize: 11, fontWeight: 700, letterSpacing: ".08em" }}>END</Box>
         <Timeline wf={wf} />
       </Box>
     </Box>
@@ -1073,10 +1070,6 @@ interface StepCtx {
   onHere: (stepId: string) => void;
   highlight: string | null;
   details: (s: NonNullable<Selection>) => React.ReactNode;
-}
-
-function Line({ h = 24 }: { h?: number }) {
-  return <Box sx={{ width: 2, height: h, bgcolor: tokens.line, flex: "none" }} />;
 }
 
 function Node({ color, icon, title, text, selected, onClick, dashed, error, stepId, count = 0, onCount, highlight }: {
@@ -1131,22 +1124,23 @@ function Node({ color, icon, title, text, selected, onClick, dashed, error, step
   );
 }
 
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return <Typography sx={{ fontSize: 12, fontWeight: 600, letterSpacing: ".06em", textTransform: "uppercase", color: "text.secondary", mt: 1.5, px: 0.5 }}>{children}</Typography>;
+}
+
+/** "Add a step", at the foot of a list. Steps then move up or down from
+ *  their editor, so there's no "+" between every pair. */
 function AddButton({ onPick, allowed }: { onPick: (t: StepType) => void; allowed: StepType[] }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   return (
     <>
-      <Line h={14} />
-      <Tooltip title="Add a step here">
-        <IconButton
-          size="small"
-          onClick={(e) => setAnchor(e.currentTarget)}
-          aria-label="Add a step here"
-          sx={{ width: 26, height: 26, flex: "none", border: `1px solid ${tokens.line}`, bgcolor: "background.paper", "&:hover": { bgcolor: "primary.main", color: "primary.contrastText", borderColor: "primary.main" } }}
-        >
-          <AddIcon sx={{ fontSize: 16 }} />
-        </IconButton>
-      </Tooltip>
-      <Line h={14} />
+      <Button
+        startIcon={<AddIcon />}
+        onClick={(e) => setAnchor(e.currentTarget)}
+        sx={{ justifyContent: "flex-start", width: "100%", minHeight: 44, textTransform: "none", fontWeight: 500, border: `1px dashed ${tokens.line}`, borderRadius: "8px", color: "text.secondary", "&:hover": { borderColor: "primary.main", color: "primary.main", bgcolor: tokens.hover } }}
+      >
+        Add a step
+      </Button>
       <Menu anchorEl={anchor} open={!!anchor} onClose={() => setAnchor(null)}>
         {STEP_TYPES.filter((t) => allowed.includes(t.type)).map((t) => (
           <MenuItem key={t.type} onClick={() => { setAnchor(null); onPick(t.type); }} sx={{ gap: 1.5, minWidth: 250, py: 1 }}>
@@ -1162,59 +1156,50 @@ function AddButton({ onPick, allowed }: { onPick: (t: StepType) => void; allowed
   );
 }
 
-/** A column of steps. Between every pair (and at both ends) sits an add
- *  button on the line, so a step can go anywhere. */
+/** Steps as a plain list, top to bottom, with "Add a step" at the end. */
 function StepList({ steps, path, ctx }: { steps: Step[]; path: Path; ctx: StepCtx }) {
   return (
-    <>
-      <AddButton onPick={(t) => ctx.onAdd(path, 0, t)} allowed={ctx.allowed} />
-      {steps.map((s, i) => {
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+      {steps.map((s) => {
         const open = ctx.sel?.kind === "step" && ctx.sel.id === s.id;
         return (
-          <Box key={s.id} sx={{ display: "flex", flexDirection: "column", alignItems: "center", width: "100%" }}>
-            <Box data-sel={`step:${s.id}`} sx={{ width: "100%" }}>
-              <Node
-                color={STEP_COLOR[s.type]}
-                icon={STEP_ICON[s.type]}
-                title={stepTitle(s)}
-                text={stepSummary(s)}
-                selected={open}
-                error={!!ctx.problems[s.id]}
-                onClick={() => ctx.setSel(open ? null : { kind: "step", id: s.id })}
-                stepId={s.id}
-                count={ctx.here[s.id]}
-                onCount={() => ctx.onHere(s.id)}
-                highlight={ctx.highlight === s.id}
-              />
-              {ctx.details({ kind: "step", id: s.id })}
-            </Box>
+          <Box key={s.id} data-sel={`step:${s.id}`}>
+            <Node
+              color={STEP_COLOR[s.type]}
+              icon={STEP_ICON[s.type]}
+              title={stepTitle(s)}
+              text={stepSummary(s)}
+              selected={open}
+              error={!!ctx.problems[s.id]}
+              onClick={() => ctx.setSel(open ? null : { kind: "step", id: s.id })}
+              stepId={s.id}
+              count={ctx.here[s.id]}
+              onCount={() => ctx.onHere(s.id)}
+              highlight={ctx.highlight === s.id}
+            />
+            {ctx.details({ kind: "step", id: s.id })}
             {s.type === "branch" && <BranchPaths step={s} ctx={ctx} />}
-            <AddButton onPick={(t) => ctx.onAdd(path, i + 1, t)} allowed={ctx.allowed} />
           </Box>
         );
       })}
-    </>
-  );
-}
-
-/** An if/else's two paths, Yes above No, each marked by a rail. */
-function BranchPaths({ step, ctx }: { step: Extract<Step, { type: "branch" }>; ctx: StepCtx }) {
-  return (
-    <Box sx={{ display: "flex", flexDirection: "column", width: "100%" }}>
-      {(["yes", "no"] as const).map((side) => (
-        <Box key={side} sx={{ display: "flex", flexDirection: "column", alignItems: "center", borderLeft: `3px solid ${side === "yes" ? tokens.green : tokens.outline}`, pl: 2, ml: 1, mt: 1.5 }}>
-          <LaneLabel side={side} />
-          <StepList steps={step[side]} path={`${step.id}:${side}`} ctx={ctx} />
-        </Box>
-      ))}
+      <AddButton onPick={(t) => ctx.onAdd(path, steps.length, t)} allowed={ctx.allowed} />
     </Box>
   );
 }
 
-function LaneLabel({ side }: { side: "yes" | "no" }) {
+/** An if/else's two paths as two labelled boxes under the check: what
+ *  happens if yes, what happens if no. */
+function BranchPaths({ step, ctx }: { step: Extract<Step, { type: "branch" }>; ctx: StepCtx }) {
   return (
-    <Box sx={{ px: 1.25, py: 0.25, borderRadius: "999px", fontSize: 12, fontWeight: 600, flex: "none", bgcolor: side === "yes" ? tokens.greenTint : tokens.surface2, color: side === "yes" ? tokens.greenDark : tokens.ink2, border: `1px solid ${side === "yes" ? tokens.greenBorder : tokens.divider}` }}>
-      {side === "yes" ? "Yes" : "No"}
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 1, mt: 1, ml: 2 }}>
+      {(["yes", "no"] as const).map((side) => (
+        <Box key={side} sx={{ border: `1px solid ${side === "yes" ? tokens.greenBorder : tokens.divider}`, bgcolor: side === "yes" ? tokens.greenTint : tokens.surface2, borderRadius: "8px", p: 1.25 }}>
+          <Typography sx={{ fontSize: 13, fontWeight: 600, mb: 1, color: side === "yes" ? tokens.greenDark : tokens.ink2 }}>
+            {side === "yes" ? "If yes" : "If no"}
+          </Typography>
+          <StepList steps={step[side]} path={`${step.id}:${side}`} ctx={ctx} />
+        </Box>
+      ))}
     </Box>
   );
 }
