@@ -376,8 +376,8 @@ export default function LeadPagePage() {
         <FbFormSource
           tab={tab}
           extras={<>
-            <ThankYouPageCard key={page.id} page={page} canSetUp={canSetUp} />
-            <LeadMagnetCard key={page.id} page={page} pipelineKind={pipeline.kind} canSetUp={canSetUp} />
+            <ThankYouPageCard key={`ty-${page.id}`} page={page} canSetUp={canSetUp} />
+            <LeadMagnetCard key={`lm-${page.id}`} page={page} pipelineKind={pipeline.kind} canSetUp={canSetUp} />
           </>}
           page={page}
           pipelineName={pipeline.name}
@@ -578,8 +578,8 @@ export default function LeadPagePage() {
               </>
             )}
 
-            <ThankYouPageCard key={page.id} page={page} canSetUp={canSetUp} />
-            <LeadMagnetCard key={page.id} page={page} pipelineKind={pipeline.kind} canSetUp={canSetUp} />
+            <ThankYouPageCard key={`ty-${page.id}`} page={page} canSetUp={canSetUp} />
+            <LeadMagnetCard key={`lm-${page.id}`} page={page} pipelineKind={pipeline.kind} canSetUp={canSetUp} />
             {canSetUp && (
               <>
               <Section

@@ -70,9 +70,20 @@ export function ThankYouCallTime({ token, slug, byPhone, preview, accent, agentN
 
   return (
     <Box sx={{ mt: 3.5, pt: 1.5, borderTop: "1px solid #eee", textAlign: "left" }}>
+      <CallTimeStep
+        question={question?.trim() || CALL_QUESTION}
+        required={false}
+        confirmText={CALL_TIME_CONFIRM.replaceAll("{agent}", agentFirst)}
+        value={value}
+        error={error}
+        onChange={(v) => { setError(""); setValue(v); }}
+      />
       {byPhone && (
-        <Box sx={{ mb: 2.5 }}>
-          <Typography sx={{ fontSize: 18, fontWeight: 600, mb: 1 }}>The WhatsApp number you gave us</Typography>
+        <Box sx={{ mt: 2.5 }}>
+          <Typography sx={{ fontSize: 18, fontWeight: 600, mb: 0.5 }}>Last step: lock in your time</Typography>
+          <Typography sx={{ fontSize: 14, color: "text.secondary", mb: 1.25 }}>
+            Which WhatsApp number should {agentFirst} call you on? Your slot isn't saved until you add it.
+          </Typography>
           <TextField
             placeholder="082 000 0000"
             value={phone}
@@ -83,19 +94,11 @@ export function ThankYouCallTime({ token, slug, byPhone, preview, accent, agentN
             }}
             fullWidth
             error={!!phoneError}
-            helperText={phoneError || "So we can match this time to your details."}
+            helperText={phoneError || " "}
             slotProps={{ htmlInput: { inputMode: "tel", autoComplete: "tel" } }}
           />
         </Box>
       )}
-      <CallTimeStep
-        question={question?.trim() || CALL_QUESTION}
-        required={false}
-        confirmText={CALL_TIME_CONFIRM.replaceAll("{agent}", agentFirst)}
-        value={value}
-        error={error}
-        onChange={(v) => { setError(""); setValue(v); }}
-      />
       {/* The form's own button (LeadCaptureForm), so it looks the same. */}
       <Button
         variant="contained"
@@ -106,7 +109,7 @@ export function ThankYouCallTime({ token, slug, byPhone, preview, accent, agentN
         startIcon={busy ? <CircularProgress size={18} sx={{ color: "inherit" }} /> : undefined}
         sx={{ mt: 3, bgcolor: accent, color: readableOn(accent), "&:hover": { bgcolor: accent, filter: "brightness(0.9)" }, "&.Mui-disabled": { bgcolor: accent, color: readableOn(accent), opacity: 0.7 } }}
       >
-        Confirm call time
+        {byPhone ? "Lock in my call time" : "Confirm call time"}
       </Button>
     </Box>
   );
