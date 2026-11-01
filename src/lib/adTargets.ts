@@ -36,14 +36,17 @@ export const METRICS: MetricDef[] = [
 /** Each metric's value; null when it can't be worked out (e.g. no landing
  *  page for an instant form, so no LP load or LP CVR). */
 export function metricValues(r: AdRowNumbers): Record<MetricDef["key"], number | null> {
+  // Landing-page numbers only mean something when the leads came from the
+  // page: more leads than page visits = instant-form leads (900% CVR).
+  const lp = r.lpv > 0 && r.leads <= r.lpv;
   return {
     spend: r.spend,
     leads: r.leads,
     cpl: r.leads ? r.spend / r.leads : null,
     cpm: r.impressions ? (r.spend / r.impressions) * 1000 : null,
     ctr: r.impressions ? (r.clicks / r.impressions) * 100 : null,
-    load: r.clicks && r.lpv ? (r.lpv / r.clicks) * 100 : null,
-    cvr: r.lpv ? (r.leads / r.lpv) * 100 : null,
+    load: lp && r.clicks ? (r.lpv / r.clicks) * 100 : null,
+    cvr: lp ? (r.leads / r.lpv) * 100 : null,
     freq: r.frequency || null,
   };
 }

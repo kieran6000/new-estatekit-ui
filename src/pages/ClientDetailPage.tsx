@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -19,6 +19,7 @@ import {
   Toolbar,
   Tooltip,
   Typography,
+  useMediaQuery,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import WhatsAppIcon from "@mui/icons-material/WhatsApp";
@@ -159,7 +160,7 @@ export default function ClientDetailPage() {
           <Header data={data} />
           <DeactivatedBanner profile={data.profile} />
           <Box sx={{ bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
-            <Box sx={{ maxWidth: 1200, mx: "auto", px: { xs: 0.5, md: 2 } }}>
+            <Box sx={{ maxWidth: 1440, mx: "auto", px: { xs: 0.5, md: 2 } }}>
               <Tabs value={tab} onChange={(_e, v) => pick(v)} variant="scrollable" allowScrollButtonsMobile>
                 <Tab value="overview" label="Overview" />
                 <Tab value="brief" label="Brief" />
@@ -167,7 +168,7 @@ export default function ClientDetailPage() {
               </Tabs>
             </Box>
           </Box>
-          <Box sx={{ p: { xs: 1.5, md: 2.5 }, maxWidth: 1200, mx: "auto", display: "flex", flexDirection: "column", gap: 2 }}>
+          <Box sx={{ p: { xs: 1.5, md: 2.5 }, maxWidth: 1440, mx: "auto", display: "flex", flexDirection: "column", gap: 2 }}>
             {tab === "overview" && <OverviewTab data={data} />}
             {tab === "brief" && (
               <Cols>
@@ -178,26 +179,7 @@ export default function ClientDetailPage() {
                 </Box>
               </Cols>
             )}
-            {tab === "settings" && (
-              <Cols>
-                <Box sx={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-                  <ProfileSection data={data} />
-                  <BrandingSection data={data} />
-                  <ContactSection data={data} />
-                  <LoginSection data={data} />
-                  <TeamSection agentId={data.profile.agent_id} name={data.profile.display_name || "This agent"} />
-                </Box>
-                <Box sx={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-                  <AdAccountSection data={data} />
-                  <LandingPagesSection data={data} />
-                  <MessagesSection data={data} />
-                  <FacebookSection data={data} />
-                  <ContractSection data={data} />
-                  <BillingSection data={data} />
-                  <AccountStatusSection profile={data.profile} />
-                </Box>
-              </Cols>
-            )}
+            {tab === "settings" && <SettingsTab data={data} />}
           </Box>
         </>
       )}
@@ -261,7 +243,7 @@ function Header({ data }: { data: Data }) {
 
   return (
     <Box sx={{ bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
-      <Box sx={{ maxWidth: 1200, mx: "auto", px: { xs: 2, md: 3 }, py: { xs: 2, md: 2.5 }, display: "flex", gap: { xs: 2, md: 3 }, alignItems: { xs: "flex-start", md: "center" }, flexDirection: { xs: "column", md: "row" } }}>
+      <Box sx={{ maxWidth: 1440, mx: "auto", px: { xs: 2, md: 3 }, py: { xs: 2, md: 2.5 }, display: "flex", gap: { xs: 2, md: 3 }, alignItems: { xs: "flex-start", md: "center" }, flexDirection: { xs: "column", md: "row" } }}>
         <Box sx={{ display: "flex", gap: 2, alignItems: "center", flex: 1, minWidth: 0 }}>
           <Box
             component="button"
@@ -335,6 +317,70 @@ function Cols({ children }: { children: ReactNode }) {
   return (
     <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" }, gap: 2, alignItems: "start" }}>
       {children}
+    </Box>
+  );
+}
+
+/** Settings in groups, each with a heading and a line on what's in it, and
+ *  (on a computer) a menu on the left that jumps to a group and shows which
+ *  one you're in. */
+function SettingsTab({ data }: { data: Data }) {
+  const wide = useMediaQuery("(min-width:1000px)");
+  const groups: { id: string; title: string; sub: string; body: ReactNode }[] = [
+    { id: "profile", title: "Profile", sub: "Who they are, how to reach them, and how their pages look.", body: <><ProfileSection data={data} /><ContactSection data={data} /><BrandingSection data={data} /></> },
+    { id: "access", title: "Login & team", sub: "How they sign in, and who works with them.", body: <><LoginSection data={data} /><TeamSection agentId={data.profile.agent_id} name={data.profile.display_name || "This agent"} /></> },
+    { id: "ads", title: "Ads & Facebook", sub: "Their ad account, Facebook page and where their leads come from.", body: <><AdAccountSection data={data} /><FacebookSection data={data} /><LandingPagesSection data={data} /></> },
+    { id: "messages", title: "Messages", sub: "Automations and emails that go to their leads.", body: <MessagesSection data={data} /> },
+    { id: "billing", title: "Billing & contract", sub: "Their plan, renewal and payments.", body: <><ContractSection data={data} /><BillingSection data={data} /></> },
+    { id: "account", title: "Account", sub: "Pause or close their account.", body: <AccountStatusSection profile={data.profile} /> },
+  ];
+  const [current, setCurrent] = useState(groups[0].id);
+  // The group nearest the top of the screen is the one lit in the menu.
+  useEffect(() => {
+    const els = groups.map((g) => document.getElementById(`set-${g.id}`)).filter(Boolean) as HTMLElement[];
+    const io = new IntersectionObserver(
+      (entries) => {
+        const top = entries.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+        if (top) setCurrent(top.target.id.replace("set-", ""));
+      },
+      { rootMargin: "-80px 0px -60% 0px" },
+    );
+    els.forEach((el) => io.observe(el));
+    return () => io.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const jump = (id: string) => document.getElementById(`set-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+
+  return (
+    <Box sx={{ display: "grid", gridTemplateColumns: wide ? "200px minmax(0, 1fr)" : "1fr", gap: 4, alignItems: "start" }}>
+      {wide && (
+        <Box component="nav" aria-label="Settings sections" sx={{ position: "sticky", top: 72, display: "flex", flexDirection: "column", gap: 0.25 }}>
+          {groups.map((g) => (
+            <Button
+              key={g.id}
+              onClick={() => jump(g.id)}
+              aria-current={current === g.id ? "true" : undefined}
+              sx={{
+                justifyContent: "flex-start", textTransform: "none", fontSize: 14, px: 1.5, minHeight: 40, borderRadius: "6px",
+                color: current === g.id ? tokens.primary : tokens.ink2, fontWeight: current === g.id ? 600 : 400,
+                bgcolor: current === g.id ? tokens.primaryBg : "transparent",
+                "&:hover": { bgcolor: current === g.id ? tokens.primaryBg : tokens.hover },
+              }}
+            >
+              {g.title}
+            </Button>
+          ))}
+        </Box>
+      )}
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 5, maxWidth: 820, minWidth: 0 }}>
+        {groups.map((g) => (
+          <Box key={g.id} id={`set-${g.id}`} component="section" aria-labelledby={`set-${g.id}-h`} sx={{ scrollMarginTop: 72 }}>
+            <Typography id={`set-${g.id}-h`} component="h2" sx={{ fontSize: 18, fontWeight: 600 }}>{g.title}</Typography>
+            <Typography sx={{ fontSize: 13.5, color: tokens.ink2, mt: 0.25, mb: 1.75 }}>{g.sub}</Typography>
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>{g.body}</Box>
+          </Box>
+        ))}
+      </Box>
     </Box>
   );
 }

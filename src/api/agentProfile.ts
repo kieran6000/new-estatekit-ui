@@ -71,6 +71,7 @@ export interface AdTableRow {
   name: string;
   /** Ads only: the ad set it's in. */
   adset: string | null;
+  adsetId?: string | null;
   status: string;
   created: string | null;
   spend: number;

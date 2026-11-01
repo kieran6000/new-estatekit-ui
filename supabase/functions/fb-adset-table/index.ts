@@ -73,7 +73,7 @@ Deno.serve(async (req) => {
     if (!tokens.length) return json({ rows: [], note: "No Facebook token configured" });
 
     const insights = `insights.time_range(${JSON.stringify({ since, until })}){spend,impressions,inline_link_clicks,frequency,actions}`;
-    const fields = ["id", "name", "effective_status", "created_time", ...(edge === "ads" ? ["adset{name}"] : []), insights].join(",");
+    const fields = ["id", "name", "effective_status", "created_time", ...(edge === "ads" ? ["adset{id,name}"] : []), insights].join(",");
     const filter = encodeURIComponent(JSON.stringify([{ field: "effective_status", operator: "IN", value: ["ACTIVE", "PAUSED", "CAMPAIGN_PAUSED", "ADSET_PAUSED"] }]));
 
     let lastErr = "";
@@ -92,6 +92,7 @@ Deno.serve(async (req) => {
           id: e.id,
           name: e.name,
           adset: e.adset?.name ?? null,
+          adsetId: e.adset?.id ?? null,
           status: e.effective_status,
           created: e.created_time,
           spend: Number(i.spend) || 0,

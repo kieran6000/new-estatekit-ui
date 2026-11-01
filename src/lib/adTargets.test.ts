@@ -32,4 +32,10 @@ describe("ad set targets", () => {
     expect(v.load).toBeNull();
     expect(v.cvr).toBeNull();
   });
+
+  it("an instant form ad with a few page visits gets no LP numbers either (no 900% CVR)", () => {
+    const v = metricValues({ ...row, leads: 27, lpv: 3, clicks: 900 });
+    expect(v.load).toBeNull();
+    expect(v.cvr).toBeNull();
+  });
 });
