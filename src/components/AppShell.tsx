@@ -77,9 +77,12 @@ export default function AppShell() {
   // Staff switch into any account; a team lead into their members' (only).
   const isTeamLead = useIsTeamLead();
   const canSwitch = !!isOperator || isTeamLead;
-  const section = activeSection(pathname);
   const activeAgentId = getActiveAgentIdSync();
+  // The client page of the account you're in is "Overview" in the menu.
   const isManagingOther = !!activeAgentId && activeAgentId !== user?.id;
+  const myClientPage = `/admin/clients/${activeAgentId ?? user?.id ?? ""}`;
+  // (Only when working in a client: in staff mode a client page is just Accounts.)
+  const section = isManagingOther && pathname === myClientPage ? "overview" : activeSection(pathname);
   usePageviewTracking();
   useRealtimeSubscriptions();
   const { data: profile } = useQuery({ queryKey: ["myProfile"], queryFn: getMyProfile, enabled: !!user, staleTime: 5 * 60_000 });
@@ -130,7 +133,7 @@ export default function AppShell() {
   ];
 
   const adminNav = [
-    ...(staffMode ? [] : [{ key: "overview", label: "Overview", icon: <DashboardOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <DashboardIcon sx={{ fontSize: SZ }} />, to: "/overview" }]),
+    ...(staffMode ? [] : [{ key: "overview", label: "Overview", icon: <DashboardOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <DashboardIcon sx={{ fontSize: SZ }} />, to: myClientPage }]),
     { key: "clients", label: "Accounts", icon: <GroupsOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <GroupsIcon sx={{ fontSize: SZ }} />, to: "/admin/clients" },
     { key: "automations", label: "Automations", icon: <SettingsOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <SettingsIcon sx={{ fontSize: SZ }} />, to: "/admin/automations" },
   ];
@@ -156,11 +159,10 @@ export default function AppShell() {
     { key: "mypage", label: "Forms", icon: <WebOutlinedIcon />, activeIcon: <WebIcon />, to: "/lead-page" },
     ...(isOperator
       ? [
-          { key: "overview", label: "Overview", icon: <DashboardOutlinedIcon />, activeIcon: <DashboardIcon />, to: "/overview" },
+          { key: "overview", label: "Overview", icon: <DashboardOutlinedIcon />, activeIcon: <DashboardIcon />, to: myClientPage },
           { key: "clients", label: "Accounts", icon: <GroupsOutlinedIcon />, activeIcon: <GroupsIcon />, to: "/admin/clients" },
         ]
-      : []),
-    { key: "account", label: "Account", icon: <AccountCircleOutlinedIcon />, activeIcon: <AccountCircleIcon />, to: "/account" },
+      : [{ key: "account", label: "Account", icon: <AccountCircleOutlinedIcon />, activeIcon: <AccountCircleIcon />, to: "/account" }]),
   ];
 
   if (staffMode && staffModeKnown && ["leads", "calendar", "mypage", "overview", "home", "setup"].includes(section)) return <Navigate to="/admin/clients" replace />;

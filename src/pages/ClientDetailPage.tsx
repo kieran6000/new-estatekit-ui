@@ -68,6 +68,9 @@ import { useSnack } from "../hooks/useSnack";
 import { trackActivity } from "../lib/activity";
 import { timeAgo } from "../lib/timeAgo";
 import RangePicker from "../components/RangePicker";
+import OverviewPage from "./OverviewPage";
+import { useFollowAccount } from "../hooks/useFollowLeadAccount";
+import { MAX_IMAGE_BYTES, uploadImage } from "../lib/image";
 import FundingChip from "../components/FundingChip";
 
 /** Digits in international form, so 083… and +2783… compare equal. */
@@ -100,6 +103,9 @@ export default function ClientDetailPage() {
   const { agentId = "" } = useParams();
   const navigate = useNavigate();
   const { data, isLoading, isError, error } = useQuery({ queryKey: ["client", agentId], queryFn: () => getClient(agentId), enabled: !!agentId });
+  // Their page is the account you're working in (it replaced /overview and,
+  // for staff, /account): opening it switches you into them.
+  useFollowAccount(agentId ? { agent_id: agentId } : null, "account");
   const [tab, setTab] = useState<TabKey>(() => {
     try {
       const t = sessionStorage.getItem(TAB_KEY);
@@ -181,11 +187,15 @@ export default function ClientDetailPage() {
               <Cols>
                 <Box sx={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
                   <ProfileSection data={data} />
+                  <BrandingSection data={data} />
                   <ContactSection data={data} />
                   <LoginSection data={data} />
                   <TeamSection agentId={data.profile.agent_id} name={data.profile.display_name || "This agent"} />
                 </Box>
                 <Box sx={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+                  <AdAccountSection data={data} />
+                  <SetupSection data={data} />
+                  <LandingPagesSection data={data} />
                   <MessagesSection data={data} />
                   <FacebookSection data={data} />
                   <ContractSection data={data} />
@@ -350,6 +360,66 @@ function Cols({ children }: { children: ReactNode }) {
     <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" }, gap: 2, alignItems: "start" }}>
       {children}
     </Box>
+  );
+}
+
+/** Their colour and logo: the sidebar, lead pages and Facebook-form
+ *  thank-you pages use them (moved here from the Account page). */
+function BrandingSection({ data }: { data: Data }) {
+  const p = data.profile;
+  const save = useClientSaver(p.agent_id);
+  const showSnack = useSnack();
+  const saved = p.sidebar_color || "#111827";
+  const [color, setColor] = useState(saved);
+  const [busy, setBusy] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  async function onLogo(file: File | undefined) {
+    if (!file) return;
+    if (file.size > MAX_IMAGE_BYTES) { showSnack("That image is too big. Try another one."); return; }
+    setBusy(true);
+    try {
+      const url = await uploadImage(file, "logo", p.agent_id);
+      await save(() => updateClientProfile(p.agent_id, { sidebar_logo_url: url }), "Logo saved");
+    } catch (e) {
+      console.error(e);
+      showSnack("Couldn't upload the logo. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Section title="Branding">
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, flexWrap: "wrap" }}>
+          <Box component="label" sx={{ display: "flex", alignItems: "center", gap: 1.25, cursor: "pointer" }}>
+            <Box component="input" type="color" value={color} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setColor(e.target.value)} aria-label="Colour" sx={{ width: 44, height: 44, p: 0, border: `1px solid ${tokens.divider}`, borderRadius: "8px", bgcolor: "transparent", cursor: "pointer" }} />
+            <Box>
+              <Typography sx={{ fontSize: 14, fontWeight: 500 }}>Colour</Typography>
+              <Typography sx={{ fontSize: 12.5, color: tokens.ink2 }}>{color.toUpperCase()} · sidebar and pages</Typography>
+            </Box>
+          </Box>
+          {color.toLowerCase() !== saved.toLowerCase() && (
+            <Button size="small" variant="contained" disabled={busy} onClick={() => void save(() => updateClientProfile(p.agent_id, { sidebar_color: color }), "Colour saved")}>Save colour</Button>
+          )}
+        </Box>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, flexWrap: "wrap" }}>
+          <Box sx={{ width: 120, height: 44, borderRadius: "8px", bgcolor: saved, display: "grid", placeItems: "center", overflow: "hidden", flex: "none" }}>
+            {p.sidebar_logo_url
+              ? <Box component="img" src={p.sidebar_logo_url} alt="Logo" sx={{ maxWidth: "90%", maxHeight: 32 }} />
+              : <Typography sx={{ fontSize: 12, color: "#fff", opacity: 0.8 }}>No logo</Typography>}
+          </Box>
+          <Button size="small" variant="outlined" startIcon={<UploadFileIcon />} disabled={busy} onClick={() => fileRef.current?.click()}>
+            {p.sidebar_logo_url ? "Change logo" : "Upload logo"}
+          </Button>
+          {p.sidebar_logo_url && (
+            <Button size="small" color="error" disabled={busy} onClick={() => void save(() => updateClientProfile(p.agent_id, { sidebar_logo_url: null }), "Logo removed")}>Remove</Button>
+          )}
+          <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => { void onLogo(e.target.files?.[0]); e.target.value = ""; }} />
+        </Box>
+      </Box>
+    </Section>
   );
 }
 
@@ -568,21 +638,16 @@ function OverviewTab({ data }: { data: Data }) {
         </Box>
       )}
 
+      <OverviewPage embedded range={{ from: sinceDay, to: ymd(new Date(until.getTime() - 1)) }} />
+
       <Cols>
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-          <Section title="Leads by stage" sub="All time">
-            <Bars data={data.live?.by_stage ?? {}} />
-            <Typography sx={{ fontSize: 12.5, color: tokens.ink3, mt: 1.5 }}>
-              {data.live?.leads_total ?? 0} leads in total · last lead {data.live?.last_lead_at ? timeAgo(data.live.last_lead_at) : "never"}
-            </Typography>
-          </Section>
-          <EmailStatsSection data={data} since={since} until={until} />
-        </Box>
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-          <AdAccountSection data={data} />
-          <SetupSection data={data} />
-          <LandingPagesSection data={data} />
-        </Box>
+        <Section title="Leads by stage" sub="All time">
+          <Bars data={data.live?.by_stage ?? {}} />
+          <Typography sx={{ fontSize: 12.5, color: tokens.ink3, mt: 1.5 }}>
+            {data.live?.leads_total ?? 0} leads in total · last lead {data.live?.last_lead_at ? timeAgo(data.live.last_lead_at) : "never"}
+          </Typography>
+        </Section>
+        <EmailStatsSection data={data} since={since} until={until} />
       </Cols>
     </>
   );

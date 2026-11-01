@@ -89,7 +89,11 @@ const ADVANCED_COLS: Col[] = [
   { k: "actualRoi", label: "Actual ROI", num: true, fmt: pct },
 ];
 
-export default function OverviewPage() {
+/** The day-by-day numbers and the live ads, for the account you're switched
+ *  into. Lives inside the client's page (Overview tab, embedded, on that
+ *  tab's dates): `range` replaces the period picker. The old /overview page
+ *  now opens that client page instead (OverviewRedirect). */
+export default function OverviewPage({ embedded = false, range }: { embedded?: boolean; range?: { from: string; to: string } } = {}) {
   const navigate = useNavigate();
   // Remember the chosen period + custom dates across visits.
   const [period, setPeriod] = useState<OverviewPeriod>(() => {
@@ -133,11 +137,13 @@ export default function OverviewPage() {
   const [pipelineFilter, setPipelineFilter] = useState<string | "all">("all");
   const [pipelineMenuAnchor2, setPipelineMenuAnchor2] = useState<HTMLElement | null>(null);
   const pipelineIdFilter = pipelineFilter === "all" ? null : pipelineFilter;
-  const { data = [], isLoading } = useOverview(period, { from: fromDate, to: toDate }, pipelineIdFilter);
+  const usePeriod: OverviewPeriod = range ? "Custom" : period;
+  const useDates = range ?? { from: fromDate, to: toDate };
+  const { data = [], isLoading } = useOverview(usePeriod, useDates, pipelineIdFilter);
   const cols = mode === "simple" ? SIMPLE_COLS : ADVANCED_COLS;
   const { sort, onSort } = useTableSort<ColKey>("estatekit_overview_sort", { k: "date", dir: "desc" }, ADVANCED_COLS.map((c) => c.k).concat(SIMPLE_COLS.map((c) => c.k)));
   // Ad KPIs report over exactly the window the table is showing.
-  const adRange = rangeFor(period, { from: fromDate, to: toDate });
+  const adRange = rangeFor(usePeriod, useDates);
   // Which client's ads to preview — the currently active/managed agent.
   const { data: profile } = useQuery({ queryKey: ["myProfile"], queryFn: getMyProfile });
   const { data: isOperator } = useIsOperator();
@@ -186,7 +192,8 @@ export default function OverviewPage() {
   };
 
   return (
-    <Box>
+    <Box sx={embedded ? { bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "8px", overflow: "hidden" } : undefined}>
+      {!embedded && (
       <AppBar position="sticky">
         <Toolbar sx={{ height: 56, minHeight: "56px !important" }}>
           <IconButton onClick={() => navigate("/leads")}>
@@ -195,8 +202,11 @@ export default function OverviewPage() {
           <Typography sx={{ fontSize: 18, fontWeight: 500 }}>Overview</Typography>
         </Toolbar>
       </AppBar>
+      )}
 
       <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.5, p: "10px 16px", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
+        {embedded && <Typography sx={{ fontSize: 15, fontWeight: 600, mr: "auto" }}>Day by day</Typography>}
+        {!embedded && (
         <Box
           component="button"
           onClick={(e) => setMenuAnchor(e.currentTarget)}
@@ -204,6 +214,7 @@ export default function OverviewPage() {
         >
           {period}
         </Box>
+        )}
         <Menu anchorEl={menuAnchor} open={!!menuAnchor} onClose={() => setMenuAnchor(null)}>
           {PERIODS.map((p) => (
             <MenuItem
@@ -219,7 +230,7 @@ export default function OverviewPage() {
           ))}
         </Menu>
 
-        {period === "Custom" && (
+        {!embedded && period === "Custom" && (
           <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
             <TextField
               type="date"
@@ -299,12 +310,12 @@ export default function OverviewPage() {
           p: isNarrow ? 0 : "12px 16px",
           // Both columns fill the window and scroll internally, so the header
           // and totals stay put and there's no dead space under a short table.
-          height: isNarrow ? "auto" : "calc(100dvh - 122px)",
+          height: isNarrow ? "auto" : embedded ? 560 : "calc(100dvh - 122px)",
           minHeight: 0,
         }}
       >
       <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", minHeight: 0 }}>
-      {showNumbers && isOperator && profile && (
+      {showNumbers && isOperator && profile && !embedded && (
         <Box sx={{ display: "flex", flexDirection: "column", gap: 1, p: isNarrow ? "12px 16px 0" : "0 0 12px" }}>
           <AdSpendCard profile={profile} adAccount={adAccount} periodSpend={totals.spend} isLoading={adAccountLoading} />
           <StageDonut counts={stageCounts} />
@@ -415,7 +426,7 @@ export default function OverviewPage() {
         >
           {!isNarrow && (
             <Typography sx={{ fontSize: 11, fontWeight: 600, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.05em", p: "14px 16px 0" }}>
-              Active ads · {period.toLowerCase()}
+              Active ads{embedded ? "" : ` · ${period.toLowerCase()}`}
             </Typography>
           )}
           <ActiveAds

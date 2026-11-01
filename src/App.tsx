@@ -11,7 +11,7 @@ import WelcomePage from "./pages/WelcomePage";
 import LeadsPage from "./pages/LeadsPage";
 import LeadDetailPage from "./pages/LeadDetailPage";
 import CalendarPage from "./pages/CalendarPage";
-import OverviewPage from "./pages/OverviewPage";
+import { getActiveAgentIdSync } from "./api/_client";
 import HomePage from "./pages/HomePage";
 import LeadPagePage from "./pages/LeadPagePage";
 import UpgradePage from "./pages/UpgradePage";
@@ -113,7 +113,8 @@ export default function App() {
             <Route path="/leads" element={<LeadsPage />} />
             <Route path="/leads/:id" element={<LeadDetailPage />} />
             <Route path="/calendar" element={<CalendarPage />} />
-            <Route path="/overview" element={<OperatorOnly><OverviewPage /></OperatorOnly>} />
+            {/* Overview now lives on the client's page (Overview tab). */}
+            <Route path="/overview" element={<OperatorOnly><Navigate to={`/admin/clients/${getActiveAgentIdSync() ?? user?.id ?? ""}`} replace /></OperatorOnly>} />
             {import.meta.env.DEV && <Route path="/home" element={<HomePage />} />}
             <Route path="/lead-page" element={<LeadPagePage />} />
             <Route path="/upgrade" element={<UpgradePage />} />
