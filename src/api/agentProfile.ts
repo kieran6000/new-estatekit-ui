@@ -65,6 +65,32 @@ export async function getActiveAds(adAccountId: string, since?: string | null, u
   return (data?.ads ?? []) as ActiveAd[];
 }
 
+/** One ad set (or ad) in the client page's "Ad sets & ads" table. */
+export interface AdTableRow {
+  id: string;
+  name: string;
+  /** Ads only: the ad set it's in. */
+  adset: string | null;
+  status: string;
+  created: string | null;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  lpv: number;
+  leads: number;
+  frequency: number;
+}
+
+/** Ad sets (or ads) that are on or spent between since and until (YYYY-MM-DD,
+ *  both included). note: "busy" when Facebook is throttling, else why Meta
+ *  couldn't be read. */
+export async function getAdSetTable(adAccountId: string, since: string, until: string, level: "adset" | "ad"): Promise<{ rows: AdTableRow[]; note?: string }> {
+  const { data, error } = await supabase.functions.invoke("fb-adset-table", { body: { adAccountId, since, until, level } });
+  if (error) throw new Error(data?.error || error.message);
+  if (data?.error) throw new Error(data.error);
+  return { rows: (data?.rows ?? []) as AdTableRow[], note: data?.note };
+}
+
 /** Pauses or resumes a single ad. Changes live delivery/spend immediately. */
 export async function setAdStatus(adId: string, status: "ACTIVE" | "PAUSED"): Promise<void> {
   const { data, error } = await supabase.functions.invoke("fb-set-ad-status", { body: { adId, status } });

@@ -28,8 +28,6 @@ import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import LoginIcon from "@mui/icons-material/Login";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import PhotoCameraOutlinedIcon from "@mui/icons-material/PhotoCameraOutlined";
-import CheckCircleIcon from "@mui/icons-material/CheckCircle";
-import RadioButtonUncheckedIcon from "@mui/icons-material/RadioButtonUnchecked";
 import LockResetIcon from "@mui/icons-material/LockReset";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
@@ -57,10 +55,7 @@ import { getFbAdAccount, setAgentPassword } from "../api/agentProfile";
 import { listAccountWorkflows } from "../api/workflows";
 import { setActiveAgent, supabase } from "../api/_client";
 import { getEmailStats } from "../api/leadEvents";
-import { listSoldListingsForAgent } from "../api/soldListings";
 import { listSignupRequests } from "../api/signup";
-import { setupDone, setupProgress, SALES_TARGET, type SetupKey } from "../lib/setup";
-import { useCalendarReady } from "../hooks/useCalendarReady";
 import { BRIEF_FIELDS, BRIEF_QUESTIONS, buildBrief, type BriefSource } from "../lib/brief";
 import { resolveRange, useDateRange, ymd } from "../lib/range";
 import { useAuth } from "../hooks/useAuth";
@@ -68,7 +63,7 @@ import { useSnack } from "../hooks/useSnack";
 import { trackActivity } from "../lib/activity";
 import { timeAgo } from "../lib/timeAgo";
 import RangePicker from "../components/RangePicker";
-import OverviewPage from "./OverviewPage";
+import AdSetsTable from "../components/AdSetsTable";
 import { useFollowAccount } from "../hooks/useFollowLeadAccount";
 import { MAX_IMAGE_BYTES, uploadImage } from "../lib/image";
 import FundingChip from "../components/FundingChip";
@@ -194,7 +189,6 @@ export default function ClientDetailPage() {
                 </Box>
                 <Box sx={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
                   <AdAccountSection data={data} />
-                  <SetupSection data={data} />
                   <LandingPagesSection data={data} />
                   <MessagesSection data={data} />
                   <FacebookSection data={data} />
@@ -245,21 +239,9 @@ function Header({ data }: { data: Data }) {
   const save = useClientSaver(p.agent_id);
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
-  const { data: sales = [] } = useQuery({ queryKey: ["sold", p.agent_id], queryFn: () => listSoldListingsForAgent(p.agent_id) });
   const name = p.display_name || p.whatsapp_number || "Unnamed account";
   const phone = p.whatsapp_number || d?.contact.phones[0] || "";
   const email = p.email || d?.contact.emails[0] || "";
-  const calendarReady = useCalendarReady();
-  const setup = setupProgress({
-    calendarReady,
-    displayName: p.display_name,
-    company: p.company,
-    whatsappNumber: p.whatsapp_number,
-    email: p.email,
-    avatarUrl: p.avatar_url,
-    salesCount: sales.length,
-    googleCalendarEmail: p.google_calendar_email,
-  });
 
   function openDashboard() {
     setActiveAgent(p.agent_id === user?.id ? null : p.agent_id);
@@ -307,13 +289,7 @@ function Header({ data }: { data: Data }) {
             <Typography sx={{ fontSize: 14, color: tokens.ink2, mt: 0.25, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {[p.company || "No agency on file", p.area].filter(Boolean).join(" · ")}
             </Typography>
-            <Box sx={{ display: "flex", gap: 0.75, flexWrap: "wrap", mt: 1 }}>
-              <Chip
-                size="small"
-                label={setup.complete ? "Set up: done" : `Set up: ${setup.done}/${setup.total}`}
-                color={setup.complete ? "success" : "default"}
-                variant="outlined"
-              />
+            <Box sx={{ display: "flex", gap: 0.75, flexWrap: "wrap", mt: 1, "&:empty": { display: "none" } }}>
               {p.deactivated_at ? <Chip size="small" color="warning" label="Deactivated" /> : p.automations_paused && <Chip size="small" color="warning" variant="outlined" label="Automations paused" />}
             </Box>
           </Box>
@@ -626,19 +602,7 @@ function OverviewTab({ data }: { data: Data }) {
         <Tile label="Mandates" value={v(r?.mandates)} />
       </Box>
 
-      {r && (r.waiting > 0 || r.no_answer > 0) && (
-        <Box sx={{ bgcolor: tokens.amberTint, border: `1px solid ${tokens.amberBorder}`, borderRadius: "8px", px: 2, py: 1.5 }}>
-          <Typography sx={{ fontSize: 14, fontWeight: 600 }}>Right now</Typography>
-          <Typography sx={{ fontSize: 14 }}>
-            {[
-              r.waiting > 0 ? `${r.waiting} ${r.waiting === 1 ? "lead is" : "leads are"} waiting for a first call` : "",
-              r.no_answer > 0 ? `${r.no_answer} didn't answer and need another try` : "",
-            ].filter(Boolean).join(" · ")}
-          </Typography>
-        </Box>
-      )}
-
-      <OverviewPage embedded range={{ from: sinceDay, to: ymd(new Date(until.getTime() - 1)) }} />
+      <AdSetsTable adAccountId={acct ?? null} since={sinceDay} until={ymd(new Date(until.getTime() - 1))} />
 
       <Cols>
         <Section title="Leads by stage" sub="All time">
@@ -721,7 +685,6 @@ function AdAccountSection({ data }: { data: Data }) {
             ["Status", a?.accountStatus != null ? ACCOUNT_STATUS[a.accountStatus] ?? `Code ${a.accountStatus}` : null],
             ["Spent all time", a?.amountSpent != null ? money(a.amountSpent) : null],
             ["Spending limit", a?.spendCap ? money(a.spendCap) : "None"],
-            ["Account", `act_${acct}`],
           ]}
         />
       )}
@@ -992,47 +955,6 @@ function ContractSection({ data }: { data: Data }) {
   );
 }
 
-const SETUP_LABELS: Record<SetupKey, string> = {
-  photo: "Photo",
-  sales: `${SALES_TARGET} recent sales`,
-  name: "Full name",
-  whatsapp: "WhatsApp cellphone",
-  email: "Reply email",
-  agency: "Agency",
-  calendar: "Google Calendar connected",
-};
-
-function SetupSection({ data }: { data: Data }) {
-  const { profile: p } = data;
-  const { data: sales = [] } = useQuery({ queryKey: ["sold", p.agent_id], queryFn: () => listSoldListingsForAgent(p.agent_id) });
-  const calendarReady = useCalendarReady();
-  const done = setupDone({
-    displayName: p.display_name,
-    company: p.company,
-    whatsappNumber: p.whatsapp_number,
-    email: p.email,
-    avatarUrl: p.avatar_url,
-    salesCount: sales.length,
-    googleCalendarEmail: p.google_calendar_email,
-  });
-  const keys = (Object.keys(SETUP_LABELS) as SetupKey[]).filter((k) => k !== "calendar" || calendarReady);
-  const n = keys.filter((k) => done[k]).length;
-  return (
-    <Section title={n === keys.length ? "All done" : `${n} of ${keys.length} done`}>
-      <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
-        {keys.map((k) => (
-          <Box key={k} sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-            {done[k] ? <CheckCircleIcon sx={{ fontSize: 20, color: "success.main" }} /> : <RadioButtonUncheckedIcon sx={{ fontSize: 20, color: tokens.ink3 }} />}
-            <Typography sx={{ fontSize: 13.5, color: done[k] ? tokens.ink : tokens.ink2 }}>
-              {SETUP_LABELS[k]}
-              {k === "sales" && !done.sales ? ` (${sales.length} of ${SALES_TARGET})` : ""}
-            </Typography>
-          </Box>
-        ))}
-      </Box>
-    </Section>
-  );
-}
 
 const SOURCE_LABEL: Record<BriefSource, string> = {
   call: "added here",
@@ -1058,7 +980,6 @@ function BriefSection({ data }: { data: Data }) {
     : submitted
       ? `Onboarding form ${submitted}`
       : undefined;
-  const toAsk = BRIEF_FIELDS.filter((f) => f.part === "call" && !brief[f.key]).map((f) => f.label);
 
   const rowsFor = (part: "signup" | "call") =>
     BRIEF_FIELDS.filter((f) => f.part === part).map((f) => {
@@ -1085,9 +1006,6 @@ function BriefSection({ data }: { data: Data }) {
             <Typography sx={{ fontSize: 12, fontWeight: 600, color: tokens.ink2, mb: 0.75 }}>From the onboarding call</Typography>
             <KV labelWidth="42%" rows={rowsFor("call")} />
           </Box>
-          {toAsk.length > 0 && (
-            <Typography sx={{ fontSize: 13, color: "warning.dark" }}>Still to ask: {toAsk.join(", ")}.</Typography>
-          )}
         </Box>
       }
       fields={BRIEF_FIELDS.map((f) => ({ key: f.key, label: f.label, value: brief[f.key]?.value ?? "", placeholder: f.placeholder, multiline: f.key === "suburbs" || f.key === "offer" }))}

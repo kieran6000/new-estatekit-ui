@@ -1,24 +1,21 @@
 import { useEffect, useState } from "react";
-import { Link as RouterLink } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Box, Button, Chip, TextField, Typography } from "@mui/material";
+import { Box, Button, TextField, Typography } from "@mui/material";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import { tokens } from "../theme";
-import { getOnboardingVideo, listOnboardingSubmissions, setOnboardingVideo } from "../api/onboarding";
+import { getOnboardingVideo, setOnboardingVideo } from "../api/onboarding";
 import { canPlayVideo } from "./VideoPlayer";
 import { useSnack } from "../hooks/useSnack";
-import { timeAgo } from "../lib/timeAgo";
 
 const LINK = "https://leads.estatekit.co/onboarding";
 
 /** Staff, on the Accounts page: the onboarding form's link (send it after
- *  the call), the "what happens next" video, and the latest forms in, with
- *  whether their account was made and whether they watched the video. */
+ *  the call) and the "what happens next" video. (The list of forms in went:
+ *  the accounts table below already shows who joined.) */
 export default function OnboardingAdminCard() {
   const qc = useQueryClient();
   const showSnack = useSnack();
   const { data: saved = "" } = useQuery({ queryKey: ["onboardingVideo"], queryFn: getOnboardingVideo });
-  const { data: rows = [] } = useQuery({ queryKey: ["onboardingSubmissions"], queryFn: listOnboardingSubmissions, staleTime: 60_000 });
   const [video, setVideo] = useState(saved);
   useEffect(() => setVideo(saved), [saved]);
   const url = video.trim();
@@ -64,25 +61,6 @@ export default function OnboardingAdminCard() {
         />
       </Box>
 
-      {rows.length > 0 && (
-        <Box sx={{ borderTop: `1px solid ${tokens.divider2}` }}>
-          {rows.slice(0, 8).map((r) => (
-            <Box key={r.id} sx={{ px: 2, py: 1.25, display: "flex", alignItems: "center", gap: 1.5, flexWrap: "wrap", "& + &": { borderTop: `1px solid ${tokens.divider2}` } }}>
-              <Box sx={{ flex: "1 1 220px", minWidth: 0 }}>
-                <Typography sx={{ fontSize: 14, fontWeight: 600 }}>{r.name} <Box component="span" sx={{ fontWeight: 400, color: "text.secondary" }}>· {r.agency}</Box></Typography>
-                <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
-                  {r.campaign} · {[r.city, r.suburbs.join(", ")].filter(Boolean).join(": ")} · {timeAgo(r.created_at)}
-                </Typography>
-              </Box>
-              <Chip size="small" variant="outlined"
-                color={r.account_status === "created" ? "success" : r.account_status === "existing" ? "default" : "error"}
-                label={r.account_status === "created" ? "Account made, login sent" : r.account_status === "existing" ? "Already had an account" : "Account not made"} />
-              <Chip size="small" variant="outlined" color={r.video_watched_at ? "success" : "default"} label={r.video_watched_at ? "Watched the video" : "Not watched yet"} />
-              {r.agent_id && <Button size="small" component={RouterLink} to={`/admin/clients/${r.agent_id}`}>Open</Button>}
-            </Box>
-          ))}
-        </Box>
-      )}
     </Box>
   );
 }
