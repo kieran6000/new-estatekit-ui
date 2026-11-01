@@ -79,6 +79,8 @@ export interface AdNumbers {
   leads: number;
   /** Landing page views. */
   lpv: number;
+  /** Ads Manager's name for the result: "Leads (Form)", "Website leads". */
+  resultType?: string;
 }
 
 /** One campaign, ad set or ad in the client page's ads table. */
@@ -92,6 +94,8 @@ export interface AdsRow extends AdNumbers {
   created: string | null;
   dailyBudget: number | null;
   lifetimeBudget: number | null;
+  /** When it stops (campaigns and ad sets); null = ongoing. */
+  ends?: string | null;
   campaign: { id: string; name: string } | null;
   adset: { id: string; name: string } | null;
   /** Ads only: what the ad shows, for the preview. */

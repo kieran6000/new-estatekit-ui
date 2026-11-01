@@ -76,19 +76,13 @@ export function resolveRange(r: DateRange): { since: Date; until: Date; label: s
   }
 }
 
-/** The days a range covers, as people say them: "1 Nov 2026",
- *  "25 – 31 Oct 2026", "29 Sep – 5 Oct 2026", "28 Dec 2025 – 3 Jan 2026". */
+/** The days a range covers, written as Ads Manager does: "Nov 1, 2026",
+ *  "Oct 26, 2026 – Nov 1, 2026". */
 export function rangeDates(r: DateRange): string {
   const { since, until } = resolveRange(r);
   const last = addDays(until, -1);
-  const d = (x: Date) => String(x.getDate());
-  const m = (x: Date) => x.toLocaleDateString("en-ZA", { month: "short" });
-  const y = (x: Date) => String(x.getFullYear());
-  if (r.key === "all") return `Since ${m(since)} ${y(since)}`;
-  if (ymd(since) === ymd(last)) return `${d(last)} ${m(last)} ${y(last)}`;
-  if (y(since) !== y(last)) return `${d(since)} ${m(since)} ${y(since)} – ${d(last)} ${m(last)} ${y(last)}`;
-  if (m(since) !== m(last)) return `${d(since)} ${m(since)} – ${d(last)} ${m(last)} ${y(last)}`;
-  return `${d(since)} – ${d(last)} ${m(last)} ${y(last)}`;
+  const f = (x: Date) => x.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return ymd(since) === ymd(last) ? f(last) : `${f(since)} – ${f(last)}`;
 }
 
 /** The chosen range, remembered on this device (one per `storageKey`). */

@@ -20,13 +20,14 @@ export interface MetricDef {
   rule?: { value: number; up: boolean };
 }
 
+// In Ads Manager's order (its "Performance" columns).
 export const METRICS: MetricDef[] = [
-  { key: "spend", label: "Amount spent" },
-  { key: "leads", label: "Leads" },
-  { key: "cpl", label: "Cost per lead", target: "under R60", rule: { value: 60, up: false } },
-  { key: "impressions", label: "Impressions" },
+  { key: "leads", label: "Results" },
   { key: "reach", label: "Reach" },
   { key: "freq", label: "Frequency", target: "under 2.5", rule: { value: 2.5, up: false } },
+  { key: "cpl", label: "Cost per result", target: "under R60", rule: { value: 60, up: false } },
+  { key: "spend", label: "Amount spent" },
+  { key: "impressions", label: "Impressions" },
   { key: "cpm", label: "CPM (cost per 1,000 impressions)", target: "R40 – R80", rule: { value: 80, up: false } },
   { key: "clicks", label: "Link clicks" },
   { key: "ctr", label: "CTR (link click-through rate)", target: "1.5%+", rule: { value: 1.5, up: true } },
@@ -66,12 +67,12 @@ export function sumRows(rows: AdRowNumbers[]): AdRowNumbers {
   );
 }
 
-/** Facebook's number formats: R1,234.56 for money, 1,234 for counts. */
+/** Ads Manager's number formats: R1,634.64 for money, 9,318 for counts. */
+export const adsMoney = (n: number) => "R" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 export function formatMetric(k: MetricKey, v: number | null): string {
   if (v === null) return "—";
-  const money = (n: number) => "R" + n.toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  if (k === "spend" || k === "cpl" || k === "cpm") return money(v);
+  if (k === "spend" || k === "cpl" || k === "cpm") return adsMoney(v);
   if (k === "ctr") return v.toFixed(2) + "%";
   if (k === "freq") return v.toFixed(2);
-  return Math.round(v).toLocaleString("en-ZA");
+  return Math.round(v).toLocaleString("en-US");
 }

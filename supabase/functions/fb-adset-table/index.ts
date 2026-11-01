@@ -27,12 +27,19 @@ type Action = { action_type: string; value: string };
 // Same as fb-active-ads: one canonical lead type, never a sum (they repeat).
 const LEAD_ACTION_PRIORITY = ["lead", "onsite_conversion.lead_grouped", "offsite_conversion.fb_pixel_lead", "leadgen.other"];
 function leadsFrom(actions: Action[] | undefined): number {
-  if (!actions) return 0;
+  return leadResult(actions).leads;
+}
+// Ads Manager's name for the result under the number: "Leads (Form)" etc.
+const RESULT_NAME: Record<string, string> = { lead: "Leads", "onsite_conversion.lead_grouped": "Leads (Form)", "offsite_conversion.fb_pixel_lead": "Website leads", "leadgen.other": "Leads (Form)" };
+function leadResult(actions: Action[] | undefined): { leads: number; resultType: string } {
+  if (!actions) return { leads: 0, resultType: "" };
+  // Form leads are named as forms even when the generic "lead" is there too.
+  const form = actions.find((a) => a.action_type === "onsite_conversion.lead_grouped");
   for (const type of LEAD_ACTION_PRIORITY) {
     const m = actions.find((a) => a.action_type === type);
-    if (m) return Number(m.value) || 0;
+    if (m) return { leads: Number(m.value) || 0, resultType: form ? "Leads (Form)" : RESULT_NAME[type] };
   }
-  return 0;
+  return { leads: 0, resultType: "" };
 }
 const actionValue = (actions: Action[] | undefined, type: string) => Number(actions?.find((a) => a.action_type === type)?.value) || 0;
 
@@ -67,6 +74,7 @@ function numbers(i: any) {
     clicks: Number(i?.inline_link_clicks) || 0,
     frequency: Number(i?.frequency) || 0,
     leads: leadsFrom(i?.actions),
+    resultType: leadResult(i?.actions).resultType,
     lpv: actionValue(i?.actions, "landing_page_view"),
   };
 }
@@ -95,6 +103,7 @@ Deno.serve(async (req) => {
     const fields = [
       "id", "name", "status", "effective_status", "created_time",
       ...(lvl !== "ad" ? ["daily_budget", "lifetime_budget"] : []),
+      ...(lvl === "campaign" ? ["stop_time"] : lvl === "adset" ? ["end_time"] : []),
       ...(lvl !== "campaign" ? ["campaign{id,name}"] : []),
       ...(lvl === "ad" ? ["adset{id,name}", "creative{body,title,image_url,thumbnail_url,call_to_action_type,link_url,object_story_spec}"] : []),
       `insights.time_range(${range}){${INSIGHT_FIELDS}}`,
@@ -123,6 +132,7 @@ Deno.serve(async (req) => {
           // Budgets come in cents.
           dailyBudget: e.daily_budget ? Number(e.daily_budget) / 100 : null,
           lifetimeBudget: e.lifetime_budget ? Number(e.lifetime_budget) / 100 : null,
+          ends: e.stop_time || e.end_time || null,
           campaign: e.campaign ? { id: e.campaign.id, name: e.campaign.name } : null,
           adset: e.adset ? { id: e.adset.id, name: e.adset.name } : null,
           creative: lvl === "ad" ? {
