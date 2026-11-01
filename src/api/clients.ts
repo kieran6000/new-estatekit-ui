@@ -226,7 +226,7 @@ export async function getClient(agentId: string): Promise<{ profile: ClientProfi
 }
 
 export type ClientProfilePatch = Partial<
-  Pick<ClientProfile, "display_name" | "whatsapp_number" | "email" | "area" | "company" | "avatar_url" | "fb_page_id" | "fb_ad_account_id" | "automations_paused" | "lead_confirmation_email" | "renewal_date" | "contract_pdf_url" | "tier" | "alert_contacts">
+  Pick<ClientProfile, "display_name" | "whatsapp_number" | "email" | "area" | "company" | "avatar_url" | "fb_page_id" | "fb_ad_account_id" | "automations_paused" | "lead_confirmation_email" | "renewal_date" | "contract_pdf_url" | "tier" | "alert_contacts" | "sidebar_color" | "sidebar_logo_url">
 > & { /** The team they're in (their team lead), or null. */ team_lead_id?: string | null };
 
 /** Puts an agent in a team lead's team (or takes them out, with null). */

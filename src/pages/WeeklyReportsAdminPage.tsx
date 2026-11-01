@@ -172,7 +172,7 @@ export default function WeeklyReportsAdminPage() {
     <Box>
       <AppBar position="sticky">
         <Toolbar sx={{ height: 56, minHeight: "56px !important" }}>
-          <IconButton onClick={() => navigate("/admin/clients")} aria-label="Back to accounts">
+          <IconButton onClick={() => navigate("/clients")} aria-label="Back to accounts">
             <ArrowBackIcon />
           </IconButton>
           <Typography sx={{ fontSize: 18, fontWeight: 500, flex: 1 }}>Weekly reports</Typography>

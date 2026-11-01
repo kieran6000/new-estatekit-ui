@@ -1,0 +1,77 @@
+// The ads table's columns, named exactly as in Ads Manager, and the media
+// buyer's targets for four of them: each is on target, close (within 20%)
+// or off target. No colour under R150 spend or fewer than 3 leads: too
+// little to judge. Nothing here is our own metric: all are Facebook's.
+
+import type { AdNumbers } from "../api/agentProfile";
+
+export type Tone = "good" | "near" | "bad" | "none";
+export type AdRowNumbers = AdNumbers;
+
+export type MetricKey = "spend" | "leads" | "cpl" | "impressions" | "reach" | "freq" | "cpm" | "clicks" | "ctr" | "lpv";
+
+export interface MetricDef {
+  key: MetricKey;
+  /** Facebook's name for it. */
+  label: string;
+  /** The target as shown under the column name. */
+  target?: string;
+  /** target and direction: up = higher is better. */
+  rule?: { value: number; up: boolean };
+}
+
+export const METRICS: MetricDef[] = [
+  { key: "spend", label: "Amount spent" },
+  { key: "leads", label: "Leads" },
+  { key: "cpl", label: "Cost per lead", target: "under R60", rule: { value: 60, up: false } },
+  { key: "impressions", label: "Impressions" },
+  { key: "reach", label: "Reach" },
+  { key: "freq", label: "Frequency", target: "under 2.5", rule: { value: 2.5, up: false } },
+  { key: "cpm", label: "CPM (cost per 1,000 impressions)", target: "R40 – R80", rule: { value: 80, up: false } },
+  { key: "clicks", label: "Link clicks" },
+  { key: "ctr", label: "CTR (link click-through rate)", target: "1.5%+", rule: { value: 1.5, up: true } },
+  { key: "lpv", label: "Landing page views" },
+];
+
+export function metricValues(r: AdRowNumbers): Record<MetricKey, number | null> {
+  return {
+    spend: r.spend,
+    leads: r.leads,
+    cpl: r.leads ? r.spend / r.leads : null,
+    impressions: r.impressions,
+    reach: r.reach || null,
+    freq: r.frequency || null,
+    cpm: r.impressions ? (r.spend / r.impressions) * 1000 : null,
+    clicks: r.clicks,
+    ctr: r.impressions ? (r.clicks / r.impressions) * 100 : null,
+    // Instant forms have no landing page.
+    lpv: r.lpv || null,
+  };
+}
+
+export function toneOf(def: MetricDef, value: number | null, r: Pick<AdRowNumbers, "spend" | "leads">): Tone {
+  if (!def.rule || value === null || r.spend < 150 || r.leads < 3) return "none";
+  const { value: t, up } = def.rule;
+  if (up) return value >= t ? "good" : value >= t * 0.8 ? "near" : "bad";
+  return value <= t ? "good" : value <= t * 1.2 ? "near" : "bad";
+}
+
+/** Add rows up for the totals row. Reach and frequency can't be added up
+ *  (the same person is in several rows), so they're left out: the account
+ *  totals carry the real ones. */
+export function sumRows(rows: AdRowNumbers[]): AdRowNumbers {
+  return rows.reduce(
+    (a, r) => ({ spend: a.spend + r.spend, impressions: a.impressions + r.impressions, reach: 0, clicks: a.clicks + r.clicks, frequency: 0, leads: a.leads + r.leads, lpv: a.lpv + r.lpv }),
+    { spend: 0, impressions: 0, reach: 0, clicks: 0, frequency: 0, leads: 0, lpv: 0 },
+  );
+}
+
+/** Facebook's number formats: R1,234.56 for money, 1,234 for counts. */
+export function formatMetric(k: MetricKey, v: number | null): string {
+  if (v === null) return "—";
+  const money = (n: number) => "R" + n.toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (k === "spend" || k === "cpl" || k === "cpm") return money(v);
+  if (k === "ctr") return v.toFixed(2) + "%";
+  if (k === "freq") return v.toFixed(2);
+  return Math.round(v).toLocaleString("en-ZA");
+}

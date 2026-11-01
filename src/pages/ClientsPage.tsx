@@ -46,19 +46,19 @@ import {
   type ClientCardRow,
   type LastActivity,
 } from "../api/clients";
+import { listAgentProfiles } from "../api/_client";
 import { getFbAdAccount } from "../api/agentProfile";
-import { setupProgress, setupTotal } from "../lib/setup";
-import { useCalendarReady } from "../hooks/useCalendarReady";
 import { resolveRange, useDateRange, ymd } from "../lib/range";
 import { timeAgo } from "../lib/timeAgo";
 import { accountIssues, healthOf, ISSUE_TEXT, META_ACCESS_MESSAGE, type Health, type IssueKind } from "../lib/accountHealth";
 import { useSnack } from "../hooks/useSnack";
+import { clientPath } from "../lib/clientSlug";
 import SignupRequests from "../components/SignupRequests";
 import OnboardingAdminCard from "../components/OnboardingAdminCard";
 import RangePicker from "../components/RangePicker";
 import FundingChip from "../components/FundingChip";
 
-type ColKey = "health" | "name" | "agency" | "leads" | "spend" | "cpl" | "funding" | "active" | "last" | "setup";
+type ColKey = "health" | "name" | "agency" | "leads" | "spend" | "cpl" | "funding" | "active" | "last";
 type Dir = "asc" | "desc";
 
 interface Row {
@@ -82,8 +82,6 @@ interface Row {
   active: number | null;
   activity: LastActivity | null;
   last: number | null;
-  /** Get set up: how many of the six are done. */
-  setup: number;
   /** What needs a look (lib/accountHealth), and the colour that says so. */
   issues: IssueKind[];
   health: Health;
@@ -101,7 +99,6 @@ const COLS: { k: ColKey; label: string; num?: boolean; width?: number; firstDir:
   { k: "funding", label: "Pays by", width: 150, firstDir: "asc" },
   { k: "active", label: "Last active", num: true, width: 115, firstDir: "desc", tip: "Last time they used the app or updated a lead" },
   { k: "last", label: "Last lead", num: true, width: 105, firstDir: "desc" },
-  { k: "setup", label: "Set up", num: true, width: 80, firstDir: "asc" },
 ];
 
 const money = (n: number) => "R" + Math.round(n).toLocaleString("en-ZA");
@@ -160,9 +157,6 @@ function ActiveLabel({ a }: { a: LastActivity | null }) {
  *  chosen dates, how they pay for ads, their latest sign of life, and a way
  *  into their Ads Manager. A table on a computer, cards on a phone. */
 export default function ClientsPage() {
-  // Get set up: 7 things once Google Calendar can be connected, else 6.
-  const calendarReady = useCalendarReady();
-  const setupN = setupTotal(calendarReady);
   const navigate = useNavigate();
   const showSnack = useSnack();
   const wide = useMediaQuery("(min-width:1000px)");
@@ -173,6 +167,8 @@ export default function ClientsPage() {
   const rangeDays = Math.max(1, Math.round((until.getTime() - since.getTime()) / 864e5));
 
   const { data: clients, isLoading, isError } = useQuery({ queryKey: ["clients"], queryFn: listClients, staleTime: 60_000 });
+  // Readable client addresses (/clients/bennie-bell/overview) need everyone's names.
+  const { data: slugs } = useQuery({ queryKey: ["agentProfiles"], queryFn: listAgentProfiles, staleTime: 5 * 60_000 });
   const { data: counts } = useQuery({
     queryKey: ["leadCounts", sinceDay, untilDay],
     queryFn: () => getLeadCounts(since, until),
@@ -246,21 +242,11 @@ export default function ClientsPage() {
         active: act?.lastSeen ? new Date(act.lastSeen).getTime() : null,
         activity: act,
         last: c.live?.last_lead_at ? new Date(c.live.last_lead_at).getTime() : null,
-        setup: setupProgress({
-          calendarReady,
-          displayName: c.display_name,
-          company: c.company,
-          whatsappNumber: c.whatsapp_number,
-          email: c.email,
-          avatarUrl: c.avatar_url,
-          salesCount: c.sales_count,
-          googleCalendarEmail: c.google_calendar_email,
-        }).done,
       };
     });
     // metaKey stands in for the Meta query results, which are new arrays each render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clients, view, counts, activity, metaKey, sinceDay, untilDay, rangeDays, calendarReady]);
+  }, [clients, view, counts, activity, metaKey, sinceDay, untilDay, rangeDays]);
 
   const shown = useMemo(() => {
     const list = rows.filter((r) => matches(r.c, search.trim()));
@@ -285,7 +271,6 @@ export default function ClientsPage() {
 
   const spendCell = (r: Row) => (r.spend === undefined ? <Skeleton width={50} sx={{ ml: "auto" }} /> : r.spend == null ? "—" : money(r.spend));
   const cplCell = (r: Row) => (r.cpl === undefined ? <Skeleton width={44} sx={{ ml: "auto" }} /> : cplLabel(r.spend, r.leads));
-  const setupCell = (r: Row) => (r.setup === setupN ? "Done" : `${r.setup}/${setupN}`);
   const adsLink = (r: Row) =>
     r.c.fb_ad_account_id ? (
       <Tooltip title="Open Ads Manager">
@@ -358,23 +343,16 @@ export default function ClientsPage() {
       </Box>
 
       <Box sx={{ p: { xs: 1.5, md: 2 }, display: "flex", flexDirection: "column", gap: 2 }}>
-        {view === "active" && <NeedsAttention rows={rows} loading={totals.loading} onOpen={(id) => navigate(`/admin/clients/${id}`)} onCopied={() => showSnack("Message copied. Paste it into WhatsApp.")} />}
+        {view === "active" && <NeedsAttention rows={rows} loading={totals.loading} onOpen={(id) => navigate(clientPath(id, clients?.map((c) => ({ agent_id: c.agent_id, display_name: c.display_name }))))} onCopied={() => showSnack("Message copied. Paste it into WhatsApp.")} />}
         <SignupRequests />
         <OnboardingAdminCard />
 
         {/* Totals for the chosen dates. */}
-        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, minmax(0, 1fr))", md: "repeat(5, minmax(0, 1fr))" }, gap: 1.5 }}>
+        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, minmax(0, 1fr))", md: "repeat(4, minmax(0, 1fr))" }, gap: 1.5 }}>
           <Kpi label={`Leads · ${label}`} value={counts ? totals.leads.toLocaleString("en-ZA") : <Skeleton width={60} />} />
           <Kpi label={`Ad spend · ${label}`} value={totals.loading ? <Skeleton width={80} /> : money(totals.spend)} />
           <Kpi label="Cost per lead" value={totals.loading ? <Skeleton width={60} /> : cplLabel(totals.spend, totals.leads)} />
           <Kpi label="Accounts with leads" value={counts ? `${totals.active} of ${rows.length}` : <Skeleton width={60} />} />
-          <Box sx={{ gridColumn: { xs: "1 / -1", md: "auto" } }}>
-            <Kpi
-              label="Payment problems"
-              value={totals.loading ? <Skeleton width={60} /> : totals.problems ? `${totals.problems} ${totals.problems === 1 ? "account" : "accounts"}` : "None"}
-              warn={totals.problems > 0}
-            />
-          </Box>
         </Box>
 
         {isError && (
@@ -428,7 +406,7 @@ export default function ClientsPage() {
                   <TableRow
                     key={r.c.agent_id}
                     hover
-                    onClick={() => navigate(`/admin/clients/${r.c.agent_id}`)}
+                    onClick={() => navigate(clientPath(r.c.agent_id, slugs))}
                     sx={{ cursor: "pointer", "& td": { fontSize: 13.5, py: 1 } }}
                   >
                     <TableCell sx={{ pr: 0 }}><HealthDot r={r} /></TableCell>
@@ -460,9 +438,6 @@ export default function ClientsPage() {
                     <TableCell align="right" sx={{ whiteSpace: "nowrap", color: r.last ? tokens.ink : tokens.ink3 }}>
                       {r.c.live?.last_lead_at ? timeAgo(r.c.live.last_lead_at) : "never"}
                     </TableCell>
-                    <TableCell align="right" sx={{ whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums", color: r.setup === setupN ? "success.main" : tokens.ink }}>
-                      {setupCell(r)}
-                    </TableCell>
                     <TableCell align="center" sx={{ py: "2px !important" }}>{adsLink(r)}</TableCell>
                   </TableRow>
                 ))}
@@ -490,7 +465,6 @@ export default function ClientsPage() {
               <MenuItem value="active:desc">Most recently active</MenuItem>
               <MenuItem value="last:desc">Latest lead</MenuItem>
               <MenuItem value="funding:asc">Payment problems first</MenuItem>
-              <MenuItem value="setup:asc">Least set up</MenuItem>
               <MenuItem value="name:asc">Name (A–Z)</MenuItem>
             </TextField>
             <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
@@ -500,7 +474,7 @@ export default function ClientsPage() {
                   key={r.c.agent_id}
                   component="div"
                   role="link"
-                  onClick={() => navigate(`/admin/clients/${r.c.agent_id}`)}
+                  onClick={() => navigate(clientPath(r.c.agent_id, slugs))}
                   sx={{ display: "block", textAlign: "left", width: "100%", bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "8px", p: 1.5 }}
                 >
                   <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
@@ -522,7 +496,6 @@ export default function ClientsPage() {
                     {r.funding && <FundingChip type={r.fundingType} label={r.fundingLabel} balance={r.owed} problem={r.problem} status={r.accountStatus} showLabel />}
                     <span>Active <ActiveLabel a={r.activity} /></span>
                     <span>Last lead {r.c.live?.last_lead_at ? timeAgo(r.c.live.last_lead_at) : "never"}</span>
-                    <Box component="span" sx={{ color: r.setup === setupN ? "success.main" : undefined }}>Set up {setupCell(r)}</Box>
                   </Box>
                 </ButtonBase>
               ))}

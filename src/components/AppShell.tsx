@@ -45,7 +45,8 @@ import { getMyProfile } from "../api/agentProfile";
 import { listMySoldListings } from "../api/soldListings";
 import { setupProgress } from "../lib/setup";
 import { useCalendarReady } from "../hooks/useCalendarReady";
-import { getActiveAgentIdSync, setActiveAgent, supabase } from "../api/_client";
+import { getActiveAgentIdSync, listAgentProfiles, setActiveAgent, supabase } from "../api/_client";
+import { clientPath } from "../lib/clientSlug";
 import { isLightColor } from "../lib/contrast";
 import AccountSwitcher from "./AccountSwitcher";
 import DevTierToggle from "./DevTierToggle";
@@ -57,7 +58,7 @@ function activeSection(pathname: string): string {
   if (pathname.startsWith("/lead-page")) return "mypage";
   if (pathname.startsWith("/home")) return "home";
   if (pathname.startsWith("/overview")) return "overview";
-  if (pathname.startsWith("/admin/clients")) return "clients";
+  if (pathname.startsWith("/clients")) return "clients";
   // Weekly reports lives under Accounts, so Accounts stays lit there.
   if (pathname.startsWith("/admin/reports")) return "clients";
   if (pathname.startsWith("/admin")) return "automations";
@@ -77,9 +78,14 @@ export default function AppShell() {
   // Staff switch into any account; a team lead into their members' (only).
   const isTeamLead = useIsTeamLead();
   const canSwitch = !!isOperator || isTeamLead;
-  const section = activeSection(pathname);
   const activeAgentId = getActiveAgentIdSync();
+  // The client page of the account you're in is "Overview" in the menu.
   const isManagingOther = !!activeAgentId && activeAgentId !== user?.id;
+  const { data: everyone } = useQuery({ queryKey: ["agentProfiles"], queryFn: listAgentProfiles, enabled: !!user, staleTime: 5 * 60_000 });
+  const myClientPage = clientPath(activeAgentId ?? user?.id ?? "", everyone, "overview");
+  const myClientBase = myClientPage.replace(/\/overview$/, "");
+  // (Only when working in a client: in staff mode a client page is just Accounts.)
+  const section = isManagingOther && (pathname === myClientBase || pathname.startsWith(myClientBase + "/")) ? "overview" : activeSection(pathname);
   usePageviewTracking();
   useRealtimeSubscriptions();
   const { data: profile } = useQuery({ queryKey: ["myProfile"], queryFn: getMyProfile, enabled: !!user, staleTime: 5 * 60_000 });
@@ -130,8 +136,8 @@ export default function AppShell() {
   ];
 
   const adminNav = [
-    ...(staffMode ? [] : [{ key: "overview", label: "Overview", icon: <DashboardOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <DashboardIcon sx={{ fontSize: SZ }} />, to: "/overview" }]),
-    { key: "clients", label: "Accounts", icon: <GroupsOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <GroupsIcon sx={{ fontSize: SZ }} />, to: "/admin/clients" },
+    ...(staffMode ? [] : [{ key: "overview", label: "Overview", icon: <DashboardOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <DashboardIcon sx={{ fontSize: SZ }} />, to: myClientPage }]),
+    { key: "clients", label: "Accounts", icon: <GroupsOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <GroupsIcon sx={{ fontSize: SZ }} />, to: "/clients" },
     { key: "automations", label: "Automations", icon: <SettingsOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <SettingsIcon sx={{ fontSize: SZ }} />, to: "/admin/automations" },
   ];
 
@@ -146,7 +152,7 @@ export default function AppShell() {
   });
 
   const mobileNav = staffMode ? [
-    { key: "clients", label: "Accounts", icon: <GroupsOutlinedIcon />, activeIcon: <GroupsIcon />, to: "/admin/clients" },
+    { key: "clients", label: "Accounts", icon: <GroupsOutlinedIcon />, activeIcon: <GroupsIcon />, to: "/clients" },
     { key: "automations", label: "Automations", icon: <SettingsOutlinedIcon />, activeIcon: <SettingsIcon />, to: "/admin/automations" },
     { key: "account", label: "Account", icon: <AccountCircleOutlinedIcon />, activeIcon: <AccountCircleIcon />, to: "/account" },
   ] : [
@@ -156,14 +162,13 @@ export default function AppShell() {
     { key: "mypage", label: "Forms", icon: <WebOutlinedIcon />, activeIcon: <WebIcon />, to: "/lead-page" },
     ...(isOperator
       ? [
-          { key: "overview", label: "Overview", icon: <DashboardOutlinedIcon />, activeIcon: <DashboardIcon />, to: "/overview" },
-          { key: "clients", label: "Accounts", icon: <GroupsOutlinedIcon />, activeIcon: <GroupsIcon />, to: "/admin/clients" },
+          { key: "overview", label: "Overview", icon: <DashboardOutlinedIcon />, activeIcon: <DashboardIcon />, to: myClientPage },
+          { key: "clients", label: "Accounts", icon: <GroupsOutlinedIcon />, activeIcon: <GroupsIcon />, to: "/clients" },
         ]
-      : []),
-    { key: "account", label: "Account", icon: <AccountCircleOutlinedIcon />, activeIcon: <AccountCircleIcon />, to: "/account" },
+      : [{ key: "account", label: "Account", icon: <AccountCircleOutlinedIcon />, activeIcon: <AccountCircleIcon />, to: "/account" }]),
   ];
 
-  if (staffMode && staffModeKnown && ["leads", "calendar", "mypage", "overview", "home", "setup"].includes(section)) return <Navigate to="/admin/clients" replace />;
+  if (staffMode && staffModeKnown && ["leads", "calendar", "mypage", "overview", "home", "setup"].includes(section)) return <Navigate to="/clients" replace />;
 
   return (
     <Box sx={{ display: "flex", minHeight: "100vh", bgcolor: "background.default" }}>
@@ -283,7 +288,7 @@ export default function AppShell() {
             <ListItem disablePadding>
               <ListItemButton
                 selected={section === "account"}
-                onClick={() => navigate("/account")}
+                onClick={() => navigate(isManagingOther && isOperator ? `${myClientBase}/settings` : "/account")}
                 sx={{
                   py: 1.25,
                   px: 1.75,

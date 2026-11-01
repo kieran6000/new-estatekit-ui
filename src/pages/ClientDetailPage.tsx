@@ -1,5 +1,5 @@
-import { useRef, useState, type ReactNode } from "react";
-import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Link as RouterLink, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AppBar,
@@ -19,6 +19,7 @@ import {
   Toolbar,
   Tooltip,
   Typography,
+  useMediaQuery,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import WhatsAppIcon from "@mui/icons-material/WhatsApp";
@@ -28,8 +29,6 @@ import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import LoginIcon from "@mui/icons-material/Login";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import PhotoCameraOutlinedIcon from "@mui/icons-material/PhotoCameraOutlined";
-import CheckCircleIcon from "@mui/icons-material/CheckCircle";
-import RadioButtonUncheckedIcon from "@mui/icons-material/RadioButtonUnchecked";
 import LockResetIcon from "@mui/icons-material/LockReset";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
@@ -40,7 +39,6 @@ import TeamSection from "../components/TeamSection";
 import {
   adsManagerUrl,
   clientPicture,
-  cplLabel,
   fundingKind,
   getClient,
   hasPaymentProblem,
@@ -57,10 +55,7 @@ import { getFbAdAccount, setAgentPassword } from "../api/agentProfile";
 import { listAccountWorkflows } from "../api/workflows";
 import { setActiveAgent, supabase } from "../api/_client";
 import { getEmailStats } from "../api/leadEvents";
-import { listSoldListingsForAgent } from "../api/soldListings";
 import { listSignupRequests } from "../api/signup";
-import { setupDone, setupProgress, SALES_TARGET, type SetupKey } from "../lib/setup";
-import { useCalendarReady } from "../hooks/useCalendarReady";
 import { BRIEF_FIELDS, BRIEF_QUESTIONS, buildBrief, type BriefSource } from "../lib/brief";
 import { resolveRange, useDateRange, ymd } from "../lib/range";
 import { useAuth } from "../hooks/useAuth";
@@ -68,6 +63,15 @@ import { useSnack } from "../hooks/useSnack";
 import { trackActivity } from "../lib/activity";
 import { timeAgo } from "../lib/timeAgo";
 import RangePicker from "../components/RangePicker";
+import AdsTable, { type AdsView } from "../components/AdsTable";
+import { clientPath, isAgentId, resolveClient, CLIENT_TABS, type ClientTab } from "../lib/clientSlug";
+import { getAdHistory, getAdsTable, type AdsLevel } from "../api/agentProfile";
+import { listAgentProfiles } from "../api/_client";
+import type { DateRange, RangeKey } from "../lib/range";
+import { RANGE_LABELS } from "../lib/range";
+import { useFollowAccount } from "../hooks/useFollowLeadAccount";
+import { formatMetric, metricValues, type MetricKey } from "../lib/adTargets";
+import { MAX_IMAGE_BYTES, uploadImage } from "../lib/image";
 import FundingChip from "../components/FundingChip";
 
 /** Digits in international form, so 083… and +2783… compare equal. */
@@ -90,34 +94,50 @@ const money = (n: number) => "R" + Math.round(n).toLocaleString("en-ZA");
 // Onboarding answers already shown in Contact or the section header.
 const SHOWN_ELSEWHERE = new Set(["Full name", "Email", "Phone", "Submitted"]);
 type Data = Awaited<ReturnType<typeof getClient>>;
-type TabKey = "overview" | "brief" | "settings";
-const TAB_KEY = "estatekit_account_tab";
+type TabKey = ClientTab;
 
-/** Operators: one account. Overview (numbers for the chosen dates), Brief
- *  (onboarding answers) and Settings (everything editable, including their
- *  login and contract, which used to live on the Account page). */
+/** Operators: one account, at /clients/<their-name>/<tab>. Overview (the
+ *  numbers and their ads), History (what changed on their ads), Brief
+ *  (onboarding answers) and Settings (everything editable). Dates and where
+ *  you are in their ads are in the address too, so a link opens the same
+ *  view and Back steps through it. */
 export default function ClientDetailPage() {
-  const { agentId = "" } = useParams();
+  const { who = "", tab: tabParam } = useParams();
+  const [params] = useSearchParams();
   const navigate = useNavigate();
+  const { data: profiles } = useQuery({ queryKey: ["agentProfiles"], queryFn: listAgentProfiles, staleTime: 5 * 60_000 });
+  const agentId = profiles ? resolveClient(who, profiles) ?? "" : isAgentId(who) ? who : "";
   const { data, isLoading, isError, error } = useQuery({ queryKey: ["client", agentId], queryFn: () => getClient(agentId), enabled: !!agentId });
-  const [tab, setTab] = useState<TabKey>(() => {
-    try {
-      const t = sessionStorage.getItem(TAB_KEY);
-      return t === "brief" || t === "settings" ? t : "overview";
-    } catch {
-      return "overview";
-    }
-  });
-  function pick(t: TabKey) {
-    setTab(t);
-    try { sessionStorage.setItem(TAB_KEY, t); } catch { /* ignore */ }
+  // Their page is the account you're working in (it replaced /overview and,
+  // for staff, /account): opening it switches you into them.
+  useFollowAccount(agentId ? { agent_id: agentId } : null, "account");
+  const tab: TabKey = CLIENT_TABS.includes(tabParam as TabKey) ? (tabParam as TabKey) : "overview";
+  const search = params.toString() ? `?${params.toString()}` : "";
+  // Tabs are pages: Back goes to the tab you were on. Only the dates carry
+  // over (where you were in the ads is Overview's own).
+  const dates = new URLSearchParams([...params].filter(([k]) => k === "range" || k === "from" || k === "to")).toString();
+  const pick = (t: TabKey) => navigate(`${clientPath(agentId, profiles, t)}${(t === "overview" || t === "history") && dates ? `?${dates}` : ""}`);
+
+  // Old addresses (the id, or no tab) move to /clients/<name>/<tab>.
+  if (profiles && agentId) {
+    const want = clientPath(agentId, profiles, tab);
+    const here = `/clients/${who}/${tabParam ?? ""}`;
+    if (here !== want) return <Navigate to={`${want}${search}`} replace />;
+  }
+  if (profiles && !agentId) {
+    return (
+      <Box sx={{ p: 4 }}>
+        <Typography sx={{ fontWeight: 500 }}>There's no account at this address.</Typography>
+        <Button component={RouterLink} to="/clients" sx={{ mt: 1 }}>Back to Accounts</Button>
+      </Box>
+    );
   }
 
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: "background.default" }}>
       <AppBar position="sticky">
         <Toolbar sx={{ height: 56, minHeight: "56px !important" }}>
-          <IconButton onClick={() => navigate("/admin/clients")} aria-label="Back to accounts">
+          <IconButton onClick={() => navigate("/clients")} aria-label="Back to accounts">
             <ArrowBackIcon />
           </IconButton>
           <Typography sx={{ fontSize: 18, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -158,16 +178,18 @@ export default function ClientDetailPage() {
           <Header data={data} />
           <DeactivatedBanner profile={data.profile} />
           <Box sx={{ bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
-            <Box sx={{ maxWidth: 1200, mx: "auto", px: { xs: 0.5, md: 2 } }}>
+            <Box sx={{ maxWidth: 1440, mx: "auto", px: { xs: 0.5, md: 2 } }}>
               <Tabs value={tab} onChange={(_e, v) => pick(v)} variant="scrollable" allowScrollButtonsMobile>
                 <Tab value="overview" label="Overview" />
+                <Tab value="history" label="History" />
                 <Tab value="brief" label="Brief" />
                 <Tab value="settings" label="Settings" />
               </Tabs>
             </Box>
           </Box>
-          <Box sx={{ p: { xs: 1.5, md: 2.5 }, maxWidth: 1200, mx: "auto", display: "flex", flexDirection: "column", gap: 2 }}>
+          <Box sx={{ p: { xs: 1.5, md: 2.5 }, maxWidth: 1440, mx: "auto", display: "flex", flexDirection: "column", gap: 2 }}>
             {tab === "overview" && <OverviewTab data={data} />}
+            {tab === "history" && <HistoryTab data={data} />}
             {tab === "brief" && (
               <Cols>
                 <BriefSection data={data} />
@@ -177,23 +199,7 @@ export default function ClientDetailPage() {
                 </Box>
               </Cols>
             )}
-            {tab === "settings" && (
-              <Cols>
-                <Box sx={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-                  <ProfileSection data={data} />
-                  <ContactSection data={data} />
-                  <LoginSection data={data} />
-                  <TeamSection agentId={data.profile.agent_id} name={data.profile.display_name || "This agent"} />
-                </Box>
-                <Box sx={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-                  <MessagesSection data={data} />
-                  <FacebookSection data={data} />
-                  <ContractSection data={data} />
-                  <BillingSection data={data} />
-                  <AccountStatusSection profile={data.profile} />
-                </Box>
-              </Cols>
-            )}
+            {tab === "settings" && <SettingsTab data={data} />}
           </Box>
         </>
       )}
@@ -235,21 +241,9 @@ function Header({ data }: { data: Data }) {
   const save = useClientSaver(p.agent_id);
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
-  const { data: sales = [] } = useQuery({ queryKey: ["sold", p.agent_id], queryFn: () => listSoldListingsForAgent(p.agent_id) });
   const name = p.display_name || p.whatsapp_number || "Unnamed account";
   const phone = p.whatsapp_number || d?.contact.phones[0] || "";
   const email = p.email || d?.contact.emails[0] || "";
-  const calendarReady = useCalendarReady();
-  const setup = setupProgress({
-    calendarReady,
-    displayName: p.display_name,
-    company: p.company,
-    whatsappNumber: p.whatsapp_number,
-    email: p.email,
-    avatarUrl: p.avatar_url,
-    salesCount: sales.length,
-    googleCalendarEmail: p.google_calendar_email,
-  });
 
   function openDashboard() {
     setActiveAgent(p.agent_id === user?.id ? null : p.agent_id);
@@ -269,7 +263,7 @@ function Header({ data }: { data: Data }) {
 
   return (
     <Box sx={{ bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
-      <Box sx={{ maxWidth: 1200, mx: "auto", px: { xs: 2, md: 3 }, py: { xs: 2, md: 2.5 }, display: "flex", gap: { xs: 2, md: 3 }, alignItems: { xs: "flex-start", md: "center" }, flexDirection: { xs: "column", md: "row" } }}>
+      <Box sx={{ maxWidth: 1440, mx: "auto", px: { xs: 2, md: 3 }, py: { xs: 2, md: 2.5 }, display: "flex", gap: { xs: 2, md: 3 }, alignItems: { xs: "flex-start", md: "center" }, flexDirection: { xs: "column", md: "row" } }}>
         <Box sx={{ display: "flex", gap: 2, alignItems: "center", flex: 1, minWidth: 0 }}>
           <Box
             component="button"
@@ -297,13 +291,7 @@ function Header({ data }: { data: Data }) {
             <Typography sx={{ fontSize: 14, color: tokens.ink2, mt: 0.25, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {[p.company || "No agency on file", p.area].filter(Boolean).join(" · ")}
             </Typography>
-            <Box sx={{ display: "flex", gap: 0.75, flexWrap: "wrap", mt: 1 }}>
-              <Chip
-                size="small"
-                label={setup.complete ? "Set up: done" : `Set up: ${setup.done}/${setup.total}`}
-                color={setup.complete ? "success" : "default"}
-                variant="outlined"
-              />
+            <Box sx={{ display: "flex", gap: 0.75, flexWrap: "wrap", mt: 1, "&:empty": { display: "none" } }}>
               {p.deactivated_at ? <Chip size="small" color="warning" label="Deactivated" /> : p.automations_paused && <Chip size="small" color="warning" variant="outlined" label="Automations paused" />}
             </Box>
           </Box>
@@ -350,6 +338,130 @@ function Cols({ children }: { children: ReactNode }) {
     <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" }, gap: 2, alignItems: "start" }}>
       {children}
     </Box>
+  );
+}
+
+/** Settings in groups, each with a heading and a line on what's in it, and
+ *  (on a computer) a menu on the left that jumps to a group and shows which
+ *  one you're in. */
+function SettingsTab({ data }: { data: Data }) {
+  const wide = useMediaQuery("(min-width:1000px)");
+  const groups: { id: string; title: string; sub: string; body: ReactNode }[] = [
+    { id: "profile", title: "Profile", sub: "Who they are, how to reach them, and how their pages look.", body: <><ProfileSection data={data} /><ContactSection data={data} /><BrandingSection data={data} /></> },
+    { id: "access", title: "Login & team", sub: "How they sign in, and who works with them.", body: <><LoginSection data={data} /><TeamSection agentId={data.profile.agent_id} name={data.profile.display_name || "This agent"} /></> },
+    { id: "ads", title: "Ads & Facebook", sub: "Their ad account, Facebook page and where their leads come from.", body: <><AdAccountSection data={data} /><FacebookSection data={data} /><LandingPagesSection data={data} /></> },
+    { id: "messages", title: "Messages", sub: "Automations and emails that go to their leads.", body: <MessagesSection data={data} /> },
+    { id: "billing", title: "Billing & contract", sub: "Their plan, renewal and payments.", body: <><ContractSection data={data} /><BillingSection data={data} /></> },
+    { id: "account", title: "Account", sub: "Pause or close their account.", body: <AccountStatusSection profile={data.profile} /> },
+  ];
+  const [current, setCurrent] = useState(groups[0].id);
+  // The group nearest the top of the screen is the one lit in the menu.
+  useEffect(() => {
+    const els = groups.map((g) => document.getElementById(`set-${g.id}`)).filter(Boolean) as HTMLElement[];
+    const io = new IntersectionObserver(
+      (entries) => {
+        const top = entries.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+        if (top) setCurrent(top.target.id.replace("set-", ""));
+      },
+      { rootMargin: "-80px 0px -60% 0px" },
+    );
+    els.forEach((el) => io.observe(el));
+    return () => io.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const jump = (id: string) => document.getElementById(`set-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+
+  return (
+    <Box sx={{ display: "grid", gridTemplateColumns: wide ? "200px minmax(0, 1fr)" : "1fr", gap: 4, alignItems: "start" }}>
+      {wide && (
+        <Box component="nav" aria-label="Settings sections" sx={{ position: "sticky", top: 72, display: "flex", flexDirection: "column", gap: 0.25 }}>
+          {groups.map((g) => (
+            <Button
+              key={g.id}
+              onClick={() => jump(g.id)}
+              aria-current={current === g.id ? "true" : undefined}
+              sx={{
+                justifyContent: "flex-start", textTransform: "none", fontSize: 14, px: 1.5, minHeight: 40, borderRadius: "6px",
+                color: current === g.id ? tokens.primary : tokens.ink2, fontWeight: current === g.id ? 600 : 400,
+                bgcolor: current === g.id ? tokens.primaryBg : "transparent",
+                "&:hover": { bgcolor: current === g.id ? tokens.primaryBg : tokens.hover },
+              }}
+            >
+              {g.title}
+            </Button>
+          ))}
+        </Box>
+      )}
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 5, maxWidth: 820, minWidth: 0 }}>
+        {groups.map((g) => (
+          <Box key={g.id} id={`set-${g.id}`} component="section" aria-labelledby={`set-${g.id}-h`} sx={{ scrollMarginTop: 72 }}>
+            <Typography id={`set-${g.id}-h`} component="h2" sx={{ fontSize: 18, fontWeight: 600 }}>{g.title}</Typography>
+            <Typography sx={{ fontSize: 13.5, color: tokens.ink2, mt: 0.25, mb: 1.75 }}>{g.sub}</Typography>
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>{g.body}</Box>
+          </Box>
+        ))}
+      </Box>
+    </Box>
+  );
+}
+
+/** Their colour and logo: the sidebar, lead pages and Facebook-form
+ *  thank-you pages use them (moved here from the Account page). */
+function BrandingSection({ data }: { data: Data }) {
+  const p = data.profile;
+  const save = useClientSaver(p.agent_id);
+  const showSnack = useSnack();
+  const saved = p.sidebar_color || "#111827";
+  const [color, setColor] = useState(saved);
+  const [busy, setBusy] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  async function onLogo(file: File | undefined) {
+    if (!file) return;
+    if (file.size > MAX_IMAGE_BYTES) { showSnack("That image is too big. Try another one."); return; }
+    setBusy(true);
+    try {
+      const url = await uploadImage(file, "logo", p.agent_id);
+      await save(() => updateClientProfile(p.agent_id, { sidebar_logo_url: url }), "Logo saved");
+    } catch (e) {
+      console.error(e);
+      showSnack("Couldn't upload the logo. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Section title="Branding">
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, flexWrap: "wrap" }}>
+          <Box component="label" sx={{ display: "flex", alignItems: "center", gap: 1.25, cursor: "pointer" }}>
+            <Box component="input" type="color" value={color} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setColor(e.target.value)} aria-label="Colour" sx={{ width: 44, height: 44, p: 0, border: `1px solid ${tokens.divider}`, borderRadius: "8px", bgcolor: "transparent", cursor: "pointer" }} />
+            <Box>
+              <Typography sx={{ fontSize: 14, fontWeight: 500 }}>Colour</Typography>
+              <Typography sx={{ fontSize: 12.5, color: tokens.ink2 }}>{color.toUpperCase()} · sidebar and pages</Typography>
+            </Box>
+          </Box>
+          {color.toLowerCase() !== saved.toLowerCase() && (
+            <Button size="small" variant="contained" disabled={busy} onClick={() => void save(() => updateClientProfile(p.agent_id, { sidebar_color: color }), "Colour saved")}>Save colour</Button>
+          )}
+        </Box>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, flexWrap: "wrap" }}>
+          <Box sx={{ width: 120, height: 44, borderRadius: "8px", bgcolor: saved, display: "grid", placeItems: "center", overflow: "hidden", flex: "none" }}>
+            {p.sidebar_logo_url
+              ? <Box component="img" src={p.sidebar_logo_url} alt="Logo" sx={{ maxWidth: "90%", maxHeight: 32 }} />
+              : <Typography sx={{ fontSize: 12, color: "#fff", opacity: 0.8 }}>No logo</Typography>}
+          </Box>
+          <Button size="small" variant="outlined" startIcon={<UploadFileIcon />} disabled={busy} onClick={() => fileRef.current?.click()}>
+            {p.sidebar_logo_url ? "Change logo" : "Upload logo"}
+          </Button>
+          {p.sidebar_logo_url && (
+            <Button size="small" color="error" disabled={busy} onClick={() => void save(() => updateClientProfile(p.agent_id, { sidebar_logo_url: null }), "Logo removed")}>Remove</Button>
+          )}
+          <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => { void onLogo(e.target.files?.[0]); e.target.value = ""; }} />
+        </Box>
+      </Box>
+    </Section>
   );
 }
 
@@ -507,83 +619,190 @@ function ExtLink({ href, children }: { href: string; children: ReactNode }) {
 
 /* ───────────────────────── overview ───────────────────────── */
 
-function Tile({ label, value, tone }: { label: string; value: ReactNode; tone?: "warning" }) {
+function Tile({ label, value, tone, hint }: { label: string; value: ReactNode; tone?: "warning"; hint?: string }) {
   return (
     <Box sx={{ bgcolor: "background.paper", border: `1px solid ${tone === "warning" ? tokens.amberBorder : tokens.divider}`, borderRadius: "8px", px: 2, py: 1.5, minWidth: 0 }}>
-      <Typography component="div" sx={{ fontSize: 24, fontWeight: 600, lineHeight: 1.2, fontVariantNumeric: "tabular-nums" }}>{value}</Typography>
-      <Typography sx={{ fontSize: 12.5, color: tokens.ink2, mt: 0.25 }}>{label}</Typography>
+      <Typography component="div" sx={{ fontSize: 22, fontWeight: 600, lineHeight: 1.2, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{value}</Typography>
+      <Tooltip title={hint ?? ""} disableHoverListener={!hint}>
+        <Typography sx={{ fontSize: 12.5, color: tokens.ink2, mt: 0.25 }}>{label}</Typography>
+      </Tooltip>
     </Box>
   );
+}
+
+/** The dates, from the address (?range=7d, or ?range=custom&from=&to=),
+ *  else the last ones used here. Changing them changes the address. */
+function useRangeParam(): [DateRange, (r: DateRange) => void] {
+  const [params, setParams] = useSearchParams();
+  const [stored, setStored] = useDateRange("estatekit_account_range");
+  const key = params.get("range") as RangeKey | null;
+  const range: DateRange = key && key in RANGE_LABELS
+    ? { key, from: params.get("from") ?? undefined, to: params.get("to") ?? undefined }
+    : stored;
+  const set = (r: DateRange) => {
+    setStored(r);
+    setParams((p) => {
+      const n = new URLSearchParams(p);
+      n.set("range", r.key);
+      if (r.key === "custom" && r.from && r.to) { n.set("from", r.from); n.set("to", r.to); } else { n.delete("from"); n.delete("to"); }
+      return n;
+    }, { replace: true });
+  };
+  return [range, set];
 }
 
 function OverviewTab({ data }: { data: Data }) {
   const p = data.profile;
   const agentId = p.agent_id;
   const acct = p.fb_ad_account_id;
-  const [range, setRange] = useDateRange("estatekit_account_range");
-  const { since, until, label } = resolveRange(range);
+  const [params, setParams] = useSearchParams();
+  const [range, setRange] = useRangeParam();
+  const { since, until } = resolveRange(range);
   const sinceDay = ymd(since);
-  const untilDay = ymd(until);
+  const lastDay = ymd(new Date(until.getTime() - 1));
 
+  // Where you are in their ads (?level=adset&campaign=…&adset=…). Each step
+  // in is a new page, so Back steps out again.
+  const level = (["campaign", "adset", "ad"].includes(params.get("level") ?? "") ? params.get("level") : "campaign") as AdsLevel;
+  const view: AdsView = { level, campaignId: params.get("campaign"), adsetId: params.get("adset") };
+  const setView = (v: AdsView) => setParams((cur) => {
+    const n = new URLSearchParams(cur);
+    if (v.level === "campaign") n.delete("level"); else n.set("level", v.level);
+    if (v.campaignId) n.set("campaign", v.campaignId); else n.delete("campaign");
+    if (v.adsetId) n.set("adset", v.adsetId); else n.delete("adset");
+    return n;
+  });
+
+  // The account's Facebook totals (shared with the table's Campaigns view).
+  const { data: fb, isLoading: fbLoading } = useQuery({
+    queryKey: ["adsTable", acct, sinceDay, lastDay, "campaign", null, null],
+    queryFn: () => getAdsTable(acct!, sinceDay, lastDay, { level: "campaign" }),
+    enabled: !!acct,
+    staleTime: 10 * 60_000,
+    retry: false,
+  });
   const { data: r, isLoading } = useQuery({
-    queryKey: ["resultsBetween", agentId, sinceDay, untilDay],
+    queryKey: ["resultsBetween", agentId, sinceDay, ymd(until)],
     queryFn: () => getResultsBetween(agentId, since, until),
     staleTime: 60_000,
   });
-  const { data: daily, isLoading: spendLoading } = useQuery({
-    queryKey: ["spendDaily", acct, sinceDay],
-    queryFn: () => getSpendDaily(acct!, sinceDay),
-    enabled: !!acct,
-    staleTime: 30 * 60_000,
-    retry: false,
-  });
-  const spend = !acct ? null : spendLoading ? undefined : spendBetween(daily ?? null, sinceDay, untilDay);
+  const a = fb?.account ? metricValues(fb.account) : null;
+  const fbTile = (k: MetricKey) => (!acct ? "—" : fbLoading ? <Skeleton width={70} /> : a ? formatMetric(k, a[k]) : "—");
   const v = (n: number | undefined) => (isLoading ? <Skeleton width={40} /> : (n ?? 0));
 
   return (
     <>
-      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1.5, flexWrap: "wrap" }}>
-        <Typography component="h2" sx={{ fontSize: 17, fontWeight: 600 }}>{label}</Typography>
+      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 1.5, flexWrap: "wrap" }}>
         <RangePicker value={range} onChange={setRange} />
       </Box>
 
-      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, 1fr)", sm: "repeat(3, 1fr)", lg: "repeat(6, 1fr)" }, gap: 1.5 }}>
-        <Tile label="New leads" value={v(r?.leads)} />
-        <Tile label="Ad spend" value={spend === undefined ? <Skeleton width={70} /> : spend == null ? "—" : money(spend)} />
-        <Tile label="Cost per lead" value={spend === undefined || isLoading ? <Skeleton width={60} /> : cplLabel(spend, r?.leads ?? 0)} />
-        <Tile label="Followed up" value={v(r?.followed_up)} />
-        <Tile label="Booked" value={v(r?.booked)} />
-        <Tile label="Mandates" value={v(r?.mandates)} />
+      {/* Facebook's numbers, in Facebook's words; then what came of the leads here. */}
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, 1fr)", sm: "repeat(4, 1fr)", xl: "repeat(8, 1fr)" }, gap: 1.5 }}>
+        <Tile label="Amount spent" value={fbTile("spend")} />
+        <Tile label="Leads" value={fbTile("leads")} />
+        <Tile label="Cost per lead" value={fbTile("cpl")} />
+        <Tile label="Impressions" value={fbTile("impressions")} />
+        <Tile label="Reach" value={fbTile("reach")} />
+        <Tile label="CTR (link click-through rate)" value={fbTile("ctr")} />
+        <Tile label="Booked" value={v(r?.booked)} hint="Leads booked for an appointment in EstateKit" />
+        <Tile label="Mandates" value={v(r?.mandates)} hint="Mandates signed in EstateKit" />
       </Box>
 
-      {r && (r.waiting > 0 || r.no_answer > 0) && (
-        <Box sx={{ bgcolor: tokens.amberTint, border: `1px solid ${tokens.amberBorder}`, borderRadius: "8px", px: 2, py: 1.5 }}>
-          <Typography sx={{ fontSize: 14, fontWeight: 600 }}>Right now</Typography>
-          <Typography sx={{ fontSize: 14 }}>
-            {[
-              r.waiting > 0 ? `${r.waiting} ${r.waiting === 1 ? "lead is" : "leads are"} waiting for a first call` : "",
-              r.no_answer > 0 ? `${r.no_answer} didn't answer and need another try` : "",
-            ].filter(Boolean).join(" · ")}
-          </Typography>
-        </Box>
-      )}
+      <AdsTable
+        adAccountId={acct ?? null}
+        since={sinceDay}
+        until={lastDay}
+        view={view}
+        onView={setView}
+        pageName={p.display_name || "Their page"}
+        pageAvatar={clientPicture(p)}
+      />
 
       <Cols>
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-          <Section title="Leads by stage" sub="All time">
-            <Bars data={data.live?.by_stage ?? {}} />
-            <Typography sx={{ fontSize: 12.5, color: tokens.ink3, mt: 1.5 }}>
-              {data.live?.leads_total ?? 0} leads in total · last lead {data.live?.last_lead_at ? timeAgo(data.live.last_lead_at) : "never"}
-            </Typography>
-          </Section>
-          <EmailStatsSection data={data} since={since} until={until} />
-        </Box>
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-          <AdAccountSection data={data} />
-          <SetupSection data={data} />
-          <LandingPagesSection data={data} />
-        </Box>
+        <Section title="Leads by stage" sub="All time">
+          <Bars data={data.live?.by_stage ?? {}} />
+          <Typography sx={{ fontSize: 12.5, color: tokens.ink3, mt: 1.5 }}>
+            {data.live?.leads_total ?? 0} leads in total · last lead {data.live?.last_lead_at ? timeAgo(data.live.last_lead_at) : "never"}
+          </Typography>
+        </Section>
+        <EmailStatsSection data={data} since={since} until={until} />
       </Cols>
+    </>
+  );
+}
+
+/** What changed on their ads, from Facebook's activity log (Ads Manager's
+ *  Account history), newest first, by day. */
+function HistoryTab({ data }: { data: Data }) {
+  const acct = data.profile.fb_ad_account_id;
+  const [range, setRange] = useRangeParam();
+  const { since, until } = resolveRange(range);
+  const sinceDay = ymd(since);
+  const lastDay = ymd(new Date(until.getTime() - 1));
+  const { data: h, isLoading, isError } = useQuery({
+    queryKey: ["adHistory", acct, sinceDay, lastDay],
+    queryFn: () => getAdHistory(acct!, sinceDay, lastDay),
+    enabled: !!acct,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const items = h?.items ?? [];
+  const days = new Map<string, typeof items>();
+  for (const it of items) {
+    const d = new Date(it.at).toLocaleDateString("en-ZA", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+    days.set(d, [...(days.get(d) ?? []), it]);
+  }
+  // Facebook's log uses its old names: a campaign group is a campaign, a
+  // "campaign" is an ad set, an ad group is an ad.
+  const OBJECT: Record<string, string> = { CAMPAIGN_GROUP: "Campaign", CAMPAIGN: "Ad set", ADGROUP: "Ad", AD_SET: "Ad set", AD: "Ad", ACCOUNT: "Ad account", AD_ACCOUNT: "Ad account" };
+
+  return (
+    <>
+      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 1.5, flexWrap: "wrap" }}>
+        <RangePicker value={range} onChange={setRange} />
+      </Box>
+      <Section title="Change history" sub="From Facebook's activity log">
+        {!acct ? (
+          <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>No ad account linked. Add it under Settings → Ads &amp; Facebook.</Typography>
+        ) : isLoading ? (
+          [0, 1, 2, 3].map((i) => <Skeleton key={i} height={48} />)
+        ) : isError || h?.note ? (
+          <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>
+            {h?.note === "busy" ? "Facebook is busy right now. Try again in a few minutes." : "Couldn't read the history from Meta. Try again in a minute."}
+          </Typography>
+        ) : !items.length ? (
+          <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>No changes in these dates.</Typography>
+        ) : (
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 2.5 }}>
+            {[...days.entries()].map(([day, list]) => (
+              <Box key={day}>
+                <Typography sx={{ fontSize: 13, fontWeight: 600, color: tokens.ink2, mb: 0.5 }}>{day}</Typography>
+                {list.map((it, i) => (
+                  <Box key={i} sx={{ display: "grid", gridTemplateColumns: { xs: "56px 1fr", sm: "64px minmax(0, 1fr) 200px" }, gap: 1.5, py: 1.25, borderTop: `1px solid ${tokens.divider2}`, alignItems: "start" }}>
+                    <Typography sx={{ fontSize: 13, color: tokens.ink3, fontVariantNumeric: "tabular-nums" }}>
+                      {new Date(it.at).toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit" })}
+                    </Typography>
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography sx={{ fontSize: 14, fontWeight: 500 }}>{it.what}</Typography>
+                      <Typography sx={{ fontSize: 13, color: tokens.ink2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {OBJECT[it.objectType] ?? it.objectType}: {it.objectName}
+                      </Typography>
+                      {it.change && (it.change.from || it.change.to) && (
+                        <Typography sx={{ fontSize: 13, mt: 0.25 }}>
+                          <Box component="span" sx={{ color: tokens.ink3, textDecoration: "line-through" }}>{it.change.from || "—"}</Box>
+                          {"  →  "}
+                          <b>{it.change.to || "—"}</b>
+                        </Typography>
+                      )}
+                    </Box>
+                    <Typography sx={{ fontSize: 13, color: tokens.ink2, display: { xs: "none", sm: "block" }, textAlign: "right" }}>by {it.who || "Facebook"}</Typography>
+                  </Box>
+                ))}
+              </Box>
+            ))}
+          </Box>
+        )}
+      </Section>
     </>
   );
 }
@@ -656,7 +875,6 @@ function AdAccountSection({ data }: { data: Data }) {
             ["Status", a?.accountStatus != null ? ACCOUNT_STATUS[a.accountStatus] ?? `Code ${a.accountStatus}` : null],
             ["Spent all time", a?.amountSpent != null ? money(a.amountSpent) : null],
             ["Spending limit", a?.spendCap ? money(a.spendCap) : "None"],
-            ["Account", `act_${acct}`],
           ]}
         />
       )}
@@ -927,47 +1145,6 @@ function ContractSection({ data }: { data: Data }) {
   );
 }
 
-const SETUP_LABELS: Record<SetupKey, string> = {
-  photo: "Photo",
-  sales: `${SALES_TARGET} recent sales`,
-  name: "Full name",
-  whatsapp: "WhatsApp cellphone",
-  email: "Reply email",
-  agency: "Agency",
-  calendar: "Google Calendar connected",
-};
-
-function SetupSection({ data }: { data: Data }) {
-  const { profile: p } = data;
-  const { data: sales = [] } = useQuery({ queryKey: ["sold", p.agent_id], queryFn: () => listSoldListingsForAgent(p.agent_id) });
-  const calendarReady = useCalendarReady();
-  const done = setupDone({
-    displayName: p.display_name,
-    company: p.company,
-    whatsappNumber: p.whatsapp_number,
-    email: p.email,
-    avatarUrl: p.avatar_url,
-    salesCount: sales.length,
-    googleCalendarEmail: p.google_calendar_email,
-  });
-  const keys = (Object.keys(SETUP_LABELS) as SetupKey[]).filter((k) => k !== "calendar" || calendarReady);
-  const n = keys.filter((k) => done[k]).length;
-  return (
-    <Section title={n === keys.length ? "All done" : `${n} of ${keys.length} done`}>
-      <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
-        {keys.map((k) => (
-          <Box key={k} sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-            {done[k] ? <CheckCircleIcon sx={{ fontSize: 20, color: "success.main" }} /> : <RadioButtonUncheckedIcon sx={{ fontSize: 20, color: tokens.ink3 }} />}
-            <Typography sx={{ fontSize: 13.5, color: done[k] ? tokens.ink : tokens.ink2 }}>
-              {SETUP_LABELS[k]}
-              {k === "sales" && !done.sales ? ` (${sales.length} of ${SALES_TARGET})` : ""}
-            </Typography>
-          </Box>
-        ))}
-      </Box>
-    </Section>
-  );
-}
 
 const SOURCE_LABEL: Record<BriefSource, string> = {
   call: "added here",
@@ -993,7 +1170,6 @@ function BriefSection({ data }: { data: Data }) {
     : submitted
       ? `Onboarding form ${submitted}`
       : undefined;
-  const toAsk = BRIEF_FIELDS.filter((f) => f.part === "call" && !brief[f.key]).map((f) => f.label);
 
   const rowsFor = (part: "signup" | "call") =>
     BRIEF_FIELDS.filter((f) => f.part === part).map((f) => {
@@ -1020,9 +1196,6 @@ function BriefSection({ data }: { data: Data }) {
             <Typography sx={{ fontSize: 12, fontWeight: 600, color: tokens.ink2, mb: 0.75 }}>From the onboarding call</Typography>
             <KV labelWidth="42%" rows={rowsFor("call")} />
           </Box>
-          {toAsk.length > 0 && (
-            <Typography sx={{ fontSize: 13, color: "warning.dark" }}>Still to ask: {toAsk.join(", ")}.</Typography>
-          )}
         </Box>
       }
       fields={BRIEF_FIELDS.map((f) => ({ key: f.key, label: f.label, value: brief[f.key]?.value ?? "", placeholder: f.placeholder, multiline: f.key === "suburbs" || f.key === "offer" }))}

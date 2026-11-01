@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { Box, CircularProgress } from "@mui/material";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "./hooks/useAuth";
@@ -11,7 +11,7 @@ import WelcomePage from "./pages/WelcomePage";
 import LeadsPage from "./pages/LeadsPage";
 import LeadDetailPage from "./pages/LeadDetailPage";
 import CalendarPage from "./pages/CalendarPage";
-import OverviewPage from "./pages/OverviewPage";
+import { getActiveAgentIdSync } from "./api/_client";
 import HomePage from "./pages/HomePage";
 import LeadPagePage from "./pages/LeadPagePage";
 import UpgradePage from "./pages/UpgradePage";
@@ -55,6 +55,25 @@ function OperatorOnly({ children }: { children: React.ReactNode }) {
   if (isLoading) return <Splash />;
   if (!isOperator) return <Navigate to="/leads" replace />;
   return <>{children}</>;
+}
+
+/** Old /admin/clients/<id> links: on to the readable /clients/… address
+ *  (the client page swaps the id for their name). */
+function OldClientLink() {
+  const { agentId = "" } = useParams();
+  const { search } = useLocation();
+  return <Navigate to={`/clients/${agentId}/overview${search}`} replace />;
+}
+
+/** Staff working in a client: their settings are on the client's page, so
+ *  /account goes there (one place, not two). Your own account and agents
+ *  keep this page. */
+function AccountRoute() {
+  const { user } = useAuth();
+  const { data: isOperator } = useIsOperator();
+  const active = getActiveAgentIdSync();
+  if (isOperator && active && active !== user?.id) return <Navigate to={`/clients/${active}/settings`} replace />;
+  return <AccountPage />;
 }
 
 function OnboardingGate({ children }: { children: React.ReactNode }) {
@@ -113,7 +132,8 @@ export default function App() {
             <Route path="/leads" element={<LeadsPage />} />
             <Route path="/leads/:id" element={<LeadDetailPage />} />
             <Route path="/calendar" element={<CalendarPage />} />
-            <Route path="/overview" element={<OperatorOnly><OverviewPage /></OperatorOnly>} />
+            {/* Overview now lives on the client's page (Overview tab). */}
+            <Route path="/overview" element={<OperatorOnly><Navigate to={`/clients/${getActiveAgentIdSync() ?? user?.id ?? ""}/overview`} replace /></OperatorOnly>} />
             {import.meta.env.DEV && <Route path="/home" element={<HomePage />} />}
             <Route path="/lead-page" element={<LeadPagePage />} />
             <Route path="/upgrade" element={<UpgradePage />} />
@@ -121,10 +141,12 @@ export default function App() {
               path="/admin/automations/*"
               element={<AdminAutomationsPage />}
             />
-            <Route path="/admin/clients" element={<OperatorOnly><ClientsPage /></OperatorOnly>} />
+            <Route path="/clients" element={<OperatorOnly><ClientsPage /></OperatorOnly>} />
+            <Route path="/clients/:who/:tab?" element={<OperatorOnly><ClientDetailPage /></OperatorOnly>} />
+            <Route path="/admin/clients" element={<Navigate to="/clients" replace />} />
+            <Route path="/admin/clients/:agentId/*" element={<OldClientLink />} />
             <Route path="/admin/reports" element={<OperatorOnly><WeeklyReportsAdminPage /></OperatorOnly>} />
-            <Route path="/admin/clients/:agentId" element={<OperatorOnly><ClientDetailPage /></OperatorOnly>} />
-            <Route path="/account" element={<AccountPage />} />
+            <Route path="/account" element={<AccountRoute />} />
             <Route path="/account/audit" element={<OperatorOnly><AuditLogPage /></OperatorOnly>} />
             <Route path="/setup" element={<SetupPage />} />
           </Route>
