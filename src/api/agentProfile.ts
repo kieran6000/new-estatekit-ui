@@ -65,34 +65,77 @@ export async function getActiveAds(adAccountId: string, since?: string | null, u
   return (data?.ads ?? []) as ActiveAd[];
 }
 
-/** One ad set (or ad) in the client page's "Ad sets & ads" table. */
-export interface AdTableRow {
-  id: string;
-  name: string;
-  /** Ads only: the ad set it's in. */
-  adset: string | null;
-  adsetId?: string | null;
-  status: string;
-  created: string | null;
+/** A level of the client page's ads table, as in Ads Manager. */
+export type AdsLevel = "campaign" | "adset" | "ad";
+
+/** Facebook's numbers for one row (or the whole account), for the dates. */
+export interface AdNumbers {
   spend: number;
   impressions: number;
+  reach: number;
+  /** Link clicks. */
   clicks: number;
-  lpv: number;
-  leads: number;
   frequency: number;
+  leads: number;
+  /** Landing page views. */
+  lpv: number;
 }
 
-/** Ad sets (or ads) that are on or spent between since and until (YYYY-MM-DD,
- *  both included). note: "busy" when Facebook is throttling, else why Meta
- *  couldn't be read. */
-export async function getAdSetTable(adAccountId: string, since: string, until: string, level: "adset" | "ad"): Promise<{ rows: AdTableRow[]; note?: string }> {
-  const { data, error } = await supabase.functions.invoke("fb-adset-table", { body: { adAccountId, since, until, level } });
+/** One campaign, ad set or ad in the client page's ads table. */
+export interface AdsRow extends AdNumbers {
+  id: string;
+  name: string;
+  /** What it's set to: ACTIVE or PAUSED (the on/off switch). */
+  status: string;
+  /** Whether it's actually delivering (Ads Manager's "Delivery"). */
+  delivery: string;
+  created: string | null;
+  dailyBudget: number | null;
+  lifetimeBudget: number | null;
+  campaign: { id: string; name: string } | null;
+  adset: { id: string; name: string } | null;
+  /** Ads only: what the ad shows, for the preview. */
+  creative: { body: string; title: string; image: string; cta: string; link: string } | null;
+}
+
+/** Campaigns, ad sets or ads that are on or spent between since and until
+ *  (YYYY-MM-DD, both included), optionally inside one campaign or ad set.
+ *  At campaign level with no campaign, `account` has the account's totals.
+ *  note: "busy" when Facebook is throttling, else why Meta couldn't be read. */
+export async function getAdsTable(
+  adAccountId: string, since: string, until: string,
+  view: { level: AdsLevel; campaignId?: string | null; adsetId?: string | null },
+): Promise<{ rows: AdsRow[]; account: AdNumbers | null; note?: string }> {
+  const { data, error } = await supabase.functions.invoke("fb-adset-table", {
+    body: { adAccountId, since, until, level: view.level, campaignId: view.campaignId || undefined, adsetId: view.adsetId || undefined },
+  });
   if (error) throw new Error(data?.error || error.message);
   if (data?.error) throw new Error(data.error);
-  return { rows: (data?.rows ?? []) as AdTableRow[], note: data?.note };
+  return { rows: (data?.rows ?? []) as AdsRow[], account: (data?.account ?? null) as AdNumbers | null, note: data?.note };
 }
 
-/** Pauses or resumes a single ad. Changes live delivery/spend immediately. */
+/** One change on the ad account, from Facebook's activity log. */
+export interface AdHistoryItem {
+  at: string;
+  /** Facebook's own words for it, e.g. "Updated ad set budget". */
+  what: string;
+  type: string;
+  objectType: string;
+  objectName: string;
+  who: string;
+  change: { from: string; to: string } | null;
+}
+
+/** What changed on the ad account between since and until (YYYY-MM-DD). */
+export async function getAdHistory(adAccountId: string, since: string, until: string): Promise<{ items: AdHistoryItem[]; note?: string }> {
+  const { data, error } = await supabase.functions.invoke("fb-ad-history", { body: { adAccountId, since, until } });
+  if (error) throw new Error(data?.error || error.message);
+  if (data?.error) throw new Error(data.error);
+  return { items: (data?.items ?? []) as AdHistoryItem[], note: data?.note };
+}
+
+/** Turns a campaign, ad set or ad on or off. Changes live delivery and spend
+ *  straight away (Facebook switches all three the same way). */
 export async function setAdStatus(adId: string, status: "ACTIVE" | "PAUSED"): Promise<void> {
   const { data, error } = await supabase.functions.invoke("fb-set-ad-status", { body: { adId, status } });
   if (error) throw new Error(data?.error || error.message);

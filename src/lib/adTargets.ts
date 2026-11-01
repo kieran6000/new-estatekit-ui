@@ -1,53 +1,51 @@
-// The media buyer's targets for the "Ad sets & ads" table (from the Client
-// Ads design): each metric is on target, close (within 20%) or off target.
-// No colour under R150 spend or fewer than 3 leads: too little to judge.
+// The ads table's columns, named exactly as in Ads Manager, and the media
+// buyer's targets for four of them: each is on target, close (within 20%)
+// or off target. No colour under R150 spend or fewer than 3 leads: too
+// little to judge. Nothing here is our own metric: all are Facebook's.
+
+import type { AdNumbers } from "../api/agentProfile";
 
 export type Tone = "good" | "near" | "bad" | "none";
+export type AdRowNumbers = AdNumbers;
 
-export interface AdRowNumbers {
-  spend: number;
-  impressions: number;
-  clicks: number;
-  lpv: number;
-  leads: number;
-  frequency: number;
-}
+export type MetricKey = "spend" | "leads" | "cpl" | "impressions" | "reach" | "freq" | "cpm" | "clicks" | "ctr" | "lpv";
 
 export interface MetricDef {
-  key: "spend" | "leads" | "cpl" | "cpm" | "ctr" | "load" | "cvr" | "freq";
+  key: MetricKey;
+  /** Facebook's name for it. */
   label: string;
   /** The target as shown under the column name. */
-  target: string;
+  target?: string;
   /** target and direction: up = higher is better. */
   rule?: { value: number; up: boolean };
 }
 
 export const METRICS: MetricDef[] = [
-  { key: "spend", label: "Spend", target: "" },
-  { key: "leads", label: "Leads", target: "" },
-  { key: "cpl", label: "CPL", target: "under R60", rule: { value: 60, up: false } },
-  { key: "cpm", label: "CPM", target: "R40 – R80", rule: { value: 80, up: false } },
-  { key: "ctr", label: "Link CTR", target: "1.5%+", rule: { value: 1.5, up: true } },
-  { key: "load", label: "LP load", target: "80%+", rule: { value: 80, up: true } },
-  { key: "cvr", label: "LP CVR", target: "15%+", rule: { value: 15, up: true } },
+  { key: "spend", label: "Amount spent" },
+  { key: "leads", label: "Leads" },
+  { key: "cpl", label: "Cost per lead", target: "under R60", rule: { value: 60, up: false } },
+  { key: "impressions", label: "Impressions" },
+  { key: "reach", label: "Reach" },
   { key: "freq", label: "Frequency", target: "under 2.5", rule: { value: 2.5, up: false } },
+  { key: "cpm", label: "CPM (cost per 1,000 impressions)", target: "R40 – R80", rule: { value: 80, up: false } },
+  { key: "clicks", label: "Link clicks" },
+  { key: "ctr", label: "CTR (link click-through rate)", target: "1.5%+", rule: { value: 1.5, up: true } },
+  { key: "lpv", label: "Landing page views" },
 ];
 
-/** Each metric's value; null when it can't be worked out (e.g. no landing
- *  page for an instant form, so no LP load or LP CVR). */
-export function metricValues(r: AdRowNumbers): Record<MetricDef["key"], number | null> {
-  // Landing-page numbers only mean something when the leads came from the
-  // page: more leads than page visits = instant-form leads (900% CVR).
-  const lp = r.lpv > 0 && r.leads <= r.lpv;
+export function metricValues(r: AdRowNumbers): Record<MetricKey, number | null> {
   return {
     spend: r.spend,
     leads: r.leads,
     cpl: r.leads ? r.spend / r.leads : null,
-    cpm: r.impressions ? (r.spend / r.impressions) * 1000 : null,
-    ctr: r.impressions ? (r.clicks / r.impressions) * 100 : null,
-    load: lp && r.clicks ? (r.lpv / r.clicks) * 100 : null,
-    cvr: lp ? (r.leads / r.lpv) * 100 : null,
+    impressions: r.impressions,
+    reach: r.reach || null,
     freq: r.frequency || null,
+    cpm: r.impressions ? (r.spend / r.impressions) * 1000 : null,
+    clicks: r.clicks,
+    ctr: r.impressions ? (r.clicks / r.impressions) * 100 : null,
+    // Instant forms have no landing page.
+    lpv: r.lpv || null,
   };
 }
 
@@ -58,8 +56,22 @@ export function toneOf(def: MetricDef, value: number | null, r: Pick<AdRowNumber
   return value <= t ? "good" : value <= t * 1.2 ? "near" : "bad";
 }
 
-/** Add rows up for the footer (frequency: the average, as in the design). */
+/** Add rows up for the totals row. Reach and frequency can't be added up
+ *  (the same person is in several rows), so they're left out: the account
+ *  totals carry the real ones. */
 export function sumRows(rows: AdRowNumbers[]): AdRowNumbers {
-  const t = rows.reduce((a, r) => ({ spend: a.spend + r.spend, impressions: a.impressions + r.impressions, clicks: a.clicks + r.clicks, lpv: a.lpv + r.lpv, leads: a.leads + r.leads, frequency: a.frequency + r.frequency }), { spend: 0, impressions: 0, clicks: 0, lpv: 0, leads: 0, frequency: 0 });
-  return { ...t, frequency: rows.length ? t.frequency / rows.length : 0 };
+  return rows.reduce(
+    (a, r) => ({ spend: a.spend + r.spend, impressions: a.impressions + r.impressions, reach: 0, clicks: a.clicks + r.clicks, frequency: 0, leads: a.leads + r.leads, lpv: a.lpv + r.lpv }),
+    { spend: 0, impressions: 0, reach: 0, clicks: 0, frequency: 0, leads: 0, lpv: 0 },
+  );
+}
+
+/** Facebook's number formats: R1,234.56 for money, 1,234 for counts. */
+export function formatMetric(k: MetricKey, v: number | null): string {
+  if (v === null) return "—";
+  const money = (n: number) => "R" + n.toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (k === "spend" || k === "cpl" || k === "cpm") return money(v);
+  if (k === "ctr") return v.toFixed(2) + "%";
+  if (k === "freq") return v.toFixed(2);
+  return Math.round(v).toLocaleString("en-ZA");
 }

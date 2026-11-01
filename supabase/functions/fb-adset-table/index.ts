@@ -1,10 +1,11 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-// The client page's "Ad sets & ads" table: one row per ad set (or ad) that
-// is on, or spent in the dates, with the numbers the media buyer reads:
-// spend, leads, impressions, link clicks, landing-page views, frequency.
-// One Graph call (insights expanded on the edge), so it's light on quota.
+// The client page's ads table, like Ads Manager: campaigns, ad sets or ads
+// (optionally inside one campaign or ad set), each with Facebook's own
+// numbers for the dates; ads also bring their creative for the preview. At
+// campaign level with no filter it adds the ad account's totals (the tiles).
+// One Graph call per view (insights expanded on the edge).
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
@@ -56,14 +57,32 @@ async function mayReadAccount(req: Request, adAccountId: string): Promise<boolea
   return own !== "" && own === String(adAccountId).replace(/^act_/, "").trim();
 }
 
+const INSIGHT_FIELDS = "spend,impressions,reach,frequency,inline_link_clicks,actions";
+// deno-lint-ignore no-explicit-any
+function numbers(i: any) {
+  return {
+    spend: Number(i?.spend) || 0,
+    impressions: Number(i?.impressions) || 0,
+    reach: Number(i?.reach) || 0,
+    clicks: Number(i?.inline_link_clicks) || 0,
+    frequency: Number(i?.frequency) || 0,
+    leads: leadsFrom(i?.actions),
+    lpv: actionValue(i?.actions, "landing_page_view"),
+  };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   try {
-    const { adAccountId, since, until, level } = await req.json();
+    const { adAccountId, since, until, level, campaignId, adsetId } = await req.json();
     if (!adAccountId || !since || !until) return json({ error: "adAccountId, since and until required" }, 400);
     if (!(await mayReadAccount(req, String(adAccountId)))) return json({ error: "Not allowed" }, 403);
+    for (const id of [campaignId, adsetId]) if (id && !/^\d+$/.test(String(id))) return json({ error: "bad id" }, 400);
     const actId = String(adAccountId).startsWith("act_") ? String(adAccountId) : `act_${adAccountId}`;
-    const edge = level === "ad" ? "ads" : "adsets";
+    const lvl: "campaign" | "adset" | "ad" = level === "ad" ? "ad" : level === "adset" ? "adset" : "campaign";
+    const edge = lvl === "campaign" ? "campaigns" : lvl === "adset" ? "adsets" : "ads";
+    // Inside one ad set or campaign, else the whole account.
+    const parent = lvl === "ad" && adsetId ? adsetId : lvl !== "campaign" && campaignId ? campaignId : actId;
 
     const tokens: string[] = [];
     for (const name of TOKEN_NAMES) {
@@ -72,13 +91,19 @@ Deno.serve(async (req) => {
     }
     if (!tokens.length) return json({ rows: [], note: "No Facebook token configured" });
 
-    const insights = `insights.time_range(${JSON.stringify({ since, until })}){spend,impressions,inline_link_clicks,frequency,actions}`;
-    const fields = ["id", "name", "effective_status", "created_time", ...(edge === "ads" ? ["adset{id,name}"] : []), insights].join(",");
-    const filter = encodeURIComponent(JSON.stringify([{ field: "effective_status", operator: "IN", value: ["ACTIVE", "PAUSED", "CAMPAIGN_PAUSED", "ADSET_PAUSED"] }]));
+    const range = JSON.stringify({ since, until });
+    const fields = [
+      "id", "name", "status", "effective_status", "created_time",
+      ...(lvl !== "ad" ? ["daily_budget", "lifetime_budget"] : []),
+      ...(lvl !== "campaign" ? ["campaign{id,name}"] : []),
+      ...(lvl === "ad" ? ["adset{id,name}", "creative{body,title,image_url,thumbnail_url,call_to_action_type,link_url,object_story_spec}"] : []),
+      `insights.time_range(${range}){${INSIGHT_FIELDS}}`,
+    ].join(",");
+    const filter = encodeURIComponent(JSON.stringify([{ field: "effective_status", operator: "IN", value: ["ACTIVE", "PAUSED", "CAMPAIGN_PAUSED", "ADSET_PAUSED", "IN_PROCESS", "WITH_ISSUES", "PENDING_REVIEW", "DISAPPROVED"] }]));
 
     let lastErr = "";
     for (const token of tokens) {
-      const res = await fetch(`${GRAPH}/${actId}/${edge}?fields=${fields}&filtering=${filter}&limit=200&access_token=${token}`);
+      const res = await fetch(`${GRAPH}/${parent}/${edge}?fields=${fields}&filtering=${filter}&limit=200&access_token=${token}`);
       const data = await res.json();
       if (data.error) {
         if (RATE_LIMIT_CODES.has(Number(data.error.code))) return json({ rows: [], note: "busy" });
@@ -87,26 +112,40 @@ Deno.serve(async (req) => {
       }
       // deno-lint-ignore no-explicit-any
       const rows = (data.data || []).map((e: any) => {
-        const i = e.insights?.data?.[0] ?? {};
+        const c = e.creative ?? {};
+        const link = c.object_story_spec?.link_data ?? c.object_story_spec?.video_data ?? {};
         return {
           id: e.id,
           name: e.name,
-          adset: e.adset?.name ?? null,
-          adsetId: e.adset?.id ?? null,
-          status: e.effective_status,
+          status: e.status,
+          delivery: e.effective_status,
           created: e.created_time,
-          spend: Number(i.spend) || 0,
-          impressions: Number(i.impressions) || 0,
-          clicks: Number(i.inline_link_clicks) || 0,
-          frequency: Number(i.frequency) || 0,
-          leads: leadsFrom(i.actions),
-          lpv: actionValue(i.actions, "landing_page_view"),
+          // Budgets come in cents.
+          dailyBudget: e.daily_budget ? Number(e.daily_budget) / 100 : null,
+          lifetimeBudget: e.lifetime_budget ? Number(e.lifetime_budget) / 100 : null,
+          campaign: e.campaign ? { id: e.campaign.id, name: e.campaign.name } : null,
+          adset: e.adset ? { id: e.adset.id, name: e.adset.name } : null,
+          creative: lvl === "ad" ? {
+            body: c.body || link.message || "",
+            title: c.title || link.name || link.title || "",
+            image: c.image_url || link.picture || link.image_url || c.thumbnail_url || "",
+            cta: c.call_to_action_type || link.call_to_action?.type || "",
+            link: c.link_url || link.link || link.call_to_action?.value?.link || "",
+          } : null,
+          ...numbers(e.insights?.data?.[0]),
         };
       })
         // On now, or spent in these dates.
         // deno-lint-ignore no-explicit-any
-        .filter((r: any) => r.status === "ACTIVE" || r.spend > 0);
-      return json({ rows });
+        .filter((r: any) => r.delivery === "ACTIVE" || r.spend > 0);
+
+      // The account's totals, for the tiles (reach can't be added up from rows).
+      let account = null;
+      if (lvl === "campaign" && !campaignId) {
+        const a = await (await fetch(`${GRAPH}/${actId}/insights?fields=${INSIGHT_FIELDS}&time_range=${encodeURIComponent(range)}&access_token=${token}`)).json();
+        if (!a.error) account = numbers(a.data?.[0]);
+      }
+      return json({ rows, account });
     }
     console.warn("fb-adset-table: all tokens failed:", lastErr);
     return json({ rows: [], note: lastErr });

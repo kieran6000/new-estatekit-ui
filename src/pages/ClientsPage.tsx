@@ -46,11 +46,13 @@ import {
   type ClientCardRow,
   type LastActivity,
 } from "../api/clients";
+import { listAgentProfiles } from "../api/_client";
 import { getFbAdAccount } from "../api/agentProfile";
 import { resolveRange, useDateRange, ymd } from "../lib/range";
 import { timeAgo } from "../lib/timeAgo";
 import { accountIssues, healthOf, ISSUE_TEXT, META_ACCESS_MESSAGE, type Health, type IssueKind } from "../lib/accountHealth";
 import { useSnack } from "../hooks/useSnack";
+import { clientPath } from "../lib/clientSlug";
 import SignupRequests from "../components/SignupRequests";
 import OnboardingAdminCard from "../components/OnboardingAdminCard";
 import RangePicker from "../components/RangePicker";
@@ -165,6 +167,8 @@ export default function ClientsPage() {
   const rangeDays = Math.max(1, Math.round((until.getTime() - since.getTime()) / 864e5));
 
   const { data: clients, isLoading, isError } = useQuery({ queryKey: ["clients"], queryFn: listClients, staleTime: 60_000 });
+  // Readable client addresses (/clients/bennie-bell/overview) need everyone's names.
+  const { data: slugs } = useQuery({ queryKey: ["agentProfiles"], queryFn: listAgentProfiles, staleTime: 5 * 60_000 });
   const { data: counts } = useQuery({
     queryKey: ["leadCounts", sinceDay, untilDay],
     queryFn: () => getLeadCounts(since, until),
@@ -339,7 +343,7 @@ export default function ClientsPage() {
       </Box>
 
       <Box sx={{ p: { xs: 1.5, md: 2 }, display: "flex", flexDirection: "column", gap: 2 }}>
-        {view === "active" && <NeedsAttention rows={rows} loading={totals.loading} onOpen={(id) => navigate(`/admin/clients/${id}`)} onCopied={() => showSnack("Message copied. Paste it into WhatsApp.")} />}
+        {view === "active" && <NeedsAttention rows={rows} loading={totals.loading} onOpen={(id) => navigate(clientPath(id, clients?.map((c) => ({ agent_id: c.agent_id, display_name: c.display_name }))))} onCopied={() => showSnack("Message copied. Paste it into WhatsApp.")} />}
         <SignupRequests />
         <OnboardingAdminCard />
 
@@ -402,7 +406,7 @@ export default function ClientsPage() {
                   <TableRow
                     key={r.c.agent_id}
                     hover
-                    onClick={() => navigate(`/admin/clients/${r.c.agent_id}`)}
+                    onClick={() => navigate(clientPath(r.c.agent_id, slugs))}
                     sx={{ cursor: "pointer", "& td": { fontSize: 13.5, py: 1 } }}
                   >
                     <TableCell sx={{ pr: 0 }}><HealthDot r={r} /></TableCell>
@@ -470,7 +474,7 @@ export default function ClientsPage() {
                   key={r.c.agent_id}
                   component="div"
                   role="link"
-                  onClick={() => navigate(`/admin/clients/${r.c.agent_id}`)}
+                  onClick={() => navigate(clientPath(r.c.agent_id, slugs))}
                   sx={{ display: "block", textAlign: "left", width: "100%", bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "8px", p: 1.5 }}
                 >
                   <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>

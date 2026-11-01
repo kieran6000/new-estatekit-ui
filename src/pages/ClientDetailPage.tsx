@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
+import { Link as RouterLink, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AppBar,
@@ -39,7 +39,6 @@ import TeamSection from "../components/TeamSection";
 import {
   adsManagerUrl,
   clientPicture,
-  cplLabel,
   fundingKind,
   getClient,
   hasPaymentProblem,
@@ -64,8 +63,14 @@ import { useSnack } from "../hooks/useSnack";
 import { trackActivity } from "../lib/activity";
 import { timeAgo } from "../lib/timeAgo";
 import RangePicker from "../components/RangePicker";
-import AdSetsTable from "../components/AdSetsTable";
+import AdsTable, { type AdsView } from "../components/AdsTable";
+import { clientPath, isAgentId, resolveClient, CLIENT_TABS, type ClientTab } from "../lib/clientSlug";
+import { getAdHistory, getAdsTable, type AdsLevel } from "../api/agentProfile";
+import { listAgentProfiles } from "../api/_client";
+import type { DateRange, RangeKey } from "../lib/range";
+import { RANGE_LABELS } from "../lib/range";
 import { useFollowAccount } from "../hooks/useFollowLeadAccount";
+import { formatMetric, metricValues, type MetricKey } from "../lib/adTargets";
 import { MAX_IMAGE_BYTES, uploadImage } from "../lib/image";
 import FundingChip from "../components/FundingChip";
 
@@ -89,37 +94,50 @@ const money = (n: number) => "R" + Math.round(n).toLocaleString("en-ZA");
 // Onboarding answers already shown in Contact or the section header.
 const SHOWN_ELSEWHERE = new Set(["Full name", "Email", "Phone", "Submitted"]);
 type Data = Awaited<ReturnType<typeof getClient>>;
-type TabKey = "overview" | "brief" | "settings";
-const TAB_KEY = "estatekit_account_tab";
+type TabKey = ClientTab;
 
-/** Operators: one account. Overview (numbers for the chosen dates), Brief
- *  (onboarding answers) and Settings (everything editable, including their
- *  login and contract, which used to live on the Account page). */
+/** Operators: one account, at /clients/<their-name>/<tab>. Overview (the
+ *  numbers and their ads), History (what changed on their ads), Brief
+ *  (onboarding answers) and Settings (everything editable). Dates and where
+ *  you are in their ads are in the address too, so a link opens the same
+ *  view and Back steps through it. */
 export default function ClientDetailPage() {
-  const { agentId = "" } = useParams();
+  const { who = "", tab: tabParam } = useParams();
+  const [params] = useSearchParams();
   const navigate = useNavigate();
+  const { data: profiles } = useQuery({ queryKey: ["agentProfiles"], queryFn: listAgentProfiles, staleTime: 5 * 60_000 });
+  const agentId = profiles ? resolveClient(who, profiles) ?? "" : isAgentId(who) ? who : "";
   const { data, isLoading, isError, error } = useQuery({ queryKey: ["client", agentId], queryFn: () => getClient(agentId), enabled: !!agentId });
   // Their page is the account you're working in (it replaced /overview and,
   // for staff, /account): opening it switches you into them.
   useFollowAccount(agentId ? { agent_id: agentId } : null, "account");
-  const [tab, setTab] = useState<TabKey>(() => {
-    try {
-      const t = sessionStorage.getItem(TAB_KEY);
-      return t === "brief" || t === "settings" ? t : "overview";
-    } catch {
-      return "overview";
-    }
-  });
-  function pick(t: TabKey) {
-    setTab(t);
-    try { sessionStorage.setItem(TAB_KEY, t); } catch { /* ignore */ }
+  const tab: TabKey = CLIENT_TABS.includes(tabParam as TabKey) ? (tabParam as TabKey) : "overview";
+  const search = params.toString() ? `?${params.toString()}` : "";
+  // Tabs are pages: Back goes to the tab you were on. Only the dates carry
+  // over (where you were in the ads is Overview's own).
+  const dates = new URLSearchParams([...params].filter(([k]) => k === "range" || k === "from" || k === "to")).toString();
+  const pick = (t: TabKey) => navigate(`${clientPath(agentId, profiles, t)}${(t === "overview" || t === "history") && dates ? `?${dates}` : ""}`);
+
+  // Old addresses (the id, or no tab) move to /clients/<name>/<tab>.
+  if (profiles && agentId) {
+    const want = clientPath(agentId, profiles, tab);
+    const here = `/clients/${who}/${tabParam ?? ""}`;
+    if (here !== want) return <Navigate to={`${want}${search}`} replace />;
+  }
+  if (profiles && !agentId) {
+    return (
+      <Box sx={{ p: 4 }}>
+        <Typography sx={{ fontWeight: 500 }}>There's no account at this address.</Typography>
+        <Button component={RouterLink} to="/clients" sx={{ mt: 1 }}>Back to Accounts</Button>
+      </Box>
+    );
   }
 
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: "background.default" }}>
       <AppBar position="sticky">
         <Toolbar sx={{ height: 56, minHeight: "56px !important" }}>
-          <IconButton onClick={() => navigate("/admin/clients")} aria-label="Back to accounts">
+          <IconButton onClick={() => navigate("/clients")} aria-label="Back to accounts">
             <ArrowBackIcon />
           </IconButton>
           <Typography sx={{ fontSize: 18, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -163,6 +181,7 @@ export default function ClientDetailPage() {
             <Box sx={{ maxWidth: 1440, mx: "auto", px: { xs: 0.5, md: 2 } }}>
               <Tabs value={tab} onChange={(_e, v) => pick(v)} variant="scrollable" allowScrollButtonsMobile>
                 <Tab value="overview" label="Overview" />
+                <Tab value="history" label="History" />
                 <Tab value="brief" label="Brief" />
                 <Tab value="settings" label="Settings" />
               </Tabs>
@@ -170,6 +189,7 @@ export default function ClientDetailPage() {
           </Box>
           <Box sx={{ p: { xs: 1.5, md: 2.5 }, maxWidth: 1440, mx: "auto", display: "flex", flexDirection: "column", gap: 2 }}>
             {tab === "overview" && <OverviewTab data={data} />}
+            {tab === "history" && <HistoryTab data={data} />}
             {tab === "brief" && (
               <Cols>
                 <BriefSection data={data} />
@@ -599,37 +619,75 @@ function ExtLink({ href, children }: { href: string; children: ReactNode }) {
 
 /* ───────────────────────── overview ───────────────────────── */
 
-function Tile({ label, value, tone }: { label: string; value: ReactNode; tone?: "warning" }) {
+function Tile({ label, value, tone, hint }: { label: string; value: ReactNode; tone?: "warning"; hint?: string }) {
   return (
     <Box sx={{ bgcolor: "background.paper", border: `1px solid ${tone === "warning" ? tokens.amberBorder : tokens.divider}`, borderRadius: "8px", px: 2, py: 1.5, minWidth: 0 }}>
-      <Typography component="div" sx={{ fontSize: 24, fontWeight: 600, lineHeight: 1.2, fontVariantNumeric: "tabular-nums" }}>{value}</Typography>
-      <Typography sx={{ fontSize: 12.5, color: tokens.ink2, mt: 0.25 }}>{label}</Typography>
+      <Typography component="div" sx={{ fontSize: 22, fontWeight: 600, lineHeight: 1.2, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{value}</Typography>
+      <Tooltip title={hint ?? ""} disableHoverListener={!hint}>
+        <Typography sx={{ fontSize: 12.5, color: tokens.ink2, mt: 0.25 }}>{label}</Typography>
+      </Tooltip>
     </Box>
   );
+}
+
+/** The dates, from the address (?range=7d, or ?range=custom&from=&to=),
+ *  else the last ones used here. Changing them changes the address. */
+function useRangeParam(): [DateRange, (r: DateRange) => void] {
+  const [params, setParams] = useSearchParams();
+  const [stored, setStored] = useDateRange("estatekit_account_range");
+  const key = params.get("range") as RangeKey | null;
+  const range: DateRange = key && key in RANGE_LABELS
+    ? { key, from: params.get("from") ?? undefined, to: params.get("to") ?? undefined }
+    : stored;
+  const set = (r: DateRange) => {
+    setStored(r);
+    setParams((p) => {
+      const n = new URLSearchParams(p);
+      n.set("range", r.key);
+      if (r.key === "custom" && r.from && r.to) { n.set("from", r.from); n.set("to", r.to); } else { n.delete("from"); n.delete("to"); }
+      return n;
+    }, { replace: true });
+  };
+  return [range, set];
 }
 
 function OverviewTab({ data }: { data: Data }) {
   const p = data.profile;
   const agentId = p.agent_id;
   const acct = p.fb_ad_account_id;
-  const [range, setRange] = useDateRange("estatekit_account_range");
+  const [params, setParams] = useSearchParams();
+  const [range, setRange] = useRangeParam();
   const { since, until } = resolveRange(range);
   const sinceDay = ymd(since);
-  const untilDay = ymd(until);
+  const lastDay = ymd(new Date(until.getTime() - 1));
 
+  // Where you are in their ads (?level=adset&campaign=…&adset=…). Each step
+  // in is a new page, so Back steps out again.
+  const level = (["campaign", "adset", "ad"].includes(params.get("level") ?? "") ? params.get("level") : "campaign") as AdsLevel;
+  const view: AdsView = { level, campaignId: params.get("campaign"), adsetId: params.get("adset") };
+  const setView = (v: AdsView) => setParams((cur) => {
+    const n = new URLSearchParams(cur);
+    if (v.level === "campaign") n.delete("level"); else n.set("level", v.level);
+    if (v.campaignId) n.set("campaign", v.campaignId); else n.delete("campaign");
+    if (v.adsetId) n.set("adset", v.adsetId); else n.delete("adset");
+    return n;
+  });
+
+  // The account's Facebook totals (shared with the table's Campaigns view).
+  const { data: fb, isLoading: fbLoading } = useQuery({
+    queryKey: ["adsTable", acct, sinceDay, lastDay, "campaign", null, null],
+    queryFn: () => getAdsTable(acct!, sinceDay, lastDay, { level: "campaign" }),
+    enabled: !!acct,
+    staleTime: 10 * 60_000,
+    retry: false,
+  });
   const { data: r, isLoading } = useQuery({
-    queryKey: ["resultsBetween", agentId, sinceDay, untilDay],
+    queryKey: ["resultsBetween", agentId, sinceDay, ymd(until)],
     queryFn: () => getResultsBetween(agentId, since, until),
     staleTime: 60_000,
   });
-  const { data: daily, isLoading: spendLoading } = useQuery({
-    queryKey: ["spendDaily", acct, sinceDay],
-    queryFn: () => getSpendDaily(acct!, sinceDay),
-    enabled: !!acct,
-    staleTime: 30 * 60_000,
-    retry: false,
-  });
-  const spend = !acct ? null : spendLoading ? undefined : spendBetween(daily ?? null, sinceDay, untilDay);
+  const a = fb?.account ? metricValues(fb.account) : null;
+  const fbTile = (k: MetricKey) => (!acct ? "—" : fbLoading ? <Skeleton width={70} /> : a ? formatMetric(k, a[k]) : "—");
   const v = (n: number | undefined) => (isLoading ? <Skeleton width={40} /> : (n ?? 0));
 
   return (
@@ -638,16 +696,27 @@ function OverviewTab({ data }: { data: Data }) {
         <RangePicker value={range} onChange={setRange} />
       </Box>
 
-      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, 1fr)", sm: "repeat(3, 1fr)", lg: "repeat(6, 1fr)" }, gap: 1.5 }}>
-        <Tile label="New leads" value={v(r?.leads)} />
-        <Tile label="Ad spend" value={spend === undefined ? <Skeleton width={70} /> : spend == null ? "—" : money(spend)} />
-        <Tile label="Cost per lead" value={spend === undefined || isLoading ? <Skeleton width={60} /> : cplLabel(spend, r?.leads ?? 0)} />
-        <Tile label="Followed up" value={v(r?.followed_up)} />
-        <Tile label="Booked" value={v(r?.booked)} />
-        <Tile label="Mandates" value={v(r?.mandates)} />
+      {/* Facebook's numbers, in Facebook's words; then what came of the leads here. */}
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, 1fr)", sm: "repeat(4, 1fr)", xl: "repeat(8, 1fr)" }, gap: 1.5 }}>
+        <Tile label="Amount spent" value={fbTile("spend")} />
+        <Tile label="Leads" value={fbTile("leads")} />
+        <Tile label="Cost per lead" value={fbTile("cpl")} />
+        <Tile label="Impressions" value={fbTile("impressions")} />
+        <Tile label="Reach" value={fbTile("reach")} />
+        <Tile label="CTR (link click-through rate)" value={fbTile("ctr")} />
+        <Tile label="Booked" value={v(r?.booked)} hint="Leads booked for an appointment in EstateKit" />
+        <Tile label="Mandates" value={v(r?.mandates)} hint="Mandates signed in EstateKit" />
       </Box>
 
-      <AdSetsTable adAccountId={acct ?? null} since={sinceDay} until={ymd(new Date(until.getTime() - 1))} />
+      <AdsTable
+        adAccountId={acct ?? null}
+        since={sinceDay}
+        until={lastDay}
+        view={view}
+        onView={setView}
+        pageName={p.display_name || "Their page"}
+        pageAvatar={clientPicture(p)}
+      />
 
       <Cols>
         <Section title="Leads by stage" sub="All time">
@@ -658,6 +727,82 @@ function OverviewTab({ data }: { data: Data }) {
         </Section>
         <EmailStatsSection data={data} since={since} until={until} />
       </Cols>
+    </>
+  );
+}
+
+/** What changed on their ads, from Facebook's activity log (Ads Manager's
+ *  Account history), newest first, by day. */
+function HistoryTab({ data }: { data: Data }) {
+  const acct = data.profile.fb_ad_account_id;
+  const [range, setRange] = useRangeParam();
+  const { since, until } = resolveRange(range);
+  const sinceDay = ymd(since);
+  const lastDay = ymd(new Date(until.getTime() - 1));
+  const { data: h, isLoading, isError } = useQuery({
+    queryKey: ["adHistory", acct, sinceDay, lastDay],
+    queryFn: () => getAdHistory(acct!, sinceDay, lastDay),
+    enabled: !!acct,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const items = h?.items ?? [];
+  const days = new Map<string, typeof items>();
+  for (const it of items) {
+    const d = new Date(it.at).toLocaleDateString("en-ZA", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+    days.set(d, [...(days.get(d) ?? []), it]);
+  }
+  // Facebook's log uses its old names: a campaign group is a campaign, a
+  // "campaign" is an ad set, an ad group is an ad.
+  const OBJECT: Record<string, string> = { CAMPAIGN_GROUP: "Campaign", CAMPAIGN: "Ad set", ADGROUP: "Ad", AD_SET: "Ad set", AD: "Ad", ACCOUNT: "Ad account", AD_ACCOUNT: "Ad account" };
+
+  return (
+    <>
+      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 1.5, flexWrap: "wrap" }}>
+        <RangePicker value={range} onChange={setRange} />
+      </Box>
+      <Section title="Change history" sub="From Facebook's activity log">
+        {!acct ? (
+          <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>No ad account linked. Add it under Settings → Ads &amp; Facebook.</Typography>
+        ) : isLoading ? (
+          [0, 1, 2, 3].map((i) => <Skeleton key={i} height={48} />)
+        ) : isError || h?.note ? (
+          <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>
+            {h?.note === "busy" ? "Facebook is busy right now. Try again in a few minutes." : "Couldn't read the history from Meta. Try again in a minute."}
+          </Typography>
+        ) : !items.length ? (
+          <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>No changes in these dates.</Typography>
+        ) : (
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 2.5 }}>
+            {[...days.entries()].map(([day, list]) => (
+              <Box key={day}>
+                <Typography sx={{ fontSize: 13, fontWeight: 600, color: tokens.ink2, mb: 0.5 }}>{day}</Typography>
+                {list.map((it, i) => (
+                  <Box key={i} sx={{ display: "grid", gridTemplateColumns: { xs: "56px 1fr", sm: "64px minmax(0, 1fr) 200px" }, gap: 1.5, py: 1.25, borderTop: `1px solid ${tokens.divider2}`, alignItems: "start" }}>
+                    <Typography sx={{ fontSize: 13, color: tokens.ink3, fontVariantNumeric: "tabular-nums" }}>
+                      {new Date(it.at).toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit" })}
+                    </Typography>
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography sx={{ fontSize: 14, fontWeight: 500 }}>{it.what}</Typography>
+                      <Typography sx={{ fontSize: 13, color: tokens.ink2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {OBJECT[it.objectType] ?? it.objectType}: {it.objectName}
+                      </Typography>
+                      {it.change && (it.change.from || it.change.to) && (
+                        <Typography sx={{ fontSize: 13, mt: 0.25 }}>
+                          <Box component="span" sx={{ color: tokens.ink3, textDecoration: "line-through" }}>{it.change.from || "—"}</Box>
+                          {"  →  "}
+                          <b>{it.change.to || "—"}</b>
+                        </Typography>
+                      )}
+                    </Box>
+                    <Typography sx={{ fontSize: 13, color: tokens.ink2, display: { xs: "none", sm: "block" }, textAlign: "right" }}>by {it.who || "Facebook"}</Typography>
+                  </Box>
+                ))}
+              </Box>
+            ))}
+          </Box>
+        )}
+      </Section>
     </>
   );
 }

@@ -1,16 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { METRICS, metricValues, toneOf } from "./adTargets";
+import { METRICS, formatMetric, metricValues, sumRows, toneOf } from "./adTargets";
 
 const def = (k: string) => METRICS.find((m) => m.key === k)!;
-const row = { spend: 319, impressions: 6935, clicks: 80, lpv: 66, leads: 9, frequency: 1.4 };
+const row = { spend: 319, impressions: 6935, reach: 4900, clicks: 80, lpv: 66, leads: 9, frequency: 1.4 };
 
-describe("ad set targets", () => {
-  it("works out the metrics like the design", () => {
+describe("ads table numbers", () => {
+  it("works out Facebook's metrics", () => {
     const v = metricValues(row);
     expect(Math.round(v.cpl!)).toBe(35);
     expect(Math.round(v.cpm!)).toBe(46);
     expect(v.ctr!.toFixed(2)).toBe("1.15");
-    expect(Math.round(v.load!)).toBe(83);
+    expect(v.reach).toBe(4900);
+  });
+
+  it("uses Facebook's names, no made-up columns", () => {
+    expect(METRICS.map((m) => m.label)).toEqual([
+      "Amount spent", "Leads", "Cost per lead", "Impressions", "Reach", "Frequency",
+      "CPM (cost per 1,000 impressions)", "Link clicks", "CTR (link click-through rate)", "Landing page views",
+    ]);
   });
 
   it("colours on target, within 20% and off target", () => {
@@ -18,24 +25,25 @@ describe("ad set targets", () => {
     expect(toneOf(def("cpl"), v.cpl, row)).toBe("good");
     expect(toneOf(def("ctr"), v.ctr, row)).toBe("bad"); // 1.15 is under 1.2 (80% of 1.5)
     expect(toneOf(def("ctr"), 1.3, row)).toBe("near");
-    expect(toneOf(def("cpl"), 70, row)).toBe("near"); // within 20% over R60
+    expect(toneOf(def("cpl"), 70, row)).toBe("near");
   });
 
-  it("no colour under R150 spend or fewer than 3 leads, and none for spend/leads", () => {
+  it("no colour under R150 spend or fewer than 3 leads, and none for counts", () => {
     expect(toneOf(def("cpl"), 20, { spend: 120, leads: 6 })).toBe("none");
     expect(toneOf(def("cpl"), 20, { spend: 400, leads: 2 })).toBe("none");
     expect(toneOf(def("spend"), 400, row)).toBe("none");
   });
 
-  it("an instant form (no landing page) has no LP load or LP CVR", () => {
-    const v = metricValues({ ...row, lpv: 0 });
-    expect(v.load).toBeNull();
-    expect(v.cvr).toBeNull();
+  it("totals don't add up reach or frequency (people repeat across rows)", () => {
+    const t = sumRows([row, row]);
+    expect(t.spend).toBe(638);
+    expect(metricValues(t).reach).toBeNull();
+    expect(metricValues(t).freq).toBeNull();
   });
 
-  it("an instant form ad with a few page visits gets no LP numbers either (no 900% CVR)", () => {
-    const v = metricValues({ ...row, leads: 27, lpv: 3, clicks: 900 });
-    expect(v.load).toBeNull();
-    expect(v.cvr).toBeNull();
+  it("formats like Ads Manager", () => {
+    expect(formatMetric("spend", 1234.5)).toMatch(/^R1.234,50$|^R1,234\.50$|^R1 234,50$/);
+    expect(formatMetric("ctr", 1.234)).toBe("1.23%");
+    expect(formatMetric("lpv", null)).toBe("—");
   });
 });
