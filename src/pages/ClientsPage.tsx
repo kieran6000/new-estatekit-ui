@@ -6,6 +6,7 @@ import {
   Avatar,
   Box,
   Button,
+  Chip,
   ButtonBase,
   IconButton,
   InputAdornment,
@@ -50,12 +51,14 @@ import { setupProgress, setupTotal } from "../lib/setup";
 import { useCalendarReady } from "../hooks/useCalendarReady";
 import { resolveRange, useDateRange, ymd } from "../lib/range";
 import { timeAgo } from "../lib/timeAgo";
+import { accountIssues, healthOf, ISSUE_TEXT, META_ACCESS_MESSAGE, type Health, type IssueKind } from "../lib/accountHealth";
+import { useSnack } from "../hooks/useSnack";
 import SignupRequests from "../components/SignupRequests";
 import OnboardingAdminCard from "../components/OnboardingAdminCard";
 import RangePicker from "../components/RangePicker";
 import FundingChip from "../components/FundingChip";
 
-type ColKey = "name" | "agency" | "leads" | "spend" | "cpl" | "funding" | "active" | "last" | "setup";
+type ColKey = "health" | "name" | "agency" | "leads" | "spend" | "cpl" | "funding" | "active" | "last" | "setup";
 type Dir = "asc" | "desc";
 
 interface Row {
@@ -81,11 +84,15 @@ interface Row {
   last: number | null;
   /** Get set up: how many of the six are done. */
   setup: number;
+  /** What needs a look (lib/accountHealth), and the colour that says so. */
+  issues: IssueKind[];
+  health: Health;
 }
 
 /** Table columns. Numbers are right-aligned with fixed widths; Account and
  *  Agency share whatever width is left. */
 const COLS: { k: ColKey; label: string; num?: boolean; width?: number; firstDir: Dir; tip?: string }[] = [
+  { k: "health", label: "", width: 36, firstDir: "asc", tip: "Needs a look? Red = ads or leads in trouble, amber = quiet in the app. Sorts the worst first." },
   { k: "name", label: "Account", firstDir: "asc" },
   { k: "agency", label: "Agency", firstDir: "asc" },
   { k: "leads", label: "Leads", num: true, width: 80, firstDir: "desc" },
@@ -129,7 +136,7 @@ function loadSort(): { k: ColKey; dir: Dir } {
     const s = JSON.parse(localStorage.getItem("estatekit_accounts_table_sort") || "null");
     if (s && COLS.some((c) => c.k === s.k) && (s.dir === "asc" || s.dir === "desc")) return s;
   } catch { /* ignore */ }
-  return { k: "leads", dir: "desc" };
+  return { k: "health", dir: "asc" };
 }
 
 /** "3h ago", with what they did on hover. Greyed out after a week. */
@@ -157,6 +164,7 @@ export default function ClientsPage() {
   const calendarReady = useCalendarReady();
   const setupN = setupTotal(calendarReady);
   const navigate = useNavigate();
+  const showSnack = useSnack();
   const wide = useMediaQuery("(min-width:1000px)");
   const [range, setRange] = useDateRange("estatekit_accounts_range");
   const { since, until, label } = resolveRange(range);
@@ -213,7 +221,15 @@ export default function ClientsPage() {
       const spend = !acct ? null : sq?.isLoading ? undefined : spendBetween(sq?.data ?? null, sinceDay, untilDay);
       const cpl = spend === undefined ? undefined : spend && leads ? spend / leads : null;
       const act = activity?.get(c.agent_id) ?? null;
+      // Meta answered with "can't read it" (or errored), not still loading.
+      const metaUnreadable = !!acct && !!fq && !fq.isLoading && (fq.isError || !!fq.data?.note);
+      const lastLeadMs = c.live?.last_lead_at ? new Date(c.live.last_lead_at).getTime() : null;
+      const lastActiveMs = act?.lastSeen ? new Date(act.lastSeen).getTime() : null;
+      const paymentProblem = hasPaymentProblem(fq?.data, spend != null ? spend / rangeDays : null);
+      const issues = accountIssues({ hasAds: !!acct, metaUnreadable, paymentProblem, lastLeadMs, lastActiveMs, now: Date.now() });
       return {
+        issues,
+        health: healthOf(issues),
         c,
         name: c.display_name || c.whatsapp_number || "",
         agency: c.company || "",
@@ -249,7 +265,8 @@ export default function ClientsPage() {
   const shown = useMemo(() => {
     const list = rows.filter((r) => matches(r.c, search.trim()));
     // "Pays by": accounts with a payment problem first.
-    const key = (r: Row) => (sort.k === "funding" ? (r.funding ? (r.problem ? "0" : "1") + r.funding : null) : r[sort.k]);
+    const HEALTH_RANK = { red: 0, amber: 1, green: 2 } as const;
+    const key = (r: Row) => (sort.k === "health" ? HEALTH_RANK[r.health] * 10 - Math.min(r.issues.length, 9) : sort.k === "funding" ? (r.funding ? (r.problem ? "0" : "1") + r.funding : null) : r[sort.k]);
     return list.sort((a, b) => cmp(key(a) as string | number | null | undefined, key(b) as string | number | null | undefined, sort.dir) || a.name.localeCompare(b.name));
   }, [rows, search, sort]);
 
@@ -341,6 +358,7 @@ export default function ClientsPage() {
       </Box>
 
       <Box sx={{ p: { xs: 1.5, md: 2 }, display: "flex", flexDirection: "column", gap: 2 }}>
+        {view === "active" && <NeedsAttention rows={rows} loading={totals.loading} onOpen={(id) => navigate(`/admin/clients/${id}`)} onCopied={() => showSnack("Message copied. Paste it into WhatsApp.")} />}
         <SignupRequests />
         <OnboardingAdminCard />
 
@@ -413,6 +431,7 @@ export default function ClientsPage() {
                     onClick={() => navigate(`/admin/clients/${r.c.agent_id}`)}
                     sx={{ cursor: "pointer", "& td": { fontSize: 13.5, py: 1 } }}
                   >
+                    <TableCell sx={{ pr: 0 }}><HealthDot r={r} /></TableCell>
                     <TableCell>
                       <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, minWidth: 0 }}>
                         {avatar(r, 36)}
@@ -464,6 +483,7 @@ export default function ClientsPage() {
                 setSort({ k, dir });
               }}
             >
+              <MenuItem value="health:asc">Needs a look first</MenuItem>
               <MenuItem value="leads:desc">Most leads</MenuItem>
               <MenuItem value="spend:desc">Most ad spend</MenuItem>
               <MenuItem value="cpl:asc">Lowest cost per lead</MenuItem>
@@ -486,7 +506,7 @@ export default function ClientsPage() {
                   <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
                     {avatar(r, 40)}
                     <Box sx={{ minWidth: 0, flex: 1 }}>
-                      <Typography sx={{ fontSize: 15, fontWeight: 600, lineHeight: 1.3, ...ellipsis }}>{r.name || "Unnamed account"}</Typography>
+                      <Typography sx={{ fontSize: 15, fontWeight: 600, lineHeight: 1.3, ...ellipsis }}><HealthDot r={r} inline />{r.name || "Unnamed account"}</Typography>
                       <Typography sx={{ fontSize: 12.5, color: tokens.ink2, lineHeight: 1.3, ...ellipsis }}>
                         {[r.area, r.agency].filter(Boolean).join(" · ") || "—"}
                       </Typography>
@@ -511,6 +531,64 @@ export default function ClientsPage() {
           </>
         )}
       </Box>
+    </Box>
+  );
+}
+
+const HEALTH_COLOR: Record<Health, string> = { red: "#d93025", amber: "#f9ab00", green: "#188038" };
+
+/** The coloured dot before a name; hover says why. */
+function HealthDot({ r, inline }: { r: Row; inline?: boolean }) {
+  const why = r.issues.length ? r.issues.map((k) => ISSUE_TEXT[k].title).join(" · ") : "All good";
+  return (
+    <Tooltip title={why}>
+      <Box
+        component="span"
+        role="img"
+        aria-label={why}
+        sx={{ display: "inline-block", width: 10, height: 10, borderRadius: "50%", bgcolor: HEALTH_COLOR[r.health], flex: "none", ...(inline ? { mr: 0.75 } : { verticalAlign: "middle" }) }}
+      />
+    </Tooltip>
+  );
+}
+
+/** Who needs you today, by reason, with a tap to open them. Hidden when
+ *  nobody does. The "Meta can't read" line also copies the WhatsApp to send. */
+function NeedsAttention({ rows, loading, onOpen, onCopied }: { rows: Row[]; loading: boolean; onOpen: (id: string) => void; onCopied: () => void }) {
+  const order: IssueKind[] = ["meta", "payment", "noLeads", "inactive"];
+  const groups = order
+    .map((k) => ({ k, list: rows.filter((r) => r.issues.includes(k)) }))
+    .filter((g) => g.list.length > 0);
+  if (!groups.length) {
+    return loading ? null : (
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1, px: 2, py: 1.25, bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "8px" }}>
+        <Box component="span" sx={{ width: 10, height: 10, borderRadius: "50%", bgcolor: HEALTH_COLOR.green }} />
+        <Typography sx={{ fontSize: 14 }}>Nobody needs a look right now.</Typography>
+      </Box>
+    );
+  }
+  const urgent = groups.filter((g) => g.k !== "inactive").reduce((n, g) => n + g.list.length, 0);
+  return (
+    <Box sx={{ bgcolor: "background.paper", border: `1px solid ${urgent ? tokens.amberBorder : tokens.divider}`, borderRadius: "8px", p: 2, display: "flex", flexDirection: "column", gap: 1.5 }}>
+      <Typography sx={{ fontSize: 12, fontWeight: 600, color: tokens.ink2, textTransform: "uppercase", letterSpacing: "0.06em" }}>Needs a look</Typography>
+      {groups.map((g) => (
+        <Box key={g.k} sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+          <Box component="span" sx={{ width: 10, height: 10, borderRadius: "50%", bgcolor: HEALTH_COLOR[g.k === "inactive" ? "amber" : "red"], flex: "none" }} />
+          <Typography sx={{ fontSize: 13.5, fontWeight: 600, mr: 0.5 }}>{ISSUE_TEXT[g.k].short}</Typography>
+          {g.list.map((r) => (
+            <Chip key={r.c.agent_id} size="small" label={r.name || "Unnamed"} onClick={() => onOpen(r.c.agent_id)} sx={{ maxWidth: 180 }} />
+          ))}
+          {g.k === "meta" && (
+            <Button
+              size="small"
+              onClick={() => { void navigator.clipboard.writeText(META_ACCESS_MESSAGE).then(onCopied, () => {}); }}
+              sx={{ ml: "auto", textTransform: "none" }}
+            >
+              Copy the message to send them
+            </Button>
+          )}
+        </Box>
+      ))}
     </Box>
   );
 }
