@@ -7,9 +7,9 @@ import {
 import CloseIcon from "@mui/icons-material/Close";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import ImageOutlinedIcon from "@mui/icons-material/ImageOutlined";
-import FlagIcon from "@mui/icons-material/Flag";
-import GridViewOutlinedIcon from "@mui/icons-material/GridViewOutlined";
-import CropLandscapeOutlinedIcon from "@mui/icons-material/CropLandscapeOutlined";
+import CampaignOutlinedIcon from "@mui/icons-material/CampaignOutlined";
+import LayersOutlinedIcon from "@mui/icons-material/LayersOutlined";
+import PhotoOutlinedIcon from "@mui/icons-material/PhotoOutlined";
 import ViewColumnOutlinedIcon from "@mui/icons-material/ViewColumnOutlined";
 import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
 import TuneIcon from "@mui/icons-material/Tune";
@@ -136,19 +136,19 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
   const tabs: { level: AdsLevel; icon: (on: boolean) => ReactNode; label: string; selected: boolean; clear?: () => void }[] = [
     {
       level: "campaign",
-      icon: (on) => <Box sx={{ width: 22, height: 22, borderRadius: "4px", bgcolor: on ? FB.blue : FB.text, color: "#fff", display: "grid", placeItems: "center" }}><FlagIcon sx={{ fontSize: 14 }} /></Box>,
+      icon: () => <CampaignOutlinedIcon sx={{ fontSize: 22 }} />,
       label: "Campaigns",
       selected: !!view.campaignId,
       clear: () => onView({ level: view.level, campaignId: null, adsetId: null }),
     },
     {
       level: "adset",
-      icon: () => <GridViewOutlinedIcon sx={{ fontSize: 22 }} />,
+      icon: () => <LayersOutlinedIcon sx={{ fontSize: 22 }} />,
       label: view.campaignId ? "Ad sets for 1 Campaign" : "Ad sets",
       selected: !!view.adsetId,
       clear: () => onView({ level: view.level, campaignId: view.campaignId, adsetId: null }),
     },
-    { level: "ad", icon: () => <CropLandscapeOutlinedIcon sx={{ fontSize: 22 }} />, label: view.adsetId ? "Ads for 1 Ad set" : view.campaignId ? "Ads for 1 Campaign" : "Ads", selected: false },
+    { level: "ad", icon: () => <PhotoOutlinedIcon sx={{ fontSize: 22 }} />, label: view.adsetId ? "Ads for 1 Ad set" : view.campaignId ? "Ads for 1 Campaign" : "Ads", selected: false },
   ];
   // Moving between tabs keeps what's selected, as in Ads Manager.
   const pickTab = (l: AdsLevel) => onView({ level: l, campaignId: view.campaignId, adsetId: l === "campaign" ? view.adsetId : view.adsetId });
@@ -259,9 +259,10 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
             startIcon={<ViewColumnOutlinedIcon />}
             endIcon={<ArrowDropDownIcon />}
             aria-haspopup="menu"
-            sx={{ textTransform: "none", color: FB.text, borderColor: FB.line, bgcolor: "#fff", fontWeight: 600, height: 36, "&:hover": { bgcolor: FB.tabOff, borderColor: FB.line } }}
+            color="inherit"
+            sx={{ textTransform: "none", letterSpacing: 0, fontWeight: 400, fontSize: 14, borderColor: "divider", minHeight: 40, whiteSpace: "nowrap" }}
           >
-            Columns: {choiceLabel(prefs)}
+            <b>Columns:</b>&nbsp;{choiceLabel(prefs)}
           </Button>
           <Menu anchorEl={colMenu} open={!!colMenu} onClose={() => setColMenu(null)} anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }} slotProps={{ paper: { sx: { minWidth: 300 } } }}>
             <Typography sx={{ px: 2, pt: 1, pb: 0.5, fontWeight: 700, fontSize: 15 }}>Columns</Typography>
@@ -365,15 +366,6 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
                               onClick={(e) => e.stopPropagation()}
                               onChange={(e) => setConfirm({ row: r, on: e.target.checked })}
                               slotProps={{ input: { "aria-label": `${r.name}: ${r.status === "ACTIVE" ? "on" : "off"}` } }}
-                              sx={{
-                                width: 52, height: 30, p: 0.75,
-                                // Off: a light pill with a dark knob. On: blue with a white knob.
-                                "& .MuiSwitch-switchBase": { p: "7px", color: FB.text },
-                                "& .MuiSwitch-thumb": { width: 16, height: 16, boxShadow: "none" },
-                                "& .MuiSwitch-switchBase.Mui-checked": { color: "#fff" },
-                                "& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track": { bgcolor: FB.blue, border: `1px solid ${FB.blue}`, opacity: 1 },
-                                "& .MuiSwitch-track": { borderRadius: 10, bgcolor: "#fff", border: "1px solid #bcc0c4", opacity: 1 },
-                              }}
                             />
                           </Tooltip>
                         </TableCell>
@@ -516,7 +508,7 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
 /** A Facebook feed ad: page, text, image, then the link bar with the button. */
 function AdPreview({ c, pageName, pageAvatar }: { c: NonNullable<AdsRow["creative"]>; pageName: string; pageAvatar?: string }) {
   return (
-    <Paper elevation={8} sx={{ width: 320, borderRadius: "10px", overflow: "hidden", fontFamily: "Helvetica, Arial, sans-serif", color: "#1c1e21" }}>
+    <Paper elevation={8} sx={{ width: 320, borderRadius: "10px", overflow: "hidden", color: "#1c1e21" }}>
       <Box sx={{ display: "flex", alignItems: "center", gap: 1, p: 1.25 }}>
         <Avatar src={pageAvatar} sx={{ width: 36, height: 36, fontSize: 15 }}>{pageName[0]}</Avatar>
         <Box>
