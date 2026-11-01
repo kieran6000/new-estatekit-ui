@@ -16,7 +16,7 @@ describe("ads table numbers", () => {
   it("uses Facebook's names, no made-up columns", () => {
     expect(METRICS.map((m) => m.label)).toEqual([
       "Results", "Reach", "Frequency", "Cost per result", "Amount spent", "Impressions",
-      "CPM (cost per 1,000 impressions)", "Link clicks", "CTR (link click-through rate)", "Landing page views",
+      "CPM (cost per 1,000 impressions)", "Link clicks", "CPC (cost per link click)", "CTR (link click-through rate)", "Landing page views",
     ]);
   });
 

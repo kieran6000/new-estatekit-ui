@@ -8,7 +8,7 @@ import type { AdNumbers } from "../api/agentProfile";
 export type Tone = "good" | "near" | "bad" | "none";
 export type AdRowNumbers = AdNumbers;
 
-export type MetricKey = "spend" | "leads" | "cpl" | "impressions" | "reach" | "freq" | "cpm" | "clicks" | "ctr" | "lpv";
+export type MetricKey = "spend" | "leads" | "cpl" | "impressions" | "reach" | "freq" | "cpm" | "clicks" | "cpc" | "ctr" | "lpv";
 
 export interface MetricDef {
   key: MetricKey;
@@ -30,6 +30,7 @@ export const METRICS: MetricDef[] = [
   { key: "impressions", label: "Impressions" },
   { key: "cpm", label: "CPM (cost per 1,000 impressions)", target: "R40 – R80", rule: { value: 80, up: false } },
   { key: "clicks", label: "Link clicks" },
+  { key: "cpc", label: "CPC (cost per link click)" },
   { key: "ctr", label: "CTR (link click-through rate)", target: "1.5%+", rule: { value: 1.5, up: true } },
   { key: "lpv", label: "Landing page views" },
 ];
@@ -44,6 +45,7 @@ export function metricValues(r: AdRowNumbers): Record<MetricKey, number | null> 
     freq: r.frequency || null,
     cpm: r.impressions ? (r.spend / r.impressions) * 1000 : null,
     clicks: r.clicks,
+    cpc: r.clicks ? r.spend / r.clicks : null,
     ctr: r.impressions ? (r.clicks / r.impressions) * 100 : null,
     // Instant forms have no landing page.
     lpv: r.lpv || null,
@@ -71,7 +73,7 @@ export function sumRows(rows: AdRowNumbers[]): AdRowNumbers {
 export const adsMoney = (n: number) => "R" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 export function formatMetric(k: MetricKey, v: number | null): string {
   if (v === null) return "—";
-  if (k === "spend" || k === "cpl" || k === "cpm") return adsMoney(v);
+  if (k === "spend" || k === "cpl" || k === "cpm" || k === "cpc") return adsMoney(v);
   if (k === "ctr") return v.toFixed(2) + "%";
   if (k === "freq") return v.toFixed(2);
   return Math.round(v).toLocaleString("en-US");
