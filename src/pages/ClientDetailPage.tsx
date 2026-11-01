@@ -567,7 +567,7 @@ function OverviewTab({ data }: { data: Data }) {
   const agentId = p.agent_id;
   const acct = p.fb_ad_account_id;
   const [range, setRange] = useDateRange("estatekit_account_range");
-  const { since, until, label } = resolveRange(range);
+  const { since, until } = resolveRange(range);
   const sinceDay = ymd(since);
   const untilDay = ymd(until);
 
@@ -588,8 +588,7 @@ function OverviewTab({ data }: { data: Data }) {
 
   return (
     <>
-      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1.5, flexWrap: "wrap" }}>
-        <Typography component="h2" sx={{ fontSize: 17, fontWeight: 600 }}>{label}</Typography>
+      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 1.5, flexWrap: "wrap" }}>
         <RangePicker value={range} onChange={setRange} />
       </Box>
 
