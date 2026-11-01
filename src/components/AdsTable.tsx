@@ -55,6 +55,22 @@ const DELIVERY: Record<string, { label: string; color: string }> = {
   DISAPPROVED: { label: "Rejected", color: "#e41e3f" },
 };
 
+const FB_CHECK = {
+  p: 0.5, color: "#8d949e",
+  "& .MuiSvgIcon-root": { fontSize: 22 },
+  "&.Mui-checked": { color: "#0866ff" },
+  "&.Mui-disabled": { color: "#bcc0c4" },
+} as const;
+const FB_SWITCH = {
+  width: 50, height: 28, p: 0.5,
+  "& .MuiSwitch-switchBase": { p: "6px", color: "#1c2b33", "&:hover": { bgcolor: "transparent" } },
+  "& .MuiSwitch-thumb": { width: 16, height: 16, boxShadow: "none" },
+  "& .MuiSwitch-track": { borderRadius: 10, bgcolor: "#fff", border: "1px solid #8d949e", opacity: 1, boxSizing: "border-box" },
+  "& .MuiSwitch-switchBase.Mui-checked": { color: "#0a78be", transform: "translateX(22px)" },
+  "& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track": { bgcolor: "#9fc6f0", borderColor: "#9fc6f0", opacity: 1 },
+  "& .Mui-disabled + .MuiSwitch-track": { opacity: 0.5 },
+} as const;
+
 /** "Leads (Form)" -> "Per Lead (Form)", as under Cost per result. */
 const perResult = (t: string) => (t ? `Per ${t.replace(/^Leads/, "Lead").replace(/^Website leads$/, "Website lead")}` : "");
 const ctaLabel = (cta: string) => (cta ? cta.toLowerCase().split("_").map((w, i) => (i ? w : w[0].toUpperCase() + w.slice(1))).join(" ") : "Learn more");
@@ -111,7 +127,19 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
   const word = LEVEL_WORD[view.level];
   const onSort = (k: MetricKey | "name") => setSort((s) => (s.k === k ? { k, dir: (s.dir * -1) as 1 | -1 } : { k, dir: k === "name" ? 1 : -1 }));
   const clickable = view.level !== "ad";
-  const selectedId = view.level === "campaign" ? view.campaignId : view.level === "adset" ? view.adsetId : null;
+  const [adTicked, setAdTicked] = useState<string | null>(null);
+  const selectedId = view.level === "campaign" ? view.campaignId : view.level === "adset" ? view.adsetId : adTicked;
+  const toggleSelect = (r: AdsRow) => {
+    const off = r.id === selectedId;
+    if (view.level === "campaign") onView({ level: "campaign", campaignId: off ? null : r.id, adsetId: null });
+    else if (view.level === "adset") onView({ level: "adset", campaignId: view.campaignId ?? r.campaign?.id ?? null, adsetId: off ? null : r.id });
+    else setAdTicked(off ? null : r.id);
+  };
+  const clearSelect = () => {
+    if (view.level === "campaign") onView({ level: "campaign", campaignId: null, adsetId: null });
+    else if (view.level === "adset") onView({ level: "adset", campaignId: view.campaignId, adsetId: null });
+    else setAdTicked(null);
+  };
   const open = (r: AdsRow) => {
     if (view.level === "campaign") onView({ level: "adset", campaignId: r.id, adsetId: null });
     else if (view.level === "adset") onView({ level: "ad", campaignId: r.campaign?.id ?? view.campaignId, adsetId: r.id });
@@ -313,8 +341,18 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
               <Table size="small" stickyHeader sx={{ tableLayout: "fixed", width: "max-content", borderCollapse: "separate", "& td": { borderBottom: 0, fontSize: 13.5, px: 1.25, py: 0.9, verticalAlign: "top", overflow: "hidden" } }}>
                 <TableHead>
                   <TableRow>
-                    <TableCell sx={{ ...headCell, ...stickyLeft(0, 72), zIndex: 3 }}>Off / On</TableCell>
-                    <TableCell sx={{ ...headCell, ...stickyLeft(72, nameW), zIndex: 3 }}>
+                    <TableCell padding="none" sx={{ ...headCell, ...stickyLeft(0, 48), zIndex: 3, textAlign: "center", px: "0 !important" }}>
+                      <Checkbox
+                        size="small"
+                        checked={!!selectedId && rows.some((x) => x.r.id === selectedId)}
+                        onChange={clearSelect}
+                        disabled={!selectedId}
+                        sx={FB_CHECK}
+                        slotProps={{ input: { "aria-label": "Clear selection" } }}
+                      />
+                    </TableCell>
+                    <TableCell sx={{ ...headCell, ...stickyLeft(48, 72), zIndex: 3 }}>Off / On</TableCell>
+                    <TableCell sx={{ ...headCell, ...stickyLeft(120, nameW), zIndex: 3 }}>
                       <TableSortLabel active={sort.k === "name"} direction={sort.dir === 1 ? "asc" : "desc"} onClick={() => onSort("name")}>{word.title}</TableSortLabel>
                       {resizer("name")}
                     </TableCell>
@@ -358,7 +396,17 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
                           "&:hover .ek-ext": { opacity: 1 },
                         }}
                       >
-                        <TableCell sx={{ ...stickyLeft(0, 72), py: "6px !important" }}>
+                        <TableCell padding="none" sx={{ ...stickyLeft(0, 48), textAlign: "center", px: "0 !important" }}>
+                          <Checkbox
+                            size="small"
+                            checked={sel}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={() => toggleSelect(r)}
+                            sx={FB_CHECK}
+                            slotProps={{ input: { "aria-label": `Select ${r.name}` } }}
+                          />
+                        </TableCell>
+                        <TableCell sx={{ ...stickyLeft(48, 72), py: "6px !important" }}>
                           <Tooltip title={r.status === "ACTIVE" ? `Turn this ${word.one} off` : `Turn this ${word.one} on`}>
                             <Switch
                               checked={r.status === "ACTIVE"}
@@ -366,10 +414,11 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
                               onClick={(e) => e.stopPropagation()}
                               onChange={(e) => setConfirm({ row: r, on: e.target.checked })}
                               slotProps={{ input: { "aria-label": `${r.name}: ${r.status === "ACTIVE" ? "on" : "off"}` } }}
+                              sx={FB_SWITCH}
                             />
                           </Tooltip>
                         </TableCell>
-                        <TableCell sx={{ ...stickyLeft(72, nameW), borderRight: `1px solid ${FB.line}` }}>
+                        <TableCell sx={{ ...stickyLeft(120, nameW), borderRight: `1px solid ${FB.line}` }}>
                           <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1, minWidth: 0 }}>
                             {view.level === "ad" && (
                               <Box
@@ -414,8 +463,9 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
                     );
                   })}
                   <TableRow sx={{ position: "sticky", bottom: 0, zIndex: 2, "& > td": { bgcolor: "#fff", borderTop: `1px solid ${FB.line}`, fontWeight: 600, whiteSpace: "nowrap" } }}>
-                    <TableCell sx={{ ...stickyLeft(0, 72) }} />
-                    <TableCell sx={{ ...stickyLeft(72, nameW), borderRight: `1px solid ${FB.line}` }}>
+                    <TableCell sx={{ ...stickyLeft(0, 48) }} />
+                    <TableCell sx={{ ...stickyLeft(48, 72) }} />
+                    <TableCell sx={{ ...stickyLeft(120, nameW), borderRight: `1px solid ${FB.line}` }}>
                       <Num v={`Results from ${rows.length} ${rows.length === 1 ? word.one : word.many}`} sub="Excludes deleted items" />
                     </TableCell>
                     {colIds.map((id) => {
