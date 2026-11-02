@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Alert,
   Drawer,
+  Tooltip,
   AppBar,
   Avatar,
   Box,
@@ -584,10 +585,10 @@ export default function LeadsPage() {
       </Box>
 
       <Box sx={{ p: "10px 16px", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
-        <Typography sx={{ fontSize: 11, fontWeight: 600, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.05em", mb: 0.75 }}>
-          Filter by stage
+        <Typography sx={{ fontSize: 15, fontWeight: 600, color: "text.primary", mb: 1 }}>
+          Show me leads that are…
         </Typography>
-        <Box data-tour="filters" sx={{ display: "flex", gap: 0.75, overflowX: "auto" }}>
+        <Box data-tour="filters" sx={{ display: "flex", gap: 0.75, overflowX: "auto", alignItems: "center", pb: 0.5 }}>
           {isOperator && (
             <Box
               component="button"
@@ -606,36 +607,47 @@ export default function LeadsPage() {
               {showArchived ? "Viewing archived" : "Archived"}
             </Box>
           )}
-          {(["All", ...stagesForPipeline] as const).map((s) => {
+          {(["All", ...stagesForPipeline] as const).map((s, i, all) => {
             const active = filter === s;
             const count = s === "All" ? pipelineLeads.length : pipelineLeads.filter((l) => l.stage === s).length;
+            const dead = s !== "All" && DEAD_STAGES.includes(s);
+            const firstDead = dead && !(all[i - 1] !== "All" && DEAD_STAGES.includes(all[i - 1] as Stage));
+            const label = s === "All" ? "All leads" : stageLabel(s, activePipeline.kind);
             return (
-              <Box
-                key={s}
-                component="button"
-                onClick={() => pickFilter(s)}
-                sx={{
-                  display: "flex", alignItems: "center", gap: 0.5,
-                  border: `1px solid ${active ? tokens.primary : tokens.divider}`,
-                  borderRadius: "6px",
-                  bgcolor: active ? tokens.primaryBg : tokens.surface,
-                  color: active ? tokens.primaryDark : "text.secondary",
-                  fontWeight: active ? 600 : 400,
-                  fontSize: 12.5,
-                  p: "5px 10px",
-                  cursor: "pointer",
-                  whiteSpace: "nowrap",
-                  "&:hover": { borderColor: tokens.primary, color: tokens.primaryDark },
-                }}
-              >
-                {s === "Mandate Signed" ? "Mandate" : s}
-                <Box component="span" sx={{ fontSize: 11, color: active ? tokens.primary : "text.disabled", fontWeight: 600 }}>
-                  {count}
-                </Box>
+              <Box key={s} sx={{ display: "flex", alignItems: "center", gap: 0.75, flex: "none" }}>
+                {/* Steps in order (›), then a gap before the ones that ended. */}
+                {i > 1 && !dead && <Box component="span" aria-hidden sx={{ color: "text.disabled", fontSize: 18 }}>›</Box>}
+                {firstDead && <Box aria-hidden sx={{ width: 1, height: 28, bgcolor: tokens.divider, mx: 0.75 }} />}
+                <Tooltip title={STAGE_HELP[s] ?? ""} disableHoverListener={!STAGE_HELP[s]}>
+                  <Box
+                    component="button"
+                    onClick={() => pickFilter(s)}
+                    aria-pressed={active}
+                    sx={{
+                      display: "flex", alignItems: "center", gap: 0.75,
+                      border: `1px solid ${active ? tokens.primary : tokens.divider}`,
+                      borderRadius: "8px",
+                      bgcolor: active ? tokens.primary : tokens.surface,
+                      color: active ? "#fff" : dead ? "text.secondary" : "text.primary",
+                      fontWeight: active ? 600 : 500,
+                      fontSize: 15, fontFamily: "inherit",
+                      minHeight: 44, p: "6px 12px",
+                      cursor: "pointer", whiteSpace: "nowrap",
+                      "&:hover": active ? undefined : { borderColor: tokens.primary, bgcolor: tokens.primaryBg },
+                      "&:focus-visible": { outline: `2px solid ${tokens.primary}`, outlineOffset: 2 },
+                    }}
+                  >
+                    {label}
+                    <Box component="span" sx={{ minWidth: 24, height: 22, px: 0.75, borderRadius: 11, display: "inline-grid", placeItems: "center", fontSize: 13, fontWeight: 700, bgcolor: active ? "rgba(255,255,255,0.25)" : count ? tokens.primaryBg : tokens.bg, color: active ? "#fff" : count ? tokens.primaryDark : "text.disabled" }}>
+                      {count}
+                    </Box>
+                  </Box>
+                </Tooltip>
               </Box>
             );
           })}
           {/* Tag filters: staff only, and only for tags some lead has. */}
+          {isOperator && tagCounts.length > 0 && <Box aria-hidden sx={{ width: 1, height: 28, bgcolor: tokens.divider, mx: 0.75, flex: "none" }} />}
           {isOperator && tagCounts.map(([tag, n]) => {
             const on = tagFilter === tag;
             return (
@@ -662,6 +674,11 @@ export default function LeadsPage() {
             );
           })}
         </Box>
+        {STAGE_HELP[filter] && (
+          <Typography sx={{ fontSize: 14, color: "text.secondary", mt: 1 }}>
+            <b>{filter === "All" ? "All leads" : stageLabel(filter as Stage, activePipeline.kind)}:</b> {STAGE_HELP[filter]}
+          </Typography>
+        )}
       </Box>
 
       {/* One-at-a-time call mode. Shown only when there's actually something to
@@ -1326,6 +1343,21 @@ function LeadsTable({
     </Box>
   );
 }
+
+/** What each tab holds, and what to do with it, in plain words. */
+const STAGE_HELP: Record<string, string> = {
+  All: "Every lead, the ones to call first at the top.",
+  "New Lead": "Just came in. Nobody has spoken to them yet. Call these first.",
+  "No Answer": "You called but they didn't pick up. Try again.",
+  Contacted: "You've spoken to them. Follow up when it says.",
+  Booked: "You've set up a meeting or valuation with them.",
+  "Viewing Booked": "You've set up a viewing with them.",
+  "Offer Made": "They've made an offer on a property.",
+  "Mandate Signed": "They signed the mandate. Well done.",
+  Bought: "They bought a property. Well done.",
+  Lost: "Not going ahead (not selling, went with someone else).",
+  "Invalid Number": "The number doesn't work, so they can't be reached.",
+};
 
 const STAGE_PICKER = {
   display: "inline-flex", alignItems: "center", gap: 0.5, minWidth: 140, minHeight: 36, p: "4px 6px 4px 12px",
