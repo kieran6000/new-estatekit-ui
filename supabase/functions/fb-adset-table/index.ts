@@ -82,15 +82,24 @@ function numbers(i: any) {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   try {
-    const { adAccountId, since, until, level, campaignId, adsetId } = await req.json();
+    const body = await req.json();
+    const { adAccountId, since, until, level } = body;
+    // Several campaigns or ad sets can be ticked, as in Ads Manager (a single
+    // campaignId / adsetId still works).
+    const list = (many: unknown, one: unknown) => (Array.isArray(many) ? many : one ? [one] : []).map(String).slice(0, 50);
+    const campaignIds = list(body.campaignIds, body.campaignId);
+    const adsetIds = list(body.adsetIds, body.adsetId);
     if (!adAccountId || !since || !until) return json({ error: "adAccountId, since and until required" }, 400);
     if (!(await mayReadAccount(req, String(adAccountId)))) return json({ error: "Not allowed" }, 403);
-    for (const id of [campaignId, adsetId]) if (id && !/^\d+$/.test(String(id))) return json({ error: "bad id" }, 400);
+    for (const id of [...campaignIds, ...adsetIds]) if (!/^\d+$/.test(id)) return json({ error: "bad id" }, 400);
     const actId = String(adAccountId).startsWith("act_") ? String(adAccountId) : `act_${adAccountId}`;
     const lvl: "campaign" | "adset" | "ad" = level === "ad" ? "ad" : level === "adset" ? "adset" : "campaign";
     const edge = lvl === "campaign" ? "campaigns" : lvl === "adset" ? "adsets" : "ads";
-    // Inside one ad set or campaign, else the whole account.
-    const parent = lvl === "ad" && adsetId ? adsetId : lvl !== "campaign" && campaignId ? campaignId : actId;
+    // Always read from the account, narrowed to the ticked ad sets or campaigns.
+    const parent = actId;
+    const scope = lvl === "ad" && adsetIds.length ? [{ field: "adset.id", operator: "IN", value: adsetIds }]
+      : lvl !== "campaign" && campaignIds.length ? [{ field: "campaign.id", operator: "IN", value: campaignIds }]
+      : [];
 
     const tokens: string[] = [];
     for (const name of TOKEN_NAMES) {
@@ -108,7 +117,7 @@ Deno.serve(async (req) => {
       ...(lvl === "ad" ? ["adset{id,name}", "creative{body,title,image_url,thumbnail_url,call_to_action_type,link_url,object_story_spec}"] : []),
       `insights.time_range(${range}){${INSIGHT_FIELDS}}`,
     ].join(",");
-    const filter = encodeURIComponent(JSON.stringify([{ field: "effective_status", operator: "IN", value: ["ACTIVE", "PAUSED", "CAMPAIGN_PAUSED", "ADSET_PAUSED", "IN_PROCESS", "WITH_ISSUES", "PENDING_REVIEW", "DISAPPROVED"] }]));
+    const filter = encodeURIComponent(JSON.stringify([...scope, { field: "effective_status", operator: "IN", value: ["ACTIVE", "PAUSED", "CAMPAIGN_PAUSED", "ADSET_PAUSED", "IN_PROCESS", "WITH_ISSUES", "PENDING_REVIEW", "DISAPPROVED"] }]));
 
     let lastErr = "";
     for (const token of tokens) {
@@ -151,7 +160,7 @@ Deno.serve(async (req) => {
 
       // The account's totals, for the tiles (reach can't be added up from rows).
       let account = null;
-      if (lvl === "campaign" && !campaignId) {
+      if (lvl === "campaign") {
         const a = await (await fetch(`${GRAPH}/${actId}/insights?fields=${INSIGHT_FIELDS}&time_range=${encodeURIComponent(range)}&access_token=${token}`)).json();
         if (!a.error) account = numbers(a.data?.[0]);
       }

@@ -108,10 +108,10 @@ export interface AdsRow extends AdNumbers {
  *  note: "busy" when Facebook is throttling, else why Meta couldn't be read. */
 export async function getAdsTable(
   adAccountId: string, since: string, until: string,
-  view: { level: AdsLevel; campaignId?: string | null; adsetId?: string | null },
+  view: { level: AdsLevel; campaignIds?: string[]; adsetIds?: string[] },
 ): Promise<{ rows: AdsRow[]; account: AdNumbers | null; note?: string }> {
   const { data, error } = await supabase.functions.invoke("fb-adset-table", {
-    body: { adAccountId, since, until, level: view.level, campaignId: view.campaignId || undefined, adsetId: view.adsetId || undefined },
+    body: { adAccountId, since, until, level: view.level, campaignIds: view.campaignIds ?? [], adsetIds: view.adsetIds ?? [] },
   });
   if (error) throw new Error(data?.error || error.message);
   if (data?.error) throw new Error(data.error);

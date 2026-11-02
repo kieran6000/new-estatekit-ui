@@ -31,14 +31,14 @@ import { ALL_COLUMNS, COLUMN_LABEL, PRESETS, choiceLabel, loadPrefs, savePrefs, 
 import { useSnack } from "../hooks/useSnack";
 
 // The client page's ads table, made to look and work like Ads Manager:
-// Campaigns / Ad sets / Ads folder tabs with "1 selected" on the tab you
+// Campaigns / Ad sets / Ads folder tabs with "N selected" on the tab you
 // came from, an Off/On switch per row, Facebook's own columns with column
 // presets, your own set and widths you drag (lib/adColumns), and the small
 // grey label under each number. Click a campaign to open its ad sets, an ad
 // set to open its ads. Hover an ad's picture for its preview. Cells are
 // tinted against the media buyer's targets ("Conditional formatting").
 
-export interface AdsView { level: AdsLevel; campaignId: string | null; adsetId: string | null }
+export interface AdsView { level: AdsLevel; campaignIds: string[]; adsetIds: string[] }
 
 // Ads Manager's colours.
 const FB = { text: "#1c2b33", sub: "#65676b", line: "#dadde1", head: "#ffffff", zebra: "#f5f6f7", hover: "#f2f4f7", link: "#1b74e4", blue: "#1b74e4", tabOff: "#f5f6f7", selected: "#ebf5ff", pill: "#1b74e4", btnLine: "#ced0d4", green: "#1a7f45" };
@@ -68,6 +68,7 @@ const boxSx = { width: 22, height: 22, borderRadius: "4px", border: "1px solid #
 const CHECK_ICONS = {
   icon: <Box className="ek-box" sx={boxSx} />,
   checkedIcon: <Box className="ek-box" sx={boxSx}><CheckIcon sx={{ fontSize: 18, color: "#1b74e4" }} /></Box>,
+  indeterminateIcon: <Box className="ek-box" sx={boxSx}><Box sx={{ width: 10, height: 2, borderRadius: 1, bgcolor: "#1b74e4" }} /></Box>,
 };
 const FB_SWITCH = {
   // Ads Manager: a 40×22 pill, an 18px knob nearly filling it.
@@ -170,10 +171,10 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
   // What to fetch: every campaign at campaign level (the selected one stays
   // selected), else the selected campaign's ad sets or ad set's ads.
   const fetchView: AdsView = view.level === "campaign"
-    ? { level: "campaign", campaignId: null, adsetId: null }
-    : view.level === "adset" ? { level: "adset", campaignId: view.campaignId, adsetId: null } : view;
+    ? { level: "campaign", campaignIds: [], adsetIds: [] }
+    : view.level === "adset" ? { level: "adset", campaignIds: view.campaignIds, adsetIds: [] } : view;
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["adsTable", adAccountId, since, until, fetchView.level, fetchView.campaignId, fetchView.adsetId],
+    queryKey: ["adsTable", adAccountId, since, until, fetchView.level, fetchView.campaignIds.join(","), fetchView.adsetIds.join(",")],
     queryFn: () => getAdsTable(adAccountId!, since, until, fetchView),
     enabled: !!adAccountId,
     staleTime: 10 * 60_000,
@@ -198,22 +199,22 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
   const word = LEVEL_WORD[view.level];
   const onSort = (k: SortKey) => setSort((s) => (s.k === k ? { k, dir: (s.dir * -1) as 1 | -1 } : { k, dir: k === "name" || k === "delivery" ? 1 : -1 }));
   const clickable = view.level !== "ad";
-  const [adTicked, setAdTicked] = useState<string | null>(null);
-  const selectedId = view.level === "campaign" ? view.campaignId : view.level === "adset" ? view.adsetId : adTicked;
-  const toggleSelect = (r: AdsRow) => {
-    const off = r.id === selectedId;
-    if (view.level === "campaign") onView({ level: "campaign", campaignId: off ? null : r.id, adsetId: null });
-    else if (view.level === "adset") onView({ level: "adset", campaignId: view.campaignId ?? r.campaign?.id ?? null, adsetId: off ? null : r.id });
-    else setAdTicked(off ? null : r.id);
+  // Ticked rows. Ticked campaigns or ad sets narrow the next tab ("2 selected").
+  const [adTicked, setAdTicked] = useState<string[]>([]);
+  const ticked = view.level === "campaign" ? view.campaignIds : view.level === "adset" ? view.adsetIds : adTicked;
+  const setTicked = (next: string[]) => {
+    if (view.level === "campaign") onView({ level: "campaign", campaignIds: next, adsetIds: [] });
+    else if (view.level === "adset") onView({ level: "adset", campaignIds: view.campaignIds, adsetIds: next });
+    else setAdTicked(next);
   };
-  const clearSelect = () => {
-    if (view.level === "campaign") onView({ level: "campaign", campaignId: null, adsetId: null });
-    else if (view.level === "adset") onView({ level: "adset", campaignId: view.campaignId, adsetId: null });
-    else setAdTicked(null);
-  };
+  const toggleSelect = (r: AdsRow) => setTicked(ticked.includes(r.id) ? ticked.filter((x) => x !== r.id) : [...ticked, r.id]);
+  const allTicked = rows.length > 0 && rows.every((x) => ticked.includes(x.r.id));
+  const someTicked = rows.some((x) => ticked.includes(x.r.id));
+  const toggleAll = () => setTicked(someTicked ? [] : rows.map((x) => x.r.id));
+  const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
   const open = (r: AdsRow) => {
-    if (view.level === "campaign") onView({ level: "adset", campaignId: r.id, adsetId: null });
-    else if (view.level === "adset") onView({ level: "ad", campaignId: r.campaign?.id ?? view.campaignId, adsetId: r.id });
+    if (view.level === "campaign") onView({ level: "adset", campaignIds: [r.id], adsetIds: [] });
+    else if (view.level === "adset") onView({ level: "ad", campaignIds: view.campaignIds.length ? view.campaignIds : r.campaign?.id ? [r.campaign.id] : [], adsetIds: [r.id] });
   };
 
   async function switchIt(row: AdsRow, on: boolean) {
@@ -232,25 +233,25 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
   }
 
   // ── Tabs: folder tabs, the open one white; "1 selected ×" where you came from ──
-  const tabs: { level: AdsLevel; icon: (on: boolean) => ReactNode; label: string; selected: boolean; clear?: () => void }[] = [
+  const tabs: { level: AdsLevel; icon: (on: boolean) => ReactNode; label: string; count: number; clear?: () => void }[] = [
     {
       level: "campaign",
       icon: (on) => (on ? <FolderIcon sx={{ fontSize: 22 }} /> : <FolderOutlinedIcon sx={{ fontSize: 22 }} />),
       label: "Campaigns",
-      selected: !!view.campaignId,
-      clear: () => onView({ level: view.level, campaignId: null, adsetId: null }),
+      count: view.campaignIds.length,
+      clear: () => onView({ level: view.level, campaignIds: [], adsetIds: [] }),
     },
     {
       level: "adset",
       icon: (on) => (on ? <GridFilledIcon /> : <GridViewOutlinedIcon sx={{ fontSize: 22 }} />),
-      label: !view.adsetId && view.campaignId ? "Ad sets for 1 Campaign" : "Ad sets",
-      selected: !!view.adsetId,
-      clear: () => onView({ level: view.level, campaignId: view.campaignId, adsetId: null }),
+      label: !view.adsetIds.length && view.campaignIds.length ? `Ad sets for ${plural(view.campaignIds.length, "Campaign")}` : "Ad sets",
+      count: view.adsetIds.length,
+      clear: () => onView({ level: view.level, campaignIds: view.campaignIds, adsetIds: [] }),
     },
-    { level: "ad", icon: (on) => (on ? <AdFilledIcon /> : <WebAssetOutlinedIcon sx={{ fontSize: 22 }} />), label: view.adsetId ? "Ads for 1 Ad set" : view.campaignId ? "Ads for 1 Campaign" : "Ads", selected: false },
+    { level: "ad", icon: (on) => (on ? <AdFilledIcon /> : <WebAssetOutlinedIcon sx={{ fontSize: 22 }} />), label: view.adsetIds.length ? `Ads for ${plural(view.adsetIds.length, "Ad set")}` : view.campaignIds.length ? `Ads for ${plural(view.campaignIds.length, "Campaign")}` : "Ads", count: 0 },
   ];
   // Moving between tabs keeps what's selected, as in Ads Manager.
-  const pickTab = (l: AdsLevel) => onView({ level: l, campaignId: view.campaignId, adsetId: l === "campaign" ? view.adsetId : view.adsetId });
+  const pickTab = (l: AdsLevel) => onView({ level: l, campaignIds: view.campaignIds, adsetIds: view.adsetIds });
 
   // ── Columns ──
   const colIds = visibleColumns(prefs, view.level);
@@ -378,12 +379,12 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
             >
               <Box sx={{ color: on ? FB.blue : FB.text, display: "flex", flex: "none" }}>{t.icon(on)}</Box>
               <Box component="span" sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: "0 1 auto" }}>{t.label}</Box>
-              {t.selected && t.clear && (
+              {t.count > 0 && t.clear && (
                 <Box
                   component="span"
                   sx={{ ml: "auto", flex: "none", display: "inline-flex", alignItems: "center", gap: 0.75, bgcolor: FB.pill, color: "#fff", borderRadius: "4px", pl: 1, pr: 0.5, height: 24, fontSize: 14, fontWeight: 500 }}
                 >
-                  1 selected
+                  {t.count} selected
                   <IconButton
                     size="small"
                     aria-label={`Clear the selected ${t.level === "campaign" ? "campaign" : "ad set"}`}
@@ -412,12 +413,12 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
           >
             Create
           </Button>
-          <Tooltip title={selectedId ? "Open the selected item in Ads Manager" : `Tick a ${word.one} to edit it`}>
+          <Tooltip title={ticked.length ? "Open what's ticked in Ads Manager" : `Tick a ${word.one} to edit it`}>
             <span>
               <Button
                 component="a"
-                disabled={!selectedId || !actUrl}
-                href={selectedId && actUrl ? `https://adsmanager.facebook.com/adsmanager/manage/${view.level === "campaign" ? "campaigns" : view.level === "adset" ? "adsets" : "ads"}/edit?act=${actUrl}&selected_${view.level === "campaign" ? "campaign" : view.level === "adset" ? "adset" : "ad"}_ids=${selectedId}` : undefined}
+                disabled={!ticked.length || !actUrl}
+                href={ticked.length && actUrl ? `https://adsmanager.facebook.com/adsmanager/manage/${view.level === "campaign" ? "campaigns" : view.level === "adset" ? "adsets" : "ads"}/edit?act=${actUrl}&selected_${view.level === "campaign" ? "campaign" : view.level === "adset" ? "adset" : "ad"}_ids=${ticked.join(",")}` : undefined}
                 target="_blank"
                 rel="noopener"
                 startIcon={<EditOutlinedIcon />}
@@ -496,11 +497,11 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
                     <TableCell padding="none" sx={{ ...headCell, ...stickyLeft(0, 48), zIndex: 3, textAlign: "center", px: "0 !important" }}>
                       <Checkbox
                         size="small"
-                        checked={!!selectedId && rows.some((x) => x.r.id === selectedId)}
-                        onChange={clearSelect}
-                        disabled={!selectedId}
+                        checked={allTicked}
+                        indeterminate={someTicked && !allTicked}
+                        onChange={toggleAll}
                         sx={FB_CHECK} {...CHECK_ICONS}
-                        slotProps={{ input: { "aria-label": "Clear selection" } }}
+                        slotProps={{ input: { "aria-label": someTicked ? "Untick all" : "Tick all" } }}
                       />
                     </TableCell>
                     <TableCell sx={{ ...headCell, ...stickyLeft(48, 80), zIndex: 3 }}>{head("Off / On", "status", null)}</TableCell>
@@ -522,7 +523,7 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
                 </TableHead>
                 <TableBody>
                   {rows.map(({ r, v }, i) => {
-                    const sel = r.id === selectedId;
+                    const sel = ticked.includes(r.id);
                     const bg = sel ? FB.selected : i % 2 ? FB.zebra : "#fff";
                     return (
                       <TableRow
