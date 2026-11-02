@@ -222,11 +222,10 @@ export default function LeadDetailPage({ leadId, onClose }: { leadId?: string; o
         </Section>
 
         <Section title="From their form" action={lead.fb_lead_id && lead.source_page_id ? <Button size="small" onClick={() => setFormOpen(true)}>View form</Button> : undefined}>
-          {lead.form_answers.length ? (
-            lead.form_answers.map((r, i) => <Row key={i} k={r.q} v={prettyAnswer(r.a)} />)
-          ) : (
-            <Row k="" v="No answers captured." />
-          )}
+          {lead.form_answers.map((r, i) => <Row key={i} k={r.q} v={prettyAnswer(r.a)} />)}
+          {!lead.form_answers.some((r) => /name/i.test(r.q)) && <Row k="Full name" v={lead.name} />}
+          {!lead.form_answers.some((r) => /phone|number|whatsapp/i.test(r.q)) && <Row k="Phone number" v={canSeeFullPhone ? lead.phone : maskPhone(lead.phone)} />}
+          {lead.email && !lead.form_answers.some((r) => /e-?mail/i.test(r.q)) && <Row k="Email" v={lead.email} />}
         </Section>
 
         <Section title="Notes">

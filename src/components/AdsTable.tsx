@@ -102,6 +102,8 @@ const THIN_SCROLL = {
   "&::-webkit-scrollbar-corner": { bgcolor: "transparent" },
 } as const;
 const LEFT_COLS = new Set<ColId>(["delivery", "ends"]);
+/** A picked menu row, as in Ads Manager: pale blue. */
+const PICKED = { "&.Mui-selected, &.Mui-selected:hover": { bgcolor: "#dbe7fb" }, "&.Mui-selected .MuiRadio-root": { color: "#1b74e4" } } as const;
 /** Tooltips for the columns that aren't numbers. */
 const COL_HELP: Partial<Record<ColId, string>> = {
   delivery: "Whether it's running right now. Off means it's paused and not spending.",
@@ -204,7 +206,7 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
   const totals = view.level === "campaign" && data?.account ? { ...data.account, booked: summed.booked, mandates: summed.mandates } : summed;
   const totalV = metricValues(totals);
   const word = LEVEL_WORD[view.level];
-  const onSort = (k: SortKey) => setSort((s) => (s.k === k ? { k, dir: (s.dir * -1) as 1 | -1 } : { k, dir: k === "name" || k === "delivery" ? 1 : -1 }));
+  const onSortRaw = (k: SortKey) => setSort((s) => (s.k === k ? { k, dir: (s.dir * -1) as 1 | -1 } : { k, dir: k === "name" || k === "delivery" ? 1 : -1 }));
   const clickable = view.level !== "ad";
   // Ticked rows. Ticked campaigns or ad sets narrow the next tab ("2 selected").
   const [adTicked, setAdTicked] = useState<string[]>([]);
@@ -332,6 +334,12 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
     );
   };
   const nameW = width("name");
+  const sortName = (k: SortKey) => (k === "name" ? word.title : k === "status" ? "Off / On" : headLabel(k as ColId));
+  const onSort = (k: SortKey) => {
+    const dir = sort.k === k ? sort.dir * -1 : k === "name" || k === "delivery" ? 1 : -1;
+    onSortRaw(k);
+    showSnack(`Sorted by ${sortName(k)}, ${dir === 1 ? "lowest first" : "highest first"}`);
+  };
   const actUrl = adAccountId ? adAccountId.replace(/^act_/, "") : "";
   const fbBtn = {
     textTransform: "none", letterSpacing: 0, fontFamily: FB_FONT, fontSize: 15, fontWeight: 500, color: FB.text, bgcolor: "#fff",
@@ -356,9 +364,14 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
     a.href = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/csv" }));
     a.download = `${word.many.replace(" ", "-")}-${since}-to-${until}.csv`;
     a.click();
+    showSnack(`Downloaded ${a.download}`);
     URL.revokeObjectURL(a.href);
   };
-  const hideColumn = (c: ColId) => setPrefs({ ...prefs, choice: "custom", custom: visibleColumns(prefs, "campaign").filter((x) => x !== c) });
+  const hideColumn = (c: ColId) => {
+    const before = prefs;
+    setPrefs({ ...prefs, choice: "custom", custom: visibleColumns(prefs, "campaign").filter((x) => x !== c) });
+    showSnack(`${COLUMN_LABEL[c]} hidden`, () => setPrefs(before));
+  };
 
   return (
     <Box sx={{ minWidth: 0 }}>
@@ -443,7 +456,7 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
             aria-haspopup="menu"
             sx={fbBtn}
           >
-            Columns
+            Columns: {choiceLabel(prefs)}
           </Button>
           <Tooltip title="Export (CSV)">
             <span>
@@ -461,24 +474,24 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
             <Divider />
             <Typography sx={{ px: 2, pt: 0.5, pb: 0.5, fontWeight: 700, fontSize: 14 }}>Presets</Typography>
             {(["performance_clicks", "performance", "estatekit"] as PresetKey[]).map((k) => (
-              <MenuItem key={k} selected={prefs.choice === k} onClick={() => { setPrefs({ ...prefs, choice: k }); setColMenu(null); }}>
+              <MenuItem key={k} selected={prefs.choice === k} sx={PICKED} onClick={() => { setPrefs({ ...prefs, choice: k }); setColMenu(null); if (prefs.choice !== k) showSnack(`Showing ${PRESETS[k].label} columns`); }}>
                 <ListItemIcon><Radio size="small" checked={prefs.choice === k} sx={{ p: 0 }} tabIndex={-1} /></ListItemIcon>
                 <ListItemText>{PRESETS[k].label}</ListItemText>
               </MenuItem>
             ))}
             {prefs.choice === "custom" || prefs.custom.length ? (
-              <MenuItem selected={prefs.choice === "custom"} onClick={() => { setPrefs({ ...prefs, choice: "custom" }); setColMenu(null); }}>
+              <MenuItem selected={prefs.choice === "custom"} sx={PICKED} onClick={() => { setPrefs({ ...prefs, choice: "custom" }); setColMenu(null); if (prefs.choice !== "custom") showSnack("Showing your own columns"); }}>
                 <ListItemIcon><Radio size="small" checked={prefs.choice === "custom"} sx={{ p: 0 }} tabIndex={-1} /></ListItemIcon>
                 <ListItemText>Custom</ListItemText>
               </MenuItem>
             ) : null}
             <Divider />
-            <MenuItem onClick={() => setPrefs({ ...prefs, tint: !prefs.tint })}>
+            <MenuItem onClick={() => { setPrefs({ ...prefs, tint: !prefs.tint }); showSnack(prefs.tint ? "Colours off" : "Colours on: green on target, yellow close, red off"); }}>
               <ListItemIcon><FormatColorFillIcon fontSize="small" /></ListItemIcon>
               <ListItemText secondary="Colour against the targets">Conditional formatting</ListItemText>
               <Checkbox size="small" checked={prefs.tint} tabIndex={-1} sx={{ p: 0, ml: 1 }} />
             </MenuItem>
-            <MenuItem onClick={() => { setPrefs({ ...prefs, widths: {} }); setColMenu(null); }}>
+            <MenuItem onClick={() => { setPrefs({ ...prefs, widths: {} }); setColMenu(null); showSnack("Column widths reset"); }}>
               <ListItemIcon><RestartAltIcon fontSize="small" /></ListItemIcon>
               <ListItemText>Reset column width</ListItemText>
             </MenuItem>
@@ -664,7 +677,7 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
           </MenuItem>
         )}
         {headMenu && (
-          <MenuItem onClick={() => { const w = { ...prefs.widths }; delete w[headMenu.col]; setPrefs({ ...prefs, widths: w }); setHeadMenu(null); }}>
+          <MenuItem onClick={() => { const w = { ...prefs.widths }; delete w[headMenu.col]; setPrefs({ ...prefs, widths: w }); setHeadMenu(null); showSnack("Column width reset"); }}>
             <ListItemIcon><RestartAltIcon fontSize="small" /></ListItemIcon><ListItemText>Reset column width</ListItemText>
           </MenuItem>
         )}
@@ -708,7 +721,7 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setCustomizing(null)}>Cancel</Button>
-          <Button variant="contained" disabled={!customizing?.length} onClick={() => { setPrefs({ ...prefs, choice: "custom", custom: customizing! }); setCustomizing(null); }}>Apply</Button>
+          <Button variant="contained" disabled={!customizing?.length} onClick={() => { setPrefs({ ...prefs, choice: "custom", custom: customizing! }); setCustomizing(null); showSnack("Your columns are saved"); }}>Apply</Button>
         </DialogActions>
       </Dialog>
 
