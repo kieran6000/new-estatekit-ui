@@ -4,6 +4,7 @@ import FacebookIcon from "@mui/icons-material/Facebook";
 import ArrowBackIosNewIcon from "@mui/icons-material/ArrowBackIosNew";
 import ArrowForwardIosIcon from "@mui/icons-material/ArrowForwardIos";
 import { tokens } from "../theme";
+import { useIsOperator } from "../hooks/useAutomations";
 import type { FbFormDetail, FbFormQuestion } from "../api/leadPages";
 
 const FB_BLUE = "#1877f2";
@@ -63,6 +64,7 @@ export default function FbFormPreview({
   }, [form]);
 
   const [i, setI] = useState(0);
+  const { data: isOperator } = useIsOperator();
   const step = steps[i];
   const total = steps.length;
   const initial = (pageName || "?").trim()[0]?.toUpperCase() ?? "?";
@@ -239,7 +241,8 @@ export default function FbFormPreview({
         </Box>
       </Box>
 
-      {step.kind === "thanks" && (
+      {/* The end-button check is for staff; clients can't fix it themselves. */}
+      {isOperator && step.kind === "thanks" && (
         <Box sx={{ maxWidth: 340, mx: "auto", mt: 1, fontSize: 12.5, color: endUrl ? (endOk ? "success.main" : "warning.main") : "error.main", wordBreak: "break-all" }}>
           {endUrl
             ? <>{endOk ? "✓ " : "⚠ "}The end button opens: <b>{endUrl}</b>{endOk ? "" : " (not a thank-you page link; copy the link from the End screen link section and set it in Facebook)"}</>
