@@ -23,6 +23,9 @@ export default function AddressMapDialog({ address, open, onClose }: { address: 
           sx={{ display: "block", width: "100%", height: { xs: 360, sm: 420 }, border: 0 }}
         />
         <Box sx={{ p: "10px 16px" }}>
+          <Typography sx={{ fontSize: 13.5, color: "text.secondary", mb: 0.75 }}>
+            The pin shows the most likely spot for the address they typed. It may not be the exact house, so confirm it with them.
+          </Typography>
           <Link href={`https://www.google.com/maps/search/?api=1&query=${q}`} target="_blank" rel="noopener" sx={{ fontSize: 14, display: "inline-flex", alignItems: "center", gap: 0.5 }}>
             Open in Google Maps <OpenInNewIcon sx={{ fontSize: 15 }} />
           </Link>
