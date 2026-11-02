@@ -9,6 +9,8 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import CallIcon from "@mui/icons-material/Call";
 import ArchiveOutlinedIcon from "@mui/icons-material/ArchiveOutlined";
 import CloseIcon from "@mui/icons-material/Close";
+import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
+import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import OpenInFullIcon from "@mui/icons-material/OpenInFull";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import EditLeadContactDialog from "../components/EditLeadContactDialog";
@@ -38,7 +40,12 @@ import type { LeadRow, OutcomeStep, Stage } from "../types";
 
 /** The lead, as its own page (/leads/:id) or in the Leads list's side panel
  *  (leadId + onClose), so agents can go down the list without losing it. */
-export default function LeadDetailPage({ leadId, onClose }: { leadId?: string; onClose?: () => void } = {}) {
+export default function LeadDetailPage({ leadId, onClose, nav }: {
+  leadId?: string;
+  onClose?: () => void;
+  /** In the panel: step to the previous / next lead in the list. */
+  nav?: { label: string; prev?: () => void; next?: () => void };
+} = {}) {
   const params = useParams<{ id: string }>();
   const id = leadId ?? params.id;
   const navigate = useNavigate();
@@ -144,6 +151,13 @@ export default function LeadDetailPage({ leadId, onClose }: { leadId?: string; o
             </IconButton>
           )}
           <Typography sx={{ fontSize: 18, fontWeight: 500, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lead.name}</Typography>
+          {nav && (
+            <Box sx={{ display: "flex", alignItems: "center", flex: "none" }}>
+              <IconButton onClick={nav.prev} disabled={!nav.prev} aria-label="Previous lead" title="Previous lead"><KeyboardArrowUpIcon /></IconButton>
+              <Typography sx={{ fontSize: 13, color: "text.secondary", whiteSpace: "nowrap" }}>{nav.label}</Typography>
+              <IconButton onClick={nav.next} disabled={!nav.next} aria-label="Next lead" title="Next lead"><KeyboardArrowDownIcon /></IconButton>
+            </Box>
+          )}
           {onClose && (
             <IconButton onClick={() => navigate(`/leads/${lead.id}`)} aria-label="Open as a full page" title="Open as a full page">
               <OpenInFullIcon fontSize="small" />
@@ -208,6 +222,7 @@ export default function LeadDetailPage({ leadId, onClose }: { leadId?: string; o
         </Box>
 
         <Section title="Contact" action={<Button size="small" startIcon={<EditOutlinedIcon />} onClick={() => setEditOpen(true)}>Edit</Button>}>
+          <Row k="Full name" v={lead.name} />
           <Row k="Phone" v={canSeeFullPhone ? lead.phone : maskPhone(lead.phone)} />
           <Row k="Email" v={lead.email || ""} />
           <Row k="Stage" v={stageLabel(lead.stage, pipelineKind)} />
@@ -223,9 +238,7 @@ export default function LeadDetailPage({ leadId, onClose }: { leadId?: string; o
 
         <Section title="From their form" action={lead.fb_lead_id && lead.source_page_id ? <Button size="small" onClick={() => setFormOpen(true)}>View form</Button> : undefined}>
           {lead.form_answers.map((r, i) => <Row key={i} k={r.q} v={prettyAnswer(r.a)} />)}
-          {!lead.form_answers.some((r) => /name/i.test(r.q)) && <Row k="Full name" v={lead.name} />}
-          {!lead.form_answers.some((r) => /phone|number|whatsapp/i.test(r.q)) && <Row k="Phone number" v={canSeeFullPhone ? lead.phone : maskPhone(lead.phone)} />}
-          {lead.email && !lead.form_answers.some((r) => /e-?mail/i.test(r.q)) && <Row k="Email" v={lead.email} />}
+          {!lead.form_answers.length && <Row k="" v="No answers captured." />}
         </Section>
 
         <Section title="Notes">

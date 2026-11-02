@@ -110,6 +110,17 @@ export default function LeadsPage() {
   const [params, setParams] = useSearchParams();
   const panelLead = params.get("lead");
   const openLead = (id: string) => setParams((cur) => { const n = new URLSearchParams(cur); n.set("lead", id); return n; });
+  // Step through the list from the panel, in the order it's shown. Replaces
+  // the history step, so Back still closes the panel.
+  const listOrder = () => Array.from(new Set(Array.from(document.querySelectorAll<HTMLElement>("[data-lead-id]")).filter((e) => e.offsetParent !== null).map((e) => e.dataset.leadId!)));
+  const stepLead = (d: 1 | -1) => {
+    const ids = listOrder();
+    const next = ids[ids.indexOf(panelLead ?? "") + d];
+    if (!next) return;
+    setParams((cur) => { const n = new URLSearchParams(cur); n.set("lead", next); return n; }, { replace: true });
+    document.querySelector(`[data-lead-id="${next}"]`)?.scrollIntoView({ block: "nearest" });
+  };
+  const panelPos = (() => { if (!panelLead) return null; const ids = listOrder(); const i = ids.indexOf(panelLead); return i < 0 ? null : { i, n: ids.length }; })();
   const closeLead = () => { if ((window.history.state?.idx ?? 0) > 0) navigate(-1); else setParams((cur) => { const n = new URLSearchParams(cur); n.delete("lead"); return n; }, { replace: true }); };
   const isMobile = useMediaQuery("(max-width:639px)");
   const { data: leads = [], isLoading: leadsLoading } = useLeads();
@@ -698,6 +709,7 @@ export default function LeadsPage() {
         onToggleSelect={toggleSelect}
         onRowSelect={handleRowSelect}
         onOpen={openLead}
+        activeId={panelLead}
         onCall={(id) => {
           setOutcomeLeadId(id);
           const called = leads.find((l) => l.id === id);
@@ -802,7 +814,14 @@ export default function LeadsPage() {
         onClose={closeLead}
         slotProps={{ paper: { sx: { width: { xs: "100%", sm: 480 }, bgcolor: "background.default" } } }}
       >
-        {panelLead && <LeadDetailPage key={panelLead} leadId={panelLead} onClose={closeLead} />}
+        {panelLead && (
+          <LeadDetailPage
+            key={panelLead}
+            leadId={panelLead}
+            onClose={closeLead}
+            nav={panelPos ? { label: `${panelPos.i + 1} of ${panelPos.n}`, prev: panelPos.i > 0 ? () => stepLead(-1) : undefined, next: panelPos.i < panelPos.n - 1 ? () => stepLead(1) : undefined } : undefined}
+          />
+        )}
       </Drawer>
     </Box>
   );
@@ -1116,6 +1135,7 @@ function AddPipelineDialog({ open, onClose, onCreated }: { open: boolean; onClos
 }
 
 function LeadsTable({
+  activeId,
   leads,
   mobileLeads,
   stages,
@@ -1132,6 +1152,8 @@ function LeadsTable({
   onCall,
   onStagePick,
 }: {
+  /** The lead open in the side panel. */
+  activeId?: string | null;
   /** In the table's sort order. */
   leads: LeadRow[];
   /** The phone list keeps the usual order (it has no headings to sort by). */
@@ -1156,7 +1178,7 @@ function LeadsTable({
   const isMobile = useMediaQuery("(max-width:639px)");
   const canSeeFullPhone = useCanSeeFullPhone();
   if (isMobile) {
-    return <MobileLeadsList leads={mobileLeads} stages={allStages} kind={kind} filter={filter} selectable={selectable} selected={selected} onToggleSelect={onToggleSelect} onRowSelect={onRowSelect} onOpen={onOpen} onCall={onCall} onStagePick={onStagePick} />;
+    return <MobileLeadsList activeId={activeId} leads={mobileLeads} stages={allStages} kind={kind} filter={filter} selectable={selectable} selected={selected} onToggleSelect={onToggleSelect} onRowSelect={onRowSelect} onOpen={onOpen} onCall={onCall} onStagePick={onStagePick} />;
   }
 
   if (leads.length === 0) {
@@ -1169,12 +1191,23 @@ function LeadsTable({
     group.map((l) => (
       <TableRow
         key={l.id}
+        data-lead-id={l.id}
         hover
-        selected={selectable && selected.has(l.id)}
-        onClick={selectable ? (e) => onRowSelect(l.id, e.shiftKey) : undefined}
+        selected={selectable ? selected.has(l.id) : l.id === activeId}
+        tabIndex={selectable ? undefined : 0}
+        aria-label={selectable ? undefined : `Open ${l.name}`}
+        onClick={selectable ? (e) => onRowSelect(l.id, e.shiftKey) : () => onOpen(l.id)}
+        onKeyDown={selectable ? undefined : (e) => { if (e.key === "Enter" && e.target === e.currentTarget) { e.preventDefault(); onOpen(l.id); } }}
         sx={{
-          ...(selectable ? { cursor: "pointer", userSelect: "none" } : undefined),
+          cursor: "pointer",
+          ...(selectable ? { userSelect: "none" } : undefined),
           ...(l.due && !DEAD_STAGES.includes(l.stage) ? { bgcolor: tokens.amberTint } : DEAD_STAGES.includes(l.stage) ? { color: tokens.ink3 } : undefined),
+          // Hover darkens whatever colour the row has; the name underlines.
+          "&:hover": { filter: "brightness(0.97)" },
+          "&:hover .ek-lead-name": { textDecoration: "underline" },
+          "&:focus-visible": { outline: `2px solid ${tokens.primary}`, outlineOffset: -2 },
+          // The lead open in the side panel.
+          ...(!selectable && l.id === activeId ? { "&.Mui-selected, &.Mui-selected:hover": { bgcolor: tokens.primaryBg }, "& > td:first-of-type": { boxShadow: `inset 4px 0 0 ${tokens.primary}` } } : undefined),
         }}
       >
         {selectable && (
@@ -1183,7 +1216,7 @@ function LeadsTable({
           </TableCell>
         )}
         <TableCell sx={{ py: 1 }}>
-          <Box component="span" onClick={selectable ? undefined : () => onOpen(l.id)} sx={{ fontWeight: 500, fontSize: 15, color: tokens.primaryDark, cursor: selectable ? "inherit" : "pointer" }}>
+          <Box component="span" className="ek-lead-name" sx={{ fontWeight: 500, fontSize: 15, color: tokens.primaryDark }}>
             {l.name}
             {isFreshLead(l) && <Box component="span" sx={{ fontSize: 10, fontWeight: 700, color: tokens.green, ml: 0.75 }}>NEW</Box>}
             {cameBack(l) && <CameBackBadge />}
@@ -1202,9 +1235,11 @@ function LeadsTable({
               <Box
                 component="button"
                 onClick={(e) => { e.stopPropagation(); open(e); }}
-                sx={{ border: 0, bgcolor: "transparent", fontSize: 14, color: "inherit", display: "inline-flex", alignItems: "center", gap: 0.75, cursor: "pointer", p: "6px 0" }}
+                aria-label={`Stage: ${stageLabel(l.stage, kind)}. Change stage`}
+                sx={STAGE_PICKER}
               >
                 {stageLabel(l.stage, kind)}
+                <ArrowDropDownIcon sx={{ fontSize: 20, ml: "auto", color: "text.secondary" }} />
               </Box>
             )}
           </StageMenu>
@@ -1292,7 +1327,16 @@ function LeadsTable({
   );
 }
 
+const STAGE_PICKER = {
+  display: "inline-flex", alignItems: "center", gap: 0.5, minWidth: 140, minHeight: 36, p: "4px 6px 4px 12px",
+  fontSize: 14, color: "inherit", fontFamily: "inherit", textAlign: "left",
+  bgcolor: "#fff", border: `1px solid ${tokens.divider}`, borderRadius: "6px", cursor: "pointer",
+  "&:hover": { borderColor: tokens.primary, bgcolor: tokens.primaryBg },
+  "&:focus-visible": { outline: `2px solid ${tokens.primary}`, outlineOffset: 1 },
+} as const;
+
 function MobileLeadsList({
+  activeId,
   leads,
   stages,
   kind,
@@ -1305,6 +1349,8 @@ function MobileLeadsList({
   onCall,
   onStagePick,
 }: {
+  /** The lead open in the side panel. */
+  activeId?: string | null;
   leads: LeadRow[];
   stages: Stage[];
   /** Only affects wording — a "general" pipeline shows neutral stage names. */
@@ -1330,14 +1376,20 @@ function MobileLeadsList({
     <Box
       key={l.id}
       data-tour={idx === 0 ? "lead-row" : undefined}
-      onClick={selectable ? (e) => onRowSelect(l.id, e.shiftKey) : undefined}
+      data-lead-id={l.id}
+      role={selectable ? undefined : "button"}
+      tabIndex={selectable ? undefined : 0}
+      onClick={selectable ? (e) => onRowSelect(l.id, e.shiftKey) : () => onOpen(l.id)}
+      onKeyDown={selectable ? undefined : (e) => { if (e.key === "Enter" && e.target === e.currentTarget) { e.preventDefault(); onOpen(l.id); } }}
       sx={{
         borderBottom: `8px solid ${tokens.bg}`,
-        bgcolor: selectable && selected.has(l.id) ? tokens.primaryBg : l.due && !DEAD_STAGES.includes(l.stage) ? tokens.amberTint : "background.paper",
+        bgcolor: (selectable && selected.has(l.id)) || (!selectable && l.id === activeId) ? tokens.primaryBg : l.due && !DEAD_STAGES.includes(l.stage) ? tokens.amberTint : "background.paper",
         p: "12px 16px",
         display: selectable ? "flex" : "block",
         gap: 1,
-        cursor: selectable ? "pointer" : "default",
+        cursor: "pointer",
+        "&:active": { filter: "brightness(0.96)" },
+        "&:focus-visible": { outline: `2px solid ${tokens.primary}`, outlineOffset: -2 },
       }}
     >
       {selectable && (
@@ -1346,7 +1398,7 @@ function MobileLeadsList({
         <Checkbox size="small" checked={selected.has(l.id)} readOnly tabIndex={-1} sx={{ p: 0, mt: 0.25, alignSelf: "flex-start", pointerEvents: "none" }} />
       )}
       <Box sx={{ flex: 1, minWidth: 0 }}>
-      <Box onClick={selectable ? undefined : () => onOpen(l.id)} sx={{ fontWeight: 500, fontSize: 15, color: tokens.primaryDark, cursor: selectable ? "inherit" : "pointer" }}>
+      <Box sx={{ fontWeight: 500, fontSize: 15, color: tokens.primaryDark }}>
         {l.name}
         {isFreshLead(l) && <Box component="span" sx={{ fontSize: 10, fontWeight: 700, color: tokens.green, ml: 0.75 }}>NEW</Box>}
         {cameBack(l) && <CameBackBadge />}
@@ -1363,9 +1415,11 @@ function MobileLeadsList({
             <Box
               component="button"
               onClick={(e) => { e.stopPropagation(); open(e); }}
-              sx={{ border: 0, bgcolor: "transparent", fontSize: 14, color: DEAD_STAGES.includes(l.stage) ? "text.disabled" : "text.primary", p: 0, cursor: "pointer" }}
+              aria-label={`Stage: ${stageLabel(l.stage, kind)}. Change stage`}
+              sx={{ ...STAGE_PICKER, color: DEAD_STAGES.includes(l.stage) ? "text.disabled" : "text.primary", minHeight: 40 }}
             >
-              {l.stage}
+              {stageLabel(l.stage, kind)}
+              <ArrowDropDownIcon sx={{ fontSize: 20, ml: "auto", color: "text.secondary" }} />
             </Box>
           )}
         </StageMenu>
@@ -1378,7 +1432,7 @@ function MobileLeadsList({
         <Box
           component="a"
           href={`tel:${l.phone.replace(/\s/g, "")}`}
-          onClick={() => setTimeout(() => onCall(l.id), 150)}
+          onClick={(e) => { e.stopPropagation(); setTimeout(() => onCall(l.id), 150); }}
           data-tour="call"
           sx={{
             display: "flex",
