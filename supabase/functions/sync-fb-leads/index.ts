@@ -18,7 +18,17 @@ function json(body: unknown, status = 200) {
 }
 
 interface FieldDatum { name: string; values: string[] }
-interface FbLead { id: string; created_time: string; field_data: FieldDatum[] }
+interface FbLead { id: string; created_time: string; field_data: FieldDatum[]; ad_id?: string; adset_id?: string; campaign_id?: string }
+
+/** Which ad, ad set and campaign the lead came from, so the ads table can
+ *  count bookings and mandates per ad (fb_ad_id + attribution). */
+function adFields(l: FbLead) {
+  const attribution: Record<string, string> = {};
+  if (l.ad_id) attribution.ad_id = String(l.ad_id);
+  if (l.adset_id) attribution.adset_id = String(l.adset_id);
+  if (l.campaign_id) attribution.campaign_id = String(l.campaign_id);
+  return { fb_ad_id: l.ad_id ? String(l.ad_id) : null, attribution };
+}
 
 const RATE_LIMIT_CODES = new Set([4, 17, 32, 613]);
 
@@ -127,7 +137,7 @@ async function maybeNotify(agentId: string, lead: Record<string, unknown>, creat
 
 async function fetchFormLeads(formId: string, token: string, sinceFilter: string): Promise<FbLead[] | null> {
   const out: FbLead[] = [];
-  let url: string | null = `${GRAPH}/${formId}/leads?fields=id,created_time,field_data&limit=200${sinceFilter}&access_token=${token}`;
+  let url: string | null = `${GRAPH}/${formId}/leads?fields=id,created_time,field_data,ad_id,adset_id,campaign_id&limit=200${sinceFilter}&access_token=${token}`;
   while (url) {
     const res = await fetch(url);
     const data = await res.json();
@@ -253,7 +263,7 @@ Deno.serve(async (req) => {
       for (const l of leads) {
         if (known.has(l.id)) continue;
         const { name, phone, email, answers } = extract(l.field_data || []);
-        const r = await insertOrMerge({ agent_id: page.agent_id, name, phone, email, stage: "New Lead", next_label: "Just came in", due: true, form_answers: answers, pipeline_id: page.pipeline_id, source_page_id: page.id, fb_lead_id: l.id, created_at: l.created_time || undefined });
+        const r = await insertOrMerge({ agent_id: page.agent_id, name, phone, email, stage: "New Lead", next_label: "Just came in", due: true, form_answers: answers, pipeline_id: page.pipeline_id, source_page_id: page.id, fb_lead_id: l.id, ...adFields(l), created_at: l.created_time || undefined });
         if (r === "dup") { if (l.created_time) await supabase.from("leads").update({ created_at: l.created_time }).eq("fb_lead_id", l.id); }
         else if (r !== "err") { inserted++; const address = answers.find((a) => /address/i.test(a.q))?.a; await maybeNotify(page.agent_id, { id: r.id, name, phone, address, pipeline: pipelineName, source: "Facebook form" }, l.created_time, silent); }
       }
@@ -320,7 +330,7 @@ Deno.serve(async (req) => {
           for (const l of leads) {
             if (known.has(l.id)) continue;
             const { name, phone, email, answers } = extract(l.field_data || []);
-            const r = await insertOrMerge({ agent_id: a.agent_id, name, phone, email, stage: "New Lead", next_label: "Just came in", due: true, form_answers: answers, pipeline_id: pipelineId, fb_lead_id: l.id, created_at: l.created_time || undefined });
+            const r = await insertOrMerge({ agent_id: a.agent_id, name, phone, email, stage: "New Lead", next_label: "Just came in", due: true, form_answers: answers, pipeline_id: pipelineId, fb_lead_id: l.id, ...adFields(l), created_at: l.created_time || undefined });
             if (r === "dup") { if (l.created_time) await supabase.from("leads").update({ created_at: l.created_time }).eq("fb_lead_id", l.id); }
             else if (r !== "err") { inserted++; const address = answers.find((x) => /address/i.test(x.q))?.a; await maybeNotify(a.agent_id, { id: r.id, name, phone, address, source: "Facebook form" }, l.created_time, silent); }
           }
