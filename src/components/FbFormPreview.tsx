@@ -71,10 +71,11 @@ export default function FbFormPreview({
   // The end screen's button, as it is set in Facebook.
   const endUrl = form.thank_you_page?.website_url?.trim() || "";
   const endOk = /\/thank-you\?p=/.test(endUrl);
+  // Only what Facebook has saved: a form without an end screen says so here
+  // rather than showing one it doesn't have.
+  const hasEndScreen = !!form.thank_you_page;
   const ctaText =
-    step.kind === "thanks"
-      ? form.thank_you_page?.button_text || "Claim My FREE Evaluation"
-      : form.context_card?.button_text || "Continue";
+    (step.kind === "thanks" ? form.thank_you_page?.button_text : form.context_card?.button_text) || "Continue";
 
   return (
     <Box>
@@ -192,14 +193,24 @@ export default function FbFormPreview({
               </>
             )}
 
-            {step.kind === "thanks" && (
+            {step.kind === "thanks" && !hasEndScreen && (
               <>
                 <Typography sx={{ textAlign: "center", fontSize: 15, fontWeight: 700, mb: 1.25 }}>
-                  {form.thank_you_page?.title || "ALMOST DONE:"}
+                  No end screen set up
+                </Typography>
+                <Typography sx={{ fontSize: 13.5, color: "#1c1e21", lineHeight: 1.5 }}>
+                  This form has no end screen in Facebook. People see Facebook's own short message after they submit, with no button to your thank-you page.
+                </Typography>
+              </>
+            )}
+
+            {step.kind === "thanks" && hasEndScreen && (
+              <>
+                <Typography sx={{ textAlign: "center", fontSize: 15, fontWeight: 700, mb: 1.25 }}>
+                  {form.thank_you_page?.title}
                 </Typography>
                 <Typography sx={{ fontSize: 13.5, color: "#1c1e21", lineHeight: 1.5, whiteSpace: "pre-line" }}>
-                  {form.thank_you_page?.body ||
-                    "I'm preparing your information.\n\nMy assistant will give you a quick call to confirm a few details.\n\nTap the button below 👇"}
+                  {form.thank_you_page?.body}
                 </Typography>
                 <Typography sx={{ fontSize: 11, color: "#90949c", mt: 2, textAlign: "center" }}>
                   You successfully submitted your responses.
@@ -214,7 +225,7 @@ export default function FbFormPreview({
           <Box sx={{ height: 3, borderRadius: 2, bgcolor: "#e4e6eb", mb: 1.25, overflow: "hidden" }}>
             <Box sx={{ height: "100%", width: `${((i + 1) / total) * 100}%`, bgcolor: "#2c841b", transition: "width .2s" }} />
           </Box>
-          <Box
+          {(step.kind !== "thanks" || hasEndScreen) && <Box
             component="button"
             onClick={() => {
               // On the end screen the button does what it does in Facebook: opens its link.
@@ -237,12 +248,12 @@ export default function FbFormPreview({
             }}
           >
             {ctaText}
-          </Box>
+          </Box>}
         </Box>
       </Box>
 
       {/* The end-button check is for staff; clients can't fix it themselves. */}
-      {isOperator && step.kind === "thanks" && (
+      {isOperator && step.kind === "thanks" && hasEndScreen && (
         <Box sx={{ maxWidth: 340, mx: "auto", mt: 1, fontSize: 12.5, color: endUrl ? (endOk ? "success.main" : "warning.main") : "error.main", wordBreak: "break-all" }}>
           {endUrl
             ? <>{endOk ? "✓ " : "⚠ "}The end button opens: <b>{endUrl}</b>{endOk ? "" : " (not a thank-you page link; copy the link from the End screen link section and set it in Facebook)"}</>

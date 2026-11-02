@@ -784,10 +784,14 @@ function Step({ n, label, optional, children }: { n: number; label: string; opti
   );
 }
 
-/** South African numbers with the country code: "082 668 5452" → "27826685452". */
+/** South African numbers with the country code: "082 668 5452", "+27 082 668 5452"
+ *  and "82 668 5452" → "27826685452". */
 function intlDigits(phone: string): string {
   const d = phone.replace(/\D/g, "");
-  return d.length === 10 && d.startsWith("0") ? "27" + d.slice(1) : d;
+  if (d.length === 10 && d.startsWith("0")) return "27" + d.slice(1);
+  if (d.length === 12 && d.startsWith("270")) return "27" + d.slice(3);
+  if (d.length === 9 && /^[6-8]/.test(d) && !phone.trim().startsWith("+")) return "27" + d;
+  return d;
 }
 /** "27826685452" → "+27 82 668 5452". */
 function showIntl(d: string): string {

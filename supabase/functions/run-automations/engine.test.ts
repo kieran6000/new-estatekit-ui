@@ -849,6 +849,23 @@ describe("WhatsApp the lead", () => {
     expect(db.rows("lead_events").some((e) => e.event_type === "whatsapp_sent" && e.from_value === "to_lead")).toBe(true);
   });
 
+  it("sends to the real number however it was typed", async () => {
+    staff();
+    const wf = workflow([waLead("Hi")]);
+    for (const phone of ["+270833553136", "+27 083 355 3136", "833553136", "0833553136", "+27833553136"]) enroll(wf, lead({ phone }));
+    await tick();
+    expect(sent.map((m) => m.phone)).toEqual(Array(5).fill("27833553136"));
+  });
+
+  it("doesn't send to a number that can't exist, and says why", async () => {
+    staff();
+    const wf = workflow([waLead("Hi")]);
+    const runs = ["+2778916237", "+271650981903047499", "08222222222"].map((phone) => enroll(wf, lead({ phone })));
+    await tick();
+    expect(sent).toEqual([]);
+    for (const r of runs) expect(logOf(r)).toEqual(["WhatsApp the lead: Skipped"]);
+  });
+
   it("is skipped, not failed, for a blank phone, an opt-out, or a client's account", async () => {
     staff();
     const wf = workflow([waLead("Hi")]);

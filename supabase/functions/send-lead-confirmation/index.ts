@@ -28,9 +28,14 @@ function json(body: unknown, status = 200) {
 const esc = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 const first = (s: string | null | undefined) => (s || "").trim().split(/\s+/)[0] || "";
+// South African numbers however they were typed: 083…, +27 083… (the 0 kept
+// after the country code), or 83… (the 0 left off).
 const digits = (s: string | null | undefined) => {
   const d = (s || "").replace(/\D/g, "");
-  return d.length === 10 && d.startsWith("0") ? "27" + d.slice(1) : d;
+  if (d.length === 10 && d.startsWith("0")) return "27" + d.slice(1);
+  if (d.length === 12 && d.startsWith("270")) return "27" + d.slice(3);
+  if (d.length === 9 && /^[6-8]/.test(d) && !(s || "").trim().startsWith("+")) return "27" + d;
+  return d;
 };
 const prettyPhone = (s: string) => {
   const d = digits(s);
