@@ -188,13 +188,18 @@ export async function addLeadPage(
     if (prof?.avatar_url) row.profile_photo_data_url = prof.avatar_url;
     if (prof?.sidebar_color) row.accent_color = prof.sidebar_color;
   }
-  const { data, error } = await supabase
-    .from("lead_pages")
-    .insert(row)
-    .select("*")
-    .single();
-  if (error) throw new Error(error.message);
-  return rowToPage(data as LeadPageRow);
+  // Slugs are unique across every agent, and forms are often copies with the
+  // same name ("Copy of LOW FRICTION…"): if it's taken, add a short ending.
+  for (let attempt = 0; ; attempt++) {
+    const { data, error } = await supabase
+      .from("lead_pages")
+      .insert(row)
+      .select("*")
+      .single();
+    if (!error) return rowToPage(data as LeadPageRow);
+    if (error.code !== "23505" || attempt >= 4) throw new Error(error.message);
+    row.slug = `${slug}-${Math.random().toString(36).slice(2, 6)}`;
+  }
 }
 
 export interface FbPage {
