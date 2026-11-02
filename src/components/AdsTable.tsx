@@ -12,6 +12,8 @@ import FolderOutlinedIcon from "@mui/icons-material/FolderOutlined";
 import GridViewOutlinedIcon from "@mui/icons-material/GridViewOutlined";
 import WebAssetOutlinedIcon from "@mui/icons-material/WebAssetOutlined";
 import ViewWeekOutlinedIcon from "@mui/icons-material/ViewWeekOutlined";
+import AddIcon from "@mui/icons-material/Add";
+import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import FileDownloadOutlinedIcon from "@mui/icons-material/FileDownloadOutlined";
 import SwapVertIcon from "@mui/icons-material/SwapVert";
 import InfoIcon from "@mui/icons-material/Info";
@@ -338,6 +340,7 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
     onSortRaw(k);
     showSnack(`Sorted by ${sortName(k)}, ${dir === 1 ? "lowest first" : "highest first"}`);
   };
+  const actUrl = adAccountId ? adAccountId.replace(/^act_/, "") : "";
   const fbBtn = {
     textTransform: "none", letterSpacing: 0, fontFamily: FB_FONT, fontSize: 15, fontWeight: 500, color: FB.text, bgcolor: "#fff",
     border: `1px solid ${FB.btnLine}`, borderRadius: "6px", height: 36, minHeight: 36, px: 1.5, whiteSpace: "nowrap",
@@ -418,8 +421,33 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
       </Box>
 
       <Box sx={{ bgcolor: "#fff", border: `1px solid ${FB.line}`, borderRadius: "0 8px 8px 8px", overflow: "hidden", position: "relative", zIndex: 1 }}>
-        {/* Toolbar: the column chooser and export, as in Ads Manager. */}
+        {/* Toolbar: the column chooser, as in Ads Manager. */}
         <Box sx={{ display: "flex", alignItems: "center", gap: 1, px: 1.5, py: 1.25, flexWrap: "wrap" }}>
+          <Button
+            component="a"
+            href={actUrl ? `https://adsmanager.facebook.com/adsmanager/manage/campaigns?act=${actUrl}&nav_source=no_referrer#` : undefined}
+            target="_blank"
+            rel="noopener"
+            startIcon={<AddIcon />}
+            sx={{ ...fbBtn, bgcolor: FB.green, borderColor: FB.green, color: "#fff", "&:hover": { bgcolor: "#166b3a", borderColor: "#166b3a" } }}
+          >
+            Create
+          </Button>
+          <Tooltip title={ticked.length ? "Open what's ticked in Ads Manager" : `Tick a ${word.one} to edit it`}>
+            <span>
+              <Button
+                component="a"
+                disabled={!ticked.length || !actUrl}
+                href={ticked.length && actUrl ? `https://adsmanager.facebook.com/adsmanager/manage/${view.level === "campaign" ? "campaigns" : view.level === "adset" ? "adsets" : "ads"}/edit?act=${actUrl}&selected_${view.level === "campaign" ? "campaign" : view.level === "adset" ? "adset" : "ad"}_ids=${ticked.join(",")}` : undefined}
+                target="_blank"
+                rel="noopener"
+                startIcon={<EditOutlinedIcon />}
+                sx={fbBtn}
+              >
+                Edit
+              </Button>
+            </span>
+          </Tooltip>
           <Box sx={{ flex: 1 }} />
           <Button
             onClick={(e) => setColMenu(e.currentTarget)}
