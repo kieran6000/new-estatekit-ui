@@ -584,99 +584,53 @@ export default function LeadsPage() {
         </Box>
       </Box>
 
-      <Box sx={{ p: "10px 16px", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
-        <Typography sx={{ fontSize: 15, fontWeight: 600, color: "text.primary", mb: 1 }}>
-          Show me leads that are…
-        </Typography>
-        <Box data-tour="filters" sx={{ display: "flex", gap: 0.75, overflowX: "auto", alignItems: "center", pb: 0.5 }}>
-          {isOperator && (
-            <Box
-              component="button"
-              onClick={() => setShowArchived((v) => !v)}
-              sx={{
-                display: "flex", alignItems: "center", gap: 0.5,
-                border: `1px solid ${showArchived ? tokens.amber : tokens.divider}`,
-                borderRadius: "6px",
-                bgcolor: showArchived ? tokens.amberTint : tokens.surface,
-                color: showArchived ? tokens.amber : "text.secondary",
-                fontWeight: showArchived ? 600 : 400,
-                fontSize: 12.5, p: "5px 10px", cursor: "pointer", whiteSpace: "nowrap",
-                "&:hover": { borderColor: tokens.amber },
-              }}
-            >
-              {showArchived ? "Viewing archived" : "Archived"}
-            </Box>
-          )}
+      {/* Stage tabs, as in Facebook's Leads Center: plain words with a count,
+          the open one blue and underlined, › between the steps a lead goes
+          through, the finished ones (Lost, Invalid) after a gap. */}
+      <Box sx={{ bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
+        <Box data-tour="filters" role="tablist" aria-label="Leads by stage" sx={{ display: "flex", alignItems: "stretch", overflowX: "auto", px: 1 }}>
           {(["All", ...stagesForPipeline] as const).map((s, i, all) => {
             const active = filter === s;
             const count = s === "All" ? pipelineLeads.length : pipelineLeads.filter((l) => l.stage === s).length;
             const dead = s !== "All" && DEAD_STAGES.includes(s);
             const firstDead = dead && !(all[i - 1] !== "All" && DEAD_STAGES.includes(all[i - 1] as Stage));
-            const label = s === "All" ? "All leads" : stageLabel(s, activePipeline.kind);
+            const label = s === "All" ? "All" : stageLabel(s, activePipeline.kind);
             return (
-              <Box key={s} sx={{ display: "flex", alignItems: "center", gap: 0.75, flex: "none" }}>
-                {/* Steps in order (›), then a gap before the ones that ended. */}
-                {i > 1 && !dead && <Box component="span" aria-hidden sx={{ color: "text.disabled", fontSize: 18 }}>›</Box>}
-                {firstDead && <Box aria-hidden sx={{ width: 1, height: 28, bgcolor: tokens.divider, mx: 0.75 }} />}
-                <Tooltip title={STAGE_HELP[s] ?? ""} disableHoverListener={!STAGE_HELP[s]}>
-                  <Box
-                    component="button"
-                    onClick={() => pickFilter(s)}
-                    aria-pressed={active}
-                    sx={{
-                      display: "flex", alignItems: "center", gap: 0.75,
-                      border: `1px solid ${active ? tokens.primary : tokens.divider}`,
-                      borderRadius: "8px",
-                      bgcolor: active ? tokens.primary : tokens.surface,
-                      color: active ? "#fff" : dead ? "text.secondary" : "text.primary",
-                      fontWeight: active ? 600 : 500,
-                      fontSize: 15, fontFamily: "inherit",
-                      minHeight: 44, p: "6px 12px",
-                      cursor: "pointer", whiteSpace: "nowrap",
-                      "&:hover": active ? undefined : { borderColor: tokens.primary, bgcolor: tokens.primaryBg },
-                      "&:focus-visible": { outline: `2px solid ${tokens.primary}`, outlineOffset: 2 },
-                    }}
-                  >
+              <Box key={s} sx={{ display: "flex", alignItems: "center", flex: "none" }}>
+                {i > 1 && !dead && <Box component="span" aria-hidden sx={{ color: "text.disabled", fontSize: 12, px: 0.25 }}>▸</Box>}
+                {firstDead && <Box aria-hidden sx={{ width: "1px", height: 22, bgcolor: tokens.divider, mx: 1 }} />}
+                <Tooltip title={STAGE_HELP[s] ?? ""} disableHoverListener={!STAGE_HELP[s]} enterDelay={400}>
+                  <Box component="button" role="tab" aria-selected={active} onClick={() => pickFilter(s)} sx={tabSx(active, dead)}>
                     {label}
-                    <Box component="span" sx={{ minWidth: 24, height: 22, px: 0.75, borderRadius: 11, display: "inline-grid", placeItems: "center", fontSize: 13, fontWeight: 700, bgcolor: active ? "rgba(255,255,255,0.25)" : count ? tokens.primaryBg : tokens.bg, color: active ? "#fff" : count ? tokens.primaryDark : "text.disabled" }}>
-                      {count}
-                    </Box>
+                    <Box component="span" sx={countSx(active)}>{count}</Box>
                   </Box>
                 </Tooltip>
               </Box>
             );
           })}
-          {/* Tag filters: staff only, and only for tags some lead has. */}
-          {isOperator && tagCounts.length > 0 && <Box aria-hidden sx={{ width: 1, height: 28, bgcolor: tokens.divider, mx: 0.75, flex: "none" }} />}
-          {isOperator && tagCounts.map(([tag, n]) => {
-            const on = tagFilter === tag;
-            return (
-              <Box
-                key={tag}
-                component="button"
-                onClick={() => setTagFilter(on ? null : tag)}
-                aria-pressed={on}
-                sx={{
-                  display: "flex", alignItems: "center", gap: 0.5,
-                  border: `1px solid ${on ? tokens.primary : tokens.divider}`,
-                  borderRadius: "6px",
-                  bgcolor: on ? tokens.primaryBg : tokens.surface,
-                  color: on ? tokens.primaryDark : "text.secondary",
-                  fontWeight: on ? 600 : 400,
-                  fontSize: 12.5, p: "5px 10px", cursor: "pointer", whiteSpace: "nowrap",
-                  "&:hover": { borderColor: tokens.primary, color: tokens.primaryDark },
-                }}
-              >
-                <LocalOfferIcon sx={{ fontSize: 13 }} />
-                {tag}
-                <Box component="span" sx={{ fontSize: 11, color: on ? tokens.primary : "text.disabled", fontWeight: 600 }}>{n}</Box>
+          {isOperator && (
+            <>
+              <Box aria-hidden sx={{ width: "1px", height: 22, bgcolor: tokens.divider, mx: 1, alignSelf: "center", flex: "none" }} />
+              <Box component="button" role="tab" aria-selected={showArchived} onClick={() => setShowArchived((v) => !v)} sx={{ ...tabSx(showArchived, true), flex: "none" }}>
+                Archived
               </Box>
-            );
-          })}
+              {/* Tag filters: staff only, and only for tags some lead has. */}
+              {tagCounts.map(([tag, n]) => {
+                const on = tagFilter === tag;
+                return (
+                  <Box key={tag} component="button" aria-pressed={on} onClick={() => setTagFilter(on ? null : tag)} sx={{ ...tabSx(on, true), flex: "none" }}>
+                    <LocalOfferIcon sx={{ fontSize: 14 }} />
+                    {tag}
+                    <Box component="span" sx={countSx(on)}>{n}</Box>
+                  </Box>
+                );
+              })}
+            </>
+          )}
         </Box>
         {STAGE_HELP[filter] && (
-          <Typography sx={{ fontSize: 14, color: "text.secondary", mt: 1 }}>
-            <b>{filter === "All" ? "All leads" : stageLabel(filter as Stage, activePipeline.kind)}:</b> {STAGE_HELP[filter]}
+          <Typography sx={{ fontSize: 14, color: "text.secondary", px: 2, py: 1, borderTop: `1px solid ${tokens.divider2}` }}>
+            {STAGE_HELP[filter]}
           </Typography>
         )}
       </Box>
@@ -1360,12 +1314,32 @@ const STAGE_HELP: Record<string, string> = {
 };
 
 const STAGE_PICKER = {
-  display: "inline-flex", alignItems: "center", gap: 0.5, minWidth: 140, minHeight: 36, p: "4px 6px 4px 12px",
-  fontSize: 14, color: "inherit", fontFamily: "inherit", textAlign: "left",
-  bgcolor: "#fff", border: `1px solid ${tokens.divider}`, borderRadius: "6px", cursor: "pointer",
-  "&:hover": { borderColor: tokens.primary, bgcolor: tokens.primaryBg },
+  display: "inline-flex", alignItems: "center", gap: 0.25, minWidth: 128, minHeight: 34, p: "4px 4px 4px 12px",
+  fontSize: 14, fontWeight: 500, color: "inherit", fontFamily: "inherit", textAlign: "left",
+  bgcolor: "rgba(0,0,0,0.05)", border: 0, borderRadius: "6px", cursor: "pointer",
+  "&:hover": { bgcolor: "rgba(0,0,0,0.09)" },
   "&:focus-visible": { outline: `2px solid ${tokens.primary}`, outlineOffset: 1 },
 } as const;
+
+/** A stage tab: plain text, blue and underlined when open. */
+function tabSx(active: boolean, quiet: boolean) {
+  return {
+    display: "flex", alignItems: "center", gap: 0.75, height: 52, px: 1.5,
+    border: 0, borderBottom: `3px solid ${active ? tokens.primary : "transparent"}`, borderTop: "3px solid transparent",
+    bgcolor: "transparent", fontFamily: "inherit", fontSize: 15, whiteSpace: "nowrap", cursor: "pointer",
+    fontWeight: active ? 600 : 500,
+    color: active ? tokens.primary : quiet ? "text.secondary" : "text.primary",
+    "&:hover": { bgcolor: "rgba(0,0,0,0.04)" },
+    "&:focus-visible": { outline: `2px solid ${tokens.primary}`, outlineOffset: -2 },
+  } as const;
+}
+function countSx(active: boolean) {
+  return {
+    minWidth: 22, height: 20, px: 0.75, borderRadius: 10, display: "inline-grid", placeItems: "center",
+    fontSize: 12, fontWeight: 600,
+    bgcolor: active ? tokens.primaryBg : "rgba(0,0,0,0.06)", color: active ? tokens.primary : "text.secondary",
+  } as const;
+}
 
 function MobileLeadsList({
   activeId,
