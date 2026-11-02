@@ -2,7 +2,7 @@ import { useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Avatar, Box, Button, ButtonBase, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, Divider, IconButton, ListItemIcon, ListItemText, Menu, MenuItem,
-  Paper, Popper, Radio, useMediaQuery, Skeleton, Switch, Table, TableBody, TableCell, TableHead, TableRow, Tooltip, Typography,
+  Paper, Popover, Popper, Radio, TextField, useMediaQuery, Skeleton, Switch, Table, TableBody, TableCell, TableHead, TableRow, Tooltip, Typography,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
@@ -25,10 +25,11 @@ import FormatColorFillIcon from "@mui/icons-material/FormatColorFill";
 import RestartAltIcon from "@mui/icons-material/RestartAlt";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
-import { getAdsTable, setAdStatus, type AdsLevel, type AdsRow } from "../api/agentProfile";
+import { getAdsTable, setAdBudget, setAdStatus, type AdsLevel, type AdsRow } from "../api/agentProfile";
 import { METRICS, adsMoney, formatMetric, metricValues, sumRows, toneOf, type MetricKey, type Tone } from "../lib/adTargets";
 import { ALL_COLUMNS, COLUMN_LABEL, PRESETS, choiceLabel, loadPrefs, savePrefs, visibleColumns, type ColId, type ColumnPrefs, type PresetKey } from "../lib/adColumns";
 import { useSnack } from "../hooks/useSnack";
+import { useIsOperator } from "../hooks/useAutomations";
 
 // The client page's ads table, made to look and work like Ads Manager:
 // Campaigns / Ad sets / Ads folder tabs with "N selected" on the tab you
@@ -169,6 +170,12 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
   const [sort, setSort] = useState<{ k: SortKey; dir: 1 | -1 }>({ k: "spend", dir: -1 });
   const [headMenu, setHeadMenu] = useState<{ el: HTMLElement; col: ColId | "name"; key: SortKey } | null>(null);
   const [confirm, setConfirm] = useState<{ row: AdsRow; on: boolean } | null>(null);
+  // Editing a daily budget, as in Ads Manager: the pencil in the cell opens it.
+  const isOperator = useIsOperator();
+  const budgetInput = useRef<HTMLInputElement>(null);
+  const [budgetEdit, setBudgetEdit] = useState<{ el: HTMLElement; row: AdsRow; value: string } | null>(null);
+  const budgetValue = budgetEdit ? Number(budgetEdit.value.replace(/[^\d.]/g, "")) : NaN;
+  const budgetOk = Number.isFinite(budgetValue) && budgetValue >= 1 && budgetValue <= 100000;
   const [busy, setBusy] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ el: HTMLElement; row: AdsRow } | null>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -226,6 +233,25 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
     if (view.level === "campaign") onView({ level: "adset", campaignIds: [r.id], adsetIds: [] });
     else if (view.level === "adset") onView({ level: "ad", campaignIds: view.campaignIds.length ? view.campaignIds : r.campaign?.id ? [r.campaign.id] : [], adsetIds: [r.id] });
   };
+
+  async function saveBudget() {
+    if (!budgetEdit || !budgetOk) return;
+    const { row } = budgetEdit;
+    const amount = Math.round(budgetValue * 100) / 100;
+    setBudgetEdit(null);
+    if (amount === row.dailyBudget) return;
+    setBusy(row.id);
+    try {
+      await setAdBudget(row.id, amount);
+      await qc.invalidateQueries({ queryKey: ["adsTable", adAccountId] });
+      showSnack(`${row.name}: budget is now ${adsMoney(amount)} a day`);
+    } catch (e) {
+      console.error(e);
+      showSnack("Facebook didn't take that budget. Try again, or change it in Ads Manager.");
+    } finally {
+      setBusy(null);
+    }
+  }
 
   async function switchIt(row: AdsRow, on: boolean) {
     setConfirm(null);
@@ -297,7 +323,26 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
       return <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}><Box component="span" sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: d.color, flex: "none" }} />{d.label}</Box>;
     }
     if (id === "budget") {
-      if (r.dailyBudget) return <Num v={adsMoney(r.dailyBudget)} sub="Daily" />;
+      if (r.dailyBudget) {
+        if (!isOperator || phone) return <Num v={adsMoney(r.dailyBudget)} sub="Daily" />;
+        // Ads Manager's pencil: shows on row hover, opens the budget box.
+        return (
+          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 1 }}>
+            <Tooltip title="Edit daily budget">
+              <IconButton
+                className="ek-edit"
+                size="small"
+                aria-label={`Edit daily budget for ${r.name}`}
+                onClick={(e) => { e.stopPropagation(); setBudgetEdit({ el: e.currentTarget.parentElement!, row: r, value: r.dailyBudget!.toFixed(2) }); }}
+                sx={{ opacity: 0, p: 0.5, color: FB.text, "&:focus-visible": { opacity: 1 } }}
+              >
+                <EditOutlinedIcon sx={{ fontSize: 18 }} />
+              </IconButton>
+            </Tooltip>
+            <Box><Num v={adsMoney(r.dailyBudget)} sub="Daily" /></Box>
+          </Box>
+        );
+      }
       if (r.lifetimeBudget) return <Num v={adsMoney(r.lifetimeBudget)} sub="Lifetime" />;
       return <Box sx={{ color: FB.text, overflow: "hidden", textOverflow: "ellipsis" }}>{view.level === "campaign" ? "Using ad set budget" : "Using campaign budget"}</Box>;
     }
@@ -566,6 +611,7 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
                           "&:focus-visible": { outline: `2px solid ${FB.blue}`, outlineOffset: -2 },
                           "&:hover .ek-name": { textDecoration: "underline" },
                           "&:hover .ek-ext": { opacity: 1 },
+                          "&:hover .ek-edit": { opacity: 1 },
                         }}
                       >
                         <TableCell padding="none" sx={{ ...stickyLeft(0, 48), textAlign: "center", px: "0 !important", pt: "6px !important" }}>
@@ -730,6 +776,56 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
           <Button variant="contained" disabled={!customizing?.length} onClick={() => { setPrefs({ ...prefs, choice: "custom", custom: customizing! }); setCustomizing(null); showSnack("Your columns are saved"); }}>Apply</Button>
         </DialogActions>
       </Dialog>
+
+      <Popover
+        open={!!budgetEdit}
+        anchorEl={budgetEdit?.el}
+        onClose={() => setBudgetEdit(null)}
+        onClick={(e) => e.stopPropagation()}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+        transformOrigin={{ vertical: "top", horizontal: "right" }}
+        slotProps={{ transition: { onEntered: () => budgetInput.current?.select() }, paper: { sx: { width: 440, maxWidth: "calc(100vw - 32px)", p: 2, borderRadius: "8px", fontFamily: FB_FONT, color: FB.text } } }}
+      >
+        <Box component="form" onSubmit={(e) => { e.preventDefault(); void saveBudget(); }}>
+          <Box sx={{ display: "flex", gap: 2, alignItems: "flex-start" }}>
+            <Typography sx={{ fontFamily: "inherit", fontWeight: 700, fontSize: 15, flex: 1, pt: 1 }}>Daily budget</Typography>
+            <TextField
+              inputRef={budgetInput}
+              size="small"
+              value={budgetEdit?.value ?? ""}
+              onChange={(e) => budgetEdit && setBudgetEdit({ ...budgetEdit, value: e.target.value })}
+              error={!!budgetEdit && !budgetOk}
+              sx={{ width: 200 }}
+              slotProps={{
+                htmlInput: { inputMode: "decimal", "aria-label": "Daily budget in rand" },
+                input: {
+                  startAdornment: <Box component="span" sx={{ mr: 0.25 }}>R</Box>,
+                  endAdornment: <Box component="span" sx={{ fontSize: 12, color: FB.sub }}>ZAR</Box>,
+                },
+              }}
+            />
+          </Box>
+          <Box sx={{ fontSize: 13, mt: 1.25, ml: "auto", width: 200 }}>
+            {budgetOk ? (
+              <>Facebook may spend up to <b>{adsMoney(budgetValue * 1.75)}</b> on a busy day, and at most <b>{adsMoney(budgetValue * 7)}</b> in a week.</>
+            ) : (
+              <Box component="span" sx={{ color: "#e41e3f" }}>Enter an amount in rand, e.g. 50.</Box>
+            )}
+          </Box>
+          {budgetOk && !!budgetEdit?.row.dailyBudget && Math.abs(budgetValue - budgetEdit.row.dailyBudget) / budgetEdit.row.dailyBudget > 0.2 && (
+            <Box sx={{ fontSize: 13, color: "#8a6d00", mt: 1, ml: "auto", width: 200 }}>
+              That's a change of more than 20%, which can restart Facebook's learning.
+            </Box>
+          )}
+          <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mt: 2 }}>
+            <Button onClick={() => setBudgetEdit(null)} sx={{ textTransform: "none", color: FB.link, fontFamily: "inherit", fontSize: 15 }}>Cancel</Button>
+            <Button type="submit" disabled={!budgetOk}
+              sx={{ ...fbBtn, bgcolor: FB.green, borderColor: FB.green, color: "#fff", "&:hover": { bgcolor: "#166b3a", borderColor: "#166b3a" } }}>
+              Publish
+            </Button>
+          </Box>
+        </Box>
+      </Popover>
 
       <Dialog open={!!confirm} onClose={() => setConfirm(null)}>
         <DialogTitle>Turn {confirm?.on ? "on" : "off"} this {word.one}?</DialogTitle>

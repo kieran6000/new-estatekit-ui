@@ -149,6 +149,14 @@ export async function setAdStatus(adId: string, status: "ACTIVE" | "PAUSED"): Pr
   if (data?.error) throw new Error(data.error);
 }
 
+/** Sets a campaign's or ad set's daily budget, in rand. Live straight away.
+ *  Operators only (the function checks). */
+export async function setAdBudget(id: string, dailyBudget: number): Promise<void> {
+  const { data, error } = await supabase.functions.invoke("fb-set-ad-status", { body: { adId: id, dailyBudget } });
+  if (error) throw new Error(data?.error || error.message);
+  if (data?.error) throw new Error(data.error);
+}
+
 /** Daily ad spend keyed by YYYY-MM-DD, from Meta insights. */
 export async function getFbAdInsights(adAccountId: string, since: string | null): Promise<Record<string, number>> {
   const { data, error } = await supabase.functions.invoke("fb-ad-insights", { body: { adAccountId, since } });

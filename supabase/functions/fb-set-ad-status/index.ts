@@ -1,8 +1,9 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-// Pauses or resumes a single Facebook ad. Operator action from the dashboard —
-// it changes live ad delivery (and therefore spend), so the UI confirms first.
+// Pauses or resumes a Facebook campaign, ad set or ad, or sets a campaign's or
+// ad set's daily budget. Changes live delivery and spend, so the UI confirms
+// first. Budgets are for operators only.
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -56,11 +57,17 @@ Deno.serve(async (req) => {
     const ownAccount = digits(me?.fb_ad_account_id);
     if (!isOperator && !ownAccount) return json({ error: "Not allowed" }, 403);
 
-    const { adId, status } = await req.json();
+    const { adId, status, dailyBudget } = await req.json();
     // Digits only: adId goes into a Graph path, so anything else could address
     // a different object or edge.
     if (!adId || !/^\d+$/.test(String(adId))) return json({ error: "adId required" }, 400);
-    if (status !== "ACTIVE" && status !== "PAUSED") return json({ error: "status must be ACTIVE or PAUSED" }, 400);
+    const budget = dailyBudget == null ? null : Number(dailyBudget);
+    if (budget != null) {
+      if (!isOperator) return json({ error: "Not allowed" }, 403);
+      // Rand, two decimals; Facebook takes cents. A sanity cap against typos.
+      if (!Number.isFinite(budget) || budget < 1 || budget > 100000) return json({ error: "dailyBudget out of range" }, 400);
+    } else if (status !== "ACTIVE" && status !== "PAUSED") return json({ error: "status must be ACTIVE or PAUSED" }, 400);
+    const change: Record<string, string> = budget != null ? { daily_budget: String(Math.round(budget * 100)) } : { status };
 
     const tokens: string[] = [];
     for (const name of TOKEN_NAMES) {
@@ -83,14 +90,14 @@ Deno.serve(async (req) => {
       const res = await fetch(`${GRAPH}/${adId}`, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ status, access_token: token }),
+        body: new URLSearchParams({ ...change, access_token: token }),
       });
       const data = await res.json();
       if (!res.ok || data.error) {
         lastErr = data.error?.message || `HTTP ${res.status}`;
         continue;
       }
-      return json({ ok: true, status });
+      return json({ ok: true, ...change });
     }
 
     console.warn("fb-set-ad-status: all tokens failed:", lastErr);
