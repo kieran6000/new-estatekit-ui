@@ -105,10 +105,15 @@ export function rank(l: Pick<LeadRow, "stage" | "due">): number {
 }
 
 export function sortLeadsForList(leads: LeadRow[]): LeadRow[] {
+  const now = new Date();
+  const when = new Map(leads.map((l) => [l.id, whenToCall(l, now)]));
+  // Lost and parked leads stay at the bottom; the rest go by how soon they need a call.
+  const group = (l: LeadRow) => (rank(l) <= 1 ? 0 : rank(l));
   return [...leads].sort((a, b) => {
-    const r = rank(a) - rank(b);
+    const r = group(a) - group(b);
     if (r !== 0) return r;
-    if (a.due !== b.due) return a.due ? -1 : 1;
+    const w = compareWhenToCall(when.get(a.id)!, when.get(b.id)!);
+    if (w !== 0) return w;
     // Then whoever got in touch most recently: came in, or came back (filled
     // in a form again). For everyone else that's the usual newest-first.
     const at = (l: LeadRow) => (l.came_back_at && l.came_back_at > l.created_at ? l.came_back_at : l.created_at);
@@ -159,41 +164,111 @@ export function computeStagePatch(
   return {};
 }
 
-/**
- * What the "Next" column shows. New leads are stored with the fixed label
- * "Just came in", which stays put until someone acts on the lead, so a lead
- * from five weeks ago still said "Just came in". For a lead nobody has
- * touched, say how long it has been waiting instead. Display only: the stored
- * next_label is unchanged.
- */
-export function nextStepLabel(l: Pick<LeadRow, "stage" | "next_label" | "created_at"> & { call_at?: string | null }): string {
-  // They picked a call time on the thank-you page: say when, not just that.
-  if (l.call_at && /they picked this time/i.test(l.next_label || "")) {
-    const at = new Date(l.call_at);
-    if (!Number.isNaN(at.getTime())) return `Wants a call ${callWhen(at)}`;
-  }
-  const untouched = l.stage === "New Lead" && (l.next_label === "Just came in" || l.next_label === "—" || !l.next_label);
-  if (!untouched) return l.next_label;
-  const mins = Math.max(0, Math.floor((Date.now() - new Date(l.created_at).getTime()) / 60000));
-  if (Number.isNaN(mins)) return l.next_label;
-  if (mins < 60) return `Call now · ${mins < 1 ? "just in" : `${mins} min`}`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `Call today · waiting ${hrs}h`;
-  const days = Math.floor(hrs / 24);
-  if (days < 14) return `Not called · ${days} day${days === 1 ? "" : "s"}`;
-  const weeks = Math.floor(days / 7);
-  if (weeks < 9) return `Not called · ${weeks} wks`;
-  return `Not called · ${Math.floor(days / 30)} months`;
+/** How soon a lead needs a call: most urgent first. */
+export type CallLevel = "missed" | "now" | "today" | "later" | "none";
+const LEVEL_RANK: Record<CallLevel, number> = { missed: 0, now: 1, today: 2, later: 3, none: 4 };
+const HOUR = 60 * 60_000;
+const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+export interface WhenToCall {
+  level: CallLevel;
+  /** The bold line: "Now", "Today", "Tomorrow, 12:00", "Missed: Fri 30 Oct, 12:00". */
+  when: string;
+  /** The grey line: "They picked this time", "Didn't answer, try again". */
+  why: string;
+  /** The time this is about, for ordering within a level. */
+  at: number;
 }
 
-/** "today at 12:00", "tomorrow at 09:00", "Fri 7 Nov at 12:00", and once
- *  it has gone by "yesterday at 12:00" or "on Fri 31 Oct at 12:00". */
-function callWhen(at: Date): string {
-  const time = at.toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit", hour12: false });
-  const day = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-  const diff = Math.round((day(at) - day(new Date())) / 86_400_000);
-  if (diff === 0) return `today at ${time}`;
-  if (diff === 1) return `tomorrow at ${time}`;
-  if (diff === -1) return `yesterday at ${time}`;
-  return `${diff < 0 ? "on " : ""}${at.toLocaleDateString("en-ZA", { weekday: "short", day: "numeric", month: "short" })} at ${time}`;
+const clockOf = (d: Date) => `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+
+/** "Today", "Tomorrow", "Yesterday" or "Wed 4 Nov", with the time if asked. */
+function dayWords(at: Date, now: Date, withTime: boolean): string {
+  const start = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const diff = Math.round((start(at) - start(now)) / 86_400_000);
+  const day = diff === 0 ? "Today" : diff === 1 ? "Tomorrow" : diff === -1 ? "Yesterday" : `${DAYS[at.getDay()]} ${at.getDate()} ${MONTHS[at.getMonth()]}`;
+  return withTime ? `${day}, ${clockOf(at)}` : day;
+}
+
+/** The stored label in plain words, without repeating the name or the time
+ *  (the same lead row says those already). Display only. */
+function whyWords(label: string): string {
+  const t = (label || "").trim();
+  if (!t || t === "—" || t === "Just came in" || t === "Call") return "";
+  if (/^retry/i.test(t)) return "Didn't answer, try again";
+  if (/^follow up/i.test(t)) return "Follow up";
+  const named = /^call\s+[^:]+:\s*(.+)$/i.exec(t);
+  const words = named ? named[1] : t;
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/**
+ * What the leads list shows for "When to call", worked out from what's stored.
+ * Red ("missed") is only for a call time the lead picked that has gone by, so
+ * it stays rare. A booked lead whose date has passed is not called missed: most
+ * of those happened and were never updated, so it asks how it went instead.
+ */
+export function whenToCall(
+  l: Pick<LeadRow, "stage" | "next_label" | "created_at" | "due" | "reminder_at"> & { call_at?: string | null; appointment_at?: string | null },
+  now: Date = new Date(),
+): WhenToCall {
+  const created = Date.parse(l.created_at);
+  const none: WhenToCall = { level: "none", when: "—", why: "", at: created };
+  if (DEAD_STAGES.includes(l.stage)) return none;
+  const label = l.next_label || "";
+  const t = now.getTime();
+
+  // A call time they picked counts from that time, not from when they picked it.
+  if (l.call_at && /they picked this time/i.test(label)) {
+    const at = new Date(l.call_at);
+    if (!Number.isNaN(at.getTime())) {
+      const why = "They picked this time";
+      const ms = at.getTime();
+      if (ms > t) return { level: dayWords(at, now, false) === "Today" ? "today" : "later", when: dayWords(at, now, true), why, at: ms };
+      if (t - ms < HOUR) return { level: "now", when: "Now", why: `They picked ${clockOf(at)}`, at: ms };
+      return { level: "missed", when: `Missed: ${dayWords(at, now, true)}`, why, at: ms };
+    }
+  }
+
+  if (l.stage === "Booked" || l.stage === "Viewing Booked") {
+    const word = l.stage === "Viewing Booked" ? "Viewing" : "Appointment";
+    const iso = l.appointment_at ?? l.reminder_at;
+    const at = iso ? new Date(iso) : null;
+    if (!at || Number.isNaN(at.getTime())) return { level: "later", when: "No time set", why: word, at: created };
+    const ms = at.getTime();
+    if (ms >= t) return { level: dayWords(at, now, false) === "Today" ? "today" : "later", when: dayWords(at, now, true), why: word, at: ms };
+    return { level: "today", when: `Was ${dayWords(at, now, true)}`, why: `${word}: how did it go?`, at: ms };
+  }
+
+  // Just came in and nobody has touched it.
+  const untouched = l.stage === "New Lead" && (!label || label === "Just came in" || label === "—");
+  if (untouched) {
+    if (t - created < HOUR) return { level: "now", when: "Now", why: "Just came in", at: created };
+    return { level: "today", when: "Today", why: "Not called yet", at: created };
+  }
+
+  const reminder = l.reminder_at ? Date.parse(l.reminder_at) : NaN;
+  const why = whyWords(label);
+  if (Number.isFinite(reminder)) {
+    // They came back within the hour: as hot as a brand new lead.
+    if (/came back/i.test(label) && t - reminder < HOUR && reminder <= t) return { level: "now", when: "Now", why, at: reminder };
+    if (reminder > t) return { level: dayWords(new Date(reminder), now, false) === "Today" ? "today" : "later", when: dayWords(new Date(reminder), now, false), why, at: reminder };
+    return { level: "today", when: "Today", why, at: created };
+  }
+  if (l.due) return { level: "today", when: "Today", why, at: created };
+  return why ? { level: "later", when: "No date set", why, at: created } : none;
+}
+
+/** Order for the list: most urgent level first. Upcoming dates run soonest
+ *  first; everything else newest first, since the newest are likeliest to pick up. */
+export function compareWhenToCall(a: WhenToCall, b: WhenToCall): number {
+  const r = LEVEL_RANK[a.level] - LEVEL_RANK[b.level];
+  if (r !== 0) return r;
+  return a.level === "later" ? a.at - b.at : b.at - a.at;
+}
+
+/** One number that sorts the same way as compareWhenToCall (for the table's column sort). */
+export function whenToCallSortValue(w: WhenToCall): number {
+  return LEVEL_RANK[w.level] * 1e14 + (w.level === "later" ? w.at : 1e13 - w.at);
 }

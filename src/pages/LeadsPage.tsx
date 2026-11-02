@@ -35,7 +35,6 @@ import {
 } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
 import CallIcon from "@mui/icons-material/Call";
-import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
 import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
 import RefreshIcon from "@mui/icons-material/Refresh";
@@ -70,10 +69,8 @@ const CameBackBadge = () => <Box component="span" sx={{ fontSize: 10, fontWeight
 function leadSortValue(l: LeadRow, k: LeadSortKey): string | number {
   if (k === "name") return l.name;
   if (k === "came") return lastIn(l);
-  // Next: most urgent first. Due before not due, then the earliest reminder
-  // (or, with no reminder, the longest-waiting lead); Lost/Invalid last.
-  const at = Date.parse(l.reminder_at ?? l.created_at);
-  return (DEAD_STAGES.includes(l.stage) ? 2e13 : l.due ? 0 : 1e13) + at;
+  // When to call: most urgent first; Lost/Invalid last.
+  return whenToCallSortValue(whenToCall(l));
 }
 import { LeadTags } from "../components/LeadTag";
 import { leadTags } from "../lib/leadTags";
@@ -81,7 +78,7 @@ import { useDatasetByPage } from "../hooks/useLeadPages";
 import LocalOfferIcon from "@mui/icons-material/LocalOffer";
 import { DEAD_STAGES, PIPELINE_KIND_LABEL, PIPELINE_STAGES, type LeadRow, type OutcomeStep, type Pipeline, type PipelineKind, type Stage } from "../types";
 import { stageLabel } from "../types";
-import { dueLeads, pipelineKindFor, sortLeadsForList, stepForStage, computeStagePatch, stageForKind, nextStepLabel } from "../lib/stageLogic";
+import { dueLeads, pipelineKindFor, sortLeadsForList, stepForStage, computeStagePatch, stageForKind, whenToCall, whenToCallSortValue } from "../lib/stageLogic";
 import { timeAgo } from "../lib/timeAgo";
 import { useLeads, useUpdateLeadStage } from "../hooks/useLeads";
 import { useAddPipeline, usePipelines, useSyncPipelineSheet } from "../hooks/usePipelines";
@@ -1270,7 +1267,7 @@ function LeadsTable({
             <SortHead k="name" label="Name" sort={sort} onSort={onSort} />
             <SortHead k="came" label="Came in" sort={sort} onSort={onSort} firstDir="desc" />
             <SortHead k="stage" label="Stage" sort={sort} onSort={onSort} />
-            <SortHead k="next" label="Next" sort={sort} onSort={onSort} />
+            <SortHead k="next" label="When to call" sort={sort} onSort={onSort} />
             <PlainHead />
           </TableRow>
         </TableHead>
@@ -1479,36 +1476,15 @@ function MobileLeadsList({
   );
 }
 
-/** What to do next with a lead, in three plain levels (the row stays white):
- *    Late    should have happened on an earlier day: a red "Late" label.
- *    Today   orange text, no label (most of the list on a busy day, so a
- *            label there would mean nothing).
- *    Later   grey. */
+/** When to call, then why, in two lines like the name beside it. No labels:
+ *  the word says it. Red only for a call time they picked that has gone by. */
 function NextStep({ l }: { l: LeadRow }) {
-  // A call time they picked counts from that time, not from when they picked
-  // it (the reminder is set the moment they pick).
-  const picked = !!l.call_at && /they picked this time/i.test(l.next_label || "");
-  const untouched = l.stage === "New Lead" && (!l.next_label || l.next_label === "Just came in" || l.next_label === "—");
-  const whenIso = picked ? l.call_at : untouched ? l.created_at : l.reminder_at;
-  const when = whenIso ? new Date(whenIso).getTime() : NaN;
-  const live = !DEAD_STAGES.includes(l.stage);
-  const dueNow = live && !!l.due && !(picked && when > Date.now());
-  const startOfToday = new Date().setHours(0, 0, 0, 0);
-  const late = dueNow && Number.isFinite(when) && when < startOfToday;
-  if (late) {
-    return (
-      <Tooltip title={`Late: this was for ${new Date(when).toLocaleDateString("en-ZA", { weekday: "long", day: "numeric", month: "long" })}. Call them first.`}>
-        <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, fontSize: 13, color: "#b42318" }}>
-          <Box component="span" sx={{ fontSize: 11.5, fontWeight: 700, letterSpacing: 0.3, textTransform: "uppercase", px: 0.75, py: "1px", borderRadius: "4px", bgcolor: "#d92d20", color: "#fff", flex: "none" }}>Late</Box>
-          <Box component="span" sx={{ fontWeight: 600 }}>{nextStepLabel(l)}</Box>
-        </Box>
-      </Tooltip>
-    );
-  }
+  const w = whenToCall(l);
+  const urgent = w.level === "missed" || w.level === "now" || w.level === "today";
   return (
-    <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, fontSize: 13, color: dueNow ? tokens.orange : "text.secondary", fontWeight: dueNow ? 600 : 400 }}>
-      {(l.reminder_at || dueNow) && <AccessTimeIcon sx={{ fontSize: 14 }} />}
-      {nextStepLabel(l)}
+    <Box sx={{ lineHeight: 1.3 }}>
+      <Box sx={{ fontSize: 14, fontWeight: urgent ? 600 : 400, color: w.level === "missed" ? "#b42318" : urgent ? "text.primary" : "text.secondary" }}>{w.when}</Box>
+      {w.why && <Box sx={{ fontSize: 12.5, color: "text.secondary" }}>{w.why}</Box>}
     </Box>
   );
 }
