@@ -15,6 +15,7 @@ import OpenInFullIcon from "@mui/icons-material/OpenInFull";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import EditLeadContactDialog from "../components/EditLeadContactDialog";
 import LeadFormDialog from "../components/LeadFormDialog";
+import AddressMapDialog from "../components/AddressMapDialog";
 import { tokens } from "../theme";
 import { LeadTags } from "../components/LeadTag";
 import { leadTags } from "../lib/leadTags";
@@ -237,7 +238,7 @@ export default function LeadDetailPage({ leadId, onClose, nav }: {
         </Section>
 
         <Section title="From their form" action={lead.fb_lead_id && lead.source_page_id ? <Button size="small" onClick={() => setFormOpen(true)}>View form</Button> : undefined}>
-          {lead.form_answers.map((r, i) => <Row key={i} k={r.q} v={prettyAnswer(r.a)} />)}
+          {lead.form_answers.map((r, i) => <Row key={i} k={r.q} v={prettyAnswer(r.a)} map={/address/i.test(r.q) && prettyAnswer(r.a).trim().length > 4} />)}
           {!lead.form_answers.length && <Row k="" v="No answers captured." />}
         </Section>
 
@@ -523,13 +524,28 @@ function Section({ title, action, children }: { title: string; action?: React.Re
   );
 }
 
-function Row({ k, v }: { k: string; v: string }) {
+function Row({ k, v, map }: { k: string; v: string; map?: boolean }) {
+  const [mapOpen, setMapOpen] = useState(false);
   return (
     <Box sx={{ display: "flex", p: "10px 16px", borderTop: `1px solid ${tokens.divider2}`, gap: 1.5, "&:first-of-type": { borderTop: 0 } }}>
       {k && (
         <Typography sx={{ color: "text.secondary", fontSize: 13, flex: "0 0 46%" }}>{k}</Typography>
       )}
-      <Typography sx={{ fontSize: 14, flex: 1 }}>{v}</Typography>
+      {map ? (
+        <>
+          <Typography
+            component="button"
+            type="button"
+            onClick={() => setMapOpen(true)}
+            sx={{ fontSize: 14, flex: 1, p: 0, border: 0, bgcolor: "transparent", font: "inherit", color: "inherit", textAlign: "left", cursor: "pointer", textDecoration: "underline", textDecorationColor: tokens.divider, textUnderlineOffset: 3, "&:hover": { textDecorationColor: "currentColor" } }}
+          >
+            {v}
+          </Typography>
+          <AddressMapDialog address={v} open={mapOpen} onClose={() => setMapOpen(false)} />
+        </>
+      ) : (
+        <Typography sx={{ fontSize: 14, flex: 1 }}>{v}</Typography>
+      )}
     </Box>
   );
 }
