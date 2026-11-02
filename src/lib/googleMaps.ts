@@ -79,8 +79,35 @@ const HOUSE_PIN = `data:image/svg+xml,${encodeURIComponent(
   `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="46" viewBox="0 0 40 46"><path d="M4 0h32a4 4 0 0 1 4 4v30a4 4 0 0 1-4 4h-9l-7 8-7-8H4a4 4 0 0 1-4-4V4a4 4 0 0 1 4-4z" fill="#0b57d0"/><path d="M20 8 8 19h4v11h6v-7h4v7h6V19h4z" fill="#fff"/></svg>`,
 )}`;
 
-/** A clean road map on this element with our house pin. */
-export async function drawMap(el: HTMLElement, at: LatLng, zoom: number): Promise<void> {
+const PIN_BLUE = "#0b57d0";
+const UNSURE_METRES = 350;
+const RIPPLE_MS = 3600;
+
+/** A faint circle round a pin we're not sure of, with a slow ripple moving out
+ *  to its edge. Still for people who've asked their phone for less motion.
+ *  Gives back how to stop it. */
+function drawUnsureArea(maps: GoogleMaps, map: GoogleMaps, at: LatLng): () => void {
+  const circle = (radius: number, fillOpacity: number, strokeOpacity: number) =>
+    new maps.Circle({ map, center: at, radius, fillColor: PIN_BLUE, fillOpacity, strokeColor: PIN_BLUE, strokeOpacity, strokeWeight: 1, clickable: false });
+  const area = circle(UNSURE_METRES, 0.05, 0.22);
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return () => area.setMap(null);
+  const ripple = circle(0, 0.08, 0);
+  const started = performance.now();
+  let frame = requestAnimationFrame(function tick(now) {
+    const t = ((now - started) % RIPPLE_MS) / RIPPLE_MS;
+    ripple.setOptions({ radius: UNSURE_METRES * t, fillOpacity: 0.08 * (1 - t) });
+    frame = requestAnimationFrame(tick);
+  });
+  return () => {
+    cancelAnimationFrame(frame);
+    ripple.setMap(null);
+    area.setMap(null);
+  };
+}
+
+/** A clean road map on this element with our house pin. Gives back how to
+ *  stop anything it left running. */
+export async function drawMap(el: HTMLElement, at: LatLng, zoom: number, unsure = false): Promise<() => void> {
   const maps = await loadGoogleMaps();
   const { Map } = await maps.importLibrary("maps");
   const { Marker } = await maps.importLibrary("marker");
@@ -97,10 +124,12 @@ export async function drawMap(el: HTMLElement, at: LatLng, zoom: number): Promis
       { featureType: "transit", elementType: "labels.icon", stylers: [{ visibility: "off" }] },
     ],
   });
-  new Marker({ map, position: at, icon: { url: HOUSE_PIN, anchor: new maps.Point(20, 46) } });
+  new Marker({ map, position: at, zIndex: 2, icon: { url: HOUSE_PIN, anchor: new maps.Point(20, 46) } });
+  return unsure ? drawUnsureArea(maps, map, at) : () => {};
 }
 
-/** Google's photo from the road. Gives an error instead of a grey "no image"
- *  picture when there isn't one, so the <img> can hide itself. */
-export const streetPhotoUrl = (at: LatLng) =>
-  `https://maps.googleapis.com/maps/api/streetview?size=640x320&location=${at.lat},${at.lng}&source=outdoor&return_error_code=true&key=${KEY}`;
+/** Google's photo from the road, in the shape it'll be shown so none of it is
+ *  cut off. Gives an error instead of a grey "no image" picture when there
+ *  isn't one, so the <img> can hide itself. */
+export const streetPhotoUrl = (at: LatLng, width: number, height: number) =>
+  `https://maps.googleapis.com/maps/api/streetview?size=${width}x${height}&location=${at.lat},${at.lng}&source=outdoor&return_error_code=true&key=${KEY}`;

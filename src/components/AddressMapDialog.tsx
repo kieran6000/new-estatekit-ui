@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Box, Dialog, DialogContent, DialogTitle, IconButton, Paper, Skeleton, Typography } from "@mui/material";
+import { Box, Dialog, DialogContent, DialogTitle, IconButton, Paper, Skeleton, Typography, useMediaQuery } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import { useQuery } from "@tanstack/react-query";
 import { listSoldListingsForAgent } from "../api/soldListings";
@@ -9,7 +9,10 @@ import { tokens } from "../theme";
 
 const NEARBY_KM = 5;
 const money = (n: number) => "R " + n.toLocaleString("en-ZA");
-const tile = { borderRadius: "6px", overflow: "hidden", border: `1px solid ${tokens.divider}`, height: { xs: 200, sm: 260 } };
+const frame = { borderRadius: "6px", overflow: "hidden", border: `1px solid ${tokens.divider}` };
+// Photo sizes match the box's shape on that screen: phone 8:5, otherwise square.
+const PHONE_PHOTO = { width: 640, height: 400 };
+const SQUARE_PHOTO = { width: 640, height: 640 };
 
 function Row({ k, v }: { k: string; v: string }) {
   return (
@@ -37,8 +40,16 @@ export default function AddressMapDialog({ address, agentId, open, onClose }: { 
   const [mapFailed, setMapFailed] = useState(false);
   const [noPhoto, setNoPhoto] = useState(false);
   useEffect(() => {
-    if (mapEl && geo) drawMap(mapEl, geo, geo.exact ? 17 : 15).catch(() => setMapFailed(true));
+    if (!mapEl || !geo) return;
+    let gone = false;
+    let stop: (() => void) | undefined;
+    drawMap(mapEl, geo, geo.exact ? 17 : 15, !geo.exact)
+      .then((s) => { if (gone) s(); else stop = s; })
+      .catch(() => setMapFailed(true));
+    return () => { gone = true; stop?.(); };
   }, [mapEl, geo]);
+  const wide = useMediaQuery("(min-width:600px)");
+  const photo = wide ? SQUARE_PHOTO : PHONE_PHOTO;
 
   const { data: sales = [] } = useQuery({
     queryKey: ["salesNearby", agentId, geo?.lat, geo?.lng],
@@ -58,6 +69,8 @@ export default function AddressMapDialog({ address, agentId, open, onClose }: { 
   const prices = sales.flatMap((s) => (s.price ? [s.price] : []));
   const low = Math.min(...prices);
   const high = Math.max(...prices);
+  // Beside the photo the map is the same square; on its own it's a wide strip.
+  const tile = { ...frame, height: showPhoto ? { xs: 200, sm: "auto" } : { xs: 200, sm: 300 }, aspectRatio: showPhoto ? { sm: "1" } : undefined };
 
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
@@ -87,9 +100,9 @@ export default function AddressMapDialog({ address, agentId, open, onClose }: { 
             <Box
               component="img"
               alt={`The most likely house at ${address}, from the road`}
-              src={streetPhotoUrl(geo)}
+              src={streetPhotoUrl(geo, photo.width, photo.height)}
               onError={() => setNoPhoto(true)}
-              sx={{ ...tile, display: "block", width: "100%", objectFit: "cover" }}
+              sx={{ ...frame, display: "block", width: "100%", height: "auto", aspectRatio: { xs: "8 / 5", sm: "1" } }}
             />
           )}
         </Box>
