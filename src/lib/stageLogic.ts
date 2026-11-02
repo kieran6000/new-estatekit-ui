@@ -166,7 +166,12 @@ export function computeStagePatch(
  * touched, say how long it has been waiting instead. Display only: the stored
  * next_label is unchanged.
  */
-export function nextStepLabel(l: Pick<LeadRow, "stage" | "next_label" | "created_at">): string {
+export function nextStepLabel(l: Pick<LeadRow, "stage" | "next_label" | "created_at"> & { call_at?: string | null }): string {
+  // They picked a call time on the thank-you page: say when, not just that.
+  if (l.call_at && /they picked this time/i.test(l.next_label || "")) {
+    const at = new Date(l.call_at);
+    if (!Number.isNaN(at.getTime())) return `Wants a call ${callWhen(at)}`;
+  }
   const untouched = l.stage === "New Lead" && (l.next_label === "Just came in" || l.next_label === "—" || !l.next_label);
   if (!untouched) return l.next_label;
   const mins = Math.max(0, Math.floor((Date.now() - new Date(l.created_at).getTime()) / 60000));
@@ -179,4 +184,16 @@ export function nextStepLabel(l: Pick<LeadRow, "stage" | "next_label" | "created
   const weeks = Math.floor(days / 7);
   if (weeks < 9) return `Not called · ${weeks} wks`;
   return `Not called · ${Math.floor(days / 30)} months`;
+}
+
+/** "today at 12:00", "tomorrow at 09:00", "Fri 7 Nov at 12:00", and once
+ *  it has gone by "yesterday at 12:00" or "on Fri 31 Oct at 12:00". */
+function callWhen(at: Date): string {
+  const time = at.toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit", hour12: false });
+  const day = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const diff = Math.round((day(at) - day(new Date())) / 86_400_000);
+  if (diff === 0) return `today at ${time}`;
+  if (diff === 1) return `tomorrow at ${time}`;
+  if (diff === -1) return `yesterday at ${time}`;
+  return `${diff < 0 ? "on " : ""}${at.toLocaleDateString("en-ZA", { weekday: "short", day: "numeric", month: "short" })} at ${time}`;
 }
