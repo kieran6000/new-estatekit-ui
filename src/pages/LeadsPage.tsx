@@ -1482,7 +1482,10 @@ function MobileLeadsList({
 /** What to do next with a lead. Due now: an orange "Due" label, so it says
  *  what it means (the row itself stays white). Later: plain grey. */
 function NextStep({ l }: { l: LeadRow }) {
-  const due = !!l.due && !DEAD_STAGES.includes(l.stage);
+  // A call time they picked is only due once it comes round (the reminder is
+  // set the moment they pick it).
+  const callLater = !!l.call_at && /they picked this time/i.test(l.next_label || "") && new Date(l.call_at).getTime() > Date.now();
+  const due = !!l.due && !callLater && !DEAD_STAGES.includes(l.stage);
   if (!due) {
     return (
       <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, fontSize: 13, color: "text.secondary" }}>
