@@ -17,7 +17,7 @@ export const CALL_QUESTION = "When suits you for a quick call?";
  *  are (leads from our own forms). From a Facebook instant form's end button
  *  we don't: they type their number once (byPhone) and request_call_time
  *  matches it to their lead, now or when it arrives. */
-export function ThankYouCallTime({ token, slug, byPhone, seller, preview, accent, agentName, question, onSaved }: { token: string; slug?: string; byPhone?: boolean; seller?: boolean; preview?: boolean; accent: string; agentName: string; question?: string | null; onSaved?: () => void }) {
+export function ThankYouCallTime({ token, slug, byPhone, seller, preview, accent, agentName, question, noWeekends, onSaved }: { token: string; slug?: string; byPhone?: boolean; seller?: boolean; preview?: boolean; accent: string; agentName: string; question?: string | null; noWeekends?: boolean; onSaved?: () => void }) {
   const agentFirst = (agentName || "").trim().split(/\s+/)[0] || "We";
   const [value, setValue] = useState("");
   const [phone, setPhone] = useState("");
@@ -97,6 +97,7 @@ export function ThankYouCallTime({ token, slug, byPhone, seller, preview, accent
         confirmText={CALL_TIME_CONFIRM.replaceAll("{agent}", agentFirst)}
         value={value}
         error={error}
+        noWeekends={noWeekends}
         onChange={(v) => { setError(""); setValue(v); }}
       />}
       {onNumberStep && (
