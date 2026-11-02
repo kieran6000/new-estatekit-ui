@@ -32,7 +32,7 @@ export interface ColumnPrefs {
   tint: boolean;
 }
 
-export const DEFAULT_PREFS: ColumnPrefs = { choice: "performance_clicks", custom: PRESETS.performance_clicks.cols, widths: {}, tint: true };
+export const DEFAULT_PREFS: ColumnPrefs = { choice: "performance_clicks", custom: PRESETS.performance_clicks.cols, widths: {}, tint: false };
 const KEY = "ek.adsTable.columns";
 
 export function loadPrefs(): ColumnPrefs {

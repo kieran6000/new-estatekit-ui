@@ -2,15 +2,23 @@ import { useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Avatar, Box, Button, ButtonBase, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, Divider, IconButton, ListItemIcon, ListItemText, Menu, MenuItem,
-  Paper, Popper, Radio, Skeleton, Switch, Table, TableBody, TableCell, TableHead, TableRow, TableSortLabel, Tooltip, Typography,
+  Paper, Popper, Radio, Skeleton, Switch, Table, TableBody, TableCell, TableHead, TableRow, Tooltip, Typography,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import ImageOutlinedIcon from "@mui/icons-material/ImageOutlined";
-import CampaignOutlinedIcon from "@mui/icons-material/CampaignOutlined";
-import LayersOutlinedIcon from "@mui/icons-material/LayersOutlined";
-import PhotoOutlinedIcon from "@mui/icons-material/PhotoOutlined";
-import ViewColumnOutlinedIcon from "@mui/icons-material/ViewColumnOutlined";
+import FolderIcon from "@mui/icons-material/Folder";
+import FolderOutlinedIcon from "@mui/icons-material/FolderOutlined";
+import GridViewOutlinedIcon from "@mui/icons-material/GridViewOutlined";
+import WebAssetOutlinedIcon from "@mui/icons-material/WebAssetOutlined";
+import ViewWeekOutlinedIcon from "@mui/icons-material/ViewWeekOutlined";
+import AddIcon from "@mui/icons-material/Add";
+import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
+import FileDownloadOutlinedIcon from "@mui/icons-material/FileDownloadOutlined";
+import SwapVertIcon from "@mui/icons-material/SwapVert";
+import InfoIcon from "@mui/icons-material/Info";
+import CheckIcon from "@mui/icons-material/Check";
+import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined";
 import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
 import TuneIcon from "@mui/icons-material/Tune";
 import FormatColorFillIcon from "@mui/icons-material/FormatColorFill";
@@ -33,15 +41,15 @@ import { useSnack } from "../hooks/useSnack";
 export interface AdsView { level: AdsLevel; campaignId: string | null; adsetId: string | null }
 
 // Ads Manager's colours.
-const FB = { text: "#1c2b33", sub: "#65676b", line: "#dddfe2", head: "#ffffff", zebra: "#f5f6f7", hover: "#e9eef6", link: "#0a66c2", blue: "#0866ff", tabOff: "#f0f2f5", selected: "#e7f0fe", pill: "#0866ff" };
+const FB = { text: "#1c2b33", sub: "#65676b", line: "#dadde1", head: "#ffffff", zebra: "#f5f6f7", hover: "#f2f4f7", link: "#1b74e4", blue: "#1b74e4", tabOff: "#f5f6f7", selected: "#ebf5ff", pill: "#1b74e4", btnLine: "#ced0d4", green: "#1a7f45" };
+// Ads Manager's own type (Segoe UI on Windows, SF on a Mac).
+const FB_FONT = '"Optimistic Text Normal", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
 const TONE_BG: Record<Tone, string | undefined> = { good: "#e6f4ea", near: "#fef7e0", bad: "#fce8e6", none: undefined };
 const LEVEL_WORD: Record<AdsLevel, { one: string; many: string; title: string }> = {
   campaign: { one: "campaign", many: "campaigns", title: "Campaign" },
   adset: { one: "ad set", many: "ad sets", title: "Ad set" },
   ad: { one: "ad", many: "ads", title: "Ad" },
 };
-const DEFAULT_W: Partial<Record<ColId | "name", number>> = { delivery: 150, budget: 160, ends: 110, cpm: 200, ctr: 200, cpc: 190 };
-const defaultWidth = (id: ColId | "name", level: AdsLevel) => (id === "name" ? (level === "ad" ? 380 : 320) : DEFAULT_W[id] ?? 130);
 
 // Ads Manager's "Delivery" words.
 const DELIVERY: Record<string, { label: string; color: string }> = {
@@ -55,21 +63,74 @@ const DELIVERY: Record<string, { label: string; color: string }> = {
   DISAPPROVED: { label: "Rejected", color: "#e41e3f" },
 };
 
-const FB_CHECK = {
-  p: 0.5, color: "#8d949e",
-  "& .MuiSvgIcon-root": { fontSize: 22 },
-  "&.Mui-checked": { color: "#0866ff" },
-  "&.Mui-disabled": { color: "#bcc0c4" },
-} as const;
+const FB_CHECK = { p: 0.5, "&:hover": { bgcolor: "transparent" }, "&.Mui-focusVisible .ek-box": { borderColor: "#1b74e4", boxShadow: "0 0 0 2px rgba(27,116,228,0.25)" } } as const;
+const boxSx = { width: 22, height: 22, borderRadius: "4px", border: "1px solid #ccd0d5", bgcolor: "#fff", display: "grid", placeItems: "center", boxSizing: "border-box" } as const;
+const CHECK_ICONS = {
+  icon: <Box className="ek-box" sx={boxSx} />,
+  checkedIcon: <Box className="ek-box" sx={boxSx}><CheckIcon sx={{ fontSize: 18, color: "#1b74e4" }} /></Box>,
+};
 const FB_SWITCH = {
-  width: 50, height: 28, p: 0.5,
-  "& .MuiSwitch-switchBase": { p: "6px", color: "#1c2b33", "&:hover": { bgcolor: "transparent" } },
-  "& .MuiSwitch-thumb": { width: 16, height: 16, boxShadow: "none" },
-  "& .MuiSwitch-track": { borderRadius: 10, bgcolor: "#fff", border: "1px solid #8d949e", opacity: 1, boxSizing: "border-box" },
-  "& .MuiSwitch-switchBase.Mui-checked": { color: "#0a78be", transform: "translateX(22px)" },
-  "& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track": { bgcolor: "#9fc6f0", borderColor: "#9fc6f0", opacity: 1 },
+  // Ads Manager: a 40×22 pill, an 18px knob nearly filling it.
+  width: 40, height: 22, p: 0, overflow: "visible", verticalAlign: "middle",
+  "& .MuiSwitch-switchBase": { p: "2px", color: "#1c2b33", "&:hover": { bgcolor: "transparent" }, "&.Mui-focusVisible .MuiSwitch-thumb": { boxShadow: "0 0 0 3px rgba(27,116,228,0.3)" } },
+  "& .MuiSwitch-thumb": { width: 18, height: 18, boxShadow: "none" },
+  "& .MuiSwitch-track": { borderRadius: 11, bgcolor: "#fff", border: "1px solid #bcc0c4", opacity: 1, boxSizing: "border-box" },
+  "& .MuiSwitch-switchBase.Mui-checked": { color: "#1b74e4", transform: "translateX(18px)" },
+  "& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track": { bgcolor: "#c4ddfa", borderColor: "#c4ddfa", opacity: 1 },
   "& .Mui-disabled + .MuiSwitch-track": { opacity: 0.5 },
 } as const;
+
+// Four solid squares (Material's filled grid is drawn as outlines).
+const GridFilledIcon = () => (
+  <Box sx={{ width: 22, height: 22, display: "grid", gridTemplateColumns: "8px 8px", gridAutoRows: "8px", gap: "2px", placeContent: "center" }}>
+    {[0, 1, 2, 3].map((i) => <Box key={i} sx={{ bgcolor: "currentColor", borderRadius: "2px" }} />)}
+  </Box>
+);
+const AdFilledIcon = () => (
+  <Box sx={{ width: 22, height: 22, display: "grid", placeItems: "center" }}>
+    <Box sx={{ width: 18, height: 16, borderRadius: "2px", bgcolor: "currentColor", position: "relative", "&::after": { content: '""', position: "absolute", left: 3, right: 3, top: 4, height: "1.5px", bgcolor: "#fff", opacity: 0.85 } }} />
+  </Box>
+);
+// A thin, quiet scrollbar with no arrows, darker while you use it.
+const THIN_SCROLL = {
+  "&::-webkit-scrollbar": { width: 10, height: 10 },
+  "&::-webkit-scrollbar-button": { display: "none" },
+  "&::-webkit-scrollbar-track": { bgcolor: "transparent" },
+  "&::-webkit-scrollbar-thumb": { bgcolor: "rgba(0,0,0,0.18)", borderRadius: 8, border: "3px solid transparent", backgroundClip: "padding-box" },
+  "&::-webkit-scrollbar-thumb:hover": { bgcolor: "rgba(0,0,0,0.35)" },
+  "&::-webkit-scrollbar-corner": { bgcolor: "transparent" },
+} as const;
+const LEFT_COLS = new Set<ColId>(["delivery", "ends"]);
+/** Ads Manager's shorter header names. */
+const SHORT_LABEL: Partial<Record<ColId, string>> = {
+  leads: "Results", cpl: "Cost per result", cpm: "CPM (cost per 1,000 impressions)", ctr: "CTR (link click-through rate)", cpc: "CPC (cost per link click)",
+};
+type SortKey = MetricKey | "name" | "status" | "delivery" | "budget" | "ends";
+
+// A column's normal width just fits its full name, on at most two lines as
+// in Ads Manager, plus the sort arrows and the ▾. Some columns need room for
+// what's in them ("Using ad set budget").
+const HEAD_EXTRA = 20 + 6 + 18 + 32 + 4;
+const CONTENT_MIN: Partial<Record<ColId, number>> = { delivery: 130, budget: 150, ends: 110 };
+let measureCtx: CanvasRenderingContext2D | null | undefined;
+function textWidth(t: string): number {
+  if (measureCtx === undefined) {
+    try { measureCtx = document.createElement("canvas").getContext("2d"); } catch { measureCtx = null; }
+    if (measureCtx) measureCtx.font = `600 14px ${FB_FONT}`;
+  }
+  return measureCtx ? measureCtx.measureText(t).width : t.length * 8;
+}
+function fitWidth(label: string): number {
+  const words = label.split(" ");
+  let best = textWidth(label);
+  for (let i = 1; i < words.length; i++) {
+    best = Math.min(best, Math.max(textWidth(words.slice(0, i).join(" ")), textWidth(words.slice(i).join(" "))));
+  }
+  return Math.ceil(best + HEAD_EXTRA);
+}
+const headLabel = (id: ColId) => SHORT_LABEL[id] ?? COLUMN_LABEL[id];
+const defaultWidth = (id: ColId | "name", level: AdsLevel) =>
+  id === "name" ? (level === "ad" ? 380 : 320) : Math.max(fitWidth(headLabel(id)), CONTENT_MIN[id] ?? 90);
 
 /** "Leads (Form)" -> "Per Lead (Form)", as under Cost per result. */
 const perResult = (t: string) => (t ? `Per ${t.replace(/^Leads/, "Lead").replace(/^Website leads$/, "Website lead")}` : "");
@@ -95,7 +156,8 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
 }) {
   const qc = useQueryClient();
   const showSnack = useSnack();
-  const [sort, setSort] = useState<{ k: MetricKey | "name"; dir: 1 | -1 }>({ k: "spend", dir: -1 });
+  const [sort, setSort] = useState<{ k: SortKey; dir: 1 | -1 }>({ k: "spend", dir: -1 });
+  const [headMenu, setHeadMenu] = useState<{ el: HTMLElement; col: ColId | "name"; key: SortKey } | null>(null);
   const [confirm, setConfirm] = useState<{ row: AdsRow; on: boolean } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ el: HTMLElement; row: AdsRow } | null>(null);
@@ -119,13 +181,22 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
   });
 
   const rows = (data?.rows ?? []).map((r) => ({ r, v: metricValues(r) }));
-  rows.sort((a, b) => (sort.k === "name" ? a.r.name.localeCompare(b.r.name) * sort.dir : ((a.v[sort.k] ?? -Infinity) - (b.v[sort.k] ?? -Infinity)) * sort.dir));
+  const sortVal = (x: { r: AdsRow; v: ReturnType<typeof metricValues> }): number | string => {
+    const k = sort.k;
+    if (k === "name") return x.r.name.toLowerCase();
+    if (k === "status") return x.r.status === "ACTIVE" ? 1 : 0;
+    if (k === "delivery") return DELIVERY[x.r.delivery]?.label ?? x.r.delivery;
+    if (k === "budget") return x.r.dailyBudget ?? x.r.lifetimeBudget ?? -Infinity;
+    if (k === "ends") return x.r.ends ? Date.parse(x.r.ends) : Infinity;
+    return x.v[k] ?? -Infinity;
+  };
+  rows.sort((a, b) => { const x = sortVal(a), y = sortVal(b); return (typeof x === "string" ? x.localeCompare(String(y)) : x - (y as number)) * sort.dir; });
   // Reach and frequency can't be added up (people repeat across rows); only
   // the account totals have them right.
   const totals = view.level === "campaign" && data?.account ? data.account : sumRows(rows.map((x) => x.r));
   const totalV = metricValues(totals);
   const word = LEVEL_WORD[view.level];
-  const onSort = (k: MetricKey | "name") => setSort((s) => (s.k === k ? { k, dir: (s.dir * -1) as 1 | -1 } : { k, dir: k === "name" ? 1 : -1 }));
+  const onSort = (k: SortKey) => setSort((s) => (s.k === k ? { k, dir: (s.dir * -1) as 1 | -1 } : { k, dir: k === "name" || k === "delivery" ? 1 : -1 }));
   const clickable = view.level !== "ad";
   const [adTicked, setAdTicked] = useState<string | null>(null);
   const selectedId = view.level === "campaign" ? view.campaignId : view.level === "adset" ? view.adsetId : adTicked;
@@ -164,19 +235,19 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
   const tabs: { level: AdsLevel; icon: (on: boolean) => ReactNode; label: string; selected: boolean; clear?: () => void }[] = [
     {
       level: "campaign",
-      icon: () => <CampaignOutlinedIcon sx={{ fontSize: 22 }} />,
+      icon: (on) => (on ? <FolderIcon sx={{ fontSize: 22 }} /> : <FolderOutlinedIcon sx={{ fontSize: 22 }} />),
       label: "Campaigns",
       selected: !!view.campaignId,
       clear: () => onView({ level: view.level, campaignId: null, adsetId: null }),
     },
     {
       level: "adset",
-      icon: () => <LayersOutlinedIcon sx={{ fontSize: 22 }} />,
-      label: view.campaignId ? "Ad sets for 1 Campaign" : "Ad sets",
+      icon: (on) => (on ? <GridFilledIcon /> : <GridViewOutlinedIcon sx={{ fontSize: 22 }} />),
+      label: !view.adsetId && view.campaignId ? "Ad sets for 1 Campaign" : "Ad sets",
       selected: !!view.adsetId,
       clear: () => onView({ level: view.level, campaignId: view.campaignId, adsetId: null }),
     },
-    { level: "ad", icon: () => <PhotoOutlinedIcon sx={{ fontSize: 22 }} />, label: view.adsetId ? "Ads for 1 Ad set" : view.campaignId ? "Ads for 1 Campaign" : "Ads", selected: false },
+    { level: "ad", icon: (on) => (on ? <AdFilledIcon /> : <WebAssetOutlinedIcon sx={{ fontSize: 22 }} />), label: view.adsetId ? "Ads for 1 Ad set" : view.campaignId ? "Ads for 1 Campaign" : "Ads", selected: false },
   ];
   // Moving between tabs keeps what's selected, as in Ads Manager.
   const pickTab = (l: AdsLevel) => onView({ level: l, campaignId: view.campaignId, adsetId: l === "campaign" ? view.adsetId : view.adsetId });
@@ -225,8 +296,61 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
   };
 
   const stickyLeft = (left: number, w: number) => ({ position: "sticky", left, zIndex: 1, minWidth: w, maxWidth: w, width: w } as const);
-  const headCell = { bgcolor: FB.head, color: FB.text, fontSize: 13, fontWeight: 600, py: 1, px: 1.25, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", borderRight: `1px solid ${FB.line}`, borderBottom: `1px solid ${FB.line}`, lineHeight: 1.25, verticalAlign: "middle", position: "relative" } as const;
+  const headCell = { bgcolor: FB.head, color: FB.text, fontFamily: FB_FONT, fontSize: 14, fontWeight: 600, py: 0.75, px: 1.25, height: 52, overflow: "hidden", borderRight: `1px solid ${FB.line}`, borderBottom: `1px solid ${FB.line}`, borderTop: `1px solid ${FB.line}`, lineHeight: 1.3, verticalAlign: "middle", position: "relative", textAlign: "left" } as const;
+  // A header as in Ads Manager: the name, ⇅ to sort (↓/↑ in blue when sorted), ▾ for the column's menu.
+  const head = (label: string, key: SortKey, col: ColId | "name" | null, tip?: string) => {
+    const active = sort.k === key;
+    return (
+      <Box sx={{ display: "flex", alignItems: "stretch", mx: -1.25, my: -0.75, height: 52, minWidth: 0, "&:hover": { bgcolor: "#f2f2f2" } }}>
+        <Tooltip title={tip ?? ""} disableHoverListener={!tip}>
+          <ButtonBase
+            disableRipple
+            onClick={() => onSort(key)}
+            aria-label={`Sort by ${label}`}
+            sx={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 0.75, minWidth: 0, px: 1.25, textAlign: "left", font: "inherit", color: active ? FB.link : "inherit", "&.Mui-focusVisible": { outline: `2px solid ${FB.blue}`, outlineOffset: -2 } }}
+          >
+            <Box component="span" sx={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{label}</Box>
+            {active
+              ? (sort.dir === -1 ? <ArrowDownwardIcon sx={{ fontSize: 17, flex: "none" }} /> : <ArrowUpwardIcon sx={{ fontSize: 17, flex: "none" }} />)
+              : <SwapVertIcon sx={{ fontSize: 18, flex: "none", color: FB.text }} />}
+          </ButtonBase>
+        </Tooltip>
+        {col && (
+          <IconButton size="small" aria-label={`${label} column options`} onClick={(e) => setHeadMenu({ el: e.currentTarget, col, key })} sx={{ alignSelf: "center", mx: 0.5, p: 0.25, color: FB.text, flex: "none", borderRadius: "4px", "&:hover": { bgcolor: "transparent" } }}>
+            <ArrowDropDownIcon sx={{ fontSize: 20 }} />
+          </IconButton>
+        )}
+      </Box>
+    );
+  };
   const nameW = width("name");
+  const actUrl = adAccountId ? adAccountId.replace(/^act_/, "") : "";
+  const fbBtn = {
+    textTransform: "none", letterSpacing: 0, fontFamily: FB_FONT, fontSize: 15, fontWeight: 500, color: FB.text, bgcolor: "#fff",
+    border: `1px solid ${FB.btnLine}`, borderRadius: "6px", height: 36, minHeight: 36, px: 1.5, whiteSpace: "nowrap",
+    "& .MuiButton-startIcon": { mr: 0.75 }, "& .MuiButton-endIcon": { ml: 0.5 },
+    "&:hover": { bgcolor: "#f2f2f2" }, "&.Mui-disabled": { color: "#bcc0c4", borderColor: "#e4e6eb" },
+  } as const;
+  // Ads Manager's Export: the table as it is, columns and all.
+  const exportCsv = () => {
+    const q = (x: string) => `"${x.replace(/"/g, '""')}"`;
+    const lines = [[word.title, "Off / On", ...colIds.map((c) => COLUMN_LABEL[c])].map(q).join(",")];
+    for (const { r, v } of rows) {
+      lines.push([r.name, r.status === "ACTIVE" ? "On" : "Off", ...colIds.map((c) => {
+        if (c === "delivery") return DELIVERY[r.delivery]?.label ?? r.delivery;
+        if (c === "budget") return r.dailyBudget ? `${r.dailyBudget} daily` : r.lifetimeBudget ? `${r.lifetimeBudget} lifetime` : "";
+        if (c === "ends") return r.ends ? fbDate(r.ends) : "Ongoing";
+        const n = v[c];
+        return n === null || n === undefined ? "" : String(Math.round(n * 100) / 100);
+      })].map((x) => q(String(x))).join(","));
+    }
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/csv" }));
+    a.download = `${word.many.replace(" ", "-")}-${since}-to-${until}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+  const hideColumn = (c: ColId) => setPrefs({ ...prefs, choice: "custom", custom: visibleColumns(prefs, "campaign").filter((x) => x !== c) });
 
   return (
     <Box sx={{ minWidth: 0 }}>
@@ -244,9 +368,9 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
               onClick={() => pickTab(t.level)}
               onKeyDown={(e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pickTab(t.level); } }}
               sx={{
-                flex: "0 1 300px", minWidth: 0, justifyContent: "flex-start", gap: 1.25, px: 2, height: on ? 48 : 44,
-                bgcolor: on ? "#fff" : FB.tabOff, color: on ? FB.link : FB.text, fontSize: 15, fontWeight: 600,
-                border: `1px solid ${FB.line}`, borderBottom: on ? "1px solid #fff" : `1px solid ${FB.line}`, borderRadius: "8px 8px 0 0",
+                flex: "0 1 288px", minWidth: 0, justifyContent: "flex-start", gap: 1.25, px: 2, height: 44,
+                bgcolor: on ? "#fff" : FB.tabOff, color: on ? FB.link : FB.text, fontSize: 16, fontWeight: 600, fontFamily: FB_FONT,
+                border: `1px solid ${FB.line}`, borderBottom: on ? "1px solid #fff" : `1px solid ${FB.line}`, borderRadius: "6px 6px 0 0",
                 mb: "-1px", position: "relative", zIndex: on ? 2 : 1,
                 "&:hover": { bgcolor: on ? "#fff" : "#e4e6eb" },
                 "&.Mui-focusVisible": { outline: `2px solid ${FB.blue}`, outlineOffset: -2 },
@@ -257,16 +381,16 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
               {t.selected && t.clear && (
                 <Box
                   component="span"
-                  sx={{ ml: "auto", flex: "none", display: "inline-flex", alignItems: "center", gap: 0.5, bgcolor: FB.pill, color: "#fff", borderRadius: "6px", pl: 1, pr: 0.25, height: 26, fontSize: 13, fontWeight: 600 }}
+                  sx={{ ml: "auto", flex: "none", display: "inline-flex", alignItems: "center", gap: 0.75, bgcolor: FB.pill, color: "#fff", borderRadius: "4px", pl: 1, pr: 0.5, height: 24, fontSize: 14, fontWeight: 500 }}
                 >
                   1 selected
                   <IconButton
                     size="small"
                     aria-label={`Clear the selected ${t.level === "campaign" ? "campaign" : "ad set"}`}
                     onClick={(e) => { e.stopPropagation(); t.clear!(); }}
-                    sx={{ color: "#fff", p: 0.25, "&:hover": { bgcolor: "rgba(255,255,255,0.18)" } }}
+                    sx={{ color: "#fff", p: 0, "&:hover": { bgcolor: "rgba(255,255,255,0.18)" } }}
                   >
-                    <CloseIcon sx={{ fontSize: 16 }} />
+                    <CloseIcon sx={{ fontSize: 18 }} />
                   </IconButton>
                 </Box>
               )}
@@ -277,23 +401,51 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
 
       <Box sx={{ bgcolor: "#fff", border: `1px solid ${FB.line}`, borderRadius: "0 8px 8px 8px", overflow: "hidden", position: "relative", zIndex: 1 }}>
         {/* Toolbar: the column chooser, as in Ads Manager. */}
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1, px: 1.5, py: 1, borderBottom: `1px solid ${FB.line}` }}>
-          <Typography sx={{ fontSize: 13, color: FB.sub, mr: "auto" }}>
-            {rows.length ? `${rows.length} ${rows.length === 1 ? word.one : word.many}` : ""}
-          </Typography>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1, px: 1.5, py: 1.25, flexWrap: "wrap" }}>
           <Button
-            variant="outlined"
+            component="a"
+            href={actUrl ? `https://adsmanager.facebook.com/adsmanager/manage/campaigns?act=${actUrl}&nav_source=no_referrer#` : undefined}
+            target="_blank"
+            rel="noopener"
+            startIcon={<AddIcon />}
+            sx={{ ...fbBtn, bgcolor: FB.green, borderColor: FB.green, color: "#fff", "&:hover": { bgcolor: "#166b3a", borderColor: "#166b3a" } }}
+          >
+            Create
+          </Button>
+          <Tooltip title={selectedId ? "Open the selected item in Ads Manager" : `Tick a ${word.one} to edit it`}>
+            <span>
+              <Button
+                component="a"
+                disabled={!selectedId || !actUrl}
+                href={selectedId && actUrl ? `https://adsmanager.facebook.com/adsmanager/manage/${view.level === "campaign" ? "campaigns" : view.level === "adset" ? "adsets" : "ads"}/edit?act=${actUrl}&selected_${view.level === "campaign" ? "campaign" : view.level === "adset" ? "adset" : "ad"}_ids=${selectedId}` : undefined}
+                target="_blank"
+                rel="noopener"
+                startIcon={<EditOutlinedIcon />}
+                sx={fbBtn}
+              >
+                Edit
+              </Button>
+            </span>
+          </Tooltip>
+          <Box sx={{ flex: 1 }} />
+          <Button
             onClick={(e) => setColMenu(e.currentTarget)}
-            startIcon={<ViewColumnOutlinedIcon />}
+            startIcon={<ViewWeekOutlinedIcon />}
             endIcon={<ArrowDropDownIcon />}
             aria-haspopup="menu"
-            color="inherit"
-            sx={{ textTransform: "none", letterSpacing: 0, fontWeight: 400, fontSize: 14, borderColor: "divider", minHeight: 40, whiteSpace: "nowrap" }}
+            sx={fbBtn}
           >
-            <b>Columns:</b>&nbsp;{choiceLabel(prefs)}
+            Columns
           </Button>
+          <Tooltip title="Export (CSV)">
+            <span>
+              <Button onClick={exportCsv} disabled={!rows.length} aria-label="Export as a spreadsheet" sx={{ ...fbBtn, minWidth: 44, px: 1.25 }}>
+                <FileDownloadOutlinedIcon sx={{ fontSize: 20 }} />
+              </Button>
+            </span>
+          </Tooltip>
           <Menu anchorEl={colMenu} open={!!colMenu} onClose={() => setColMenu(null)} anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }} slotProps={{ paper: { sx: { minWidth: 300 } } }}>
-            <Typography sx={{ px: 2, pt: 1, pb: 0.5, fontWeight: 700, fontSize: 15 }}>Columns</Typography>
+            <Typography sx={{ px: 2, pt: 1, pb: 0.5, fontWeight: 700, fontSize: 15 }}>Columns: {choiceLabel(prefs)}</Typography>
             <MenuItem onClick={() => { setColMenu(null); setCustomizing(visibleColumns(prefs, "campaign")); }}>
               <ListItemIcon><TuneIcon fontSize="small" /></ListItemIcon>
               <ListItemText>Customize columns</ListItemText>
@@ -337,8 +489,8 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
           <Typography sx={{ p: 2, fontSize: 14, color: FB.sub }}>No {word.many} ran in these dates.</Typography>
         ) : (
           <>
-            <Box sx={{ overflow: "auto", maxHeight: 640 }}>
-              <Table size="small" stickyHeader sx={{ tableLayout: "fixed", width: "max-content", borderCollapse: "separate", "& td": { borderBottom: 0, fontSize: 13.5, px: 1.25, py: 0.9, verticalAlign: "top", overflow: "hidden" } }}>
+            <Box sx={{ overflow: "auto", maxHeight: 640, ...THIN_SCROLL }}>
+              <Table size="small" stickyHeader sx={{ tableLayout: "fixed", width: "max-content", borderCollapse: "separate", "& td": { borderBottom: 0, fontFamily: FB_FONT, fontSize: 14, color: FB.text, px: 1.25, py: 1.25, lineHeight: 1.35, verticalAlign: "top", overflow: "hidden" } }}>
                 <TableHead>
                   <TableRow>
                     <TableCell padding="none" sx={{ ...headCell, ...stickyLeft(0, 48), zIndex: 3, textAlign: "center", px: "0 !important" }}>
@@ -347,27 +499,21 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
                         checked={!!selectedId && rows.some((x) => x.r.id === selectedId)}
                         onChange={clearSelect}
                         disabled={!selectedId}
-                        sx={FB_CHECK}
+                        sx={FB_CHECK} {...CHECK_ICONS}
                         slotProps={{ input: { "aria-label": "Clear selection" } }}
                       />
                     </TableCell>
-                    <TableCell sx={{ ...headCell, ...stickyLeft(48, 72), zIndex: 3 }}>Off / On</TableCell>
-                    <TableCell sx={{ ...headCell, ...stickyLeft(120, nameW), zIndex: 3 }}>
-                      <TableSortLabel active={sort.k === "name"} direction={sort.dir === 1 ? "asc" : "desc"} onClick={() => onSort("name")}>{word.title}</TableSortLabel>
+                    <TableCell sx={{ ...headCell, ...stickyLeft(48, 80), zIndex: 3 }}>{head("Off / On", "status", null)}</TableCell>
+                    <TableCell sx={{ ...headCell, ...stickyLeft(128, nameW), zIndex: 3 }}>
+                      {head(word.title, "name", "name")}
                       {resizer("name")}
                     </TableCell>
                     {colIds.map((id) => {
                       const m = metricOf(id);
                       const w = width(id);
                       return (
-                        <TableCell key={id} align={id === "delivery" ? "left" : "right"} sx={{ ...headCell, width: w, minWidth: w, maxWidth: w }}>
-                          {m ? (
-                            <Tooltip title={m.target ? `${m.label} · Target: ${m.target}` : m.label}>
-                              <TableSortLabel active={sort.k === m.key} direction={sort.dir === 1 ? "asc" : "desc"} onClick={() => onSort(m.key)} sx={{ maxWidth: "100%", "& > span": { overflow: "hidden", textOverflow: "ellipsis" } }}>
-                                {COLUMN_LABEL[id]}
-                              </TableSortLabel>
-                            </Tooltip>
-                          ) : COLUMN_LABEL[id]}
+                        <TableCell key={id} sx={{ ...headCell, width: w, minWidth: w, maxWidth: w }}>
+                          {head(headLabel(id), m ? m.key : id, id, m ? (m.target ? `${m.label} · Target: ${m.target}` : m.label) : undefined)}
                           {resizer(id)}
                         </TableCell>
                       );
@@ -390,23 +536,22 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
                           opacity: busy === r.id ? 0.5 : 1,
                           "& > td": { bgcolor: bg },
                           "&:hover > td": { bgcolor: sel ? FB.selected : FB.hover },
-                          "& > td:first-of-type": sel ? { boxShadow: `inset 3px 0 0 ${FB.blue}` } : {},
                           "&:focus-visible": { outline: `2px solid ${FB.blue}`, outlineOffset: -2 },
                           "&:hover .ek-name": { textDecoration: "underline" },
                           "&:hover .ek-ext": { opacity: 1 },
                         }}
                       >
-                        <TableCell padding="none" sx={{ ...stickyLeft(0, 48), textAlign: "center", px: "0 !important" }}>
+                        <TableCell padding="none" sx={{ ...stickyLeft(0, 48), textAlign: "center", px: "0 !important", pt: "6px !important" }}>
                           <Checkbox
                             size="small"
                             checked={sel}
                             onClick={(e) => e.stopPropagation()}
                             onChange={() => toggleSelect(r)}
-                            sx={FB_CHECK}
+                            sx={FB_CHECK} {...CHECK_ICONS}
                             slotProps={{ input: { "aria-label": `Select ${r.name}` } }}
                           />
                         </TableCell>
-                        <TableCell sx={{ ...stickyLeft(48, 72), py: "6px !important" }}>
+                        <TableCell sx={{ ...stickyLeft(48, 80), py: "8px !important", textAlign: "center" }}>
                           <Tooltip title={r.status === "ACTIVE" ? `Turn this ${word.one} off` : `Turn this ${word.one} on`}>
                             <Switch
                               checked={r.status === "ACTIVE"}
@@ -418,7 +563,7 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
                             />
                           </Tooltip>
                         </TableCell>
-                        <TableCell sx={{ ...stickyLeft(120, nameW), borderRight: `1px solid ${FB.line}` }}>
+                        <TableCell sx={{ ...stickyLeft(128, nameW), borderRight: `1px solid ${FB.line}` }}>
                           <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1, minWidth: 0 }}>
                             {view.level === "ad" && (
                               <Box
@@ -430,7 +575,7 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
                               </Box>
                             )}
                             <Tooltip title={r.created ? `${r.name} · Created ${fbDate(r.created)}` : r.name} placement="top-start">
-                              <Box className="ek-name" sx={{ flex: 1, minWidth: 0, color: clickable ? FB.link : FB.text, fontWeight: sel ? 600 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", pt: view.level === "ad" ? 0.75 : 0 }}>{r.name}</Box>
+                              <Box className="ek-name" sx={{ flex: 1, minWidth: 0, color: clickable ? FB.link : FB.text, fontWeight: 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", pt: view.level === "ad" ? 0.75 : 0 }}>{r.name}</Box>
                             </Tooltip>
                             {!clickable && (
                               <Tooltip title="Open in Ads Manager">
@@ -454,7 +599,7 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
                           const m = metricOf(id);
                           const tone = m && prefs.tint && !sel ? TONE_BG[toneOf(m, v[m.key], r)] : undefined;
                           return (
-                            <TableCell key={id} align={id === "delivery" ? "left" : "right"} sx={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", textOverflow: "ellipsis", ...(tone ? { bgcolor: `${tone} !important` } : {}) }}>
+                            <TableCell key={id} align={LEFT_COLS.has(id) ? "left" : "right"} sx={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", textOverflow: "ellipsis", ...(tone ? { bgcolor: `${tone} !important` } : {}) }}>
                               {cell(id, r, v)}
                             </TableCell>
                           );
@@ -462,16 +607,19 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
                       </TableRow>
                     );
                   })}
-                  <TableRow sx={{ position: "sticky", bottom: 0, zIndex: 2, "& > td": { bgcolor: "#fff", borderTop: `1px solid ${FB.line}`, fontWeight: 600, whiteSpace: "nowrap" } }}>
+                  <TableRow sx={{ position: "sticky", bottom: 0, zIndex: 2, "& > td": { bgcolor: "#fff", borderTop: `1px solid ${FB.line}`, fontWeight: 400, whiteSpace: "nowrap" } }}>
                     <TableCell sx={{ ...stickyLeft(0, 48) }} />
-                    <TableCell sx={{ ...stickyLeft(48, 72) }} />
-                    <TableCell sx={{ ...stickyLeft(120, nameW), borderRight: `1px solid ${FB.line}` }}>
-                      <Num v={`Results from ${rows.length} ${rows.length === 1 ? word.one : word.many}`} sub="Excludes deleted items" />
+                    <TableCell sx={{ ...stickyLeft(48, 80) }} />
+                    <TableCell sx={{ ...stickyLeft(128, nameW), borderRight: `1px solid ${FB.line}` }}>
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                        Results from {rows.length} {rows.length === 1 ? word.one : word.many}
+                        <Tooltip title="Excludes deleted items"><InfoIcon sx={{ fontSize: 15, color: FB.text }} /></Tooltip>
+                      </Box>
                     </TableCell>
                     {colIds.map((id) => {
                       const m = metricOf(id);
                       return (
-                        <TableCell key={id} align={id === "delivery" ? "left" : "right"} sx={{ fontVariantNumeric: "tabular-nums" }}>
+                        <TableCell key={id} align={LEFT_COLS.has(id) ? "left" : "right"} sx={{ fontVariantNumeric: "tabular-nums" }}>
                           {m ? <Num v={formatMetric(m.key, totalV[m.key])} sub={m.key === "spend" ? "Total spent" : m.key === "leads" ? "Total" : m.key === "cpl" ? "Per result" : m.key === "reach" && totalV.reach !== null ? "Accounts Center accounts" : undefined} /> : null}
                         </TableCell>
                       );
@@ -494,6 +642,25 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
           </>
         )}
       </Box>
+
+      <Menu anchorEl={headMenu?.el} open={!!headMenu} onClose={() => setHeadMenu(null)}>
+        <MenuItem onClick={() => { if (headMenu) setSort({ k: headMenu.key, dir: 1 }); setHeadMenu(null); }}>
+          <ListItemIcon><ArrowUpwardIcon fontSize="small" /></ListItemIcon><ListItemText>Sort ascending</ListItemText>
+        </MenuItem>
+        <MenuItem onClick={() => { if (headMenu) setSort({ k: headMenu.key, dir: -1 }); setHeadMenu(null); }}>
+          <ListItemIcon><ArrowDownwardIcon fontSize="small" /></ListItemIcon><ListItemText>Sort descending</ListItemText>
+        </MenuItem>
+        {headMenu && headMenu.col !== "name" && (
+          <MenuItem onClick={() => { hideColumn(headMenu.col as ColId); setHeadMenu(null); }}>
+            <ListItemIcon><VisibilityOffOutlinedIcon fontSize="small" /></ListItemIcon><ListItemText>Hide column</ListItemText>
+          </MenuItem>
+        )}
+        {headMenu && (
+          <MenuItem onClick={() => { const w = { ...prefs.widths }; delete w[headMenu.col]; setPrefs({ ...prefs, widths: w }); setHeadMenu(null); }}>
+            <ListItemIcon><RestartAltIcon fontSize="small" /></ListItemIcon><ListItemText>Reset column width</ListItemText>
+          </MenuItem>
+        )}
+      </Menu>
 
       {/* The ad as it shows on Facebook. */}
       <Popper open={!!preview} anchorEl={preview?.el} placement="right-start" sx={{ zIndex: 1500, pointerEvents: "none" }} modifiers={[{ name: "offset", options: { offset: [0, 12] } }, { name: "preventOverflow", options: { padding: 12 } }]}>
