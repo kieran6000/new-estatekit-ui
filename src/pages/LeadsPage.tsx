@@ -1479,27 +1479,36 @@ function MobileLeadsList({
   );
 }
 
-/** What to do next with a lead. Due now: an orange "Due" label, so it says
- *  what it means (the row itself stays white). Later: plain grey. */
+/** What to do next with a lead, in three plain levels (the row stays white):
+ *    Late    should have happened on an earlier day: a red "Late" label.
+ *    Today   orange text, no label (most of the list on a busy day, so a
+ *            label there would mean nothing).
+ *    Later   grey. */
 function NextStep({ l }: { l: LeadRow }) {
-  // A call time they picked is only due once it comes round (the reminder is
-  // set the moment they pick it).
-  const callLater = !!l.call_at && /they picked this time/i.test(l.next_label || "") && new Date(l.call_at).getTime() > Date.now();
-  const due = !!l.due && !callLater && !DEAD_STAGES.includes(l.stage);
-  if (!due) {
+  // A call time they picked counts from that time, not from when they picked
+  // it (the reminder is set the moment they pick).
+  const picked = !!l.call_at && /they picked this time/i.test(l.next_label || "");
+  const untouched = l.stage === "New Lead" && (!l.next_label || l.next_label === "Just came in" || l.next_label === "—");
+  const whenIso = picked ? l.call_at : untouched ? l.created_at : l.reminder_at;
+  const when = whenIso ? new Date(whenIso).getTime() : NaN;
+  const live = !DEAD_STAGES.includes(l.stage);
+  const dueNow = live && !!l.due && !(picked && when > Date.now());
+  const startOfToday = new Date().setHours(0, 0, 0, 0);
+  const late = dueNow && Number.isFinite(when) && when < startOfToday;
+  if (late) {
     return (
-      <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, fontSize: 13, color: "text.secondary" }}>
-        {l.reminder_at && <AccessTimeIcon sx={{ fontSize: 14 }} />}
-        {nextStepLabel(l)}
-      </Box>
+      <Tooltip title={`Late: this was for ${new Date(when).toLocaleDateString("en-ZA", { weekday: "long", day: "numeric", month: "long" })}. Call them first.`}>
+        <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, fontSize: 13, color: "#b42318" }}>
+          <Box component="span" sx={{ fontSize: 11.5, fontWeight: 700, letterSpacing: 0.3, textTransform: "uppercase", px: 0.75, py: "1px", borderRadius: "4px", bgcolor: "#d92d20", color: "#fff", flex: "none" }}>Late</Box>
+          <Box component="span" sx={{ fontWeight: 600 }}>{nextStepLabel(l)}</Box>
+        </Box>
+      </Tooltip>
     );
   }
   return (
-    <Tooltip title="Due now: call them today.">
-      <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, fontSize: 13, color: tokens.orange }}>
-        <Box component="span" sx={{ fontSize: 11.5, fontWeight: 700, letterSpacing: 0.3, textTransform: "uppercase", px: 0.75, py: "1px", borderRadius: "4px", bgcolor: tokens.orange, color: "#fff", flex: "none" }}>Due</Box>
-        <Box component="span" sx={{ fontWeight: 600 }}>{nextStepLabel(l)}</Box>
-      </Box>
-    </Tooltip>
+    <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, fontSize: 13, color: dueNow ? tokens.orange : "text.secondary", fontWeight: dueNow ? 600 : 400 }}>
+      {(l.reminder_at || dueNow) && <AccessTimeIcon sx={{ fontSize: 14 }} />}
+      {nextStepLabel(l)}
+    </Box>
   );
 }
