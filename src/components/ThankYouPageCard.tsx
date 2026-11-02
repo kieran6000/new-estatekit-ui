@@ -20,20 +20,21 @@ export default function ThankYouPageCard({ page, canSetUp }: { page: LeadPage; c
   // The form already asks for a call time: asking again after it is noise.
   const formAsks = questions.some((q) => q.type === "call_time");
 
-  const saved = { video: page.thankYouVideoUrl ?? "", askCall: page.thankYouAskCall === true, question: page.thankYouCallQuestion?.trim() || CALL_QUESTION };
+  const saved = { video: page.thankYouVideoUrl ?? "", askCall: page.thankYouAskCall === true, question: page.thankYouCallQuestion?.trim() || CALL_QUESTION, weekendOff: page.thankYouWeekendOff === true };
   const [video, setVideo] = useState(saved.video);
   const [askCall, setAskCall] = useState(saved.askCall);
   const [question, setQuestion] = useState(saved.question);
+  const [weekendOff, setWeekendOff] = useState(saved.weekendOff);
 
   const url = video.trim();
   const playable = !url || canPlayVideo(url);
   const q = question.trim() || CALL_QUESTION;
   // Blank or the standard wording is stored as "not set", so a later change to the standard reaches it.
   useAutosave(
-    { video: url, askCall, question: q },
+    { video: url, askCall, question: q, weekendOff },
     saved,
     async (v) => {
-      await updateLeadPage(page.id, { thankYouVideoUrl: v.video || null, thankYouAskCall: v.askCall, thankYouCallQuestion: v.question === CALL_QUESTION ? null : v.question });
+      await updateLeadPage(page.id, { thankYouVideoUrl: v.video || null, thankYouAskCall: v.askCall, thankYouCallQuestion: v.question === CALL_QUESTION ? null : v.question, thankYouWeekendOff: v.weekendOff });
       await Promise.all([qc.invalidateQueries({ queryKey: ["leadPages"] }), qc.invalidateQueries({ queryKey: ["publicPageSlug"] })]);
     },
     { ready: canSetUp && playable },
@@ -91,6 +92,17 @@ export default function ThankYouPageCard({ page, canSetUp }: { page: LeadPage; c
           sx={{ mt: -0.5 }}
         />
       )}
+
+      {/* Weekends */}
+      <Box sx={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 2 }}>
+        <Box>
+          <Typography sx={{ fontSize: 14, fontWeight: 600 }}>Weekend leads wait until Monday</Typography>
+          <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
+            On Saturdays and Sundays this page says you're out on viewings and they'll get a call from Monday. People can't pick a weekend for their call on any day.
+          </Typography>
+        </Box>
+        <Switch checked={weekendOff} disabled={!canSetUp} onChange={(e) => setWeekendOff(e.target.checked)} />
+      </Box>
 
     </Box>
   );

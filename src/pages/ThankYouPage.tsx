@@ -22,6 +22,7 @@ import { resolveMagnet, type Magnet } from "../lib/leadMagnet";
 import type { LeadPage } from "../types";
 import { getPagePlan } from "../api/pagePlan";
 import { ThankYouCallTime } from "../components/ThankYouExtras";
+import { isWeekendSA } from "../components/CallTimeStep";
 import VideoPlayer, { canPlayVideo, type EndCta, type VideoProgress } from "../components/VideoPlayer";
 import { supabase } from "../api/_client";
 
@@ -134,9 +135,9 @@ export default function ThankYouPage() {
         <Box sx={{ width: "100%", maxWidth: 480, mt: video ? 2.5 : 7 }}>
           <Box sx={{ border: "1px solid #e0e0e0", borderRadius: "8px", bgcolor: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,.08)" }}>
             <Box sx={{ p: "40px 24px", minHeight: 260, display: "flex", flexDirection: "column" }}>
-              <BrandedThankYou page={page} name={name} video={video} endCta={endCta} onVideoEnd={showNext} onVideoProgress={onVideoProgress} showWhatsApp={!gift && !askCall && !video} />
+              <BrandedThankYou page={page} name={name} video={video} endCta={endCta} onVideoEnd={showNext} onVideoProgress={onVideoProgress} showWhatsApp={!gift && !askCall && !video} weekendNote={page.thankYouWeekendOff === true && (preview || isWeekendSA())} />
               <Box ref={nextRef}>
-                {askCall && <ThankYouCallTime token={planToken ?? ""} slug={page.slug} byPhone={byPhone} seller={pagePlan?.pipeline_kind === "seller"} preview={preview} accent={page.accentColor} agentName={page.agentName} question={page.thankYouCallQuestion} onSaved={() => setTimePicked(true)} />}
+                {askCall && <ThankYouCallTime token={planToken ?? ""} slug={page.slug} byPhone={byPhone} seller={pagePlan?.pipeline_kind === "seller"} preview={preview} accent={page.accentColor} agentName={page.agentName} question={page.thankYouCallQuestion} noWeekends={page.thankYouWeekendOff} onSaved={() => setTimePicked(true)} />}
                 {gift && giftUrl && <Box ref={magnetRef}><MagnetCta page={page} magnet={gift} href={giftUrl} personal={!!planToken} compact={askCall && !timePicked} attract={timePicked || !askCall} still={!!video} /></Box>}
               </Box>
             </Box>
@@ -248,7 +249,7 @@ const WA_GREEN = "#25D366";
 
 /** With a video: photo, headline, then the video straight under it (no
  *  subtext, label or divider), so nothing stands between them and Play. */
-function BrandedThankYou({ page, name, video, endCta, onVideoEnd, onVideoProgress, showWhatsApp }: { page: LeadPage; name: string; video: string | null; endCta?: EndCta; onVideoEnd: () => void; onVideoProgress: (p: VideoProgress) => void; showWhatsApp: boolean }) {
+function BrandedThankYou({ page, name, video, endCta, onVideoEnd, onVideoProgress, showWhatsApp, weekendNote }: { page: LeadPage; name: string; video: string | null; endCta?: EndCta; onVideoEnd: () => void; onVideoProgress: (p: VideoProgress) => void; showWhatsApp: boolean; weekendNote?: boolean }) {
   const hasPhoto = !!page.profilePhotoDataUrl;
   const size = hasPhoto ? 76 : 96;
   return (
@@ -320,6 +321,11 @@ function BrandedThankYou({ page, name, video, endCta, onVideoEnd, onVideoProgres
         </Box>
       ) : (
         <Typography sx={{ fontSize: 14, color: "text.secondary", mt: 1 }}>{fillNamed(page.thankYouSubtext, name, page.agentName)}</Typography>
+      )}
+      {weekendNote && (
+        <Typography sx={{ fontSize: 14, fontWeight: 600, mt: 1.5 }}>
+          {(page.agentName || "").trim().split(/\s+/)[0] || "Our team"} is out on viewings this weekend. You'll get a call from Monday.
+        </Typography>
       )}
 
       {showWhatsApp && (() => {

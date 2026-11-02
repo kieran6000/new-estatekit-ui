@@ -18,12 +18,20 @@ const LAST_HOUR = 18;
 const dateText = (d: Date) => d.toLocaleDateString("en-ZA", { weekday: "short", day: "numeric", month: "short" }).replace(/,/g, "");
 const hh = (h: number) => `${String(h).padStart(2, "0")}:00`;
 
-/** The next 7 days; today only while there's still a time left today. */
-function days(now = new Date()) {
+/** Saturday or Sunday in South Africa, wherever the visitor's phone thinks it is. */
+export function isWeekendSA(now = new Date()): boolean {
+  const day = now.toLocaleDateString("en-ZA", { weekday: "short", timeZone: "Africa/Johannesburg" });
+  return day === "Sat" || day === "Sun";
+}
+
+/** The next 7 days, without Saturday and Sunday if asked; today only while
+ *  there's still a time left today. */
+export function days(now = new Date(), noWeekends = false) {
   const out: { value: string; label: string; today: boolean }[] = [];
   for (let i = 0; i < 7; i++) {
     const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
     if (i === 0 && now.getHours() + 1 > LAST_HOUR) continue;
+    if (noWeekends && (d.getDay() === 0 || d.getDay() === 6)) continue;
     const text = dateText(d);
     out.push({ value: text, label: i === 0 ? `Today (${text})` : i === 1 ? `Tomorrow (${text})` : text, today: i === 0 });
   }
@@ -51,6 +59,7 @@ export default function CallTimeStep({
   confirmText,
   value,
   error,
+  noWeekends,
   onChange,
 }: {
   question: string;
@@ -59,9 +68,11 @@ export default function CallTimeStep({
   confirmText: string;
   value: string;
   error?: string;
+  /** Don't offer Saturday or Sunday. */
+  noWeekends?: boolean;
   onChange: (v: string) => void;
 }) {
-  const dayList = days();
+  const dayList = days(new Date(), noWeekends);
   const [day = "", time = ""] = value ? value.split(AROUND) : [];
   const pickedDay = dayList.find((d) => d.value === day);
   const hourList = hours(!!pickedDay?.today);

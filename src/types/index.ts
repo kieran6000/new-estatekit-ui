@@ -243,6 +243,9 @@ export interface LeadPage {
   thankYouAskCall?: boolean;
   /** Its wording; blank = "When suits you for a quick call?". */
   thankYouCallQuestion?: string | null;
+  /** Only gets to weekend leads on Monday: the thank-you page says so on
+   *  weekends, and weekends can't be picked for a call. */
+  thankYouWeekendOff?: boolean;
 }
 
 export type FormPresetKey = "most_leads" | "balanced" | "best_quality";

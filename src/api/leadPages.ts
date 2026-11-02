@@ -40,6 +40,7 @@ interface LeadPageRow {
   thank_you_video_url?: string | null;
   thank_you_ask_call?: boolean | null;
   thank_you_call_question?: string | null;
+  thank_you_weekend_off?: boolean | null;
 }
 
 function rowToPage(r: LeadPageRow): LeadPage {
@@ -78,6 +79,7 @@ function rowToPage(r: LeadPageRow): LeadPage {
     thankYouVideoUrl: r.thank_you_video_url ?? null,
     thankYouAskCall: r.thank_you_ask_call === true,
     thankYouCallQuestion: r.thank_you_call_question ?? null,
+    thankYouWeekendOff: r.thank_you_weekend_off === true,
     magnetTitle: r.magnet_title ?? "",
     magnetText: r.magnet_text ?? "",
     magnetButton: r.magnet_button ?? "",
@@ -127,6 +129,7 @@ function patchToRow(
   if (p.thankYouVideoUrl !== undefined) m.thank_you_video_url = p.thankYouVideoUrl;
   if (p.thankYouAskCall !== undefined) m.thank_you_ask_call = p.thankYouAskCall;
   if (p.thankYouCallQuestion !== undefined) m.thank_you_call_question = p.thankYouCallQuestion;
+  if (p.thankYouWeekendOff !== undefined) m.thank_you_weekend_off = p.thankYouWeekendOff;
   return m;
 }
 

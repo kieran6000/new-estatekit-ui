@@ -276,6 +276,7 @@ export default function LeadCaptureForm({
                   error={errors.question}
                   accent={page.accentColor}
                   agentFirst={(page.agentName || "").trim().split(/\s+/)[0] || "We"}
+                  noWeekends={page.thankYouWeekendOff}
                   onChange={(v) => { setErrors({}); setAnswers((a) => ({ ...a, [step.question.id]: v })); }}
                   onPickChoice={(v) => pickChoice(step.question.id, v)}
                 />
@@ -538,6 +539,7 @@ function QuestionStep({
   error,
   accent,
   agentFirst,
+  noWeekends,
   onChange,
   onPickChoice,
 }: {
@@ -547,6 +549,7 @@ function QuestionStep({
   accent: string;
   /** For the call-time confirmation line. */
   agentFirst: string;
+  noWeekends?: boolean;
   onChange: (v: string) => void;
   onPickChoice: (v: string) => void;
 }) {
@@ -559,6 +562,7 @@ function QuestionStep({
         confirmText={(question.helperText || CALL_TIME_CONFIRM).replaceAll("{agent}", agentFirst)}
         value={value}
         error={error}
+        noWeekends={noWeekends}
         onChange={onChange}
       />
     );
