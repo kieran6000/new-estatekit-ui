@@ -12,6 +12,7 @@ import { useLeads } from "../hooks/useLeads";
 import { useCanSeeFullPhone } from "../hooks/useTier";
 import { maskPhone } from "../lib/format";
 import { logLeadCall } from "../api/leadEvents";
+import LeadDetailPage from "./LeadDetailPage";
 import { calendarItems, DURATION, layoutDay, overdue, weekStart, type CalItem, type CalKind } from "../lib/calendar";
 
 // Calendar, laid out like Google Calendar (what agents already know): days
@@ -118,10 +119,26 @@ export default function CalendarPage() {
     const t = setTimeout(() => setFlash(undefined), 2400);
     return () => clearTimeout(t);
   }, [flash]);
-  const openLead = (id: string) => {
+  // A lead opens in the side panel (?lead=…), as on Leads. Each opening is a
+  // history step, so the phone's Back button closes it. ↑ ↓ step through what
+  // they opened it from: the days on screen in time order, or the overdue list.
+  const panelLead = params.get("lead");
+  const [panelFrom, setPanelFrom] = useState<"cal" | "late">("cal");
+  const openLead = (id: string, from: "cal" | "late" = "cal") => {
     writeMemo({ key: dayKey, top: body.current?.scrollTop ?? 0, lead: id });
-    navigate(`/leads/${id}`);
+    setPanelFrom(from);
+    setOpen(null);
+    setParams((cur) => { const n = new URLSearchParams(cur); n.set("lead", id); return n; });
   };
+  const panelIds = Array.from(new Set((panelFrom === "late" ? late : [...shownItems].sort((a, b) => +a.at - +b.at)).map((it) => it.lead.id)));
+  const panelPos = (() => { if (!panelLead) return null; const i = panelIds.indexOf(panelLead); return i < 0 ? null : { i, n: panelIds.length }; })();
+  const stepLead = (d: 1 | -1) => {
+    const next = panelIds[panelIds.indexOf(panelLead ?? "") + d];
+    if (!next) return;
+    setParam("lead", next);
+    document.querySelector(`[data-cal-lead="${next}"]`)?.scrollIntoView({ block: "nearest" });
+  };
+  const closeLead = () => { if ((window.history.state?.idx ?? 0) > 0) navigate(-1); else setParam("lead", null); };
 
   // Swipe left / right = next / previous, like the Google Calendar app: on
   // the hours by `step` (a day on phones), on the row of dates by a week.
@@ -239,13 +256,14 @@ export default function CalendarPage() {
                         key={`${p.it.lead.id}-${p.it.kind}`}
                         component="button"
                         type="button"
+                        data-cal-lead={p.it.lead.id}
                         onClick={(e: React.MouseEvent<HTMLElement>) => setOpen({ el: e.currentTarget, it: p.it })}
                         sx={{
                           position: "absolute", top: (p.start / 60) * HOUR + 1, height, zIndex: 1,
                           left: `calc(${(p.lane / p.lanes) * 100}% + 2px)`, width: `calc(${100 / p.lanes}% - 6px)`,
                           bgcolor: k.color, color: "#fff", border: 0, borderRadius: "6px", px: 0.75, py: roomy ? 0.5 : 0.15,
                           textAlign: "left", font: "inherit", fontSize: phone ? 13.5 : 12, lineHeight: 1.25, overflow: "hidden", cursor: "pointer",
-                          boxShadow: flash === p.it.lead.id ? `0 0 0 2px #fff, 0 0 0 5px ${k.color}` : "0 0 0 1px rgba(255,255,255,.35)",
+                          boxShadow: flash === p.it.lead.id || panelLead === p.it.lead.id ? `0 0 0 2px #fff, 0 0 0 5px ${k.color}` : "0 0 0 1px rgba(255,255,255,.35)",
                           transition: "box-shadow .6s ease", "&:hover": { filter: "brightness(1.08)" },
                         }}
                       >
@@ -295,8 +313,8 @@ export default function CalendarPage() {
           <IconButton aria-label="Close" onClick={() => setShowLate(false)} sx={{ width: 48, height: 48, mr: -1 }}><CloseIcon /></IconButton>
         </Box>
         {late.map((it) => (
-          <Box key={`${it.lead.id}-${it.kind}`} sx={{ display: "flex", alignItems: "center", gap: 1, py: 1, px: 1, mx: -1, borderRadius: "8px", transition: "background-color .6s ease", bgcolor: flash === it.lead.id ? tokens.divider2 : "transparent", "& + &": { borderTop: `1px solid ${tokens.divider2}` } }}>
-            <Box component="button" type="button" onClick={() => openLead(it.lead.id)}
+          <Box key={`${it.lead.id}-${it.kind}`} sx={{ display: "flex", alignItems: "center", gap: 1, py: 1, px: 1, mx: -1, borderRadius: "8px", transition: "background-color .6s ease", bgcolor: flash === it.lead.id || panelLead === it.lead.id ? tokens.divider2 : "transparent", "& + &": { borderTop: `1px solid ${tokens.divider2}` } }}>
+            <Box component="button" type="button" data-cal-lead={it.lead.id} onClick={() => openLead(it.lead.id, "late")}
               sx={{ flex: 1, minWidth: 0, minHeight: 48, textAlign: "left", font: "inherit", bgcolor: "transparent", border: 0, p: 0, cursor: "pointer" }}>
               <Typography sx={{ fontSize: 16, fontWeight: 500, color: tokens.primaryDark }}>{it.lead.name}</Typography>
               <Typography sx={{ fontSize: 13.5, color: "text.secondary" }}>
@@ -307,6 +325,22 @@ export default function CalendarPage() {
           </Box>
         ))}
       </Sheet>
+
+      <Drawer
+        anchor="right"
+        open={!!panelLead}
+        onClose={closeLead}
+        slotProps={{ paper: { sx: { width: { xs: "100%", sm: 480 }, bgcolor: "background.default" } } }}
+      >
+        {panelLead && (
+          <LeadDetailPage
+            key={panelLead}
+            leadId={panelLead}
+            onClose={closeLead}
+            nav={panelPos ? { label: `${panelPos.i + 1} of ${panelPos.n}`, prev: panelPos.i > 0 ? () => stepLead(-1) : undefined, next: panelPos.i < panelPos.n - 1 ? () => stepLead(1) : undefined } : undefined}
+          />
+        )}
+      </Drawer>
     </Box>
   );
 }
