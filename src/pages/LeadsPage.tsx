@@ -638,7 +638,7 @@ export default function LeadsPage() {
       {/* One-at-a-time call mode. Shown only when there's actually something to
           call, so the list isn't cluttered on a quiet day. This is the whole
           "don't make me think" path: tap once, work the list top to bottom. */}
-      {!selectMode && !showArchived && !showGlobalSearch && callList.length > 0 && (
+      {/* Hidden for now (Nov 2026): the list itself is the way in. */ false && !selectMode && !showArchived && !showGlobalSearch && callList.length > 0 && (
         <Box
           sx={{
             display: "flex", alignItems: "center", gap: 1.5,
