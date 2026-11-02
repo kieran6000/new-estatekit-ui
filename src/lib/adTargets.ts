@@ -15,6 +15,8 @@ export interface MetricDef {
   key: MetricKey;
   /** Facebook's name for it. */
   label: string;
+  /** What it means, in plain words (the column's tooltip). */
+  help: string;
   /** The target as shown under the column name. */
   target?: string;
   /** target and direction: up = higher is better. */
@@ -23,21 +25,21 @@ export interface MetricDef {
 
 // In Ads Manager's order (its "Performance" columns).
 export const METRICS: MetricDef[] = [
-  { key: "leads", label: "Results" },
-  { key: "reach", label: "Reach" },
-  { key: "freq", label: "Frequency", target: "under 2.5", rule: { value: 2.5, up: false } },
-  { key: "cpl", label: "Cost per result", target: "under R60", rule: { value: 60, up: false } },
-  { key: "spend", label: "Amount spent" },
-  { key: "impressions", label: "Impressions" },
-  { key: "cpm", label: "CPM (cost per 1,000 impressions)", target: "R40 – R80", rule: { value: 80, up: false } },
-  { key: "clicks", label: "Link clicks" },
-  { key: "cpc", label: "CPC (cost per link click)" },
-  { key: "ctr", label: "CTR (link click-through rate)", target: "1.5%+", rule: { value: 1.5, up: true } },
-  { key: "lpv", label: "Landing page views" },
-  { key: "booked", label: "Booked (EstateKit)" },
-  { key: "cpb", label: "Cost per booking (EstateKit)" },
-  { key: "mandates", label: "Mandates (EstateKit)" },
-  { key: "cpmand", label: "Cost per mandate (EstateKit)" },
+  { key: "leads", label: "Results", help: "How many people filled in the form from these ads. Each one is a lead." },
+  { key: "reach", label: "Reach", help: "How many different people saw these ads at least once." },
+  { key: "freq", label: "Frequency", help: "On average, how many times each person saw these ads. Amount seen ÷ people reached.", target: "under 2.5", rule: { value: 2.5, up: false } },
+  { key: "cpl", label: "Cost per result", help: "What one lead cost. Amount spent ÷ leads.", target: "under R60", rule: { value: 60, up: false } },
+  { key: "spend", label: "Amount spent", help: "How much money these ads used in these dates." },
+  { key: "impressions", label: "Impressions", help: "How many times these ads were shown, counting repeats to the same person." },
+  { key: "cpm", label: "CPM (cost per 1,000 impressions)", help: "What it cost to show these ads 1,000 times.", target: "R40 – R80", rule: { value: 80, up: false } },
+  { key: "clicks", label: "Link clicks", help: "How many times people clicked the ad's link or button." },
+  { key: "cpc", label: "CPC (cost per link click)", help: "What one click cost. Amount spent ÷ link clicks." },
+  { key: "ctr", label: "CTR (link click-through rate)", help: "Out of every 100 times the ad was shown, how many times someone clicked it.", target: "1.5%+", rule: { value: 1.5, up: true } },
+  { key: "lpv", label: "Landing page views", help: "How many people clicked and the landing page actually opened for them. Blank for Facebook forms (no landing page)." },
+  { key: "booked", label: "Booked (EstateKit)", help: "From EstateKit, not Facebook: of the leads these ads brought in during these dates, how many were moved to Booked (or later Mandate Signed) in the pipeline." },
+  { key: "cpb", label: "Cost per booking (EstateKit)", help: "From EstateKit: what one booking cost. Amount spent ÷ Booked." },
+  { key: "mandates", label: "Mandates (EstateKit)", help: "From EstateKit, not Facebook: of the leads these ads brought in during these dates, how many reached Mandate Signed in the pipeline." },
+  { key: "cpmand", label: "Cost per mandate (EstateKit)", help: "From EstateKit: what one signed mandate cost. Amount spent ÷ Mandates." },
 ];
 
 export function metricValues(r: AdRowNumbers): Record<MetricKey, number | null> {

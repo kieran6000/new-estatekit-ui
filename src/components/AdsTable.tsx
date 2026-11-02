@@ -102,6 +102,12 @@ const THIN_SCROLL = {
   "&::-webkit-scrollbar-corner": { bgcolor: "transparent" },
 } as const;
 const LEFT_COLS = new Set<ColId>(["delivery", "ends"]);
+/** Tooltips for the columns that aren't numbers. */
+const COL_HELP: Partial<Record<ColId, string>> = {
+  delivery: "Whether it's running right now. Off means it's paused and not spending.",
+  budget: "How much it may spend: per day (Daily) or in total (Lifetime). \"Using ad set budget\" means each ad set has its own.",
+  ends: "When it stops by itself. Ongoing means it runs until someone turns it off.",
+};
 /** Ads Manager's shorter header names. */
 const SHORT_LABEL: Partial<Record<ColId, string>> = {
   leads: "Results", cpl: "Cost per result", cpm: "CPM (cost per 1,000 impressions)", ctr: "CTR (link click-through rate)", cpc: "CPC (cost per link click)",
@@ -505,7 +511,7 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
                         slotProps={{ input: { "aria-label": someTicked ? "Untick all" : "Tick all" } }}
                       />
                     </TableCell>
-                    <TableCell sx={{ ...headCell, ...stickyLeft(48, 80), zIndex: 3 }}>{head("Off / On", "status", null)}</TableCell>
+                    <TableCell sx={{ ...headCell, ...stickyLeft(48, 80), zIndex: 3 }}>{head("Off / On", "status", null, "Turn it on or off. Off stops it showing and spending straight away.")}</TableCell>
                     <TableCell sx={{ ...headCell, ...stickyLeft(128, nameW), zIndex: 3 }}>
                       {head(word.title, "name", "name")}
                       {resizer("name")}
@@ -515,7 +521,7 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
                       const w = width(id);
                       return (
                         <TableCell key={id} sx={{ ...headCell, width: w, minWidth: w, maxWidth: w }}>
-                          {head(headLabel(id), m ? m.key : id, id, m ? (m.target ? `${m.label} · Target: ${m.target}` : m.label) : undefined)}
+                          {head(headLabel(id), m ? m.key : id, id, m ? (m.target ? `${m.help} Target: ${m.target}.` : m.help) : COL_HELP[id])}
                           {resizer(id)}
                         </TableCell>
                       );

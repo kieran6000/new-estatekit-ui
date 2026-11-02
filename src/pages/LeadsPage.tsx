@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Alert,
+  Drawer,
   AppBar,
   Avatar,
   Box,
@@ -94,6 +95,7 @@ import { logLeadCall } from "../api/leadEvents";
 import { startLeadsTour, hasSeenLeadsTour } from "../lib/tour";
 import { listArchivedLeads } from "../api/leads";
 import { syncFbLeads } from "../api/leadPages";
+import LeadDetailPage from "./LeadDetailPage";
 import { getActiveAgentIdSync } from "../api/_client";
 import { getMyProfile } from "../api/agentProfile";
 import GSheetIcon from "../components/GSheetIcon";
@@ -103,6 +105,12 @@ import FocusCallModal from "../components/FocusCallModal";
 
 export default function LeadsPage() {
   const navigate = useNavigate();
+  // The open lead, in the side panel (?lead=…). Each opening is a history
+  // step, so the phone's Back button closes it.
+  const [params, setParams] = useSearchParams();
+  const panelLead = params.get("lead");
+  const openLead = (id: string) => setParams((cur) => { const n = new URLSearchParams(cur); n.set("lead", id); return n; });
+  const closeLead = () => { if ((window.history.state?.idx ?? 0) > 0) navigate(-1); else setParams((cur) => { const n = new URLSearchParams(cur); n.delete("lead"); return n; }, { replace: true }); };
   const isMobile = useMediaQuery("(max-width:639px)");
   const { data: leads = [], isLoading: leadsLoading } = useLeads();
   const { data: pipelines = [], isLoading: pipelinesLoading } = usePipelines();
@@ -689,7 +697,7 @@ export default function LeadsPage() {
         selected={selected}
         onToggleSelect={toggleSelect}
         onRowSelect={handleRowSelect}
-        onOpen={(id) => navigate(`/leads/${id}`)}
+        onOpen={openLead}
         onCall={(id) => {
           setOutcomeLeadId(id);
           const called = leads.find((l) => l.id === id);
@@ -788,6 +796,14 @@ export default function LeadsPage() {
           showSnack("Pipeline created");
         }}
       />
+      <Drawer
+        anchor="right"
+        open={!!panelLead}
+        onClose={closeLead}
+        slotProps={{ paper: { sx: { width: { xs: "100%", sm: 480 }, bgcolor: "background.default" } } }}
+      >
+        {panelLead && <LeadDetailPage key={panelLead} leadId={panelLead} onClose={closeLead} />}
+      </Drawer>
     </Box>
   );
 }
