@@ -2,7 +2,7 @@ import { useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Avatar, Box, Button, ButtonBase, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, Divider, IconButton, ListItemIcon, ListItemText, Menu, MenuItem,
-  Paper, Popper, Radio, Skeleton, Switch, Table, TableBody, TableCell, TableHead, TableRow, Tooltip, Typography,
+  Paper, Popper, Radio, useMediaQuery, Skeleton, Switch, Table, TableBody, TableCell, TableHead, TableRow, Tooltip, Typography,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
@@ -102,6 +102,7 @@ const THIN_SCROLL = {
   "&::-webkit-scrollbar-corner": { bgcolor: "transparent" },
 } as const;
 const LEFT_COLS = new Set<ColId>(["delivery", "ends"]);
+const SHORT_TAB: Record<AdsLevel, string> = { campaign: "Campaigns", adset: "Ad sets", ad: "Ads" };
 /** A picked menu row, as in Ads Manager: pale blue. */
 const PICKED = { "&.Mui-selected, &.Mui-selected:hover": { bgcolor: "#dbe7fb" }, "&.Mui-selected .MuiRadio-root": { color: "#1b74e4" } } as const;
 /** Tooltips for the columns that aren't numbers. */
@@ -325,7 +326,7 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
               : <SwapVertIcon sx={{ fontSize: 18, flex: "none", color: FB.text }} />}
           </ButtonBase>
         </Tooltip>
-        {col && (
+        {col && !phone && (
           <IconButton size="small" aria-label={`${label} column options`} onClick={(e) => setHeadMenu({ el: e.currentTarget, col, key })} sx={{ alignSelf: "center", mx: 0.5, p: 0.25, color: FB.text, flex: "none", borderRadius: "4px", "&:hover": { bgcolor: "transparent" } }}>
             <ArrowDropDownIcon sx={{ fontSize: 20 }} />
           </IconButton>
@@ -333,7 +334,8 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
       </Box>
     );
   };
-  const nameW = width("name");
+  const phone = useMediaQuery("(max-width:599px)");
+  const nameW = phone ? 150 : width("name");
   const sortName = (k: SortKey) => (k === "name" ? word.title : k === "status" ? "Off / On" : headLabel(k as ColId));
   const onSort = (k: SortKey) => {
     const dir = sort.k === k ? sort.dir * -1 : k === "name" || k === "delivery" ? 1 : -1;
@@ -389,8 +391,8 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
               onClick={() => pickTab(t.level)}
               onKeyDown={(e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pickTab(t.level); } }}
               sx={{
-                flex: "0 1 288px", minWidth: 0, justifyContent: "flex-start", gap: 1.25, px: 2, height: 44,
-                bgcolor: on ? "#fff" : FB.tabOff, color: on ? FB.link : FB.text, fontSize: 16, fontWeight: 600, fontFamily: FB_FONT,
+                flex: "0 1 288px", minWidth: 0, justifyContent: "flex-start", gap: phone ? 0.75 : 1.25, px: phone ? 1.25 : 2, height: 44,
+                bgcolor: on ? "#fff" : FB.tabOff, color: on ? FB.link : FB.text, fontSize: phone ? 14 : 16, fontWeight: 600, fontFamily: FB_FONT,
                 border: `1px solid ${FB.line}`, borderBottom: on ? "1px solid #fff" : `1px solid ${FB.line}`, borderRadius: "6px 6px 0 0",
                 mb: "-1px", position: "relative", zIndex: on ? 2 : 1,
                 "&:hover": { bgcolor: on ? "#fff" : "#e4e6eb" },
@@ -398,13 +400,13 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
               }}
             >
               <Box sx={{ color: on ? FB.blue : FB.text, display: "flex", flex: "none" }}>{t.icon(on)}</Box>
-              <Box component="span" sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: "0 1 auto" }}>{t.label}</Box>
+              <Box component="span" sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: "0 1 auto" }}>{phone ? SHORT_TAB[t.level] : t.label}</Box>
               {t.count > 0 && t.clear && (
                 <Box
                   component="span"
                   sx={{ ml: "auto", flex: "none", display: "inline-flex", alignItems: "center", gap: 0.75, bgcolor: FB.pill, color: "#fff", borderRadius: "4px", pl: 1, pr: 0.5, height: 24, fontSize: 14, fontWeight: 500 }}
                 >
-                  {t.count} selected
+                  {phone ? t.count : `${t.count} selected`}
                   <IconButton
                     size="small"
                     aria-label={`Clear the selected ${t.level === "campaign" ? "campaign" : "ad set"}`}
@@ -423,31 +425,35 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
       <Box sx={{ bgcolor: "#fff", border: `1px solid ${FB.line}`, borderRadius: "0 8px 8px 8px", overflow: "hidden", position: "relative", zIndex: 1 }}>
         {/* Toolbar: the column chooser, as in Ads Manager. */}
         <Box sx={{ display: "flex", alignItems: "center", gap: 1, px: 1.5, py: 1.25, flexWrap: "wrap" }}>
-          <Button
-            component="a"
-            href={actUrl ? `https://adsmanager.facebook.com/adsmanager/manage/campaigns?act=${actUrl}&nav_source=no_referrer#` : undefined}
-            target="_blank"
-            rel="noopener"
-            startIcon={<AddIcon />}
-            sx={{ ...fbBtn, bgcolor: FB.green, borderColor: FB.green, color: "#fff", "&:hover": { bgcolor: "#166b3a", borderColor: "#166b3a" } }}
-          >
-            Create
-          </Button>
-          <Tooltip title={ticked.length ? "Open what's ticked in Ads Manager" : `Tick a ${word.one} to edit it`}>
-            <span>
+          {!phone && (
+            <>
               <Button
                 component="a"
-                disabled={!ticked.length || !actUrl}
-                href={ticked.length && actUrl ? `https://adsmanager.facebook.com/adsmanager/manage/${view.level === "campaign" ? "campaigns" : view.level === "adset" ? "adsets" : "ads"}/edit?act=${actUrl}&selected_${view.level === "campaign" ? "campaign" : view.level === "adset" ? "adset" : "ad"}_ids=${ticked.join(",")}` : undefined}
+                href={actUrl ? `https://adsmanager.facebook.com/adsmanager/manage/campaigns?act=${actUrl}&nav_source=no_referrer#` : undefined}
                 target="_blank"
                 rel="noopener"
-                startIcon={<EditOutlinedIcon />}
-                sx={fbBtn}
+                startIcon={<AddIcon />}
+                sx={{ ...fbBtn, bgcolor: FB.green, borderColor: FB.green, color: "#fff", "&:hover": { bgcolor: "#166b3a", borderColor: "#166b3a" } }}
               >
-                Edit
+                Create
               </Button>
-            </span>
-          </Tooltip>
+              <Tooltip title={ticked.length ? "Open what's ticked in Ads Manager" : `Tick a ${word.one} to edit it`}>
+                <span>
+                  <Button
+                    component="a"
+                    disabled={!ticked.length || !actUrl}
+                    href={ticked.length && actUrl ? `https://adsmanager.facebook.com/adsmanager/manage/${view.level === "campaign" ? "campaigns" : view.level === "adset" ? "adsets" : "ads"}/edit?act=${actUrl}&selected_${view.level === "campaign" ? "campaign" : view.level === "adset" ? "adset" : "ad"}_ids=${ticked.join(",")}` : undefined}
+                    target="_blank"
+                    rel="noopener"
+                    startIcon={<EditOutlinedIcon />}
+                    sx={fbBtn}
+                  >
+                    Edit
+                  </Button>
+                </span>
+              </Tooltip>
+                </>
+          )}
           <Box sx={{ flex: 1 }} />
           <Button
             onClick={(e) => setColMenu(e.currentTarget)}
@@ -456,7 +462,7 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
             aria-haspopup="menu"
             sx={fbBtn}
           >
-            Columns: {choiceLabel(prefs)}
+            {phone ? "Columns" : `Columns: ${choiceLabel(prefs)}`}
           </Button>
           <Tooltip title="Export (CSV)">
             <span>
