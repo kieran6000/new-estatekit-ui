@@ -96,9 +96,9 @@ export default function ThankYouPageCard({ page, canSetUp }: { page: LeadPage; c
       {/* Weekends */}
       <Box sx={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 2 }}>
         <Box>
-          <Typography sx={{ fontSize: 14, fontWeight: 600 }}>Weekend leads wait until Monday</Typography>
+          <Typography sx={{ fontSize: 14, fontWeight: 600 }}>No weekend calls</Typography>
           <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
-            On Saturdays and Sundays this page says you're out on viewings and they'll get a call from Monday. People can't pick a weekend for their call on any day.
+            Saturday and Sunday aren't offered when they pick a day for their call.
           </Typography>
         </Box>
         <Switch checked={weekendOff} disabled={!canSetUp} onChange={(e) => setWeekendOff(e.target.checked)} />
