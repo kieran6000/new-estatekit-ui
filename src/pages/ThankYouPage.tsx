@@ -314,18 +314,16 @@ function BrandedThankYou({ page, name, video, endCta, onVideoEnd, onVideoProgres
         )}
       </Box>
       )}
-      <Typography sx={{ fontSize: 20, fontWeight: 700 }}>{fillNamed(page.thankYouHeadline, name, page.agentName)}</Typography>
+      <Typography sx={{ fontSize: 20, fontWeight: 700 }}>{fillNamed(weekendNote ? "Thanks {name}!" : page.thankYouHeadline, name, page.agentName)}</Typography>
       {video ? (
         <Box sx={{ mt: 2.5 }}>
           <VideoPlayer url={video} accent={page.accentColor} autoplay endCta={endCta} onProgress={(p) => { onVideoProgress(p); if (p.ended) window.setTimeout(onVideoEnd, 1200); }} />
         </Box>
       ) : (
-        <Typography sx={{ fontSize: 14, color: "text.secondary", mt: 1 }}>{fillNamed(page.thankYouSubtext, name, page.agentName)}</Typography>
+        <Typography sx={{ fontSize: 14, color: "text.secondary", mt: 1 }}>{fillNamed(weekendNote ? "{agent} is out on viewings this weekend. You'll get a call from Monday." : page.thankYouSubtext, name, page.agentName)}</Typography>
       )}
-      {weekendNote && (
-        <Typography sx={{ fontSize: 14, fontWeight: 600, mt: 1.5 }}>
-          {(page.agentName || "").trim().split(/\s+/)[0] || "Our team"} is out on viewings this weekend. You'll get a call from Monday.
-        </Typography>
+      {weekendNote && video && (
+        <Typography sx={{ fontSize: 14, color: "text.secondary", mt: 1.5 }}>{fillNamed("{agent} is out on viewings this weekend. You'll get a call from Monday.", name, page.agentName)}</Typography>
       )}
 
       {showWhatsApp && (() => {
