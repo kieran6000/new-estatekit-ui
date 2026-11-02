@@ -13,9 +13,14 @@ const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPAB
 const FALLBACK = "https://leads.estatekit.co/";
 
 const first = (s: string | null | undefined) => (s || "").trim().split(/\s+/)[0] || "";
+// South African numbers however they were typed: 083…, +27 083… (the 0 kept
+// after the country code), or 83… (the 0 left off).
 const digits = (s: string | null | undefined) => {
   const d = (s || "").replace(/\D/g, "");
-  return d.length === 10 && d.startsWith("0") ? "27" + d.slice(1) : d;
+  if (d.length === 10 && d.startsWith("0")) return "27" + d.slice(1);
+  if (d.length === 12 && d.startsWith("270")) return "27" + d.slice(3);
+  if (d.length === 9 && /^[6-8]/.test(d) && !(s || "").trim().startsWith("+")) return "27" + d;
+  return d;
 };
 // WhatsApp needs a cellphone. South African numbers must be mobiles (06/07/08,
 // not an 010/011 office line); other countries (e.g. Namibia +264) are accepted.

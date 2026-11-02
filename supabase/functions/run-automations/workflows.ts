@@ -128,9 +128,14 @@ const MAX_STEPS_PER_PASS = 25;
 // ── Small helpers ─────────────────────────────────────────────────────────
 
 const first = (s: string | null | undefined) => (s || "").trim().split(/\s+/)[0] || "";
+// South African numbers however they were typed: 083…, +27 083… (the 0 kept
+// after the country code), or 83… (the 0 left off).
 const digits = (s: string | null | undefined) => {
   const d = (s || "").replace(/\D/g, "");
-  return d.length === 10 && d.startsWith("0") ? "27" + d.slice(1) : d;
+  if (d.length === 10 && d.startsWith("0")) return "27" + d.slice(1);
+  if (d.length === 12 && d.startsWith("270")) return "27" + d.slice(3);
+  if (d.length === 9 && /^[6-8]/.test(d) && !(s || "").trim().startsWith("+")) return "27" + d;
+  return d;
 };
 const prettyPhone = (s: string) => {
   const d = digits(s);
@@ -762,6 +767,12 @@ class Context {
     const to = digits(l.phone);
     if (to.length < 9) {
       await log(this.supabase, this.run, step.id, what, "Skipped", "The lead has no WhatsApp number");
+      return { kind: "done" };
+    }
+    // TextMeBot says OK to a number that can't exist, so it would log as Sent
+    // and never arrive.
+    if (to.startsWith("0") || (to.startsWith("27") && to.length !== 11)) {
+      await log(this.supabase, this.run, step.id, what, "Skipped", "The lead's number looks wrong: " + l.phone);
       return { kind: "done" };
     }
     // Before anything is sent.

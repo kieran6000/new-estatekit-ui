@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { cleanLeadPhone } from "./phone.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 
@@ -52,6 +53,7 @@ Deno.serve(async (req: Request) => {
     return new Response(JSON.stringify({ error: "pageId, name and phone are required" }), { status: 400, headers: CORS });
   }
 
+  const phone = cleanLeadPhone(body.phone);
   const supabase = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
   const { data: page, error: pageErr } = await supabase
@@ -97,7 +99,7 @@ Deno.serve(async (req: Request) => {
     pipeline_id: page.pipeline_id,
     source_page_id: page.id,
     name: body.name,
-    phone: body.phone,
+    phone,
     email: body.email ?? null,
     form_answers: body.formAnswers ?? [],
     attribution,
@@ -116,7 +118,7 @@ Deno.serve(async (req: Request) => {
   // of becoming a second one. See merge_repeat_lead. If the check itself
   // fails, the lead is saved as new: never lost.
   const { data: repeatId, error: repeatErr } = await supabase.rpc("merge_repeat_lead", {
-    p_agent: page.agent_id, p_phone: body.phone, p_name: body.name, p_email: body.email ?? null,
+    p_agent: page.agent_id, p_phone: phone, p_name: body.name, p_email: body.email ?? null,
     p_answers: body.formAnswers ?? [], p_source: "website", p_plan_token: planToken,
   });
   if (repeatErr) console.error("merge_repeat_lead", repeatErr.message);
@@ -124,7 +126,7 @@ Deno.serve(async (req: Request) => {
     await notifyActivity({
       event: "new_lead",
       agentId: page.agent_id,
-      lead: { id: repeatId, name: body.name, phone: body.phone, source: "Website form · came back (filled it in again)" },
+      lead: { id: repeatId, name: body.name, phone, source: "Website form · came back (filled it in again)" },
     });
     return new Response(JSON.stringify({ id: repeatId, repeat: true }), { headers: CORS });
   }
@@ -177,7 +179,7 @@ Deno.serve(async (req: Request) => {
   await notifyActivity({
     event: "new_lead",
     agentId: page.agent_id,
-    lead: { id: lead.id, name: body.name, phone: body.phone, address, pipeline: pipelineName, source: sourceLabel },
+    lead: { id: lead.id, name: body.name, phone, address, pipeline: pipelineName, source: sourceLabel },
   });
 
   return new Response(JSON.stringify({ id: lead.id }), { headers: CORS });
