@@ -1172,7 +1172,7 @@ function LeadsTable({
         sx={{
           cursor: "pointer",
           ...(selectable ? { userSelect: "none" } : undefined),
-          ...(l.due && !DEAD_STAGES.includes(l.stage) ? { bgcolor: tokens.amberTint } : DEAD_STAGES.includes(l.stage) ? { color: tokens.ink3 } : undefined),
+          ...(DEAD_STAGES.includes(l.stage) ? { color: tokens.ink3 } : undefined),
           // Hover darkens whatever colour the row has; the name underlines.
           "&:hover": { filter: "brightness(0.97)" },
           "&:hover .ek-lead-name": { textDecoration: "underline" },
@@ -1216,10 +1216,7 @@ function LeadsTable({
           </StageMenu>
         </TableCell>
         <TableCell>
-          <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, fontSize: 13, color: l.reminder_at ? tokens.orange : "text.secondary" }}>
-            {l.reminder_at && <AccessTimeIcon sx={{ fontSize: 14 }} />}
-            {nextStepLabel(l)}
-          </Box>
+          <NextStep l={l} />
         </TableCell>
         <TableCell align="right">
           {/* Hidden while selecting, matching the mobile list — otherwise a tap
@@ -1389,7 +1386,7 @@ function MobileLeadsList({
       onKeyDown={selectable ? undefined : (e) => { if (e.key === "Enter" && e.target === e.currentTarget) { e.preventDefault(); onOpen(l.id); } }}
       sx={{
         borderBottom: `8px solid ${tokens.bg}`,
-        bgcolor: (selectable && selected.has(l.id)) || (!selectable && l.id === activeId) ? tokens.primaryBg : l.due && !DEAD_STAGES.includes(l.stage) ? tokens.amberTint : "background.paper",
+        bgcolor: (selectable && selected.has(l.id)) || (!selectable && l.id === activeId) ? tokens.primaryBg : "background.paper",
         p: "12px 16px",
         display: selectable ? "flex" : "block",
         gap: 1,
@@ -1429,10 +1426,7 @@ function MobileLeadsList({
             </Box>
           )}
         </StageMenu>
-        <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, fontSize: 13, color: l.reminder_at ? tokens.orange : "text.secondary" }}>
-          {l.reminder_at && <AccessTimeIcon sx={{ fontSize: 14 }} />}
-          {nextStepLabel(l)}
-        </Box>
+        <NextStep l={l} />
       </Box>
       {!selectable && !DEAD_STAGES.includes(l.stage) && (
         <Box
@@ -1482,5 +1476,27 @@ function MobileLeadsList({
           })
         : leads.map((l, i) => card(l, i))}
     </Box>
+  );
+}
+
+/** What to do next with a lead. Due now: an orange "Due" label, so it says
+ *  what it means (the row itself stays white). Later: plain grey. */
+function NextStep({ l }: { l: LeadRow }) {
+  const due = !!l.due && !DEAD_STAGES.includes(l.stage);
+  if (!due) {
+    return (
+      <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, fontSize: 13, color: "text.secondary" }}>
+        {l.reminder_at && <AccessTimeIcon sx={{ fontSize: 14 }} />}
+        {nextStepLabel(l)}
+      </Box>
+    );
+  }
+  return (
+    <Tooltip title="Due now: call them today.">
+      <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, fontSize: 13, color: tokens.orange }}>
+        <Box component="span" sx={{ fontSize: 11.5, fontWeight: 700, letterSpacing: 0.3, textTransform: "uppercase", px: 0.75, py: "1px", borderRadius: "4px", bgcolor: tokens.orange, color: "#fff", flex: "none" }}>Due</Box>
+        <Box component="span" sx={{ fontWeight: 600 }}>{nextStepLabel(l)}</Box>
+      </Box>
+    </Tooltip>
   );
 }

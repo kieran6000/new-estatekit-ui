@@ -25,13 +25,16 @@ export function ThankYouCallTime({ token, slug, byPhone, seller, preview, accent
   // Two steps from a Facebook form: the time, then the number.
   const [step, setStep] = useState<1 | 2>(1);
   const onNumberStep = !!byPhone && step === 2;
+  // The time they had when they tapped Change: until they pick a different
+  // one, stay on the time (with a Next button) instead of jumping back.
+  const [changingFrom, setChangingFrom] = useState<string | null>(null);
   // Day and time both picked: straight on to the number, no Next button.
   useEffect(() => {
-    if (byPhone && step === 1 && value && !callTimeIncomplete(value)) {
-      const t = setTimeout(() => setStep(2), 350);
+    if (byPhone && step === 1 && value && !callTimeIncomplete(value) && value !== changingFrom) {
+      const t = setTimeout(() => { setChangingFrom(null); setStep(2); }, 350);
       return () => clearTimeout(t);
     }
-  }, [byPhone, step, value]);
+  }, [byPhone, step, value, changingFrom]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState("");
@@ -85,7 +88,7 @@ export function ThankYouCallTime({ token, slug, byPhone, seller, preview, accent
       {onNumberStep && (
         <Box sx={{ display: "flex", alignItems: "center", gap: 1, p: 1.5, mb: 2.5, borderRadius: "10px", bgcolor: "#f1f3f4" }}>
           <Typography sx={{ flex: 1, fontSize: 15 }}>{value}</Typography>
-          <Button size="small" onClick={() => setStep(1)} sx={{ color: "text.secondary" }}>Change</Button>
+          <Button size="small" onClick={() => { setChangingFrom(value); setStep(1); }} sx={{ color: "text.secondary" }}>Change</Button>
         </Box>
       )}
       {!onNumberStep && <CallTimeStep
@@ -121,13 +124,14 @@ export function ThankYouCallTime({ token, slug, byPhone, seller, preview, accent
         </Box>
       )}
       {/* The form's own button (LeadCaptureForm), so it looks the same. */}
-      {!(byPhone && step === 1) && <Button
+      {!(byPhone && step === 1 && changingFrom == null) && <Button
         variant="contained"
         size="large"
         fullWidth
         onClick={() => {
           if (byPhone && step === 1) {
             if (!value || callTimeIncomplete(value)) { setError(!value ? "Please pick a day and a time." : value.startsWith(",") ? "Please pick a day too." : "Please pick a time too."); return; }
+            setChangingFrom(null);
             setStep(2);
             return;
           }
@@ -137,7 +141,7 @@ export function ThankYouCallTime({ token, slug, byPhone, seller, preview, accent
         startIcon={busy ? <CircularProgress size={18} sx={{ color: "inherit" }} /> : undefined}
         sx={{ mt: 3, bgcolor: accent, color: readableOn(accent), "&:hover": { bgcolor: accent, filter: "brightness(0.9)" }, "&.Mui-disabled": { bgcolor: accent, color: readableOn(accent), opacity: 0.7 } }}
       >
-        {byPhone ? (seller ? "Get my evaluation" : "Confirm my call") : "Confirm call time"}
+        {byPhone && step === 1 ? "Next" : byPhone ? (seller ? "Get my evaluation" : "Confirm my call") : "Confirm call time"}
       </Button>}
     </Box>
   );
