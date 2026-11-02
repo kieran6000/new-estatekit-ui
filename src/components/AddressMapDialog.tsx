@@ -17,7 +17,7 @@ export default function AddressMapDialog({ address, open, onClose }: { address: 
         <Box
           component="iframe"
           title={`Map of ${address}`}
-          src={open ? `https://www.google.com/maps?q=${q}&output=embed&z=17` : undefined}
+          src={open ? `https://www.google.com/maps?q=${q}&output=embed&t=m&z=17` : undefined}
           loading="lazy"
           referrerPolicy="no-referrer-when-downgrade"
           sx={{ display: "block", width: "100%", height: { xs: 360, sm: 420 }, border: 0 }}
