@@ -65,6 +65,65 @@ async function mayReadAccount(req: Request, adAccountId: string): Promise<boolea
 }
 
 const INSIGHT_FIELDS = "spend,impressions,reach,frequency,inline_link_clicks,actions";
+
+const BOOKED = ["Booked", "Viewing Booked", "Mandate Signed"];
+const MANDATE = "Mandate Signed";
+
+/** EstateKit's own results per campaign, ad set or ad: of the leads that came
+ *  from its ads in these dates, how many were booked and how many signed a
+ *  mandate (ever, so a lead from March booked in April still counts for
+ *  March's ad). Leads are tied to an ad by fb_ad_id; ads to their ad set and
+ *  campaign by asking Facebook. */
+async function ekResults(actId: string, since: string, until: string, lvl: "campaign" | "adset" | "ad", token: string) {
+  const out: Record<string, { booked: number; mandates: number }> = {};
+  const bare = actId.replace(/^act_/, "");
+  const { data: owners } = await supabase.from("agent_profiles").select("agent_id").in("fb_ad_account_id", [bare, actId]);
+  const agentIds = (owners ?? []).map((o: { agent_id: string }) => o.agent_id);
+  if (!agentIds.length) return out;
+  const end = new Date(`${until}T00:00:00Z`);
+  end.setUTCDate(end.getUTCDate() + 1);
+  const { data: leads } = await supabase.from("leads").select("id, fb_ad_id, stage")
+    .in("agent_id", agentIds).not("fb_ad_id", "is", null)
+    .gte("created_at", `${since}T00:00:00Z`).lt("created_at", end.toISOString())
+    .range(0, 9999);
+  if (!leads?.length) return out;
+
+  // Booked or signed: by the stage it's in now, or any move into one.
+  const booked = new Set<string>(), signed = new Set<string>();
+  for (const l of leads) {
+    if (BOOKED.includes(l.stage)) booked.add(l.id);
+    if (l.stage === MANDATE) signed.add(l.id);
+  }
+  const ids = leads.map((l: { id: string }) => l.id);
+  for (let i = 0; i < ids.length; i += 300) {
+    const { data: ev } = await supabase.from("lead_events").select("lead_id, to_value")
+      .in("lead_id", ids.slice(i, i + 300)).eq("event_type", "stage_changed").in("to_value", BOOKED);
+    for (const e of ev ?? []) { booked.add(e.lead_id); if (e.to_value === MANDATE) signed.add(e.lead_id); }
+  }
+
+  // Which row each ad belongs to.
+  const adIds = [...new Set(leads.map((l: { fb_ad_id: string }) => String(l.fb_ad_id)))].filter((x) => /^\d+$/.test(x));
+  const rowOf: Record<string, string> = {};
+  if (lvl === "ad") for (const a of adIds) rowOf[a] = a;
+  else {
+    for (let i = 0; i < adIds.length; i += 50) {
+      const r = await (await fetch(`${GRAPH}/?ids=${adIds.slice(i, i + 50).join(",")}&fields=adset_id,campaign_id&access_token=${token}`)).json();
+      if (r.error) continue;
+      for (const [id, v] of Object.entries(r as Record<string, { adset_id?: string; campaign_id?: string }>)) {
+        const row = lvl === "adset" ? v.adset_id : v.campaign_id;
+        if (row) rowOf[id] = String(row);
+      }
+    }
+  }
+  for (const l of leads) {
+    const row = rowOf[String(l.fb_ad_id)];
+    if (!row) continue;
+    const o = (out[row] ??= { booked: 0, mandates: 0 });
+    if (booked.has(l.id)) o.booked++;
+    if (signed.has(l.id)) o.mandates++;
+  }
+  return out;
+}
 // deno-lint-ignore no-explicit-any
 function numbers(i: any) {
   return {
@@ -157,6 +216,14 @@ Deno.serve(async (req) => {
         // On now, or spent in these dates.
         // deno-lint-ignore no-explicit-any
         .filter((r: any) => r.delivery === "ACTIVE" || r.spend > 0);
+
+      try {
+        const ek = await ekResults(actId, since, until, lvl, token);
+        // deno-lint-ignore no-explicit-any
+        for (const r of rows as any[]) { r.booked = ek[r.id]?.booked ?? 0; r.mandates = ek[r.id]?.mandates ?? 0; }
+      } catch (e) {
+        console.error("fb-adset-table: EstateKit results", e);
+      }
 
       // The account's totals, for the tiles (reach can't be added up from rows).
       let account = null;

@@ -14,13 +14,18 @@ export const COLUMN_LABEL: Record<ColId, string> = {
 };
 
 /** Every column, in Ads Manager's order. */
-export const ALL_COLUMNS: ColId[] = ["delivery", "leads", "reach", "freq", "cpl", "budget", "spend", "ends", "impressions", "cpm", "clicks", "cpc", "ctr", "lpv"];
+export const ALL_COLUMNS: ColId[] = ["delivery", "leads", "reach", "freq", "cpl", "budget", "spend", "ends", "impressions", "cpm", "clicks", "cpc", "ctr", "lpv", "booked", "cpb", "mandates", "cpmand"];
 
-export type PresetKey = "performance" | "performance_clicks";
+export type PresetKey = "performance" | "performance_clicks" | "estatekit";
 export const PRESETS: Record<PresetKey, { label: string; cols: ColId[] }> = {
   performance: { label: "Performance", cols: ["delivery", "leads", "reach", "freq", "cpl", "budget", "spend", "ends"] },
   performance_clicks: { label: "Performance and clicks", cols: ["delivery", "leads", "reach", "freq", "cpl", "budget", "spend", "ends", "impressions", "cpm", "clicks", "cpc", "ctr", "lpv"] },
+  // Ours: what the leads turned into.
+  estatekit: { label: "EstateKit results", cols: ["delivery", "leads", "cpl", "booked", "cpb", "mandates", "cpmand", "budget", "spend"] },
 };
+
+/** EstateKit's columns: per campaign and ad set only (per ad, it's mostly 0 or 1). */
+export const EK_COLUMNS: ColId[] = ["booked", "cpb", "mandates", "cpmand"];
 
 export interface ColumnPrefs {
   /** A preset, or "custom" for your own set. */
@@ -53,7 +58,7 @@ export function savePrefs(p: ColumnPrefs) {
 /** The columns to show. Ads have no budget or end date of their own. */
 export function visibleColumns(p: ColumnPrefs, level: "campaign" | "adset" | "ad"): ColId[] {
   const cols = p.choice === "custom" ? p.custom : PRESETS[p.choice].cols;
-  return cols.filter((c) => level !== "ad" || (c !== "budget" && c !== "ends"));
+  return cols.filter((c) => level !== "ad" || (c !== "budget" && c !== "ends" && !EK_COLUMNS.includes(c)));
 }
 
 export const choiceLabel = (p: ColumnPrefs) => (p.choice === "custom" ? "Custom" : PRESETS[p.choice].label);

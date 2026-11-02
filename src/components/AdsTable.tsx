@@ -194,7 +194,8 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
   rows.sort((a, b) => { const x = sortVal(a), y = sortVal(b); return (typeof x === "string" ? x.localeCompare(String(y)) : x - (y as number)) * sort.dir; });
   // Reach and frequency can't be added up (people repeat across rows); only
   // the account totals have them right.
-  const totals = view.level === "campaign" && data?.account ? data.account : sumRows(rows.map((x) => x.r));
+  const summed = sumRows(rows.map((x) => x.r));
+  const totals = view.level === "campaign" && data?.account ? { ...data.account, booked: summed.booked, mandates: summed.mandates } : summed;
   const totalV = metricValues(totals);
   const word = LEVEL_WORD[view.level];
   const onSort = (k: SortKey) => setSort((s) => (s.k === k ? { k, dir: (s.dir * -1) as 1 | -1 } : { k, dir: k === "name" || k === "delivery" ? 1 : -1 }));
@@ -453,7 +454,7 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
             </MenuItem>
             <Divider />
             <Typography sx={{ px: 2, pt: 0.5, pb: 0.5, fontWeight: 700, fontSize: 14 }}>Presets</Typography>
-            {(["performance_clicks", "performance"] as PresetKey[]).map((k) => (
+            {(["performance_clicks", "performance", "estatekit"] as PresetKey[]).map((k) => (
               <MenuItem key={k} selected={prefs.choice === k} onClick={() => { setPrefs({ ...prefs, choice: k }); setColMenu(null); }}>
                 <ListItemIcon><Radio size="small" checked={prefs.choice === k} sx={{ p: 0 }} tabIndex={-1} /></ListItemIcon>
                 <ListItemText>{PRESETS[k].label}</ListItemText>

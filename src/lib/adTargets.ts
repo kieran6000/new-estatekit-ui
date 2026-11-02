@@ -1,14 +1,15 @@
 // The ads table's columns, named exactly as in Ads Manager, and the media
 // buyer's targets for four of them: each is on target, close (within 20%)
 // or off target. No colour under R150 spend or fewer than 3 leads: too
-// little to judge. Nothing here is our own metric: all are Facebook's.
+// little to judge. All are Facebook's except the four marked (EstateKit):
+// what came of the leads here.
 
 import type { AdNumbers } from "../api/agentProfile";
 
 export type Tone = "good" | "near" | "bad" | "none";
 export type AdRowNumbers = AdNumbers;
 
-export type MetricKey = "spend" | "leads" | "cpl" | "impressions" | "reach" | "freq" | "cpm" | "clicks" | "cpc" | "ctr" | "lpv";
+export type MetricKey = "spend" | "leads" | "cpl" | "impressions" | "reach" | "freq" | "cpm" | "clicks" | "cpc" | "ctr" | "lpv" | "booked" | "cpb" | "mandates" | "cpmand";
 
 export interface MetricDef {
   key: MetricKey;
@@ -33,6 +34,10 @@ export const METRICS: MetricDef[] = [
   { key: "cpc", label: "CPC (cost per link click)" },
   { key: "ctr", label: "CTR (link click-through rate)", target: "1.5%+", rule: { value: 1.5, up: true } },
   { key: "lpv", label: "Landing page views" },
+  { key: "booked", label: "Booked (EstateKit)" },
+  { key: "cpb", label: "Cost per booking (EstateKit)" },
+  { key: "mandates", label: "Mandates (EstateKit)" },
+  { key: "cpmand", label: "Cost per mandate (EstateKit)" },
 ];
 
 export function metricValues(r: AdRowNumbers): Record<MetricKey, number | null> {
@@ -49,6 +54,10 @@ export function metricValues(r: AdRowNumbers): Record<MetricKey, number | null> 
     ctr: r.impressions ? (r.clicks / r.impressions) * 100 : null,
     // Instant forms have no landing page.
     lpv: r.lpv || null,
+    booked: r.booked ?? null,
+    cpb: r.booked ? r.spend / r.booked : null,
+    mandates: r.mandates ?? null,
+    cpmand: r.mandates ? r.spend / r.mandates : null,
   };
 }
 
@@ -64,8 +73,8 @@ export function toneOf(def: MetricDef, value: number | null, r: Pick<AdRowNumber
  *  totals carry the real ones. */
 export function sumRows(rows: AdRowNumbers[]): AdRowNumbers {
   return rows.reduce(
-    (a, r) => ({ spend: a.spend + r.spend, impressions: a.impressions + r.impressions, reach: 0, clicks: a.clicks + r.clicks, frequency: 0, leads: a.leads + r.leads, lpv: a.lpv + r.lpv }),
-    { spend: 0, impressions: 0, reach: 0, clicks: 0, frequency: 0, leads: 0, lpv: 0 },
+    (a, r) => ({ spend: a.spend + r.spend, impressions: a.impressions + r.impressions, reach: 0, clicks: a.clicks + r.clicks, frequency: 0, leads: a.leads + r.leads, lpv: a.lpv + r.lpv, booked: (a.booked ?? 0) + (r.booked ?? 0), mandates: (a.mandates ?? 0) + (r.mandates ?? 0) }),
+    { spend: 0, impressions: 0, reach: 0, clicks: 0, frequency: 0, leads: 0, lpv: 0, booked: 0, mandates: 0 } as AdRowNumbers,
   );
 }
 
@@ -73,7 +82,7 @@ export function sumRows(rows: AdRowNumbers[]): AdRowNumbers {
 export const adsMoney = (n: number) => "R" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 export function formatMetric(k: MetricKey, v: number | null): string {
   if (v === null) return "—";
-  if (k === "spend" || k === "cpl" || k === "cpm" || k === "cpc") return adsMoney(v);
+  if (k === "spend" || k === "cpl" || k === "cpm" || k === "cpc" || k === "cpb" || k === "cpmand") return adsMoney(v);
   if (k === "ctr") return v.toFixed(2) + "%";
   if (k === "freq") return v.toFixed(2);
   return Math.round(v).toLocaleString("en-US");

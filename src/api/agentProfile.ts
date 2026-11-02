@@ -81,6 +81,9 @@ export interface AdNumbers {
   lpv: number;
   /** Ads Manager's name for the result: "Leads (Form)", "Website leads". */
   resultType?: string;
+  /** EstateKit: of this row's leads in these dates, how many were booked / signed a mandate. */
+  booked?: number;
+  mandates?: number;
 }
 
 /** One campaign, ad set or ad in the client page's ads table. */
