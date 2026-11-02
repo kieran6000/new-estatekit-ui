@@ -1,36 +1,45 @@
 // The ads table's columns, named exactly as in Ads Manager, and the media
 // buyer's targets for four of them: each is on target, close (within 20%)
 // or off target. No colour under R150 spend or fewer than 3 leads: too
-// little to judge. Nothing here is our own metric: all are Facebook's.
+// little to judge. All are Facebook's except the four marked (EstateKit):
+// what came of the leads here.
 
 import type { AdNumbers } from "../api/agentProfile";
 
 export type Tone = "good" | "near" | "bad" | "none";
 export type AdRowNumbers = AdNumbers;
 
-export type MetricKey = "spend" | "leads" | "cpl" | "impressions" | "reach" | "freq" | "cpm" | "clicks" | "ctr" | "lpv";
+export type MetricKey = "spend" | "leads" | "cpl" | "impressions" | "reach" | "freq" | "cpm" | "clicks" | "cpc" | "ctr" | "lpv" | "booked" | "cpb" | "mandates" | "cpmand";
 
 export interface MetricDef {
   key: MetricKey;
   /** Facebook's name for it. */
   label: string;
+  /** What it means, in plain words (the column's tooltip). */
+  help: string;
   /** The target as shown under the column name. */
   target?: string;
   /** target and direction: up = higher is better. */
   rule?: { value: number; up: boolean };
 }
 
+// In Ads Manager's order (its "Performance" columns).
 export const METRICS: MetricDef[] = [
-  { key: "spend", label: "Amount spent" },
-  { key: "leads", label: "Leads" },
-  { key: "cpl", label: "Cost per lead", target: "under R60", rule: { value: 60, up: false } },
-  { key: "impressions", label: "Impressions" },
-  { key: "reach", label: "Reach" },
-  { key: "freq", label: "Frequency", target: "under 2.5", rule: { value: 2.5, up: false } },
-  { key: "cpm", label: "CPM (cost per 1,000 impressions)", target: "R40 – R80", rule: { value: 80, up: false } },
-  { key: "clicks", label: "Link clicks" },
-  { key: "ctr", label: "CTR (link click-through rate)", target: "1.5%+", rule: { value: 1.5, up: true } },
-  { key: "lpv", label: "Landing page views" },
+  { key: "leads", label: "Results", help: "How many people filled in the form from these ads. Each one is a lead." },
+  { key: "reach", label: "Reach", help: "How many different people saw these ads at least once." },
+  { key: "freq", label: "Frequency", help: "On average, how many times each person saw these ads. Amount seen ÷ people reached.", target: "under 2.5", rule: { value: 2.5, up: false } },
+  { key: "cpl", label: "Cost per result", help: "What one lead cost. Amount spent ÷ leads.", target: "under R60", rule: { value: 60, up: false } },
+  { key: "spend", label: "Amount spent", help: "How much money these ads used in these dates." },
+  { key: "impressions", label: "Impressions", help: "How many times these ads were shown, counting repeats to the same person." },
+  { key: "cpm", label: "CPM (cost per 1,000 impressions)", help: "What it cost to show these ads 1,000 times.", target: "R40 – R80", rule: { value: 80, up: false } },
+  { key: "clicks", label: "Link clicks", help: "How many times people clicked the ad's link or button." },
+  { key: "cpc", label: "CPC (cost per link click)", help: "What one click cost. Amount spent ÷ link clicks." },
+  { key: "ctr", label: "CTR (link click-through rate)", help: "Out of every 100 times the ad was shown, how many times someone clicked it.", target: "1.5%+", rule: { value: 1.5, up: true } },
+  { key: "lpv", label: "Landing page views", help: "How many people clicked and the landing page actually opened for them. Blank for Facebook forms (no landing page)." },
+  { key: "booked", label: "Booked (EstateKit)", help: "From EstateKit, not Facebook: of the leads these ads brought in during these dates, how many were moved to Booked (or later Mandate Signed) in the pipeline." },
+  { key: "cpb", label: "Cost per booking (EstateKit)", help: "From EstateKit: what one booking cost. Amount spent ÷ Booked." },
+  { key: "mandates", label: "Mandates (EstateKit)", help: "From EstateKit, not Facebook: of the leads these ads brought in during these dates, how many reached Mandate Signed in the pipeline." },
+  { key: "cpmand", label: "Cost per mandate (EstateKit)", help: "From EstateKit: what one signed mandate cost. Amount spent ÷ Mandates." },
 ];
 
 export function metricValues(r: AdRowNumbers): Record<MetricKey, number | null> {
@@ -43,9 +52,14 @@ export function metricValues(r: AdRowNumbers): Record<MetricKey, number | null> 
     freq: r.frequency || null,
     cpm: r.impressions ? (r.spend / r.impressions) * 1000 : null,
     clicks: r.clicks,
+    cpc: r.clicks ? r.spend / r.clicks : null,
     ctr: r.impressions ? (r.clicks / r.impressions) * 100 : null,
     // Instant forms have no landing page.
     lpv: r.lpv || null,
+    booked: r.booked ?? null,
+    cpb: r.booked ? r.spend / r.booked : null,
+    mandates: r.mandates ?? null,
+    cpmand: r.mandates ? r.spend / r.mandates : null,
   };
 }
 
@@ -61,17 +75,17 @@ export function toneOf(def: MetricDef, value: number | null, r: Pick<AdRowNumber
  *  totals carry the real ones. */
 export function sumRows(rows: AdRowNumbers[]): AdRowNumbers {
   return rows.reduce(
-    (a, r) => ({ spend: a.spend + r.spend, impressions: a.impressions + r.impressions, reach: 0, clicks: a.clicks + r.clicks, frequency: 0, leads: a.leads + r.leads, lpv: a.lpv + r.lpv }),
-    { spend: 0, impressions: 0, reach: 0, clicks: 0, frequency: 0, leads: 0, lpv: 0 },
+    (a, r) => ({ spend: a.spend + r.spend, impressions: a.impressions + r.impressions, reach: 0, clicks: a.clicks + r.clicks, frequency: 0, leads: a.leads + r.leads, lpv: a.lpv + r.lpv, booked: (a.booked ?? 0) + (r.booked ?? 0), mandates: (a.mandates ?? 0) + (r.mandates ?? 0) }),
+    { spend: 0, impressions: 0, reach: 0, clicks: 0, frequency: 0, leads: 0, lpv: 0, booked: 0, mandates: 0 } as AdRowNumbers,
   );
 }
 
-/** Facebook's number formats: R1,234.56 for money, 1,234 for counts. */
+/** Ads Manager's number formats: R1,634.64 for money, 9,318 for counts. */
+export const adsMoney = (n: number) => "R" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 export function formatMetric(k: MetricKey, v: number | null): string {
   if (v === null) return "—";
-  const money = (n: number) => "R" + n.toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  if (k === "spend" || k === "cpl" || k === "cpm") return money(v);
+  if (k === "spend" || k === "cpl" || k === "cpm" || k === "cpc" || k === "cpb" || k === "cpmand") return adsMoney(v);
   if (k === "ctr") return v.toFixed(2) + "%";
   if (k === "freq") return v.toFixed(2);
-  return Math.round(v).toLocaleString("en-ZA");
+  return Math.round(v).toLocaleString("en-US");
 }

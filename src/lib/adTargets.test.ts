@@ -15,8 +15,8 @@ describe("ads table numbers", () => {
 
   it("uses Facebook's names, no made-up columns", () => {
     expect(METRICS.map((m) => m.label)).toEqual([
-      "Amount spent", "Leads", "Cost per lead", "Impressions", "Reach", "Frequency",
-      "CPM (cost per 1,000 impressions)", "Link clicks", "CTR (link click-through rate)", "Landing page views",
+      "Results", "Reach", "Frequency", "Cost per result", "Amount spent", "Impressions",
+      "CPM (cost per 1,000 impressions)", "Link clicks", "CPC (cost per link click)", "CTR (link click-through rate)", "Landing page views", "Booked (EstateKit)", "Cost per booking (EstateKit)", "Mandates (EstateKit)", "Cost per mandate (EstateKit)",
     ]);
   });
 
@@ -42,7 +42,8 @@ describe("ads table numbers", () => {
   });
 
   it("formats like Ads Manager", () => {
-    expect(formatMetric("spend", 1234.5)).toMatch(/^R1.234,50$|^R1,234\.50$|^R1 234,50$/);
+    expect(formatMetric("spend", 1634.64)).toBe("R1,634.64");
+    expect(formatMetric("reach", 9318)).toBe("9,318");
     expect(formatMetric("ctr", 1.234)).toBe("1.23%");
     expect(formatMetric("lpv", null)).toBe("—");
   });

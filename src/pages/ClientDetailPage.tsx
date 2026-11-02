@@ -664,18 +664,19 @@ function OverviewTab({ data }: { data: Data }) {
   // Where you are in their ads (?level=adset&campaign=…&adset=…). Each step
   // in is a new page, so Back steps out again.
   const level = (["campaign", "adset", "ad"].includes(params.get("level") ?? "") ? params.get("level") : "campaign") as AdsLevel;
-  const view: AdsView = { level, campaignId: params.get("campaign"), adsetId: params.get("adset") };
+  const ids = (k: string) => (params.get(k) ?? "").split(",").filter((x) => /^\d+$/.test(x));
+  const view: AdsView = { level, campaignIds: ids("campaign"), adsetIds: ids("adset") };
   const setView = (v: AdsView) => setParams((cur) => {
     const n = new URLSearchParams(cur);
     if (v.level === "campaign") n.delete("level"); else n.set("level", v.level);
-    if (v.campaignId) n.set("campaign", v.campaignId); else n.delete("campaign");
-    if (v.adsetId) n.set("adset", v.adsetId); else n.delete("adset");
+    if (v.campaignIds.length) n.set("campaign", v.campaignIds.join(",")); else n.delete("campaign");
+    if (v.adsetIds.length) n.set("adset", v.adsetIds.join(",")); else n.delete("adset");
     return n;
   });
 
   // The account's Facebook totals (shared with the table's Campaigns view).
   const { data: fb, isLoading: fbLoading } = useQuery({
-    queryKey: ["adsTable", acct, sinceDay, lastDay, "campaign", null, null],
+    queryKey: ["adsTable", acct, sinceDay, lastDay, "campaign", "", ""],
     queryFn: () => getAdsTable(acct!, sinceDay, lastDay, { level: "campaign" }),
     enabled: !!acct,
     staleTime: 10 * 60_000,

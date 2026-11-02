@@ -185,6 +185,11 @@ Deno.serve(async (req) => {
             pipeline_id: pipeline?.id || null,
             source_page_id: sourcePageRowId,
             fb_lead_id: String(leadgenId),
+            // Which ad it came from (for bookings and mandates per ad).
+            fb_ad_id: leadData.ad_id ? String(leadData.ad_id) : null,
+            attribution: Object.fromEntries(
+              (["ad_id", "adset_id", "campaign_id"] as const).filter((k) => leadData[k]).map((k) => [k, String(leadData[k])]),
+            ),
             created_at: leadData.created_time || undefined,
           });
 
@@ -209,7 +214,7 @@ async function fetchFbLead(leadgenId: string, pageId: string) {
   const candidates = pageToken ? [pageToken, ...tokens] : tokens;
   for (const token of candidates) {
     try {
-      const res = await fetch(`https://graph.facebook.com/v21.0/${leadgenId}?fields=id,created_time,field_data&access_token=${token}`);
+      const res = await fetch(`https://graph.facebook.com/v21.0/${leadgenId}?fields=id,created_time,field_data,ad_id,adset_id,campaign_id&access_token=${token}`);
       if (res.ok) {
         const data = await res.json();
         if (!data.error) return data;

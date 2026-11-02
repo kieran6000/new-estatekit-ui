@@ -8,6 +8,13 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import CallIcon from "@mui/icons-material/Call";
 import ArchiveOutlinedIcon from "@mui/icons-material/ArchiveOutlined";
+import CloseIcon from "@mui/icons-material/Close";
+import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
+import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
+import OpenInFullIcon from "@mui/icons-material/OpenInFull";
+import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
+import EditLeadContactDialog from "../components/EditLeadContactDialog";
+import LeadFormDialog from "../components/LeadFormDialog";
 import { tokens } from "../theme";
 import { LeadTags } from "../components/LeadTag";
 import { leadTags } from "../lib/leadTags";
@@ -31,8 +38,16 @@ import LeadHistory from "../components/LeadHistory";
 import { logLeadCall } from "../api/leadEvents";
 import type { LeadRow, OutcomeStep, Stage } from "../types";
 
-export default function LeadDetailPage() {
-  const { id } = useParams<{ id: string }>();
+/** The lead, as its own page (/leads/:id) or in the Leads list's side panel
+ *  (leadId + onClose), so agents can go down the list without losing it. */
+export default function LeadDetailPage({ leadId, onClose, nav }: {
+  leadId?: string;
+  onClose?: () => void;
+  /** In the panel: step to the previous / next lead in the list. */
+  nav?: { label: string; prev?: () => void; next?: () => void };
+} = {}) {
+  const params = useParams<{ id: string }>();
+  const id = leadId ?? params.id;
   const navigate = useNavigate();
   // Loads the lead by id when it isn't in the open account (staff opening
   // another agent's link), then switches to that agent's account.
@@ -51,6 +66,8 @@ export default function LeadDetailPage() {
   const [saveState, setSaveState] = useState("");
   const [outcomeOpen, setOutcomeOpen] = useState(false);
   const [stageStep, setStageStep] = useState<{ step: OutcomeStep; stage: Stage } | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // Fetched only when the lead's pipeline isn't among the ones we loaded.
@@ -125,11 +142,27 @@ export default function LeadDetailPage() {
     <Box>
       <AppBar position="sticky">
         <Toolbar sx={{ height: 56, minHeight: "56px !important" }}>
-          {/* Back to wherever they came from (e.g. Automations), else the lead list. */}
-          <IconButton onClick={() => ((window.history.state?.idx ?? 0) > 0 ? navigate(-1) : navigate("/leads"))}>
-            <ArrowBackIcon />
-          </IconButton>
-          <Typography sx={{ fontSize: 18, fontWeight: 500 }}>{lead.name}</Typography>
+          {onClose ? (
+            <IconButton onClick={onClose} aria-label="Close"><CloseIcon /></IconButton>
+          ) : (
+            /* Back to wherever they came from (e.g. Automations), else the lead list. */
+            <IconButton onClick={() => ((window.history.state?.idx ?? 0) > 0 ? navigate(-1) : navigate("/leads"))} aria-label="Back">
+              <ArrowBackIcon />
+            </IconButton>
+          )}
+          <Typography sx={{ fontSize: 18, fontWeight: 500, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lead.name}</Typography>
+          {nav && (
+            <Box sx={{ display: "flex", alignItems: "center", flex: "none" }}>
+              <IconButton onClick={nav.prev} disabled={!nav.prev} aria-label="Previous lead" title="Previous lead"><KeyboardArrowUpIcon /></IconButton>
+              <Typography sx={{ fontSize: 13, color: "text.secondary", whiteSpace: "nowrap" }}>{nav.label}</Typography>
+              <IconButton onClick={nav.next} disabled={!nav.next} aria-label="Next lead" title="Next lead"><KeyboardArrowDownIcon /></IconButton>
+            </Box>
+          )}
+          {onClose && (
+            <IconButton onClick={() => navigate(`/leads/${lead.id}`)} aria-label="Open as a full page" title="Open as a full page">
+              <OpenInFullIcon fontSize="small" />
+            </IconButton>
+          )}
         </Toolbar>
       </AppBar>
 
@@ -188,11 +221,12 @@ export default function LeadDetailPage() {
           </Box>
         </Box>
 
-        <Section title="Contact">
+        <Section title="Contact" action={<Button size="small" startIcon={<EditOutlinedIcon />} onClick={() => setEditOpen(true)}>Edit</Button>}>
+          <Row k="Full name" v={lead.name} />
           <Row k="Phone" v={canSeeFullPhone ? lead.phone : maskPhone(lead.phone)} />
           <Row k="Email" v={lead.email || ""} />
           <Row k="Stage" v={stageLabel(lead.stage, pipelineKind)} />
-          <Row k="Received" v={timeAgo(lead.created_at)} />
+          <Row k="Received" v={`${new Date(lead.created_at).toLocaleString("en-ZA", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })} (${timeAgo(lead.created_at)})`} />
           <Row k="Next" v={nextStepLabel(lead)} />
           {isOperator && leadTags(lead, datasetByPage).length > 0 && (
             <Box sx={{ display: "flex", p: "10px 16px", borderTop: `1px solid ${tokens.divider2}`, gap: 1.5, alignItems: "center" }}>
@@ -202,12 +236,9 @@ export default function LeadDetailPage() {
           )}
         </Section>
 
-        <Section title="From their form">
-          {lead.form_answers.length ? (
-            lead.form_answers.map((r, i) => <Row key={i} k={r.q} v={prettyAnswer(r.a)} />)
-          ) : (
-            <Row k="" v="No answers captured." />
-          )}
+        <Section title="From their form" action={lead.fb_lead_id && lead.source_page_id ? <Button size="small" onClick={() => setFormOpen(true)}>View form</Button> : undefined}>
+          {lead.form_answers.map((r, i) => <Row key={i} k={r.q} v={prettyAnswer(r.a)} />)}
+          {!lead.form_answers.length && <Row k="" v="No answers captured." />}
         </Section>
 
         <Section title="Notes">
@@ -288,7 +319,7 @@ export default function LeadDetailPage() {
                           qc.invalidateQueries({ queryKey: ["leads"] }),
                         );
                       });
-                      navigate("/leads");
+                      if (onClose) onClose(); else navigate("/leads");
                     })
                     .catch((err) => { console.error(err); showSnack("That didn't save. Try again."); });
                 }}
@@ -305,6 +336,8 @@ export default function LeadDetailPage() {
         </Section>
       </Box>
 
+      <EditLeadContactDialog lead={lead} open={editOpen} onClose={() => setEditOpen(false)} showPhone={canSeeFullPhone} />
+      {lead.source_page_id && <LeadFormDialog pageId={lead.source_page_id} open={formOpen} onClose={() => setFormOpen(false)} />}
       <OutcomeSheet lead={lead} pipelineKind={pipelineKind} open={outcomeOpen} onClose={() => setOutcomeOpen(false)} onSnack={showSnack} />
       <OutcomeSheet
         lead={lead}
@@ -476,12 +509,15 @@ function SourceAdSection({ leadId, lead }: { leadId: string; lead: LeadRow }) {
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
     <Paper variant="outlined" sx={{ mt: 1.5, mx: 2, borderRadius: "6px" }}>
-      <Typography sx={{ fontSize: 12, fontWeight: 500, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.06em", p: "14px 16px 4px" }}>
-        {title}
-      </Typography>
+      <Box sx={{ display: "flex", alignItems: "center", pr: 1 }}>
+        <Typography sx={{ flex: 1, fontSize: 12, fontWeight: 500, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.06em", p: "14px 16px 4px" }}>
+          {title}
+        </Typography>
+        {action && <Box sx={{ pt: 1 }}>{action}</Box>}
+      </Box>
       {children}
     </Paper>
   );

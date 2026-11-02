@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Alert,
+  Drawer,
+  Tooltip,
   AppBar,
   Avatar,
   Box,
@@ -94,6 +96,7 @@ import { logLeadCall } from "../api/leadEvents";
 import { startLeadsTour, hasSeenLeadsTour } from "../lib/tour";
 import { listArchivedLeads } from "../api/leads";
 import { syncFbLeads } from "../api/leadPages";
+import LeadDetailPage from "./LeadDetailPage";
 import { getActiveAgentIdSync } from "../api/_client";
 import { getMyProfile } from "../api/agentProfile";
 import GSheetIcon from "../components/GSheetIcon";
@@ -103,6 +106,23 @@ import FocusCallModal from "../components/FocusCallModal";
 
 export default function LeadsPage() {
   const navigate = useNavigate();
+  // The open lead, in the side panel (?lead=…). Each opening is a history
+  // step, so the phone's Back button closes it.
+  const [params, setParams] = useSearchParams();
+  const panelLead = params.get("lead");
+  const openLead = (id: string) => setParams((cur) => { const n = new URLSearchParams(cur); n.set("lead", id); return n; });
+  // Step through the list from the panel, in the order it's shown. Replaces
+  // the history step, so Back still closes the panel.
+  const listOrder = () => Array.from(new Set(Array.from(document.querySelectorAll<HTMLElement>("[data-lead-id]")).filter((e) => e.offsetParent !== null).map((e) => e.dataset.leadId!)));
+  const stepLead = (d: 1 | -1) => {
+    const ids = listOrder();
+    const next = ids[ids.indexOf(panelLead ?? "") + d];
+    if (!next) return;
+    setParams((cur) => { const n = new URLSearchParams(cur); n.set("lead", next); return n; }, { replace: true });
+    document.querySelector(`[data-lead-id="${next}"]`)?.scrollIntoView({ block: "nearest" });
+  };
+  const panelPos = (() => { if (!panelLead) return null; const ids = listOrder(); const i = ids.indexOf(panelLead); return i < 0 ? null : { i, n: ids.length }; })();
+  const closeLead = () => { if ((window.history.state?.idx ?? 0) > 0) navigate(-1); else setParams((cur) => { const n = new URLSearchParams(cur); n.delete("lead"); return n; }, { replace: true }); };
   const isMobile = useMediaQuery("(max-width:639px)");
   const { data: leads = [], isLoading: leadsLoading } = useLeads();
   const { data: pipelines = [], isLoading: pipelinesLoading } = usePipelines();
@@ -564,91 +584,61 @@ export default function LeadsPage() {
         </Box>
       </Box>
 
-      <Box sx={{ p: "10px 16px", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
-        <Typography sx={{ fontSize: 11, fontWeight: 600, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.05em", mb: 0.75 }}>
-          Filter by stage
-        </Typography>
-        <Box data-tour="filters" sx={{ display: "flex", gap: 0.75, overflowX: "auto" }}>
-          {isOperator && (
-            <Box
-              component="button"
-              onClick={() => setShowArchived((v) => !v)}
-              sx={{
-                display: "flex", alignItems: "center", gap: 0.5,
-                border: `1px solid ${showArchived ? tokens.amber : tokens.divider}`,
-                borderRadius: "6px",
-                bgcolor: showArchived ? tokens.amberTint : tokens.surface,
-                color: showArchived ? tokens.amber : "text.secondary",
-                fontWeight: showArchived ? 600 : 400,
-                fontSize: 12.5, p: "5px 10px", cursor: "pointer", whiteSpace: "nowrap",
-                "&:hover": { borderColor: tokens.amber },
-              }}
-            >
-              {showArchived ? "Viewing archived" : "Archived"}
-            </Box>
-          )}
-          {(["All", ...stagesForPipeline] as const).map((s) => {
+      {/* Stage tabs, as in Facebook's Leads Center: plain words with a count,
+          the open one blue and underlined, › between the steps a lead goes
+          through, the finished ones (Lost, Invalid) after a gap. */}
+      <Box sx={{ bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
+        <Box data-tour="filters" role="tablist" aria-label="Leads by stage" sx={{ display: "flex", alignItems: "stretch", overflowX: "auto", px: 1 }}>
+          {(["All", ...stagesForPipeline] as const).map((s, i, all) => {
             const active = filter === s;
             const count = s === "All" ? pipelineLeads.length : pipelineLeads.filter((l) => l.stage === s).length;
+            const dead = s !== "All" && DEAD_STAGES.includes(s);
+            const firstDead = dead && !(all[i - 1] !== "All" && DEAD_STAGES.includes(all[i - 1] as Stage));
+            const label = s === "All" ? "All" : stageLabel(s, activePipeline.kind);
             return (
-              <Box
-                key={s}
-                component="button"
-                onClick={() => pickFilter(s)}
-                sx={{
-                  display: "flex", alignItems: "center", gap: 0.5,
-                  border: `1px solid ${active ? tokens.primary : tokens.divider}`,
-                  borderRadius: "6px",
-                  bgcolor: active ? tokens.primaryBg : tokens.surface,
-                  color: active ? tokens.primaryDark : "text.secondary",
-                  fontWeight: active ? 600 : 400,
-                  fontSize: 12.5,
-                  p: "5px 10px",
-                  cursor: "pointer",
-                  whiteSpace: "nowrap",
-                  "&:hover": { borderColor: tokens.primary, color: tokens.primaryDark },
-                }}
-              >
-                {s === "Mandate Signed" ? "Mandate" : s}
-                <Box component="span" sx={{ fontSize: 11, color: active ? tokens.primary : "text.disabled", fontWeight: 600 }}>
-                  {count}
-                </Box>
+              <Box key={s} sx={{ display: "flex", alignItems: "center", flex: "none" }}>
+                {i > 1 && !dead && <Box component="span" aria-hidden sx={{ color: "text.disabled", fontSize: 12, px: 0.25 }}>▸</Box>}
+                {firstDead && <Box aria-hidden sx={{ width: "1px", height: 22, bgcolor: tokens.divider, mx: 1 }} />}
+                <Tooltip title={STAGE_HELP[s] ?? ""} disableHoverListener={!STAGE_HELP[s]} enterDelay={400}>
+                  <Box component="button" role="tab" aria-selected={active} onClick={() => pickFilter(s)} sx={tabSx(active, dead)}>
+                    {label}
+                    <Box component="span" sx={countSx(active)}>{count}</Box>
+                  </Box>
+                </Tooltip>
               </Box>
             );
           })}
-          {/* Tag filters: staff only, and only for tags some lead has. */}
-          {isOperator && tagCounts.map(([tag, n]) => {
-            const on = tagFilter === tag;
-            return (
-              <Box
-                key={tag}
-                component="button"
-                onClick={() => setTagFilter(on ? null : tag)}
-                aria-pressed={on}
-                sx={{
-                  display: "flex", alignItems: "center", gap: 0.5,
-                  border: `1px solid ${on ? tokens.primary : tokens.divider}`,
-                  borderRadius: "6px",
-                  bgcolor: on ? tokens.primaryBg : tokens.surface,
-                  color: on ? tokens.primaryDark : "text.secondary",
-                  fontWeight: on ? 600 : 400,
-                  fontSize: 12.5, p: "5px 10px", cursor: "pointer", whiteSpace: "nowrap",
-                  "&:hover": { borderColor: tokens.primary, color: tokens.primaryDark },
-                }}
-              >
-                <LocalOfferIcon sx={{ fontSize: 13 }} />
-                {tag}
-                <Box component="span" sx={{ fontSize: 11, color: on ? tokens.primary : "text.disabled", fontWeight: 600 }}>{n}</Box>
+          {isOperator && (
+            <>
+              <Box aria-hidden sx={{ width: "1px", height: 22, bgcolor: tokens.divider, mx: 1, alignSelf: "center", flex: "none" }} />
+              <Box component="button" role="tab" aria-selected={showArchived} onClick={() => setShowArchived((v) => !v)} sx={{ ...tabSx(showArchived, true), flex: "none" }}>
+                Archived
               </Box>
-            );
-          })}
+              {/* Tag filters: staff only, and only for tags some lead has. */}
+              {tagCounts.map(([tag, n]) => {
+                const on = tagFilter === tag;
+                return (
+                  <Box key={tag} component="button" aria-pressed={on} onClick={() => setTagFilter(on ? null : tag)} sx={{ ...tabSx(on, true), flex: "none" }}>
+                    <LocalOfferIcon sx={{ fontSize: 14 }} />
+                    {tag}
+                    <Box component="span" sx={countSx(on)}>{n}</Box>
+                  </Box>
+                );
+              })}
+            </>
+          )}
         </Box>
+        {STAGE_HELP[filter] && (
+          <Typography sx={{ fontSize: 14, color: "text.secondary", px: 2, py: 1, borderTop: `1px solid ${tokens.divider2}` }}>
+            {STAGE_HELP[filter]}
+          </Typography>
+        )}
       </Box>
 
       {/* One-at-a-time call mode. Shown only when there's actually something to
           call, so the list isn't cluttered on a quiet day. This is the whole
           "don't make me think" path: tap once, work the list top to bottom. */}
-      {!selectMode && !showArchived && !showGlobalSearch && callList.length > 0 && (
+      {/* Hidden for now (Nov 2026): the list itself is the way in. */ false && !selectMode && !showArchived && !showGlobalSearch && callList.length > 0 && (
         <Box
           sx={{
             display: "flex", alignItems: "center", gap: 1.5,
@@ -689,7 +679,8 @@ export default function LeadsPage() {
         selected={selected}
         onToggleSelect={toggleSelect}
         onRowSelect={handleRowSelect}
-        onOpen={(id) => navigate(`/leads/${id}`)}
+        onOpen={openLead}
+        activeId={panelLead}
         onCall={(id) => {
           setOutcomeLeadId(id);
           const called = leads.find((l) => l.id === id);
@@ -788,6 +779,21 @@ export default function LeadsPage() {
           showSnack("Pipeline created");
         }}
       />
+      <Drawer
+        anchor="right"
+        open={!!panelLead}
+        onClose={closeLead}
+        slotProps={{ paper: { sx: { width: { xs: "100%", sm: 480 }, bgcolor: "background.default" } } }}
+      >
+        {panelLead && (
+          <LeadDetailPage
+            key={panelLead}
+            leadId={panelLead}
+            onClose={closeLead}
+            nav={panelPos ? { label: `${panelPos.i + 1} of ${panelPos.n}`, prev: panelPos.i > 0 ? () => stepLead(-1) : undefined, next: panelPos.i < panelPos.n - 1 ? () => stepLead(1) : undefined } : undefined}
+          />
+        )}
+      </Drawer>
     </Box>
   );
 }
@@ -1100,6 +1106,7 @@ function AddPipelineDialog({ open, onClose, onCreated }: { open: boolean; onClos
 }
 
 function LeadsTable({
+  activeId,
   leads,
   mobileLeads,
   stages,
@@ -1116,6 +1123,8 @@ function LeadsTable({
   onCall,
   onStagePick,
 }: {
+  /** The lead open in the side panel. */
+  activeId?: string | null;
   /** In the table's sort order. */
   leads: LeadRow[];
   /** The phone list keeps the usual order (it has no headings to sort by). */
@@ -1140,7 +1149,7 @@ function LeadsTable({
   const isMobile = useMediaQuery("(max-width:639px)");
   const canSeeFullPhone = useCanSeeFullPhone();
   if (isMobile) {
-    return <MobileLeadsList leads={mobileLeads} stages={allStages} kind={kind} filter={filter} selectable={selectable} selected={selected} onToggleSelect={onToggleSelect} onRowSelect={onRowSelect} onOpen={onOpen} onCall={onCall} onStagePick={onStagePick} />;
+    return <MobileLeadsList activeId={activeId} leads={mobileLeads} stages={allStages} kind={kind} filter={filter} selectable={selectable} selected={selected} onToggleSelect={onToggleSelect} onRowSelect={onRowSelect} onOpen={onOpen} onCall={onCall} onStagePick={onStagePick} />;
   }
 
   if (leads.length === 0) {
@@ -1153,12 +1162,23 @@ function LeadsTable({
     group.map((l) => (
       <TableRow
         key={l.id}
+        data-lead-id={l.id}
         hover
-        selected={selectable && selected.has(l.id)}
-        onClick={selectable ? (e) => onRowSelect(l.id, e.shiftKey) : undefined}
+        selected={selectable ? selected.has(l.id) : l.id === activeId}
+        tabIndex={selectable ? undefined : 0}
+        aria-label={selectable ? undefined : `Open ${l.name}`}
+        onClick={selectable ? (e) => onRowSelect(l.id, e.shiftKey) : () => onOpen(l.id)}
+        onKeyDown={selectable ? undefined : (e) => { if (e.key === "Enter" && e.target === e.currentTarget) { e.preventDefault(); onOpen(l.id); } }}
         sx={{
-          ...(selectable ? { cursor: "pointer", userSelect: "none" } : undefined),
+          cursor: "pointer",
+          ...(selectable ? { userSelect: "none" } : undefined),
           ...(l.due && !DEAD_STAGES.includes(l.stage) ? { bgcolor: tokens.amberTint } : DEAD_STAGES.includes(l.stage) ? { color: tokens.ink3 } : undefined),
+          // Hover darkens whatever colour the row has; the name underlines.
+          "&:hover": { filter: "brightness(0.97)" },
+          "&:hover .ek-lead-name": { textDecoration: "underline" },
+          "&:focus-visible": { outline: `2px solid ${tokens.primary}`, outlineOffset: -2 },
+          // The lead open in the side panel.
+          ...(!selectable && l.id === activeId ? { "&.Mui-selected, &.Mui-selected:hover": { bgcolor: tokens.primaryBg }, "& > td:first-of-type": { boxShadow: `inset 4px 0 0 ${tokens.primary}` } } : undefined),
         }}
       >
         {selectable && (
@@ -1167,7 +1187,7 @@ function LeadsTable({
           </TableCell>
         )}
         <TableCell sx={{ py: 1 }}>
-          <Box component="span" onClick={selectable ? undefined : () => onOpen(l.id)} sx={{ fontWeight: 500, fontSize: 15, color: tokens.primaryDark, cursor: selectable ? "inherit" : "pointer" }}>
+          <Box component="span" className="ek-lead-name" sx={{ fontWeight: 500, fontSize: 15, color: tokens.primaryDark }}>
             {l.name}
             {isFreshLead(l) && <Box component="span" sx={{ fontSize: 10, fontWeight: 700, color: tokens.green, ml: 0.75 }}>NEW</Box>}
             {cameBack(l) && <CameBackBadge />}
@@ -1186,9 +1206,11 @@ function LeadsTable({
               <Box
                 component="button"
                 onClick={(e) => { e.stopPropagation(); open(e); }}
-                sx={{ border: 0, bgcolor: "transparent", fontSize: 14, color: "inherit", display: "inline-flex", alignItems: "center", gap: 0.75, cursor: "pointer", p: "6px 0" }}
+                aria-label={`Stage: ${stageLabel(l.stage, kind)}. Change stage`}
+                sx={STAGE_PICKER}
               >
                 {stageLabel(l.stage, kind)}
+                <ArrowDropDownIcon sx={{ fontSize: 20, ml: "auto", color: "text.secondary" }} />
               </Box>
             )}
           </StageMenu>
@@ -1276,7 +1298,51 @@ function LeadsTable({
   );
 }
 
+/** What each tab holds, and what to do with it, in plain words. */
+const STAGE_HELP: Record<string, string> = {
+  All: "Every lead, the ones to call first at the top.",
+  "New Lead": "Just came in. Nobody has spoken to them yet. Call these first.",
+  "No Answer": "You called but they didn't pick up. Try again.",
+  Contacted: "You've spoken to them. Follow up when it says.",
+  Booked: "You've set up a meeting or valuation with them.",
+  "Viewing Booked": "You've set up a viewing with them.",
+  "Offer Made": "They've made an offer on a property.",
+  "Mandate Signed": "They signed the mandate. Well done.",
+  Bought: "They bought a property. Well done.",
+  Lost: "Not going ahead (not selling, went with someone else).",
+  "Invalid Number": "The number doesn't work, so they can't be reached.",
+};
+
+const STAGE_PICKER = {
+  display: "inline-flex", alignItems: "center", gap: 0.25, minWidth: 128, minHeight: 34, p: "4px 4px 4px 12px",
+  fontSize: 14, fontWeight: 500, color: "inherit", fontFamily: "inherit", textAlign: "left",
+  bgcolor: "rgba(0,0,0,0.05)", border: 0, borderRadius: "6px", cursor: "pointer",
+  "&:hover": { bgcolor: "rgba(0,0,0,0.09)" },
+  "&:focus-visible": { outline: `2px solid ${tokens.primary}`, outlineOffset: 1 },
+} as const;
+
+/** A stage tab: plain text, blue and underlined when open. */
+function tabSx(active: boolean, quiet: boolean) {
+  return {
+    display: "flex", alignItems: "center", gap: 0.75, height: 52, px: 1.5,
+    border: 0, borderBottom: `3px solid ${active ? tokens.primary : "transparent"}`, borderTop: "3px solid transparent",
+    bgcolor: "transparent", fontFamily: "inherit", fontSize: 15, whiteSpace: "nowrap", cursor: "pointer",
+    fontWeight: active ? 600 : 500,
+    color: active ? tokens.primary : quiet ? "text.secondary" : "text.primary",
+    "&:hover": { bgcolor: "rgba(0,0,0,0.04)" },
+    "&:focus-visible": { outline: `2px solid ${tokens.primary}`, outlineOffset: -2 },
+  } as const;
+}
+function countSx(active: boolean) {
+  return {
+    minWidth: 22, height: 20, px: 0.75, borderRadius: 10, display: "inline-grid", placeItems: "center",
+    fontSize: 12, fontWeight: 600,
+    bgcolor: active ? tokens.primaryBg : "rgba(0,0,0,0.06)", color: active ? tokens.primary : "text.secondary",
+  } as const;
+}
+
 function MobileLeadsList({
+  activeId,
   leads,
   stages,
   kind,
@@ -1289,6 +1355,8 @@ function MobileLeadsList({
   onCall,
   onStagePick,
 }: {
+  /** The lead open in the side panel. */
+  activeId?: string | null;
   leads: LeadRow[];
   stages: Stage[];
   /** Only affects wording — a "general" pipeline shows neutral stage names. */
@@ -1314,14 +1382,20 @@ function MobileLeadsList({
     <Box
       key={l.id}
       data-tour={idx === 0 ? "lead-row" : undefined}
-      onClick={selectable ? (e) => onRowSelect(l.id, e.shiftKey) : undefined}
+      data-lead-id={l.id}
+      role={selectable ? undefined : "button"}
+      tabIndex={selectable ? undefined : 0}
+      onClick={selectable ? (e) => onRowSelect(l.id, e.shiftKey) : () => onOpen(l.id)}
+      onKeyDown={selectable ? undefined : (e) => { if (e.key === "Enter" && e.target === e.currentTarget) { e.preventDefault(); onOpen(l.id); } }}
       sx={{
         borderBottom: `8px solid ${tokens.bg}`,
-        bgcolor: selectable && selected.has(l.id) ? tokens.primaryBg : l.due && !DEAD_STAGES.includes(l.stage) ? tokens.amberTint : "background.paper",
+        bgcolor: (selectable && selected.has(l.id)) || (!selectable && l.id === activeId) ? tokens.primaryBg : l.due && !DEAD_STAGES.includes(l.stage) ? tokens.amberTint : "background.paper",
         p: "12px 16px",
         display: selectable ? "flex" : "block",
         gap: 1,
-        cursor: selectable ? "pointer" : "default",
+        cursor: "pointer",
+        "&:active": { filter: "brightness(0.96)" },
+        "&:focus-visible": { outline: `2px solid ${tokens.primary}`, outlineOffset: -2 },
       }}
     >
       {selectable && (
@@ -1330,7 +1404,7 @@ function MobileLeadsList({
         <Checkbox size="small" checked={selected.has(l.id)} readOnly tabIndex={-1} sx={{ p: 0, mt: 0.25, alignSelf: "flex-start", pointerEvents: "none" }} />
       )}
       <Box sx={{ flex: 1, minWidth: 0 }}>
-      <Box onClick={selectable ? undefined : () => onOpen(l.id)} sx={{ fontWeight: 500, fontSize: 15, color: tokens.primaryDark, cursor: selectable ? "inherit" : "pointer" }}>
+      <Box sx={{ fontWeight: 500, fontSize: 15, color: tokens.primaryDark }}>
         {l.name}
         {isFreshLead(l) && <Box component="span" sx={{ fontSize: 10, fontWeight: 700, color: tokens.green, ml: 0.75 }}>NEW</Box>}
         {cameBack(l) && <CameBackBadge />}
@@ -1347,9 +1421,11 @@ function MobileLeadsList({
             <Box
               component="button"
               onClick={(e) => { e.stopPropagation(); open(e); }}
-              sx={{ border: 0, bgcolor: "transparent", fontSize: 14, color: DEAD_STAGES.includes(l.stage) ? "text.disabled" : "text.primary", p: 0, cursor: "pointer" }}
+              aria-label={`Stage: ${stageLabel(l.stage, kind)}. Change stage`}
+              sx={{ ...STAGE_PICKER, color: DEAD_STAGES.includes(l.stage) ? "text.disabled" : "text.primary", minHeight: 40 }}
             >
-              {l.stage}
+              {stageLabel(l.stage, kind)}
+              <ArrowDropDownIcon sx={{ fontSize: 20, ml: "auto", color: "text.secondary" }} />
             </Box>
           )}
         </StageMenu>
@@ -1362,7 +1438,7 @@ function MobileLeadsList({
         <Box
           component="a"
           href={`tel:${l.phone.replace(/\s/g, "")}`}
-          onClick={() => setTimeout(() => onCall(l.id), 150)}
+          onClick={(e) => { e.stopPropagation(); setTimeout(() => onCall(l.id), 150); }}
           data-tour="call"
           sx={{
             display: "flex",

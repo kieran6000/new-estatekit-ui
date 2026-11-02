@@ -79,6 +79,11 @@ export interface AdNumbers {
   leads: number;
   /** Landing page views. */
   lpv: number;
+  /** Ads Manager's name for the result: "Leads (Form)", "Website leads". */
+  resultType?: string;
+  /** EstateKit: of this row's leads in these dates, how many were booked / signed a mandate. */
+  booked?: number;
+  mandates?: number;
 }
 
 /** One campaign, ad set or ad in the client page's ads table. */
@@ -92,6 +97,8 @@ export interface AdsRow extends AdNumbers {
   created: string | null;
   dailyBudget: number | null;
   lifetimeBudget: number | null;
+  /** When it stops (campaigns and ad sets); null = ongoing. */
+  ends?: string | null;
   campaign: { id: string; name: string } | null;
   adset: { id: string; name: string } | null;
   /** Ads only: what the ad shows, for the preview. */
@@ -104,10 +111,10 @@ export interface AdsRow extends AdNumbers {
  *  note: "busy" when Facebook is throttling, else why Meta couldn't be read. */
 export async function getAdsTable(
   adAccountId: string, since: string, until: string,
-  view: { level: AdsLevel; campaignId?: string | null; adsetId?: string | null },
+  view: { level: AdsLevel; campaignIds?: string[]; adsetIds?: string[] },
 ): Promise<{ rows: AdsRow[]; account: AdNumbers | null; note?: string }> {
   const { data, error } = await supabase.functions.invoke("fb-adset-table", {
-    body: { adAccountId, since, until, level: view.level, campaignId: view.campaignId || undefined, adsetId: view.adsetId || undefined },
+    body: { adAccountId, since, until, level: view.level, campaignIds: view.campaignIds ?? [], adsetIds: view.adsetIds ?? [] },
   });
   if (error) throw new Error(data?.error || error.message);
   if (data?.error) throw new Error(data.error);
