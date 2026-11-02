@@ -89,6 +89,7 @@ export async function drawMap(el: HTMLElement, at: LatLng, zoom: number): Promis
     zoom,
     disableDefaultUI: true,
     zoomControl: true,
+    keyboardShortcuts: false,
     clickableIcons: false,
     gestureHandling: "greedy",
     styles: [

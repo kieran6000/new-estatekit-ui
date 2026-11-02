@@ -3,6 +3,7 @@ import { Box, Dialog, DialogContent, DialogTitle, IconButton, Skeleton, Typograp
 import CloseIcon from "@mui/icons-material/Close";
 import { useQuery } from "@tanstack/react-query";
 import { listSoldListingsForAgent } from "../api/soldListings";
+import { tokens } from "../theme";
 import { nearby } from "../lib/geo";
 import { drawMap, geocodeAddress, hasMapsKey, streetPhotoUrl } from "../lib/googleMaps";
 
@@ -46,62 +47,72 @@ export default function AddressMapDialog({ address, agentId, open, onClose }: { 
   const ours = !!geo && !mapFailed;
   const showPhoto = ours && geo.exact && !noPhoto;
 
+  const tile = { borderRadius: "12px", overflow: "hidden", bgcolor: "action.hover", height: { xs: 240, md: 300 } };
+
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
-      <DialogTitle sx={{ display: "flex", alignItems: "flex-start", gap: 1, pr: 1 }}>
-        <Typography component="span" sx={{ flex: 1, fontSize: 16, fontWeight: 600 }}>{address}</Typography>
-        <IconButton aria-label="Close" size="small" onClick={onClose}><CloseIcon fontSize="small" /></IconButton>
+    <Dialog open={open} onClose={onClose} fullWidth maxWidth={showPhoto ? "md" : "sm"} slotProps={{ paper: { sx: { borderRadius: "16px" } } }}>
+      <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1, p: "16px 12px 12px 20px" }}>
+        <Typography component="span" sx={{ flex: 1, fontSize: 18, fontWeight: 700, lineHeight: 1.3 }}>{address}</Typography>
+        <IconButton aria-label="Close" onClick={onClose}><CloseIcon /></IconButton>
       </DialogTitle>
-      <DialogContent sx={{ p: 0 }}>
-        {isLoading ? (
-          <Skeleton variant="rectangular" sx={{ width: "100%", height: { xs: 300, sm: 340 } }} />
-        ) : ours ? (
-          <Box ref={setMapEl} role="img" aria-label={`Map of ${address}`} sx={{ width: "100%", height: { xs: 300, sm: 340 } }} />
-        ) : (
-          <Box
-            component="iframe"
-            title={`Map of ${address}`}
-            src={open ? `https://www.google.com/maps?q=${q}&output=embed&t=m&z=17` : undefined}
-            loading="lazy"
-            referrerPolicy="no-referrer-when-downgrade"
-            sx={{ display: "block", width: "100%", height: { xs: 360, sm: 420 }, border: 0 }}
-          />
-        )}
-
-        {showPhoto && (
-          <Box
-            component="img"
-            alt={`The most likely house at ${address}, from the road`}
-            src={streetPhotoUrl(geo)}
-            onError={() => setNoPhoto(true)}
-            sx={{ display: "block", width: "100%", height: { xs: 180, sm: 240 }, objectFit: "cover", mt: "2px" }}
-          />
-        )}
-
-        <Box sx={{ p: "10px 16px" }}>
-          <Typography sx={{ fontSize: 13.5, color: "text.secondary" }}>
-            {ours && !geo.exact
-              ? "Google couldn't find this exact address, so the pin shows the closest area it found. Confirm the address with them."
-              : showPhoto
-                ? "The pin and photo show the most likely house for the address they typed. It may not be the exact one, so confirm it with them."
-                : "The pin shows the most likely spot for the address they typed. It may not be the exact house, so confirm it with them."}
-          </Typography>
+      <DialogContent sx={{ p: "0 20px 20px" }}>
+        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "minmax(0, 1fr)", md: showPhoto ? "repeat(2, minmax(0, 1fr))" : "minmax(0, 1fr)" }, gap: 1.5 }}>
+          {isLoading ? (
+            <Skeleton variant="rectangular" sx={tile} />
+          ) : ours ? (
+            <Box ref={setMapEl} role="img" aria-label={`Map of ${address}`} sx={tile} />
+          ) : (
+            <Box sx={tile}>
+              <Box
+                component="iframe"
+                title={`Map of ${address}`}
+                src={open ? `https://www.google.com/maps?q=${q}&output=embed&t=m&z=17` : undefined}
+                loading="lazy"
+                referrerPolicy="no-referrer-when-downgrade"
+                sx={{ display: "block", width: "100%", height: "100%", border: 0 }}
+              />
+            </Box>
+          )}
+          {showPhoto && (
+            <Box sx={tile}>
+              <Box
+                component="img"
+                alt={`The most likely house at ${address}, from the road`}
+                src={streetPhotoUrl(geo)}
+                onError={() => setNoPhoto(true)}
+                sx={{ display: "block", width: "100%", height: "100%", objectFit: "cover" }}
+              />
+            </Box>
+          )}
         </Box>
 
+        <Typography sx={{ fontSize: 13, color: "text.secondary", mt: 1.25 }}>
+          {ours && !geo.exact
+            ? "Google couldn't find this exact address, so the pin shows the closest area it found. Confirm the address with them."
+            : showPhoto
+              ? "Most likely house for the address they typed. Confirm it with them."
+              : "Most likely spot for the address they typed. Confirm it with them."}
+        </Typography>
+
         {sales.length > 0 && (
-          <Box sx={{ p: "4px 16px 14px" }}>
-            <Typography sx={{ fontSize: 15, fontWeight: 600, mb: 0.75 }}>
+          <Box sx={{ mt: 2.5 }}>
+            <Typography sx={{ fontSize: 15, fontWeight: 700, mb: 1.25 }}>
               You've sold {sales.length} {sales.length === 1 ? "home" : "homes"} within {NEARBY_KM} km
             </Typography>
-            {sales.slice(0, 3).map((s) => (
-              <Box key={s.id} sx={{ display: "flex", justifyContent: "space-between", gap: 2, py: 0.5 }}>
-                <Box sx={{ minWidth: 0 }}>
-                  <Typography sx={{ fontSize: 14 }}>{s.address}</Typography>
-                  <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>{kmWords(s.km)}</Typography>
+            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "minmax(0, 1fr)", sm: "repeat(3, minmax(0, 1fr))" }, gap: 1.5 }}>
+              {sales.slice(0, 3).map((s) => (
+                <Box key={s.id} sx={{ display: "flex", flexDirection: { xs: "row", sm: "column" }, border: `1px solid ${tokens.divider}`, borderRadius: "12px", overflow: "hidden" }}>
+                  <Box
+                    sx={{ flexShrink: 0, width: { xs: 96, sm: "100%" }, height: { xs: "auto", sm: 96 }, minHeight: { xs: 84, sm: 0 }, bgcolor: "action.hover", backgroundImage: s.imageUrl ? `url("${s.imageUrl}")` : undefined, backgroundSize: "cover", backgroundPosition: "center" }}
+                  />
+                  <Box sx={{ p: "10px 12px", minWidth: 0 }}>
+                    <Typography sx={{ fontSize: 15, fontWeight: 700 }}>{money(s.price)}</Typography>
+                    <Typography sx={{ fontSize: 13, lineHeight: 1.35, mt: 0.25 }}>{s.address}</Typography>
+                    <Typography sx={{ fontSize: 12.5, color: "text.secondary", mt: 0.25 }}>{kmWords(s.km)}</Typography>
+                  </Box>
                 </Box>
-                <Typography sx={{ fontSize: 14, fontWeight: 600, whiteSpace: "nowrap" }}>{money(s.price)}</Typography>
-              </Box>
-            ))}
+              ))}
+            </Box>
           </Box>
         )}
       </DialogContent>
