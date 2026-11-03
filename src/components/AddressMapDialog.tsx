@@ -8,6 +8,7 @@ import { cachedGeocode, drawMap, geocodeAddress, hasMapsKey, HOUSE_PIN, metresTo
 import { tokens } from "../theme";
 
 const NEARBY_KM = 5;
+const FIND_LIMIT_MS = 4000;
 const money = (n: number) => "R " + n.toLocaleString("en-ZA");
 const frame = { borderRadius: "6px", overflow: "hidden", border: `1px solid ${tokens.divider}` };
 // Photo sizes match the box's shape on that screen: phone 8:5, otherwise square.
@@ -55,7 +56,8 @@ function MapLoader() {
  *  a photo, and what the agent has sold close by. If our map can't be used (no
  *  key, or Google refuses this web address) it falls back to Google's plain
  *  embed, which needs no key. It's mounted, closed, with every address row, so
- *  the map code and any saved location are ready before the tap. */
+ *  the map code and the location are ready before the tap. A new address is
+ *  looked up then, which is one lookup per address, ever (geocode_cache). */
 export default function AddressMapDialog({ address, agentId, open, onClose }: { address: string; agentId?: string; open: boolean; onClose: () => void }) {
   useEffect(() => { warmUpMaps(); }, []);
   // Never leave them on the loader: if Google says no, use the plain embed.
@@ -70,15 +72,24 @@ export default function AddressMapDialog({ address, agentId, open, onClose }: { 
   const { data: looked, isLoading: looking } = useQuery({
     queryKey: ["geocode", address],
     queryFn: () => geocodeAddress(address),
-    enabled: open && hasMapsKey() && saved === "unknown",
+    enabled: hasMapsKey() && saved === "unknown",
     staleTime: Infinity,
     retry: false,
   });
   const geo = saved === "unknown" || saved === undefined ? looked : saved;
-  const isLoading = hasMapsKey() && (checking || looking);
 
   const [mapEl, setMapEl] = useState<HTMLElement | null>(null);
   const [mapFailed, setMapFailed] = useState(false);
+  // Google can go quiet without saying no, so the wait for the address has a
+  // limit. If the address does come after that, our map takes over.
+  const [waitedEnough, setWaitedEnough] = useState(false);
+  const finding = hasMapsKey() && (checking || looking);
+  const isLoading = finding && !mapFailed && !waitedEnough;
+  useEffect(() => {
+    if (!open || !finding) return;
+    const t = setTimeout(() => setWaitedEnough(true), FIND_LIMIT_MS);
+    return () => clearTimeout(t);
+  }, [open, finding]);
   const [mapReady, setMapReady] = useState(false);
   const [picture, setPicture] = useState<{ width: number; height: number } | null>(null);
   const [pictureReady, setPictureReady] = useState(false);
