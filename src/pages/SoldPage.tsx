@@ -6,7 +6,8 @@ import { tokens } from "../theme";
 import { supabase } from "../api/_client";
 import { listSoldListingsForAgent } from "../api/soldListings";
 import { SoldList } from "../components/SoldListings";
-import { readableOn } from "../lib/contrast";
+import { accentButton, readableOn } from "../lib/contrast";
+import BrandLogo from "../components/BrandLogo";
 
 // Public page: an agent's recent sales. Linked from the confirmation email
 // ("here are some homes I've sold recently") as proof while the lead waits.
@@ -47,7 +48,7 @@ export default function SoldPage() {
     <Box sx={{ minHeight: "100vh", bgcolor: tokens.bg }}>
       <Box sx={{ bgcolor: accent, color: readableOn(accent), p: "14px 20px", textAlign: "center", minHeight: 56 }}>
         {brand?.logo_data_url ? (
-          <Box component="img" src={brand.logo_data_url} alt="" sx={{ height: 44, width: "auto", display: "inline-block", verticalAlign: "middle" }} />
+          <BrandLogo src={brand.logo_data_url} size={44} onColor={accent} />
         ) : (
           <Typography sx={{ fontSize: 18, fontWeight: 700, lineHeight: "28px" }}>{name}</Typography>
         )}
@@ -74,7 +75,7 @@ export default function SoldPage() {
             variant="contained"
             size="large"
             fullWidth
-            sx={{ mt: 3, bgcolor: accent, color: readableOn(accent), "&:hover": { bgcolor: accent, filter: "brightness(0.9)" } }}
+            sx={{ mt: 3, ...accentButton(accent) }}
           >
             Get your free home evaluation
           </Button>

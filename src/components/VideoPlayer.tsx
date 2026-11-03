@@ -8,7 +8,7 @@ import ReplayRoundedIcon from "@mui/icons-material/ReplayRounded";
 import VolumeUpRoundedIcon from "@mui/icons-material/VolumeUpRounded";
 import VolumeOffRoundedIcon from "@mui/icons-material/VolumeOffRounded";
 import FullscreenRoundedIcon from "@mui/icons-material/FullscreenRounded";
-import { readableOn } from "../lib/contrast";
+import { accentButton, accentOnVideo, readableOn } from "../lib/contrast";
 
 // Our own video player, so we can measure every viewer the way Wistia does:
 // where they are, every second, and the furthest point they reach.
@@ -117,7 +117,7 @@ function EndOverlay({ accent, cta, onReplay }: { accent: string; cta: EndCta; on
         size="large"
         onClick={cta.onClick}
         endIcon={cta.below ? <ArrowDownwardRoundedIcon /> : <ArrowForwardRoundedIcon />}
-        sx={{ bgcolor: accent, color: readableOn(accent), maxWidth: "100%", "&:hover": { bgcolor: accent, filter: "brightness(0.9)" } }}
+        sx={{ ...accentButton(accent), maxWidth: "100%" }}
       >
         {cta.label}
       </Button>
@@ -436,7 +436,7 @@ function YouTubePlayer({ id, accent, autoplay, endCta, report }: { id: string; a
           real position stays on the bar's own slider. */}
       {status === "playing" && !teasing && (
         <Box sx={{ position: "absolute", left: 0, right: 0, top: 0, height: 5, bgcolor: "rgba(255,255,255,.28)", pointerEvents: "none", zIndex: 1 }}>
-          <Box sx={{ height: "100%", width: `${(1 - (1 - pct / 100) ** 2) * 100}%`, bgcolor: accent, transition: "width 1s linear" }} />
+          <Box sx={{ height: "100%", width: `${(1 - (1 - pct / 100) ** 2) * 100}%`, bgcolor: accentOnVideo(accent), transition: "width 1s linear" }} />
         </Box>
       )}
 
@@ -464,7 +464,7 @@ function YouTubePlayer({ id, accent, autoplay, endCta, report }: { id: string; a
             sx={{ flex: 1, height: 24, display: "flex", alignItems: "center", cursor: "pointer" }}
           >
             <Box sx={{ position: "relative", width: "100%", height: 4, borderRadius: 2, bgcolor: "rgba(255,255,255,.3)" }}>
-              <Box sx={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${pct}%`, borderRadius: 2, bgcolor: accent }} />
+              <Box sx={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${pct}%`, borderRadius: 2, bgcolor: accentOnVideo(accent) }} />
             </Box>
           </Box>
           <Typography sx={{ fontSize: 12, fontVariantNumeric: "tabular-nums", mx: 0.5, whiteSpace: "nowrap" }}>

@@ -72,6 +72,8 @@ import { RANGE_LABELS } from "../lib/range";
 import { useFollowAccount } from "../hooks/useFollowLeadAccount";
 import { formatMetric, metricValues, type MetricKey } from "../lib/adTargets";
 import { MAX_IMAGE_BYTES, uploadImage } from "../lib/image";
+import { accentEdge, readableOn } from "../lib/contrast";
+import BrandLogo from "../components/BrandLogo";
 import FundingChip from "../components/FundingChip";
 import ContractsSection from "../components/ContractsSection";
 
@@ -284,7 +286,7 @@ function Header({ data }: { data: Data }) {
             title="Change photo"
             sx={{ position: "relative", p: 0, border: 0, bgcolor: "transparent", borderRadius: "50%", cursor: "pointer", flexShrink: 0, "&:hover .cam, &:focus-visible .cam": { opacity: 1 } }}
           >
-            <Avatar src={clientPicture(p)} alt={name} sx={{ width: 72, height: 72, fontSize: 28, fontWeight: 600, bgcolor: p.sidebar_color || "#111827" }}>
+            <Avatar src={clientPicture(p)} alt={name} sx={{ width: 72, height: 72, fontSize: 28, fontWeight: 600, bgcolor: p.sidebar_color || "#111827", color: readableOn(p.sidebar_color || "#111827"), boxShadow: accentEdge(p.sidebar_color || "#111827") }}>
               {name[0]?.toUpperCase()}
             </Avatar>
             <Box
@@ -458,10 +460,10 @@ function BrandingSection({ data }: { data: Data }) {
           )}
         </Box>
         <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, flexWrap: "wrap" }}>
-          <Box sx={{ width: 120, height: 44, borderRadius: "8px", bgcolor: saved, display: "grid", placeItems: "center", overflow: "hidden", flex: "none" }}>
+          <Box sx={{ width: 208, height: 80, p: 1, boxSizing: "border-box", borderRadius: "8px", bgcolor: saved, boxShadow: accentEdge(saved), display: "grid", placeItems: "center", overflow: "hidden", flex: "none" }}>
             {p.sidebar_logo_url
-              ? <Box component="img" src={p.sidebar_logo_url} alt="Logo" sx={{ maxWidth: "90%", maxHeight: 32 }} />
-              : <Typography sx={{ fontSize: 12, color: "#fff", opacity: 0.8 }}>No logo</Typography>}
+              ? <BrandLogo src={p.sidebar_logo_url} size={64} onColor={saved} alt="Logo" />
+              : <Typography sx={{ fontSize: 12, color: readableOn(saved) }}>No logo</Typography>}
           </Box>
           <Button size="small" variant="outlined" startIcon={<UploadFileIcon />} disabled={busy} onClick={() => fileRef.current?.click()}>
             {p.sidebar_logo_url ? "Change logo" : "Upload logo"}

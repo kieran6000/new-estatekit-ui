@@ -232,7 +232,7 @@ export default function LeadDetailPage({ leadId, onClose, nav }: {
           {isOperator && leadTags(lead, datasetByPage).length > 0 && (
             <Box sx={{ display: "flex", p: "10px 16px", borderTop: `1px solid ${tokens.divider2}`, gap: 1.5, alignItems: "center" }}>
               <Typography sx={{ color: "text.secondary", fontSize: 13, flex: "0 0 46%" }}>Tags</Typography>
-              <Box sx={{ flex: 1, display: "flex", gap: 0.5, flexWrap: "wrap" }}><LeadTags lead={lead} /></Box>
+              <Box sx={{ flex: 1, minWidth: 0, display: "flex", gap: 0.5, flexWrap: "wrap" }}><LeadTags lead={lead} /></Box>
             </Box>
           )}
         </Section>
@@ -537,14 +537,14 @@ function Row({ k, v, map, agentId }: { k: string; v: string; map?: boolean; agen
             component="button"
             type="button"
             onClick={() => setMapOpen(true)}
-            sx={{ fontSize: 14, flex: 1, p: 0, border: 0, bgcolor: "transparent", font: "inherit", color: "inherit", textAlign: "left", cursor: "pointer", textDecoration: "underline", textDecorationColor: tokens.divider, textUnderlineOffset: 3, "&:hover": { textDecorationColor: "currentColor" } }}
+            sx={{ fontSize: 14, flex: 1, minWidth: 0, overflowWrap: "anywhere", p: 0, border: 0, bgcolor: "transparent", font: "inherit", color: "inherit", textAlign: "left", cursor: "pointer", textDecoration: "underline", textDecorationColor: tokens.divider, textUnderlineOffset: 3, "&:hover": { textDecorationColor: "currentColor" } }}
           >
             {v}
           </Typography>
           <AddressMapDialog address={v} agentId={agentId} open={mapOpen} onClose={() => setMapOpen(false)} />
         </>
       ) : (
-        <Typography sx={{ fontSize: 14, flex: 1 }}>{v}</Typography>
+        <Typography sx={{ fontSize: 14, flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>{v}</Typography>
       )}
     </Box>
   );

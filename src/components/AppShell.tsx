@@ -47,10 +47,12 @@ import { setupProgress } from "../lib/setup";
 import { useCalendarReady } from "../hooks/useCalendarReady";
 import { getActiveAgentIdSync, listAgentProfiles, setActiveAgent, supabase } from "../api/_client";
 import { clientPath } from "../lib/clientSlug";
-import { isLightColor } from "../lib/contrast";
+import { isLightColor, readableOn, softInkOn } from "../lib/contrast";
+import BrandLogo from "./BrandLogo";
 import AccountSwitcher from "./AccountSwitcher";
 import DevTierToggle from "./DevTierToggle";
 import estateKitLogoWhite from "../assets/whitelogofull.png";
+import estateKitLogoBlue from "../assets/blue logo full.png";
 
 const RAIL_WIDTH = 240;
 
@@ -115,14 +117,13 @@ export default function AppShell() {
 
   const sidebarBg = profile?.sidebarColor || "#111827";
   const light = isLightColor(sidebarBg);
-  const textColor = light ? "#111827" : "#ffffff";
-  const mutedColor = light ? "#4b5563" : "#d1d5db";
+  const textColor = readableOn(sidebarBg);
+  const mutedColor = softInkOn(sidebarBg);
   const dividerColor = light ? "rgba(0,0,0,0.12)" : "rgba(255,255,255,0.1)";
   const hoverBg = light ? "rgba(0,0,0,0.06)" : "rgba(255,255,255,0.08)";
   const activeBg = light ? "rgba(0,0,0,0.10)" : "rgba(255,255,255,0.14)";
   const avatarBg = light ? "rgba(0,0,0,0.12)" : "rgba(255,255,255,0.15)";
-  const sectionLabel = light ? "rgba(0,0,0,0.45)" : "rgba(255,255,255,0.4)";
-  const logoSrc = profile?.sidebarLogoUrl || estateKitLogoWhite;
+  const logoSrc = profile?.sidebarLogoUrl || (light ? estateKitLogoBlue : estateKitLogoWhite);
 
   const SZ = 20;
   const agentNav = staffMode ? [] : [
@@ -188,13 +189,13 @@ export default function AppShell() {
             },
           }}
         >
-          <Box sx={{ px: 2, py: 1.75 }}>
-            <Box component="img" src={logoSrc} alt="EstateKit" sx={{ height: 24, display: "block", maxWidth: "100%", objectFit: "contain", marginX: "auto" }} />
+          <Box sx={{ px: 2, py: 1.5, textAlign: "center" }}>
+            <BrandLogo src={logoSrc} size={profile?.sidebarLogoUrl ? 64 : 32} onColor={sidebarBg} alt={profile?.sidebarLogoUrl ? "Logo" : "EstateKit"} />
           </Box>
 
           {canSwitch && (
             <Box sx={{ px: 1.25 }}>
-              <AccountSwitcher staff={!!isOperator} />
+              <AccountSwitcher variant={light ? "light" : "dark"} staff={!!isOperator} />
             </Box>
           )}
 
@@ -205,8 +206,8 @@ export default function AppShell() {
                 mt: 0.75,
                 px: 1.25,
                 py: 0.75,
-                bgcolor: "#f59e0b22",
-                border: "1px solid #f59e0b66",
+                bgcolor: "#fef3c7",
+                border: "1px solid #f59e0b",
                 borderRadius: "6px",
                 display: "flex",
                 alignItems: "center",
@@ -214,7 +215,7 @@ export default function AppShell() {
                 gap: 1,
               }}
             >
-              <Typography sx={{ fontSize: 11, fontWeight: 600, color: "#f59e0b", lineHeight: 1.3 }}>
+              <Typography sx={{ fontSize: 11, fontWeight: 600, color: "#78350f", lineHeight: 1.3 }}>
                 Managing: {profile?.displayName || "another agent"}
               </Typography>
               <Box
@@ -227,15 +228,15 @@ export default function AppShell() {
                 sx={{
                   fontSize: 10,
                   fontWeight: 600,
-                  color: "#f59e0b",
+                  color: "#78350f",
                   bgcolor: "transparent",
-                  border: "1px solid #f59e0b66",
+                  border: "1px solid #b45309",
                   borderRadius: "4px",
                   px: 0.75,
                   py: 0.25,
                   cursor: "pointer",
                   whiteSpace: "nowrap",
-                  "&:hover": { bgcolor: "#f59e0b22" },
+                  "&:hover": { bgcolor: "#fde68a" },
                 }}
               >
                 Back
@@ -262,7 +263,7 @@ export default function AppShell() {
           {isOperator && (
             <>
               <Divider sx={{ borderColor: dividerColor, mx: 1.25, my: 0.75 }} />
-              <Typography sx={{ fontSize: 10, fontWeight: 600, color: sectionLabel, textTransform: "uppercase", letterSpacing: "0.08em", px: 2.25, pt: 0.5, pb: 0.25 }}>
+              <Typography sx={{ fontSize: 10, fontWeight: 600, color: mutedColor, textTransform: "uppercase", letterSpacing: "0.08em", px: 2.25, pt: 0.5, pb: 0.25 }}>
                 Admin
               </Typography>
               <List disablePadding sx={{ px: 1.25 }}>

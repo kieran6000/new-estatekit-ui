@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Box, Skeleton, Typography } from "@mui/material";
 import { usePostHog } from "@posthog/react";
 import { tokens } from "../theme";
+import { readableOn } from "../lib/contrast";
 import { getLeadPageBySlug, submitMockLead, reportCapiLead } from "../api/leadPages";
 import { getPipelinePublic } from "../api/pipelines";
 import { listCustomQuestionsPublic } from "../api/customQuestions";
@@ -67,7 +68,7 @@ export default function LeadPagePreviewPage() {
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: tokens.bg }}>
       {!loading && page && (
-        <Box sx={{ bgcolor: page.accentColor, color: "#fff", p: "14px 20px", textAlign: "center" }}>
+        <Box sx={{ bgcolor: page.accentColor, color: readableOn(page.accentColor), p: "14px 20px", textAlign: "center" }}>
           <HeaderBrand page={page} />
         </Box>
       )}

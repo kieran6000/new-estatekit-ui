@@ -78,6 +78,7 @@ import { cleanOptions } from "../lib/options";
 import { applyFormPreset, FORM_PRESET_VERSION, presetByKey } from "../lib/formPresets";
 import type { FormPresetKey } from "../types";
 import { MAX_IMAGE_BYTES, uploadImage } from "../lib/image";
+import BrandLogo from "../components/BrandLogo";
 
 export default function LeadPagePage() {
   const navigate = useNavigate();
@@ -448,12 +449,12 @@ export default function LeadPagePage() {
                       sx={{
                         width: 64, height: 64, borderRadius: "8px", border: `2px dashed ${page.logoDataUrl ? tokens.primary : tokens.divider}`,
                         display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", overflow: "hidden",
-                        bgcolor: page.logoDataUrl ? "transparent" : tokens.bg,
+                        bgcolor: page.logoDataUrl ? page.accentColor : tokens.bg,
                         "&:hover": { borderColor: tokens.primary },
                       }}
                     >
                       {page.logoDataUrl ? (
-                        <Box component="img" src={page.logoDataUrl} alt="" sx={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                        <BrandLogo src={page.logoDataUrl} size={52} onColor={page.accentColor} />
                       ) : (
                         <AddIcon sx={{ fontSize: 20, color: "text.disabled" }} />
                       )}
