@@ -31,10 +31,10 @@ import { timeAgo } from "../lib/timeAgo";
 import ContractSheet from "./ContractSheet";
 import SignDialog from "./SignDialog";
 
-const when = (iso: string) =>
+export const when = (iso: string) =>
   new Date(iso).toLocaleString("en-ZA", { timeZone: "Africa/Johannesburg", weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 const linkFor = (c: ContractRow) => `${window.location.origin}/c/${c.token}`;
-const toneColours = {
+export const toneColours = {
   green: { color: tokens.greenDark, bgcolor: tokens.greenTint },
   blue: { color: tokens.primary, bgcolor: tokens.primaryBg },
   amber: { color: tokens.amber, bgcolor: tokens.amberTint },
@@ -53,7 +53,7 @@ const EVENT_LABEL: Record<string, string> = {
   cancelled: "Cancelled",
 };
 
-function Row({ k, v }: { k: string; v: string }) {
+export function Row({ k, v }: { k: string; v: string }) {
   return (
     <Box sx={{ display: "flex", py: 1, borderTop: `1px solid ${tokens.divider2}`, gap: 1.5 }}>
       <Typography sx={{ color: "text.secondary", fontSize: 13, flex: "0 0 40%" }}>{k}</Typography>
@@ -62,7 +62,7 @@ function Row({ k, v }: { k: string; v: string }) {
   );
 }
 
-function Step({ done, label }: { done: boolean; label: string }) {
+export function Step({ done, label }: { done: boolean; label: string }) {
   const Icon = done ? CheckCircleIcon : RadioButtonUncheckedIcon;
   return (
     <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, color: done ? tokens.greenDark : tokens.ink3 }}>
@@ -296,7 +296,7 @@ function NewContractDialog({ open, onClose, client, clients }: { open: boolean; 
 }
 
 /** One client's contracts (client) or everyone's (clients, the list to pick from). */
-export default function ContractsSection({ client, clients, only }: { client?: ContractClient; clients?: ContractClient[]; only?: (c: ContractRow) => boolean }) {
+export default function ContractsSection({ client, clients, only, heading }: { client?: ContractClient; clients?: ContractClient[]; only?: (c: ContractRow) => boolean; heading?: string }) {
   const [creating, setCreating] = useState(false);
   const { data, isLoading, error } = useQuery({
     queryKey: ["contracts", client?.agentId ?? "all"],
@@ -308,7 +308,8 @@ export default function ContractsSection({ client, clients, only }: { client?: C
 
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5, maxWidth: 720, width: "100%", mx: "auto" }}>
-      <Box>
+      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1 }}>
+        {heading && <Typography sx={{ fontSize: 16, fontWeight: 600 }}>{heading}</Typography>}
         <Button variant="contained" disableElevation startIcon={<AddIcon />} onClick={() => setCreating(true)} disabled={!!error}>New contract</Button>
       </Box>
       {isLoading && <CircularProgress size={24} sx={{ m: 2 }} />}

@@ -62,6 +62,8 @@
 .ct-table-3 td { width: 35%; }
 .ct-viewer-note { box-sizing: border-box; max-width: 794px; width: calc(100% - 24px); margin: 12px auto 0; font-size: 12px; line-height: 1.4; color: #c4c8cc; text-align: center; }
 
+.ct-staff-note { box-sizing: border-box; max-width: 794px; width: calc(100% - 24px); margin: 12px auto 0; padding: 10px 14px; border-radius: 4px; background: #fff4cc; color: #111; font-size: 14px; line-height: 1.4; }
+
 /* The place to sign, the way PDF signing apps mark it. */
 .ct-field { width: 100%; height: 76px; box-sizing: border-box; background: #fff4cc; border: 2px solid #111; border-radius: 2px; font: 700 16px Arial, Helvetica, sans-serif; color: #111; cursor: pointer; }
 .ct-field:hover, .ct-field:focus-visible { background: #ffe999; }
@@ -96,7 +98,7 @@
 @media print {
   @page { size: A4; margin: 18mm 16mm; }
   .ct-viewer, .ct-viewer.ct-done { background: #fff; padding: 0; min-height: 0; }
-  .ct-bar, .ct-actionbar, .ct-foot, .ct-measure, .ct-field, .ct-viewer-note { display: none !important; }
+  .ct-bar, .ct-actionbar, .ct-foot, .ct-measure, .ct-field, .ct-viewer-note, .ct-staff-note { display: none !important; }
   .ct-page { box-shadow: none; margin: 0; padding: 0; width: auto; max-width: none; aspect-ratio: auto; font-size: 10.5pt; }
   .ct-block { break-inside: avoid; }
   .ct-table th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }

@@ -1,0 +1,83 @@
+/* The invoice, matching the EstateKit invoice template. It sits in the contract's
+   PDF viewer (contract.css) and looks the same in light and dark, and on paper,
+   so the colours are literal here. */
+
+.inv-sheet { box-sizing: border-box; display: flex; flex-direction: column; background: #fff; width: calc(100% - 24px); max-width: 794px; min-height: 1123px; margin: 16px auto 0; box-shadow: 0 2px 10px rgba(0, 0, 0, .5); font-family: Arial, Helvetica, sans-serif; font-size: 15px; line-height: 1.4; color: #17254f; }
+.inv-sheet p, .inv-sheet h2 { margin: 0; }
+.inv-sheet h2 { font-size: 15px; font-weight: 700; text-transform: uppercase; color: #172a6a; margin-bottom: 10px; }
+
+.inv-banner { display: flex; justify-content: space-between; gap: 16px; background: #172a6a; color: #fff; padding: 52px 60px 44px; }
+.inv-banner img { display: block; height: 72px; width: auto; max-width: 100%; }
+.inv-tag { margin-top: 12px !important; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .02em; color: #a9b7e6; }
+.inv-banner-right { text-align: right; flex-shrink: 0; }
+.inv-title { font-size: 50px; line-height: 1; font-weight: 700; text-transform: uppercase; margin-bottom: 14px !important; }
+
+.inv-body { flex: 1; padding: 0 60px 32px; }
+.inv-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 60px; }
+.inv-body > .inv-columns:first-child { padding: 40px 0 22px; margin: 0 -60px; padding-left: 60px; padding-right: 60px; border-bottom: 1px solid #172a6a; }
+.inv-line { display: flex; gap: 12px; padding: 7px 0; font-size: 14px; }
+.inv-line span { flex: 0 0 72px; font-weight: 700; }
+.inv-line b { flex: 1; min-width: 0; font-weight: 400; overflow-wrap: anywhere; border-bottom: 1px solid #d5daea; padding-bottom: 3px; }
+
+.inv-items { width: 100%; border-collapse: collapse; margin-top: 30px; font-size: 14px; }
+.inv-items thead th { text-align: left; font-size: 14px; text-transform: uppercase; color: #172a6a; padding: 0 0 10px; border-bottom: 3px solid #172a6a; }
+.inv-items tbody th, .inv-items tbody td { text-align: left; vertical-align: top; padding: 14px 12px 14px 0; border-bottom: 1px solid #172a6a; }
+.inv-items tbody td span { display: block; margin-top: 4px; color: #5b6472; }
+.inv-items .inv-num { text-align: right; padding-right: 0; padding-left: 12px; white-space: nowrap; }
+
+.inv-summary { margin-top: 26px; align-items: start; }
+.inv-terms p { color: #5b6472; font-size: 13.5px; margin-bottom: 14px; }
+.inv-sum { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; }
+.inv-total { display: flex; justify-content: space-between; gap: 12px; margin-top: 8px; padding-top: 16px; border-top: 3px solid #172a6a; font-size: 24px; font-weight: 700; white-space: nowrap; }
+
+.inv-bank { margin-top: 24px; border: 2px solid #172a6a; background: #eef1f8; }
+.inv-bank h2 { background: #172a6a; color: #fff; padding: 12px 28px; margin: 0; font-size: 19px; }
+.inv-bank-rows { padding: 16px 28px; }
+.inv-bank-row { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 8px; align-items: baseline; padding: 6px 0; }
+.inv-bank-row span { color: #5b6472; font-size: 16px; }
+.inv-bank-row b { font-size: 19px; overflow-wrap: anywhere; }
+.inv-account { font-size: 24px !important; }
+.inv-reference { display: flex; align-items: center; justify-content: space-between; gap: 16px; border-top: 1px solid #172a6a; padding: 10px 28px; }
+.inv-reference .inv-bank-row { flex: 1; min-width: 0; }
+.inv-reference-label { font-weight: 700; color: #172a6a !important; }
+.inv-reference p { flex: 0 0 170px; text-align: right; font-size: 13px; color: #5b6472; overflow-wrap: anywhere; }
+
+.inv-foot { display: flex; justify-content: space-between; gap: 16px; background: #172a6a; color: #fff; padding: 22px 60px; font-size: 14px; }
+.inv-preview .inv-sheet { width: 100%; margin-top: 0; }
+
+@media (max-width: 600px) {
+  .inv-sheet { width: calc(100% - 12px); min-height: 0; margin-top: 6px; font-size: 14px; }
+  .inv-banner { padding: 24px 16px; }
+  .inv-banner img { height: 40px; }
+  .inv-tag { font-size: 10px; }
+  .inv-title { font-size: 28px; margin-bottom: 6px !important; }
+  .inv-banner-right { font-size: 11px; }
+  .inv-body { padding: 0 16px 20px; }
+  .inv-body > .inv-columns:first-child { margin: 0 -16px; padding: 20px 16px 12px; }
+  .inv-columns { grid-template-columns: minmax(0, 1fr); }
+  .inv-items { margin-top: 20px; font-size: 13px; }
+  .inv-items thead { display: none; }
+  .inv-items, .inv-items tbody, .inv-items tr { display: block; }
+  .inv-items tbody th { display: block; border: 0; padding: 0; }
+  .inv-items tbody td { display: none; }
+  .inv-items tbody td:nth-of-type(1) { display: block; border: 0; padding: 4px 0 8px; }
+  .inv-items tbody td:last-child { display: block; text-align: left; padding: 0 0 12px; }
+  .inv-total { font-size: 21px; }
+  .inv-bank h2 { padding: 10px 14px; font-size: 15px; }
+  .inv-bank-rows { padding: 10px 14px; }
+  .inv-bank-row { grid-template-columns: 110px minmax(0, 1fr); }
+  .inv-bank-row span { font-size: 13px; }
+  .inv-bank-row b { font-size: 15px; }
+  .inv-account { font-size: 18px !important; }
+  .inv-reference { display: block; padding: 8px 14px; }
+  .inv-reference p { text-align: left; margin-top: 4px !important; }
+  .inv-foot { display: block; padding: 14px 16px; font-size: 12px; }
+  .inv-foot b { display: block; margin-top: 4px; }
+}
+
+/* Save as PDF: one A4 page, edge to edge, with its colours. */
+@page invoice { size: A4; margin: 0; }
+@media print {
+  .inv-sheet { page: invoice; width: 210mm; max-width: none; height: 296mm; min-height: 0; margin: 0; box-shadow: none; overflow: hidden; }
+  .inv-sheet, .inv-sheet * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
