@@ -224,7 +224,7 @@ export default function LeadHistory({ leadId }: { leadId: string }) {
               )}
               <Box sx={{ display: "flex", alignItems: "center", flexWrap: "wrap", columnGap: 0.75, mt: 0.25, color: "text.secondary" }}>
                 {[who, via].filter(Boolean).map((part) => (
-                  <Typography key={part} sx={{ fontSize: 12.5, "&:not(:first-of-type)::before": { content: '"· "' } }}>
+                  <Typography key={part} sx={{ fontSize: 12.5, minWidth: 0, overflowWrap: "anywhere", "&:not(:first-of-type)::before": { content: '"· "' } }}>
                     {part}
                   </Typography>
                 ))}

@@ -9,7 +9,8 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 
 import PlaceIcon from "@mui/icons-material/Place";
 import { LEAD_FORM_TEMPLATE } from "../lib/leadFormTemplate";
-import { readableOn } from "../lib/contrast";
+import { accentButton, accentOnWhite, readableOn } from "../lib/contrast";
+import BrandLogo from "./BrandLogo";
 import { trackPageEvent } from "../lib/pageTracking";
 import { fillMessage } from "../lib/format";
 import type { CustomQuestion, LeadPage, PipelineKind } from "../types";
@@ -234,7 +235,7 @@ export default function LeadCaptureForm({
           <LinearProgress
             variant="determinate"
             value={progress}
-            sx={{ height: 4, bgcolor: "#eee", "& .MuiLinearProgress-bar": { bgcolor: page.accentColor } }}
+            sx={{ height: 4, bgcolor: "#eee", "& .MuiLinearProgress-bar": { bgcolor: accentOnWhite(page.accentColor) } }}
           />
         )}
 
@@ -253,7 +254,7 @@ export default function LeadCaptureForm({
                 fullWidth
                 endIcon={<ArrowForwardIcon />}
                 onClick={() => { markStarted(); setPhase("steps"); }}
-                sx={{ mt: 3, bgcolor: page.accentColor, color: onAccent, "&:hover": { bgcolor: page.accentColor, filter: "brightness(0.9)" } }}
+                sx={{ mt: 3, ...accentButton(page.accentColor) }}
               >
                 Get Started
               </Button>
@@ -274,7 +275,7 @@ export default function LeadCaptureForm({
                   question={step.question}
                   value={answers[step.question.id] ?? ""}
                   error={errors.question}
-                  accent={page.accentColor}
+                  accent={accentOnWhite(page.accentColor)}
                   agentFirst={(page.agentName || "").trim().split(/\s+/)[0] || "We"}
                   noWeekends={page.thankYouWeekendOff}
                   onChange={(v) => { setErrors({}); setAnswers((a) => ({ ...a, [step.question.id]: v })); }}
@@ -341,7 +342,7 @@ export default function LeadCaptureForm({
                   fullWidth
                   endIcon={isLast ? undefined : <ArrowForwardIcon />}
                   onClick={handleNext}
-                  sx={{ mt: 3, bgcolor: page.accentColor, color: onAccent, "&:hover": { bgcolor: page.accentColor, filter: "brightness(0.9)" } }}
+                  sx={{ mt: 3, ...accentButton(page.accentColor) }}
                 >
                   {isLast ? page.ctaLabel : "Next Step"}
                 </Button>
@@ -389,7 +390,7 @@ function ContactConsent({ agentName }: { agentName: string }) {
  * — never the profile photo, which is reserved for the thank-you screen. */
 export function HeaderBrand({ page }: { page: LeadPage }) {
   return page.logoDataUrl ? (
-    <Box component="img" src={page.logoDataUrl} alt="" sx={{ height: 50, width: "auto", display: "inline-block", verticalAlign: "middle" }} />
+    <BrandLogo src={page.logoDataUrl} size={50} onColor={page.accentColor} />
   ) : (
     <Typography sx={{ fontSize: 14, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>
       {page.agentName || page.name}
@@ -491,7 +492,7 @@ function DisqualifiedScreen({ page }: { page: LeadPage }) {
           href={page.dqCtaUrl}
           target="_blank"
           rel="noopener"
-          sx={{ mt: 3, bgcolor: page.accentColor, color: readableOn(page.accentColor), "&:hover": { bgcolor: page.accentColor, filter: "brightness(0.9)" } }}
+          sx={{ mt: 3, ...accentButton(page.accentColor) }}
         >
           {page.dqCtaLabel}
         </Button>

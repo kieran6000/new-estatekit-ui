@@ -15,7 +15,7 @@ import { SoldList } from "../components/SoldListings";
 import PoweredByEstateKit from "../components/PoweredByEstateKit";
 import { initPixel } from "../lib/fbPixel";
 import { fillMessage } from "../lib/format";
-import { readableOn } from "../lib/contrast";
+import { accentButton, accentOnWhite, readableOn } from "../lib/contrast";
 import { isPlanToken, recallPlanToken } from "../lib/planToken";
 import { trackPageEvent } from "../lib/pageTracking";
 import { resolveMagnet, type Magnet } from "../lib/leadMagnet";
@@ -126,7 +126,7 @@ export default function ThankYouPage() {
 
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: tokens.bg }}>
-      <Box sx={{ bgcolor: page.accentColor, color: "#fff", p: "14px 20px", textAlign: "center" }}>
+      <Box sx={{ bgcolor: page.accentColor, color: readableOn(page.accentColor), p: "14px 20px", textAlign: "center" }}>
         <HeaderBrand page={page} />
       </Box>
 
@@ -176,7 +176,7 @@ function MagnetCta({ page, magnet, href, personal, compact, still, attract }: { 
         rel="noopener"
         sx={{ display: "flex", alignItems: "center", gap: 1.25, mt: 2.5, p: 1.5, borderRadius: "10px", border: "1px solid #e0e0e0", color: "#1d2327", textDecoration: "none", "&:hover": { bgcolor: "#fafafa" } }}
       >
-        <Icon sx={{ color: page.accentColor }} />
+        <Icon sx={{ color: accentOnWhite(page.accentColor) }} />
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Typography sx={{ fontSize: 12, color: "#5b6670" }}>While you wait</Typography>
           <Typography sx={{ fontSize: 15, fontWeight: 700, lineHeight: 1.3 }}>{magnet.title}</Typography>
@@ -187,10 +187,10 @@ function MagnetCta({ page, magnet, href, personal, compact, still, attract }: { 
   }
   return (
     <Box sx={{ mt: 3.5, pt: 3, borderTop: "1px solid #eee", textAlign: "left" }}>
-      <Typography sx={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: page.accentColor, textAlign: "center", mb: 1.5 }}>
+      <Typography sx={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: accentOnWhite(page.accentColor), textAlign: "center", mb: 1.5 }}>
         While you wait
       </Typography>
-      <Box sx={{ display: "flex", gap: 2, alignItems: "center", p: 2, borderRadius: "12px", bgcolor: `color-mix(in srgb, ${page.accentColor} 7%, #fff)`, border: `1px solid color-mix(in srgb, ${page.accentColor} 22%, #fff)` }}>
+      <Box sx={{ display: "flex", gap: 2, alignItems: "center", p: 2, borderRadius: "12px", bgcolor: `color-mix(in srgb, ${page.accentColor} 7%, #fff)`, border: `1px solid color-mix(in srgb, ${accentOnWhite(page.accentColor)} 22%, #fff)` }}>
         {/* A little cover, so it reads as something to keep, not a link. */}
         <Box sx={{ position: "relative", width: 58, height: 74, flex: "none", borderRadius: "4px 8px 8px 4px", bgcolor: page.accentColor, color: readableOn(page.accentColor), display: "grid", placeItems: "center", boxShadow: "0 6px 14px rgba(0,0,0,.18)", transform: "rotate(-4deg)" }}>
           <Box sx={{ position: "absolute", left: 6, top: 0, bottom: 0, width: 2, bgcolor: "rgba(255,255,255,.35)" }} />
@@ -212,7 +212,7 @@ function MagnetCta({ page, magnet, href, personal, compact, still, attract }: { 
         rel="noopener"
         endIcon={<ArrowForwardIcon />}
         sx={{
-          mt: 2, ...(attract ? ATTRACT : {}), bgcolor: page.accentColor, color: readableOn(page.accentColor), "&:hover": { bgcolor: page.accentColor, filter: "brightness(0.9)" },
+          mt: 2, ...(attract ? ATTRACT : {}), ...accentButton(page.accentColor),
           "& .MuiButton-endIcon": { animation: still ? "none" : "ek-nudge 1.6s ease-in-out infinite" },
           "@keyframes ek-nudge": { "0%, 100%": { transform: "translateX(0)" }, "50%": { transform: "translateX(4px)" } },
           "@media (prefers-reduced-motion: reduce)": { "& .MuiButton-endIcon": { animation: "none" } },

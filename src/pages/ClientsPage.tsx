@@ -31,6 +31,7 @@ import SearchIcon from "@mui/icons-material/Search";
 import CloseIcon from "@mui/icons-material/Close";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import { tokens } from "../theme";
+import { accentEdge, readableOn } from "../lib/contrast";
 import SendOutlinedIcon from "@mui/icons-material/SendOutlined";
 import {
   adsManagerUrl,
@@ -288,7 +289,7 @@ export default function ClientsPage() {
       </Tooltip>
     ) : null;
   const avatar = (r: Row, size: number) => (
-    <Avatar src={clientPicture(r.c)} alt={r.name} sx={{ width: size, height: size, fontSize: size * 0.42, fontWeight: 600, bgcolor: r.c.sidebar_color || "#111827", flexShrink: 0 }}>
+    <Avatar src={clientPicture(r.c)} alt={r.name} sx={{ width: size, height: size, fontSize: size * 0.42, fontWeight: 600, bgcolor: r.c.sidebar_color || "#111827", color: readableOn(r.c.sidebar_color || "#111827"), boxShadow: accentEdge(r.c.sidebar_color || "#111827"), flexShrink: 0 }}>
       {(r.name || "?")[0].toUpperCase()}
     </Avatar>
   );

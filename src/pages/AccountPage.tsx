@@ -35,6 +35,7 @@ import AccountSwitcher from "../components/AccountSwitcher";
 import AppearanceSetting from "../components/AppearanceSetting";
 import { tokens } from "../theme";
 import { MAX_IMAGE_BYTES, uploadImage } from "../lib/image";
+import BrandLogo from "../components/BrandLogo";
 
 export default function AccountPage() {
   const { user, signOut } = useAuth();
@@ -398,7 +399,7 @@ export default function AccountPage() {
                         }}
                       >
                         {form.sidebarLogoUrl ? (
-                          <Box component="img" src={form.sidebarLogoUrl} alt="" sx={{ width: "100%", height: "100%", objectFit: "contain", p: 0.5 }} />
+                          <BrandLogo src={form.sidebarLogoUrl} size={52} onColor={form.sidebarColor} />
                         ) : (
                           <AddIcon sx={{ fontSize: 20, color: "text.disabled" }} />
                         )}

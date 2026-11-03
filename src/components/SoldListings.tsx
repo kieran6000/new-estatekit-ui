@@ -1,5 +1,6 @@
 import { Box, Typography } from "@mui/material";
 import type { SoldListing } from "../api/soldListings";
+import { readableOn } from "../lib/contrast";
 
 function rands(n: number | null): string {
   if (n == null) return "";
@@ -19,7 +20,7 @@ export function SoldStrip({ listings, area, accent }: { listings: SoldListing[];
           {tiles.map((l) => (
             <Box key={l.id} sx={{ position: "relative", borderRadius: "8px", overflow: "hidden", aspectRatio: "4 / 3", bgcolor: "#e4e7e5" }}>
               <Box component="img" src={l.imageUrl!} alt={l.status === "sold" ? "Recently sold home" : "Recently listed home"} loading="lazy" sx={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-              <Box sx={{ position: "absolute", left: 4, bottom: 4, bgcolor: accent, color: "#fff", fontWeight: 800, fontSize: 10, letterSpacing: "0.5px", borderRadius: "4px", px: 0.75, py: 0.25 }}>
+              <Box sx={{ position: "absolute", left: 4, bottom: 4, bgcolor: accent, color: readableOn(accent), fontWeight: 800, fontSize: 10, letterSpacing: "0.5px", borderRadius: "4px", px: 0.75, py: 0.25 }}>
                 {l.status === "sold" ? "SOLD" : "LISTED"}
               </Box>
             </Box>

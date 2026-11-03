@@ -3,7 +3,7 @@ import { Box, Button, CircularProgress, InputAdornment, TextField, Typography } 
 import WhatsAppIcon from "@mui/icons-material/WhatsApp";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import { supabase } from "../api/_client";
-import { readableOn } from "../lib/contrast";
+import { accentButton, readableOn } from "../lib/contrast";
 import CallTimeStep, { CALL_TIME_CONFIRM, callTimeIncomplete } from "./CallTimeStep";
 import { formatLeadPhone, leadPhoneMessage, leadPhoneProblem } from "../lib/leadPhone";
 
@@ -140,7 +140,7 @@ export function ThankYouCallTime({ token, slug, byPhone, seller, preview, accent
         }}
         disabled={busy}
         startIcon={busy ? <CircularProgress size={18} sx={{ color: "inherit" }} /> : undefined}
-        sx={{ mt: 3, bgcolor: accent, color: readableOn(accent), "&:hover": { bgcolor: accent, filter: "brightness(0.9)" }, "&.Mui-disabled": { bgcolor: accent, color: readableOn(accent), opacity: 0.7 } }}
+        sx={{ mt: 3, ...accentButton(accent), "&.Mui-disabled": { bgcolor: accent, color: readableOn(accent), opacity: 0.7 } }}
       >
         {byPhone && step === 1 ? "Next" : byPhone ? (seller ? "Get my evaluation" : "Confirm my call") : "Confirm call time"}
       </Button>}

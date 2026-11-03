@@ -1,4 +1,5 @@
 import { supabase } from "../api/_client";
+import { findLogoBounds } from "./logo";
 
 // Every picture goes through here: shrunk in the browser to what the app
 // actually shows, saved as WebP in the public "logos" bucket, and cached for
@@ -34,6 +35,22 @@ async function decode(file: File): Promise<ImageBitmap | HTMLImageElement> {
   }
 }
 
+/** The part of a logo that isn't empty margin, in the picture's own pixels. */
+function logoCrop(img: ImageBitmap | HTMLImageElement, iw: number, ih: number) {
+  const all = { x: 0, y: 0, w: iw, h: ih };
+  const scale = Math.min(1, 1200 / Math.max(iw, ih));
+  const w = Math.max(1, Math.round(iw * scale));
+  const h = Math.max(1, Math.round(ih * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return all;
+  ctx.drawImage(img, 0, 0, w, h);
+  const b = findLogoBounds(ctx.getImageData(0, 0, w, h).data, w, h);
+  return b ? { x: b.x / scale, y: b.y / scale, w: b.w / scale, h: b.h / scale } : all;
+}
+
 /** Shrinks a picture to fit `kind`'s box (never enlarges) and returns WebP,
  *  or the original file if the browser can't process it. */
 export async function shrinkImage(file: File, kind: ImageKind): Promise<Blob> {
@@ -42,13 +59,14 @@ export async function shrinkImage(file: File, kind: ImageKind): Promise<Blob> {
     const img = await decode(file);
     const iw = "naturalWidth" in img ? img.naturalWidth : img.width;
     const ih = "naturalHeight" in img ? img.naturalHeight : img.height;
-    const scale = Math.min(1, w / iw, h / ih);
+    const crop = kind === "logo" ? logoCrop(img, iw, ih) : { x: 0, y: 0, w: iw, h: ih };
+    const scale = Math.min(1, w / crop.w, h / crop.h);
     const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(iw * scale));
-    canvas.height = Math.max(1, Math.round(ih * scale));
+    canvas.width = Math.max(1, Math.round(crop.w * scale));
+    canvas.height = Math.max(1, Math.round(crop.h * scale));
     const ctx = canvas.getContext("2d");
     if (!ctx) return file;
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, crop.x, crop.y, crop.w, crop.h, 0, 0, canvas.width, canvas.height);
     const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, "image/webp", q));
     // Some older browsers ignore WebP and return PNG; only use it if smaller.
     return blob && blob.size < file.size ? blob : file;

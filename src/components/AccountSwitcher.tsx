@@ -120,12 +120,12 @@ export default function AccountSwitcher({ variant = "dark", staff = true }: { va
             {activeName}
           </Typography>
           {activeArea && (
-            <Typography sx={{ fontSize: 11, color: variant === "dark" ? "rgba(255,255,255,.6)" : tokens.ink2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <Typography sx={{ fontSize: 11, color: variant === "dark" ? "rgba(255,255,255,.85)" : tokens.ink2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {activeArea}
             </Typography>
           )}
         </Box>
-        <UnfoldMoreIcon sx={{ color: variant === "dark" ? "rgba(255,255,255,.6)" : tokens.ink2, fontSize: 18 }} />
+        <UnfoldMoreIcon sx={{ color: variant === "dark" ? "rgba(255,255,255,.85)" : tokens.ink2, fontSize: 18 }} />
       </Box>
 
       <Popover
