@@ -66,6 +66,15 @@ export const markInvoiceShared = (id: string) => setStatus(id, { shared_at: new 
 export const markInvoicePaid = (id: string, paid: boolean) => setStatus(id, { paid_at: paid ? new Date().toISOString() : null });
 export const cancelInvoice = (id: string) => setStatus(id, { voided_at: new Date().toISOString() });
 
+/** Only a cancelled invoice can be deleted: the database refuses any other. */
+export async function deleteInvoice(id: string): Promise<void> {
+  const { data, error } = await supabase.from("invoices").delete().eq("id", id).select("id");
+  if (error || !data?.length) {
+    console.error("deleteInvoice failed:", error?.message ?? "no row deleted");
+    throw new Error("Couldn't delete the invoice. Try again.");
+  }
+}
+
 export type SharedInvoice =
   | { status: "cancelled"; reference: string; staff: boolean }
   | { status: "open" | "paid"; reference: string; staff: boolean; document: InvoiceDocument };
