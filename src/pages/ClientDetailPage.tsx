@@ -73,6 +73,7 @@ import { useFollowAccount } from "../hooks/useFollowLeadAccount";
 import { formatMetric, metricValues, type MetricKey } from "../lib/adTargets";
 import { MAX_IMAGE_BYTES, uploadImage } from "../lib/image";
 import FundingChip from "../components/FundingChip";
+import ContractsSection from "../components/ContractsSection";
 
 /** Digits in international form, so 083… and +2783… compare equal. */
 const digits = (s: string) => {
@@ -98,7 +99,7 @@ type TabKey = ClientTab;
 
 /** Operators: one account, at /clients/<their-name>/<tab>. Overview (the
  *  numbers and their ads), History (what changed on their ads), Brief
- *  (onboarding answers) and Settings (everything editable). Dates and where
+ *  (onboarding answers), Contract and Settings (everything editable). Dates and where
  *  you are in their ads are in the address too, so a link opens the same
  *  view and Back steps through it. */
 export default function ClientDetailPage() {
@@ -183,6 +184,7 @@ export default function ClientDetailPage() {
                 <Tab value="overview" label="Overview" />
                 <Tab value="history" label="History" />
                 <Tab value="brief" label="Brief" />
+                <Tab value="contract" label="Contract" />
                 <Tab value="settings" label="Settings" />
               </Tabs>
             </Box>
@@ -198,6 +200,16 @@ export default function ClientDetailPage() {
                   {data.dossier?.onboardingExtra && <OnboardingSection data={data} which="onboardingExtra" />}
                 </Box>
               </Cols>
+            )}
+            {tab === "contract" && (
+              <ContractsSection client={{
+                agentId,
+                name: data.profile.display_name ?? "",
+                company: data.profile.company,
+                phone: data.profile.whatsapp_number,
+                email: data.profile.email,
+                area: data.profile.area,
+              }} />
             )}
             {tab === "settings" && <SettingsTab data={data} />}
           </Box>

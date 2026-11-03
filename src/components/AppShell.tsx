@@ -59,8 +59,8 @@ function activeSection(pathname: string): string {
   if (pathname.startsWith("/home")) return "home";
   if (pathname.startsWith("/overview")) return "overview";
   if (pathname.startsWith("/clients")) return "clients";
-  // Weekly reports lives under Accounts, so Accounts stays lit there.
-  if (pathname.startsWith("/admin/reports")) return "clients";
+  // Weekly reports and contracts live under Accounts, so Accounts stays lit there.
+  if (pathname.startsWith("/admin/reports") || pathname.startsWith("/admin/contracts")) return "clients";
   if (pathname.startsWith("/admin")) return "automations";
   if (pathname.startsWith("/account")) return "account";
   if (pathname.startsWith("/setup")) return "setup";
