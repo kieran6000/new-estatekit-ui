@@ -22,11 +22,27 @@ declare global {
 
 let loading: Promise<GoogleMaps> | null = null;
 
+// Google can refuse the key after its code has loaded, so that's told apart
+// from loading: anyone drawing a map listens for it.
+let keyRefused = false;
+const refusedListeners = new Set<() => void>();
+
+/** Calls back if Google refuses the key, now or later. Gives back how to stop. */
+export function onMapsKeyRefused(listener: () => void): () => void {
+  if (keyRefused) listener();
+  refusedListeners.add(listener);
+  return () => { refusedListeners.delete(listener); };
+}
+
 export function loadGoogleMaps(): Promise<GoogleMaps> {
   if (loading) return loading;
   loading = new Promise((resolve, reject) => {
     if (!KEY) { reject(new Error("no maps key")); return; }
-    window.gm_authFailure = () => reject(new Error("maps key refused"));
+    window.gm_authFailure = () => {
+      keyRefused = true;
+      refusedListeners.forEach((l) => l());
+      reject(new Error("maps key refused"));
+    };
     window.ekMapsReady = () => resolve(window.google!.maps);
     const s = document.createElement("script");
     s.src = `https://maps.googleapis.com/maps/api/js?key=${KEY}&v=weekly&loading=async&callback=ekMapsReady`;
