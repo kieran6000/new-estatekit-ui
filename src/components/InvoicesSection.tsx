@@ -5,7 +5,7 @@ import AddIcon from "@mui/icons-material/Add";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import WhatsAppIcon from "@mui/icons-material/WhatsApp";
-import { cancelInvoice, createInvoice, InvoicesNotSetUp, listInvoices, markInvoicePaid, markInvoiceShared, type InvoiceRow } from "../api/invoices";
+import { cancelInvoice, createInvoice, deleteInvoice, InvoicesNotSetUp, listInvoices, markInvoicePaid, markInvoiceShared, type InvoiceRow } from "../api/invoices";
 import { buildInvoice, DEFAULT_AMOUNT, DEFAULT_DESCRIPTION, DEFAULT_ITEM, DEFAULT_PERIOD, defaultDueDate, invoiceStatus, longDate, money, todaySA, whatsappDigits } from "../lib/invoiceTemplate";
 import { useSnack } from "../hooks/useSnack";
 import { timeAgo } from "../lib/timeAgo";
@@ -18,6 +18,7 @@ function InvoiceCard({ i }: { i: InvoiceRow }) {
   const qc = useQueryClient();
   const showSnack = useSnack();
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const status = invoiceStatus(i);
   const live = !i.voided_at;
   const openable = live && !i.paid_at;
@@ -50,6 +51,11 @@ function InvoiceCard({ i }: { i: InvoiceRow }) {
   const cancel = async () => {
     await run(cancelInvoice(i.id), "Invoice cancelled");
     setConfirmCancel(false);
+  };
+
+  const remove = async () => {
+    await run(deleteInvoice(i.id), "Invoice deleted");
+    setConfirmDelete(false);
   };
 
   return (
@@ -85,6 +91,7 @@ function InvoiceCard({ i }: { i: InvoiceRow }) {
         {openable && <Button size="small" onClick={() => run(markInvoicePaid(i.id, true), "Marked as paid")}>Mark as paid</Button>}
         {live && i.paid_at && <Button size="small" onClick={() => run(markInvoicePaid(i.id, false), "Marked as not paid")}>Mark as not paid</Button>}
         {openable && <Button size="small" color="error" onClick={() => setConfirmCancel(true)}>Cancel it</Button>}
+        {i.voided_at && <Button size="small" color="error" onClick={() => setConfirmDelete(true)}>Delete</Button>}
       </Box>
 
       <Dialog open={confirmCancel} onClose={() => setConfirmCancel(false)} maxWidth="xs" fullWidth>
@@ -95,6 +102,17 @@ function InvoiceCard({ i }: { i: InvoiceRow }) {
         <DialogActions>
           <Button onClick={() => setConfirmCancel(false)}>Keep it</Button>
           <Button color="error" onClick={cancel}>Cancel invoice</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={confirmDelete} onClose={() => setConfirmDelete(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Delete this invoice?</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ fontSize: 14 }}>{i.reference} will be gone for good, and its link will stop working.</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmDelete(false)}>Keep it</Button>
+          <Button color="error" onClick={remove}>Delete invoice</Button>
         </DialogActions>
       </Dialog>
     </Paper>
