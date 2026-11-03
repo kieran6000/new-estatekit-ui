@@ -12,6 +12,8 @@ export interface ContractDocument {
   provider: string;
   client: string;
   company: string | null;
+  /** Who signed for EstateKit, in their own hand. Part of the wording, so it's locked too. */
+  issuer?: { name: string; signature: string | null };
   summary: { label: string; value: string }[];
   sections: ContractSection[];
 }
@@ -125,7 +127,7 @@ export function buildContract(t: ContractTerms): ContractDocument {
         "This is the whole agreement between us about this service. A change only counts if we've both agreed to it in writing.",
         "South African law applies to this agreement.",
         "We each accept electronic signatures. Signing this agreement electronically has the same effect as signing it by hand.",
-        "When you sign, we record the date and time, your name and signature, that a code sent to your WhatsApp number was entered, and the device and internet address used. We keep that record as proof of signature, along with a record of when this agreement was opened and read.",
+        "When you sign, we record the date and time, your name and signature, and the device and internet address used. We keep that record as proof of signature, along with a record of when this agreement was opened and read.",
       ],
     },
   ];

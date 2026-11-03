@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { cleanScroll, cleanSeconds, CODE_MINUTES, codeHash, codeRefusal, documentHash, firstIp, MAX_CODE_TRIES, maskPhone, newCode, phoneDigits, validSignature, validSignerName } from "./rules.ts";
+import { cleanScroll, cleanSeconds, documentHash, firstIp, maskPhone, phoneDigits, validSignature, validSignerName } from "./rules.ts";
 
 // Contracts clients read and sign (Accounts → Contracts).
 //
@@ -10,8 +10,9 @@ import { cleanScroll, cleanSeconds, CODE_MINUTES, codeHash, codeRefusal, documen
 //   { action: "preview", token }       what a WhatsApp link preview may show
 //   { action: "view", token, session } the contract; a new visit is logged
 //   { action: "beat", token, session, seconds, scroll }  time on the page, how far read
-//   { action: "code", token }          WhatsApps a signing code to the client's number
-//   { action: "sign", token, session, name, signature, code, agreed }
+//   { action: "sign", token, session, name, signature, agreed }
+//   { action: "my_signature" }         operator only: their saved signature and name
+//   { action: "save_signature", signature }  operator only
 //
 // verify_jwt is off because clients aren't signed in. Operator actions check
 // the caller themselves, and an operator looking at a contract isn't logged:
@@ -87,6 +88,22 @@ Deno.serve(async (req) => {
   }
 
   try {
+    if (body.action === "my_signature" || body.action === "save_signature") {
+      const who = await caller(req);
+      if (!who?.isOperator) return json({ error: "Only EstateKit staff can do this." }, 403);
+      if (body.action === "save_signature") {
+        if (!validSignature(body.signature)) return json({ error: "That signature didn't save. Try again." }, 400);
+        const { error } = await supabase.from("contract_staff_signatures").upsert({ agent_id: who.id, signature_png: body.signature, updated_at: new Date().toISOString() });
+        if (error) {
+          console.error("signature save failed", error);
+          return json({ error: "That signature didn't save. Try again." }, 500);
+        }
+        return json({ ok: true });
+      }
+      const { data } = await supabase.from("contract_staff_signatures").select("signature_png").eq("agent_id", who.id).maybeSingle();
+      return json({ name: who.name, signature: data?.signature_png ?? null });
+    }
+
     if (body.action === "create") {
       const who = await caller(req);
       if (!who?.isOperator) return json({ error: "Only EstateKit staff can create contracts." }, 403);
@@ -205,35 +222,12 @@ Deno.serve(async (req) => {
       return json({ ok: true });
     }
 
-    if (body.action === "code") {
-      if (!open(row)) return json({ error: "This agreement can't be signed any more." }, 409);
-      const { data: earlier } = await supabase.from("contract_codes").select("created_at").eq("contract_id", row.id).order("created_at", { ascending: false }).limit(10);
-      const refusal = codeRefusal((earlier ?? []).map((c) => c.created_at), Date.now());
-      if (refusal) return json({ error: refusal }, 429);
-
-      const code = newCode();
-      const sent = await sendWhatsApp(row.signer_phone, `${code} is your code to sign EstateKit agreement ${row.reference}.\n\nIt lasts ${CODE_MINUTES} minutes. Entering it signs the agreement, so don't share it with anyone.`);
-      if (!sent) return json({ error: "We couldn't send your code. Wait a minute and try again." }, 502);
-      await supabase.from("contract_codes").insert({ contract_id: row.id, code_hash: await codeHash(row.id, code), expires_at: new Date(Date.now() + CODE_MINUTES * 60_000).toISOString() });
-      await logEvent(row.id, "code_sent", place(req));
-      return json({ ok: true, maskedPhone: maskPhone(row.signer_phone) });
-    }
-
     if (body.action === "sign") {
       if (!open(row)) return json({ error: "This agreement can't be signed any more." }, 409);
       if (body.agreed !== true) return json({ error: "Tick the box to confirm you agree." }, 400);
       if (!validSignerName(body.name)) return json({ error: "Type your full name, first name and surname." }, 400);
-      if (!validSignature(body.signature)) return json({ error: "Draw your signature in the box." }, 400);
+      if (!validSignature(body.signature)) return json({ error: "Add your signature first." }, 400);
 
-      const { data: code } = await supabase.from("contract_codes").select("id, code_hash, expires_at, attempts, used_at").eq("contract_id", row.id).order("created_at", { ascending: false }).limit(1).maybeSingle();
-      if (!code || code.used_at || new Date(code.expires_at).getTime() < Date.now() || code.attempts >= MAX_CODE_TRIES) {
-        return json({ error: "That code has expired. Send yourself a new one." }, 400);
-      }
-      if (await codeHash(row.id, String(body.code ?? "").replace(/\D/g, "")) !== code.code_hash) {
-        await supabase.from("contract_codes").update({ attempts: code.attempts + 1 }).eq("id", code.id);
-        await logEvent(row.id, "code_wrong", place(req));
-        return json({ error: "That code isn't right. Check WhatsApp and type it again." }, 400);
-      }
       // The wording they read is still the wording that was issued.
       if (await documentHash(row.document) !== row.document_hash) {
         console.error("contract fingerprint mismatch", row.id);
@@ -252,7 +246,6 @@ Deno.serve(async (req) => {
         console.error("contract sign failed", error);
         return json({ error: "That didn't go through. Try again." }, 500);
       }
-      await supabase.from("contract_codes").update({ used_at: new Date().toISOString() }).eq("id", code.id);
       await logEvent(row.id, "signed", { ip, user_agent });
 
       const link = `${APP}/c/${token}`;
