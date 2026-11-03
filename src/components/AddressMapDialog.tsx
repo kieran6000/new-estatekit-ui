@@ -4,7 +4,7 @@ import CloseIcon from "@mui/icons-material/Close";
 import { useQuery } from "@tanstack/react-query";
 import { listSoldListingsForAgent } from "../api/soldListings";
 import { nearby } from "../lib/geo";
-import { cachedGeocode, drawMap, geocodeAddress, hasMapsKey, HOUSE_PIN, metresToPixels, staticMapUrl, streetPhotoUrl, UNSURE_METRES, warmUpMaps } from "../lib/googleMaps";
+import { cachedGeocode, drawMap, geocodeAddress, hasMapsKey, HOUSE_PIN, metresToPixels, onMapsKeyRefused, staticMapUrl, streetPhotoUrl, UNSURE_METRES, warmUpMaps } from "../lib/googleMaps";
 import { tokens } from "../theme";
 
 const NEARBY_KM = 5;
@@ -58,6 +58,8 @@ function MapLoader() {
  *  the map code and any saved location are ready before the tap. */
 export default function AddressMapDialog({ address, agentId, open, onClose }: { address: string; agentId?: string; open: boolean; onClose: () => void }) {
   useEffect(() => { warmUpMaps(); }, []);
+  // Never leave them on the loader: if Google says no, use the plain embed.
+  useEffect(() => onMapsKeyRefused(() => setMapFailed(true)), []);
   const { data: saved, isLoading: checking } = useQuery({
     queryKey: ["geocodeSaved", address],
     queryFn: () => cachedGeocode(address),
@@ -139,6 +141,7 @@ export default function AddressMapDialog({ address, agentId, open, onClose }: { 
                     src={staticMapUrl(geo, zoom, picture.width, picture.height)}
                     fetchPriority="high"
                     onLoad={() => setPictureReady(true)}
+                    onError={() => setMapFailed(true)}
                     sx={{ display: "block", width: "100%", height: "100%" }}
                   />
                   {!geo.exact && (
