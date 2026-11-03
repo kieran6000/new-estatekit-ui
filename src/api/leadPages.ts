@@ -222,7 +222,7 @@ export async function listFbPages(): Promise<FbPage[]> {
   const { data, error } = await supabase.functions.invoke("discover-fb-pages", { body: {} });
   if (error) {
     console.error("discover-fb-pages error:", await functionErrorMessage(error));
-    return [];
+    throw new Error("Couldn't load Facebook pages");
   }
   const pages = (data?.pages ?? data?.data ?? []) as { id?: string; name?: string }[];
   return pages
