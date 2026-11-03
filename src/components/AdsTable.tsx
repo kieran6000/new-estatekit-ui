@@ -1,7 +1,7 @@
 import { useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Avatar, Box, Button, ButtonBase, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, Divider, IconButton, ListItemIcon, ListItemText, Menu, MenuItem,
+  Avatar, Box, Button, ButtonBase, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, Divider, Drawer, IconButton, ListItemIcon, ListItemText, Menu, MenuItem,
   Paper, Popover, Popper, Radio, TextField, useMediaQuery, Skeleton, Switch, Table, TableBody, TableCell, TableHead, TableRow, Tooltip, Typography,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
@@ -29,6 +29,8 @@ import { getAdsTable, setAdBudget, setAdStatus, type AdsLevel, type AdsRow } fro
 import { METRICS, adsMoney, formatMetric, metricValues, sumRows, toneOf, type MetricKey, type Tone } from "../lib/adTargets";
 import { ALL_COLUMNS, COLUMN_LABEL, PRESETS, choiceLabel, loadPrefs, savePrefs, visibleColumns, type ColId, type ColumnPrefs, type PresetKey } from "../lib/adColumns";
 import { useSnack } from "../hooks/useSnack";
+import { listLeadIdsForAd } from "../api/leads";
+import LeadDetailPage from "../pages/LeadDetailPage";
 import { useIsOperator } from "../hooks/useAutomations";
 
 // The client page's ads table, made to look and work like Ads Manager:
@@ -159,8 +161,8 @@ function Num({ v, sub }: { v: ReactNode; sub?: string }) {
   );
 }
 
-export default function AdsTable({ adAccountId, since, until, view, onView, pageName, pageAvatar }: {
-  adAccountId: string | null; since: string; until: string;
+export default function AdsTable({ agentId, adAccountId, since, until, view, onView, pageName, pageAvatar }: {
+  agentId: string; adAccountId: string | null; since: string; until: string;
   view: AdsView; onView: (v: AdsView) => void;
   /** Shown at the top of the ad preview, as on Facebook. */
   pageName: string; pageAvatar?: string;
@@ -170,6 +172,8 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
   const [sort, setSort] = useState<{ k: SortKey; dir: 1 | -1 }>({ k: "spend", dir: -1 });
   const [headMenu, setHeadMenu] = useState<{ el: HTMLElement; col: ColId | "name"; key: SortKey } | null>(null);
   const [confirm, setConfirm] = useState<{ row: AdsRow; on: boolean } | null>(null);
+  // An ad's Results number opens its leads in the usual lead panel, 1 of N.
+  const [adLeads, setAdLeads] = useState<{ ids: string[]; i: number } | null>(null);
   // Editing a daily budget, as in Ads Manager: the pencil in the cell opens it.
   const isOperator = useIsOperator();
   const budgetInput = useRef<HTMLInputElement>(null);
@@ -250,6 +254,17 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
       showSnack("Facebook didn't take that budget. Try again, or change it in Ads Manager.");
     } finally {
       setBusy(null);
+    }
+  }
+
+  async function openAdLeads(row: AdsRow) {
+    try {
+      const ids = await listLeadIdsForAd(agentId, row.id, since, until);
+      if (ids.length) setAdLeads({ ids, i: 0 });
+      else showSnack("These leads aren't in EstateKit yet. Facebook can take a few minutes to send them.");
+    } catch (e) {
+      console.error(e);
+      showSnack("Couldn't open these leads. Try again.");
     }
   }
 
@@ -348,6 +363,19 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
     }
     if (id === "ends") return <Box sx={{ color: FB.text }}>{r.ends ? fbDate(r.ends) : "Ongoing"}</Box>;
     const sub = id === "leads" ? (r.leads ? r.resultType || "Leads" : "") : id === "cpl" ? (r.leads ? perResult(r.resultType || "Leads") : "") : undefined;
+    if (id === "leads" && view.level === "ad" && r.leads) {
+      return (
+        <Tooltip title="See these leads">
+          <ButtonBase
+            disableRipple
+            onClick={(e) => { e.stopPropagation(); void openAdLeads(r); }}
+            sx={{ display: "block", ml: "auto", font: "inherit", textAlign: "right", "& > div:first-of-type": { color: FB.link }, "&:hover > div:first-of-type": { textDecoration: "underline" }, "&.Mui-focusVisible": { outline: `2px solid ${FB.link}`, outlineOffset: 2 } }}
+          >
+            <Num v={formatMetric(id, v[id])} sub={sub} />
+          </ButtonBase>
+        </Tooltip>
+      );
+    }
     return <Num v={formatMetric(id, v[id])} sub={sub} />;
   };
 
@@ -841,6 +869,26 @@ export default function AdsTable({ adAccountId, since, until, view, onView, page
           </Button>
         </DialogActions>
       </Dialog>
+
+      <Drawer
+        anchor="right"
+        open={!!adLeads}
+        onClose={() => setAdLeads(null)}
+        slotProps={{ paper: { sx: { width: { xs: "100%", sm: 480 }, bgcolor: "background.default" } } }}
+      >
+        {adLeads && (
+          <LeadDetailPage
+            key={adLeads.ids[adLeads.i]}
+            leadId={adLeads.ids[adLeads.i]}
+            onClose={() => setAdLeads(null)}
+            nav={{
+              label: `${adLeads.i + 1} of ${adLeads.ids.length}`,
+              prev: adLeads.i > 0 ? () => setAdLeads({ ...adLeads, i: adLeads.i - 1 }) : undefined,
+              next: adLeads.i < adLeads.ids.length - 1 ? () => setAdLeads({ ...adLeads, i: adLeads.i + 1 }) : undefined,
+            }}
+          />
+        )}
+      </Drawer>
     </Box>
   );
 }

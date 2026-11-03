@@ -9,7 +9,7 @@ const supabase = createClient(
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, x-client-info, apikey",
 };
 
 const TOKEN_NAMES = ["FB_ACCESS_TOKEN", "FB_ACCESS_TOKEN_2"];
@@ -23,12 +23,18 @@ interface FBPage { id: string; name: string }
 interface FBAdAccount { id: string; name: string }
 
 async function fetchPages(token: string): Promise<FBPage[]> {
-  const res = await fetch(
-    `https://graph.facebook.com/v21.0/me/accounts?fields=id,name,access_token&access_token=${token}`,
-  );
-  if (!res.ok) return [];
-  const data = await res.json();
-  return (data.data || []).map((p: { id: string; name: string }) => ({ id: p.id, name: p.name }));
+  // Facebook answers in pages of its own: follow "next" so no page is missing from the list.
+  const out: FBPage[] = [];
+  let url: string | null =
+    `https://graph.facebook.com/v21.0/me/accounts?fields=id,name&limit=200&access_token=${token}`;
+  while (url) {
+    const res = await fetch(url);
+    if (!res.ok) break;
+    const data = await res.json();
+    for (const p of data.data || []) out.push({ id: p.id, name: p.name });
+    url = data.paging?.next ?? null;
+  }
+  return out;
 }
 
 async function fetchAdAccounts(token: string): Promise<FBAdAccount[]> {

@@ -160,6 +160,20 @@ export interface SourceAd {
   postUrl: string;
 }
 
+/** The leads one Facebook ad brought in between two days (South African time), newest first. */
+export async function listLeadIdsForAd(agentId: string, adId: string, since: string, until: string): Promise<string[]> {
+  const { data, error } = await supabase
+    .from("leads")
+    .select("id")
+    .eq("agent_id", agentId)
+    .eq("fb_ad_id", adId)
+    .gte("created_at", `${since}T00:00:00+02:00`)
+    .lte("created_at", `${until}T23:59:59.999+02:00`)
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((l) => l.id);
+}
+
 /** The Facebook ad this lead came from, resolved from its fb_lead_id. */
 export async function getLeadSourceAd(leadId: string): Promise<SourceAd | null> {
   const { data, error } = await supabase.functions.invoke("fb-lead-source-ad", { body: { leadId } });

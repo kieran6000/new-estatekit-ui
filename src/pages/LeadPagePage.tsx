@@ -1144,10 +1144,11 @@ function FbPagePicker({
   onOpen: () => void;
   onPick: (pageId: string | null) => void;
 }) {
-  const { data: pages = [], isFetching } = useQuery({
+  const { data: pages = [], isFetching, isError } = useQuery({
     queryKey: ["fbPages"],
     queryFn: listFbPages,
     enabled: open,
+    retry: false,
     staleTime: 60 * 60_000,
     refetchOnWindowFocus: false,
   });
@@ -1182,7 +1183,8 @@ function FbPagePicker({
         label="Facebook page"
         value={activeId ?? ""}
         onChange={(e) => onPick(e.target.value === agentPageId ? null : e.target.value)}
-        helperText={isFetching ? "Loading pages from Facebook…" : "Only change this if the form lives on another page"}
+        error={isError && !isFetching}
+        helperText={isFetching ? "Loading pages from Facebook…" : isError ? "Couldn't load your other Facebook pages. Close this box and try again in a minute." : "Only change this if the form lives on another page"}
         fullWidth
       >
         {agentPageId && (
