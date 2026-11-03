@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canonical, cleanScroll, cleanSeconds, codeRefusal, documentHash, firstIp, maskPhone, newCode, phoneDigits, validSignature, validSignerName } from "./rules";
+import { canonical, cleanScroll, cleanSeconds, documentHash, firstIp, maskPhone, phoneDigits, validInitials, validSignature, validSignerName } from "./rules";
 
 describe("a contract's fingerprint", () => {
   it("is the same when the database reorders the keys", async () => {
@@ -38,35 +38,19 @@ describe("what a signature needs", () => {
     expect(validSignature(null)).toBe(false);
   });
 
+  it("wants initials made of letters", () => {
+    expect(validInitials("SD")).toBe(true);
+    expect(validInitials("É.v.d.M")).toBe(true);
+    expect(validInitials("")).toBe(false);
+    expect(validInitials("123")).toBe(false);
+    expect(validInitials(null)).toBe(false);
+  });
+
   it("wants a full name", () => {
     expect(validSignerName("Siva Naidoo")).toBe(true);
     expect(validSignerName("Élise  van der Merwe")).toBe(true);
     expect(validSignerName("Siva")).toBe(false);
     expect(validSignerName("12 34")).toBe(false);
-  });
-});
-
-describe("sending signing codes", () => {
-  const now = Date.parse("2026-11-03T10:00:00Z");
-  const ago = (ms: number) => new Date(now - ms).toISOString();
-
-  it("allows the first code", () => {
-    expect(codeRefusal([], now)).toBeNull();
-  });
-
-  it("waits 30 seconds between codes", () => {
-    expect(codeRefusal([ago(10_000)], now)).toMatch(/30 seconds/);
-    expect(codeRefusal([ago(31_000)], now)).toBeNull();
-  });
-
-  it("stops at five an hour, then allows more once they've aged out", () => {
-    const five = [1, 2, 3, 4, 5].map((m) => ago(m * 60_000));
-    expect(codeRefusal(five, now)).toMatch(/an hour/);
-    expect(codeRefusal(five.map(() => ago(3_700_000)), now)).toBeNull();
-  });
-
-  it("codes are always six digits", () => {
-    for (let i = 0; i < 200; i++) expect(newCode()).toMatch(/^\d{6}$/);
   });
 });
 

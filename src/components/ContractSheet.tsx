@@ -1,98 +1,177 @@
-import { useEffect, type ReactNode } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { deviceName, type SignedRecord } from "../api/contracts";
-import type { ContractDocument } from "../lib/contractTemplate";
+import { SIGNATURE_DATE, type ContractDocument } from "../lib/contractTemplate";
 import "../pages/contract.css";
-
-// Loaded here, not with the app: only contracts use it.
-const SERIF = "https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,700&display=swap";
 
 const SA_TIME: Intl.DateTimeFormatOptions = { timeZone: "Africa/Johannesburg" };
 const dateOnly = (iso: string) => new Date(iso).toLocaleDateString("en-ZA", { ...SA_TIME, day: "numeric", month: "long", year: "numeric" });
 const dateTime = (iso: string) => `${dateOnly(iso)}, ${new Date(iso).toLocaleTimeString("en-ZA", { ...SA_TIME, hour: "2-digit", minute: "2-digit", second: "2-digit" })} SAST`;
 
-/** The agreement as a document: the client's page, the team's preview and the
- *  signed copy all use this, so what's previewed is what's signed. `signing`
- *  is the place for the signature form while it's unsigned. */
-export default function ContractSheet({ doc, reference, issuedAt, issuedBy, documentHash, signed, signing, clausesRef }: {
+/** **word** as bold. */
+const rich = (text: string) => text.split("**").map((part, i) => (i % 2 ? <b key={i}>{part}</b> : part));
+
+/** The agreement as PDF pages: the client's page, the team's preview and the
+ *  signed copy all use this, so what's previewed is what's signed. The fields
+ *  are what shows in a signature's place until there is one. Clauses fill each
+ *  page until it's full, at whatever size the screen makes the page. */
+export default function ContractSheet({ doc, reference, issuedAt, documentHash, signed, clientField, issuerField, pagesRef }: {
   doc: ContractDocument;
   reference: string;
   issuedAt: string;
-  issuedBy: string | null;
   documentHash?: string;
   signed?: SignedRecord | null;
-  signing?: ReactNode;
-  clausesRef?: (el: HTMLElement | null) => void;
+  clientField?: ReactNode;
+  issuerField?: ReactNode;
+  pagesRef?: (el: HTMLElement | null) => void;
 }) {
-  useEffect(() => {
-    if (document.querySelector(`link[href="${SERIF}"]`)) return;
-    const link = document.createElement("link");
-    link.rel = "stylesheet";
-    link.href = SERIF;
-    document.head.appendChild(link);
-  }, []);
-  const clientName = doc.company ? `${doc.client}, ${doc.company}` : doc.client;
-  return (
-    <article className="ct-sheet">
-      <header className="ct-top">
-        <span className="ct-brand">{doc.provider}</span>
-        <span className="ct-ref">Reference {reference}</span>
-      </header>
-
-      <h1 className="ct-title">{doc.title}</h1>
-      <p className="ct-between">Between {doc.provider} and {clientName}. Issued {dateOnly(issuedAt)}.</p>
-
-      <dl className="ct-terms">
-        {doc.summary.map((s) => (
-          <div key={s.label}><dt>{s.label}</dt><dd>{s.value}</dd></div>
-        ))}
-      </dl>
-
-      <div ref={clausesRef}>
-        {doc.sections.map((section, i) => (
-          <section className="ct-section" key={section.heading}>
-            <h2>{i + 1}. {section.heading}</h2>
-            {section.clauses.map((clause, j) => (
-              <div className="ct-clause" key={j}>
-                <span>{i + 1}.{j + 1}</span>
-                <p>{clause}</p>
-              </div>
-            ))}
-          </section>
-        ))}
-      </div>
-
-      <section className="ct-execution" id="sign">
-        <h2>{signed ? "Signed" : "Signature"}</h2>
-        {signed ? (
-          <div className="ct-parties">
-            <div className="ct-party">
-              <img src={signed.signature} alt={`Signature of ${signed.name}`} />
-              <div className="ct-party-line">{signed.name}</div>
-              <div className="ct-party-note">For the Client<br />{dateTime(signed.at)}</div>
-            </div>
-            <div className="ct-party">
-              <div className="ct-party-mark">{doc.provider}</div>
-              <div className="ct-party-line">{issuedBy || doc.provider}</div>
-              <div className="ct-party-note">For {doc.provider}<br />Issued {dateOnly(issuedAt)}</div>
-            </div>
+  const blocks = useMemo<ReactNode[]>(() => {
+    const list: ReactNode[] = [
+      <>
+        <header className="ct-letterhead">
+          <div>
+            <p className="ct-brand">{doc.provider}</p>
+            <p className="ct-brand-sub">{doc.providerLine ?? doc.title}</p>
           </div>
-        ) : signing}
-      </section>
+          <div className="ct-ref">
+            Ref: <b>{reference}</b><br />
+            Date: <b>{dateOnly(issuedAt)}</b><br />
+            Status: <b>{signed ? "Signed" : "Awaiting signature"}</b>
+          </div>
+        </header>
+        <h1>{doc.title}</h1>
+        <p className="ct-sub">Between {doc.provider} and {doc.company ? `${doc.client}, ${doc.company}` : doc.client}.</p>
+        {doc.summary.length > 0 && (
+          <table className="ct-table">
+            <tbody>
+              <tr><th scope="row">Prepared for</th><td>{doc.company ? `${doc.client}, ${doc.company}` : doc.client}</td></tr>
+              {doc.summary.map((s) => <tr key={s.label}><th scope="row">{s.label}</th><td>{s.value}</td></tr>)}
+            </tbody>
+          </table>
+        )}
+      </>,
+    ];
+    const signedDate = signed ? dateOnly(signed.at) : "When signed";
+    doc.sections.forEach((section, i) => {
+      const heading = section.plain ? section.heading : `${i + 1}. ${section.heading}`;
+      if (section.table) {
+        const { head, rows } = section.table;
+        list.push(
+          <>
+            <h2>{heading}</h2>
+            <table className="ct-table ct-table-3">
+              <thead><tr>{head.map((h, c) => <th scope="col" key={c}>{h}</th>)}</tr></thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row[0]}>
+                    {row.map((cell, c) => (c === 0 ? <th scope="row" key={c}>{cell}</th> : <td key={c}>{cell === SIGNATURE_DATE ? signedDate : cell}</td>))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>,
+        );
+      }
+      section.clauses.forEach((clause, j) => {
+        const text = clause.startsWith("**Client initials:**") ? clause.replace("______", signed?.initials ? `**${signed.initials}**` : "______") : clause;
+        const line = !section.plain
+          ? <div className="ct-clause"><span>{i + 1}.{j + 1}</span><p>{clause}</p></div>
+          : text.startsWith("• ")
+            ? <div className="ct-bullet"><span>•</span><p>{rich(text.slice(2))}</p></div>
+            : <p className="ct-para">{rich(text)}</p>;
+        // A heading never ends a page on its own: it stays with its first clause.
+        list.push(j === 0 ? <><h2>{heading}</h2>{line}</> : line);
+      });
+    });
+    list.push(
+      <>
+        <h2>Signatures</h2>
+        <div className="ct-parties">
+          <div>
+            <p className="ct-party-label">For the Client</p>
+            {signed ? <div className="ct-mark"><img src={signed.signature} alt={`Signature of ${signed.name}`} /></div> : clientField}
+            <div className="ct-party-line">{signed?.name ?? doc.client}</div>
+            <div className="ct-party-note">{signed ? dateTime(signed.at) : "Date: when signed"}</div>
+            {doc.initials && <div className="ct-party-note">Place: signed electronically</div>}
+          </div>
+          <div>
+            <p className="ct-party-label">For {doc.provider}</p>
+            {doc.issuer?.signature ? <div className="ct-mark"><img src={doc.issuer.signature} alt={`Signature of ${doc.issuer.name}`} /></div> : issuerField ?? <div className="ct-mark" />}
+            <div className="ct-party-line">{doc.issuer?.name || doc.provider}</div>
+            <div className="ct-party-note">{doc.initials ? `Date: ${dateOnly(issuedAt)}` : dateOnly(issuedAt)}</div>
+            {doc.initials && <div className="ct-party-note">Place: signed electronically</div>}
+          </div>
+        </div>
+      </>,
+    );
+    if (signed) {
+      list.push(
+        <>
+          <h2>Signing record</h2>
+          <table className="ct-table">
+            <tbody>
+              <tr><th scope="row">Reference</th><td>{reference}</td></tr>
+              <tr><th scope="row">Signed by</th><td>{signed.name}</td></tr>
+              {signed.initials && <tr><th scope="row">Initials</th><td>{signed.initials}</td></tr>}
+              <tr><th scope="row">Date and time</th><td>{dateTime(signed.at)}</td></tr>
+              <tr><th scope="row">Link issued to</th><td>WhatsApp number {signed.maskedPhone}</td></tr>
+              <tr><th scope="row">Device</th><td>{deviceName(signed.userAgent)}</td></tr>
+              <tr><th scope="row">Internet address</th><td>{signed.ip || "Not recorded"}</td></tr>
+              {documentHash && <tr><th scope="row">Document fingerprint (SHA-256)</th><td className="ct-hash">{documentHash}</td></tr>}
+            </tbody>
+          </table>
+        </>,
+      );
+    }
+    return list;
+  }, [doc, reference, issuedAt, documentHash, signed, clientField, issuerField]);
 
-      {signed && (
-        <section className="ct-record">
-          <h3>Signing record</h3>
-          <dl>
-            <div><dt>Reference</dt><dd>{reference}</dd></div>
-            <div><dt>Signed by</dt><dd>{signed.name}</dd></div>
-            <div><dt>Date and time</dt><dd>{dateTime(signed.at)}</dd></div>
-            <div><dt>Confirmed by</dt><dd>Code sent to WhatsApp number {signed.maskedPhone}</dd></div>
-            <div><dt>Device</dt><dd>{deviceName(signed.userAgent)}</dd></div>
-            <div><dt>Internet address</dt><dd>{signed.ip || "Not recorded"}</dd></div>
-            {documentHash && <div><dt>Document fingerprint (SHA-256)</dt><dd className="ct-hash">{documentHash}</dd></div>}
-          </dl>
-        </section>
-      )}
-    </article>
+  const measure = useRef<HTMLDivElement>(null);
+  const [pages, setPages] = useState<number[][] | null>(null);
+
+  useLayoutEffect(() => {
+    const el = measure.current;
+    if (!el) return;
+    const paginate = () => {
+      // A real page's room: its height, less the padding the copy doesn't have.
+      const style = getComputedStyle(el);
+      const width = el.getBoundingClientRect().width;
+      const padding = window.matchMedia("(max-width: 600px)").matches ? 56 : 120;
+      const room = width * 1.414 - padding;
+      if (!(room > 0) || style.display === "none") return;
+      const next: number[][] = [[]];
+      let used = 0;
+      [...el.children].forEach((child, i) => {
+        const h = child.getBoundingClientRect().height;
+        if (used + h > room && next[next.length - 1].length) {
+          next.push([]);
+          used = 0;
+        }
+        next[next.length - 1].push(i);
+        used += h;
+      });
+      setPages((old) => (JSON.stringify(old) === JSON.stringify(next) ? old : next));
+    };
+    paginate();
+    const watcher = new ResizeObserver(paginate);
+    watcher.observe(el);
+    return () => watcher.disconnect();
+  }, [blocks]);
+
+  const shown = pages && pages.flat().length === blocks.length ? pages : [blocks.map((_, i) => i)];
+  return (
+    <div className="ct-pages" ref={pagesRef}>
+      <div className="ct-page ct-measure" ref={measure} aria-hidden>
+        {blocks.map((b, i) => <div className="ct-block" key={i}>{b}</div>)}
+      </div>
+      {shown.map((page, n) => (
+        <article className="ct-page" key={n}>
+          {page.map((i) => <div className="ct-block" key={i}>{blocks[i]}</div>)}
+          <footer className="ct-foot">
+            <span>{doc.title} · Ref {reference}</span>
+            <span>Page {n + 1} of {shown.length}</span>
+          </footer>
+        </article>
+      ))}
+    </div>
   );
 }

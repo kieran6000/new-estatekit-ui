@@ -74,7 +74,7 @@ export default function SignaturePad({ value, onChange, disabled }: { value: str
     <div className="ct-pad-wrap">
       <div className="ct-pad-x" aria-hidden>×</div>
       <div className="ct-pad-line" aria-hidden />
-      {!value && <div className="ct-pad-hint">Sign here with your finger or mouse</div>}
+      {!value && <div className="ct-pad-hint">Sign here</div>}
       <canvas
         ref={canvas}
         className="ct-pad"

@@ -24,11 +24,12 @@ import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import RadioButtonUncheckedIcon from "@mui/icons-material/RadioButtonUnchecked";
 import WhatsAppIcon from "@mui/icons-material/WhatsApp";
 import { tokens } from "../theme";
-import { cancelContract, ContractsNotSetUp, contractStatus, createContract, deviceName, listContractEvents, listContracts, markContractShared, readingTime, type ContractRow } from "../api/contracts";
-import { buildContract, CONTRACT_TITLE, type ContractTerms } from "../lib/contractTemplate";
+import { cancelContract, ContractsNotSetUp, contractStatus, createContract, deviceName, getMySignature, listContractEvents, listContracts, markContractShared, readingTime, saveMySignature, type ContractRow } from "../api/contracts";
+import { buildContract, CONTRACT_TITLE, DEFAULT_PLAN, MIN_AD_SPEND, PROVIDER_NAME, type ContractTerms } from "../lib/contractTemplate";
 import { useSnack } from "../hooks/useSnack";
 import { timeAgo } from "../lib/timeAgo";
 import ContractSheet from "./ContractSheet";
+import SignDialog from "./SignDialog";
 
 const when = (iso: string) =>
   new Date(iso).toLocaleString("en-ZA", { timeZone: "Africa/Johannesburg", weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
@@ -103,7 +104,7 @@ function ContractCard({ c, showClient }: { c: ContractRow; showClient: boolean }
   };
   const shared = (how: "whatsapp" | "copied") => markContractShared(c.id, how).then(refresh).catch(() => {});
   const first = c.signer_name.split(/\s+/)[0];
-  const message = `Hi ${first}, your EstateKit ${c.title} (${c.reference}) is ready to read and sign:\n${linkFor(c)}`;
+  const message = `Hi ${first}, your ${c.title} (${c.reference}) is ready to read and sign:\n${linkFor(c)}`;
   const sendOnWhatsApp = () => {
     window.open(`https://wa.me/${c.signer_phone}?text=${encodeURIComponent(message)}`, "_blank", "noopener");
     shared("whatsapp");
@@ -188,7 +189,6 @@ export interface ContractClient {
   area?: string | null;
 }
 
-const today = () => new Date().toLocaleDateString("en-CA", { timeZone: "Africa/Johannesburg" });
 const toNumber = (s: string) => Number(s.replace(/[^\d.]/g, ""));
 
 /** Details, then a look at the real document, then create. */
@@ -199,7 +199,7 @@ function NewContractDialog({ open, onClose, client, clients }: { open: boolean; 
   const [picked, setPicked] = useState<ContractClient | null>(client ?? null);
   const [form, setForm] = useState({
     name: client?.name ?? "", company: client?.company ?? "", phone: client?.phone ?? "", email: client?.email ?? "", area: client?.area ?? "",
-    start: today(), fee: "", ads: "", minimum: "", notice: "30", extra: "",
+    clientId: "", plan: DEFAULT_PLAN, ads: String(MIN_AD_SPEND),
   });
   const [previewing, setPreviewing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -212,17 +212,26 @@ function NewContractDialog({ open, onClose, client, clients }: { open: boolean; 
   };
 
   const terms: ContractTerms = {
-    clientName: form.name, company: form.company, area: form.area, startDate: form.start,
-    monthlyFee: toNumber(form.fee), adBudgetPerDay: toNumber(form.ads) || null, minimumMonths: toNumber(form.minimum), noticeDays: toNumber(form.notice), extraTerms: form.extra,
+    clientName: form.name, agency: form.company, clientId: form.clientId, email: form.email, targetAreas: form.area, plan: form.plan, minAdSpend: toNumber(form.ads),
   };
-  const complete = form.name.trim().split(/\s+/).length >= 2 && form.phone.replace(/\D/g, "").length >= 9 && !!form.start && terms.monthlyFee > 0 && terms.minimumMonths > 0 && terms.noticeDays > 0;
+  const adsTooLow = !!form.ads && terms.minAdSpend < MIN_AD_SPEND;
+  const complete = form.name.trim().split(/\s+/).length >= 2 && form.phone.replace(/\D/g, "").length >= 9 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) && !!form.area.trim() && !!form.plan.trim() && terms.minAdSpend >= MIN_AD_SPEND;
   const doc = useMemo(() => (previewing ? buildContract(terms) : null), [previewing]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Kieran's own handwriting, added once and on every contract after that.
+  const { data: me } = useQuery({ queryKey: ["mySignature"], queryFn: getMySignature, staleTime: Infinity });
+  const [signing, setSigning] = useState(false);
+  const saveSignature = async (_name: string, png: string) => {
+    await saveMySignature(png);
+    qc.setQueryData(["mySignature"], { signature: png, canChange: true });
+    setSigning(false);
+  };
+  const issuer = { name: PROVIDER_NAME, signature: me?.signature ?? null };
 
   const create = async () => {
     setSaving(true);
     setError(null);
     try {
-      await createContract({ agentId: picked?.agentId ?? null, title: CONTRACT_TITLE, signerName: form.name.trim(), company: form.company.trim(), phone: form.phone, email: form.email.trim(), document: buildContract(terms) });
+      await createContract({ agentId: picked?.agentId ?? null, title: CONTRACT_TITLE, signerName: form.name.trim(), company: form.company.trim(), phone: form.phone, email: form.email.trim(), document: { ...buildContract(terms), issuer } });
       qc.invalidateQueries({ queryKey: ["contracts"] });
       showSnack("Contract created. Send it on WhatsApp when you're ready.");
       onClose();
@@ -236,12 +245,19 @@ function NewContractDialog({ open, onClose, client, clients }: { open: boolean; 
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth={previewing ? "md" : "sm"} fullScreen={phone}>
       <DialogTitle>{previewing ? "Check the contract" : "New contract"}</DialogTitle>
-      <DialogContent key={previewing ? "check" : "details"} sx={previewing ? { bgcolor: "#e9ebee", p: { xs: 0, sm: 2 } } : undefined}>
+      <DialogContent key={previewing ? "check" : "details"} sx={previewing ? { bgcolor: "#3b3f42", p: { xs: 1, sm: 2 } } : undefined}>
         {previewing && doc ? (
-          <ContractSheet doc={doc} reference="given when created" issuedAt={new Date().toISOString()} issuedBy={null} signing={<p className="ct-note">{form.name.trim()} signs here.</p>} />
+          <ContractSheet
+            doc={{ ...doc, issuer }}
+            reference="Given when created"
+            issuedAt={new Date().toISOString()}
+            clientField={<div className="ct-field-empty">{form.name.trim()} signs here</div>}
+            issuerField={me?.canChange
+              ? <button type="button" className="ct-field" onClick={() => setSigning(true)}>Add your signature</button>
+              : <div className="ct-field-empty">Kieran adds this once</div>}
+          />
         ) : (
           <Box sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
-            <Alert severity="warning" sx={{ fontSize: 13 }}>This is starter wording. Have a lawyer check it before clients sign it.</Alert>
             {clients && (
               <TextField select label="Account" value={picked?.agentId ?? ""} onChange={(e) => pick(e.target.value)} helperText="Pick their account to fill in their details." slotProps={{ select: { displayEmpty: true }, inputLabel: { shrink: true } }}>
                 <MenuItem value="">Not on EstateKit yet</MenuItem>
@@ -250,26 +266,23 @@ function NewContractDialog({ open, onClose, client, clients }: { open: boolean; 
             )}
             <TextField label="Their full name" required value={form.name} onChange={set("name")} />
             <TextField label="Agency" value={form.company} onChange={set("company")} />
-            <TextField label="WhatsApp number" required value={form.phone} onChange={set("phone")} helperText="Their signing code goes here, so check it's right." />
-            <TextField label="Email" value={form.email} onChange={set("email")} />
-            <TextField label="Area" value={form.area} onChange={set("area")} />
-            <TextField label="Start date" required type="date" value={form.start} onChange={set("start")} slotProps={{ inputLabel: { shrink: true } }} />
-            <TextField label="Monthly fee" required value={form.fee} onChange={set("fee")} slotProps={{ htmlInput: { inputMode: "numeric" }, input: { startAdornment: <InputAdornment position="start">R</InputAdornment> } }} />
-            <TextField label="Ad budget a day" value={form.ads} onChange={set("ads")} slotProps={{ htmlInput: { inputMode: "numeric" }, input: { startAdornment: <InputAdornment position="start">R</InputAdornment> } }} />
-            <Box sx={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 2 }}>
-              <TextField label="Minimum months" required value={form.minimum} onChange={set("minimum")} slotProps={{ htmlInput: { inputMode: "numeric" } }} />
-              <TextField label="Notice days" required value={form.notice} onChange={set("notice")} slotProps={{ htmlInput: { inputMode: "numeric" } }} />
-            </Box>
-            <TextField label="Extra terms" multiline minRows={2} value={form.extra} onChange={set("extra")} helperText="Anything special you've agreed. One point a line." />
+            <TextField label="WhatsApp number" required value={form.phone} onChange={set("phone")} helperText="Their signing link and signed copy go here, so check it's right." />
+            <TextField label="Email" required value={form.email} onChange={set("email")} helperText="The agreement's notices go here." />
+            <TextField label="Target areas" required value={form.area} onChange={set("area")} />
+            <TextField label="Plan" required value={form.plan} onChange={set("plan")} />
+            <TextField label="Minimum daily ad spend" required value={form.ads} onChange={set("ads")} error={adsTooLow} helperText={`At least R${MIN_AD_SPEND}.`} slotProps={{ htmlInput: { inputMode: "numeric" }, input: { startAdornment: <InputAdornment position="start">R</InputAdornment> } }} />
+            <TextField label="ID or registration no." value={form.clientId} onChange={set("clientId")} helperText="Leave blank if you don't know it." />
           </Box>
         )}
         {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
+        {signing && <SignDialog title="Your signature" action="Save signature" name={issuer.name} handwrittenOnly onCancel={() => setSigning(false)} onSign={saveSignature} />}
       </DialogContent>
       <DialogActions>
         {previewing ? (
           <>
+            {me?.signature && me.canChange && <Button onClick={() => setSigning(true)} disabled={saving} sx={{ mr: "auto" }}>Change my signature</Button>}
             <Button onClick={() => setPreviewing(false)} disabled={saving}>Back</Button>
-            <Button variant="contained" disableElevation onClick={create} disabled={saving}>{saving ? "Creating…" : "Create contract"}</Button>
+            <Button variant="contained" disableElevation onClick={create} disabled={saving || !me?.signature}>{saving ? "Creating…" : "Create contract"}</Button>
           </>
         ) : (
           <>

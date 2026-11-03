@@ -1,19 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Alert, Button, Checkbox, FormControlLabel, TextField } from "@mui/material";
-import { reportReading, sendSigningCode, signContract, viewContract, type SharedContract } from "../api/contracts";
+import { reportReading, signContract, viewContract, type SharedContract } from "../api/contracts";
 import ContractSheet from "../components/ContractSheet";
-import SignaturePad from "../components/SignaturePad";
+import SignDialog from "../components/SignDialog";
 
 // The client's contract: /c/<token>, the link the team sends on WhatsApp. No
-// sign-in. They read it and sign it here: their name, their signature, and a
-// code sent to their WhatsApp, which is what ties the signature to them. Time
-// on the page and how far they've read go to the team (the contract says so).
+// sign-in. It opens like a PDF. They tap the one Sign button or the marked place
+// on the page, sign in a small window, and it's done. Time on the page and how
+// far they've read go to the team (the contract says so).
 
 const REPORT_EVERY_MS = 15_000;
-const INK = "#14181f";
-const firmButton = { bgcolor: INK, color: "#fff", py: 1.25, fontSize: 15, boxShadow: "none", "&:hover": { bgcolor: "#2b323d", boxShadow: "none" } };
 
 /** One visit: a refresh isn't a new open, coming back later is. */
 function visitId(): string {
@@ -28,33 +25,38 @@ function visitId(): string {
   }
 }
 
-/** Reports time actually spent looking at the page, and the furthest read, as
- *  a fraction of the wording. Also what the thin bar at the top shows. */
-function useReading(token: string, enabled: boolean, clauses: HTMLElement | null, session: string) {
-  const [progress, setProgress] = useState(0);
+/** Reports time actually spent looking at the page and the furthest read, and
+ *  says which page is on screen, for the bar at the top. */
+function useReading(token: string, track: boolean, pages: HTMLElement | null, session: string) {
+  const [page, setPage] = useState({ at: 1, of: 1 });
   const seconds = useRef(0);
   const furthest = useRef(0);
   const reported = useRef(0);
 
   useEffect(() => {
-    if (!clauses) return;
+    if (!pages) return;
     const measure = () => {
-      const r = clauses.getBoundingClientRect();
+      const r = pages.getBoundingClientRect();
       const pct = Math.round(Math.min(1, Math.max(0, (window.innerHeight - r.top) / r.height)) * 100);
       if (pct > furthest.current) furthest.current = pct;
-      setProgress(pct);
+      const sheets = [...pages.querySelectorAll("article.ct-page")];
+      const at = sheets.filter((s) => s.getBoundingClientRect().top < window.innerHeight / 2).length;
+      setPage({ at: Math.max(1, at), of: Math.max(1, sheets.length) });
     };
     measure();
     window.addEventListener("scroll", measure, { passive: true });
     window.addEventListener("resize", measure);
+    const watcher = new MutationObserver(measure);
+    watcher.observe(pages, { childList: true });
     return () => {
       window.removeEventListener("scroll", measure);
       window.removeEventListener("resize", measure);
+      watcher.disconnect();
     };
-  }, [clauses]);
+  }, [pages]);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!track) return;
     const send = () => {
       if (!seconds.current && furthest.current === reported.current) return;
       reportReading(token, session, seconds.current, furthest.current);
@@ -73,96 +75,16 @@ function useReading(token: string, enabled: boolean, clauses: HTMLElement | null
       window.removeEventListener("pagehide", send);
       send();
     };
-  }, [enabled, token, session]);
+  }, [track, token, session]);
 
-  return progress;
-}
-
-function SigningForm({ token, session, signerName, onSigned }: { token: string; session: string; signerName: string; onSigned: () => Promise<unknown> }) {
-  const [name, setName] = useState("");
-  const [signature, setSignature] = useState<string | null>(null);
-  const [agreed, setAgreed] = useState(false);
-  const [sentTo, setSentTo] = useState<string | null>(null);
-  const [code, setCode] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const ready = name.trim().split(/\s+/).length >= 2 && !!signature && agreed;
-  const run = async (work: () => Promise<void>) => {
-    setBusy(true);
-    setError(null);
-    try {
-      await work();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-  const sendCode = () => run(async () => {
-    const { maskedPhone } = await sendSigningCode(token);
-    setSentTo(maskedPhone);
-  });
-  const sign = () => run(async () => {
-    await signContract({ token, session, name, signature: signature!, code });
-    await onSigned();
-    window.scrollTo({ top: 0 });
-  });
-
-  return (
-    <div className="ct-form">
-      <p className="ct-sub" style={{ marginTop: 0 }}>Sign below to accept this agreement. It's binding once signed.</p>
-
-      <label className="ct-form-label" htmlFor="ct-name">Your full name</label>
-      <TextField id="ct-name" fullWidth placeholder={signerName} value={name} onChange={(e) => setName(e.target.value)} disabled={!!sentTo} autoComplete="name" sx={{ mb: 2.5 }} />
-
-      <span className="ct-form-label">Your signature</span>
-      <SignaturePad value={signature} onChange={setSignature} disabled={!!sentTo} />
-
-      <FormControlLabel
-        sx={{ mt: 1.5, mb: 1.5, alignItems: "flex-start", mr: 0, "& .MuiFormControlLabel-label": { fontSize: 15 } }}
-        control={<Checkbox checked={agreed} onChange={(e) => setAgreed(e.target.checked)} disabled={!!sentTo} sx={{ mt: -0.75, color: INK, "&.Mui-checked": { color: INK } }} />}
-        label="I have read this agreement and I agree to it. I understand my electronic signature has the same effect as signing by hand."
-      />
-
-      {!sentTo ? (
-        <>
-          {error && <Alert severity="error" sx={{ mb: 1.5 }}>{error}</Alert>}
-          <Button fullWidth variant="contained" sx={firmButton} disabled={!ready || busy} onClick={sendCode}>
-            {busy ? "Sending your code…" : "Continue"}
-          </Button>
-          <p className="ct-note">Next, we'll send a code to your WhatsApp to confirm it's you.</p>
-        </>
-      ) : (
-        <>
-          <label className="ct-form-label" htmlFor="ct-code">Type the 6-digit code we sent to your WhatsApp number ending in {sentTo.slice(-4)}</label>
-          <TextField
-            id="ct-code"
-            fullWidth
-            autoFocus
-            value={code}
-            onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-            autoComplete="one-time-code"
-            slotProps={{ htmlInput: { inputMode: "numeric", style: { fontSize: 24, letterSpacing: "0.3em", fontWeight: 500 } } }}
-            sx={{ mb: 1.5 }}
-          />
-          {error && <Alert severity="error" sx={{ mb: 1.5 }}>{error}</Alert>}
-          <Button fullWidth variant="contained" sx={firmButton} disabled={code.length !== 6 || busy} onClick={sign}>
-            {busy ? "Signing…" : "Sign agreement"}
-          </Button>
-          <Button fullWidth sx={{ mt: 0.75, color: INK }} disabled={busy} onClick={sendCode}>Send a new code</Button>
-          <p className="ct-note">Not your number, or no code after a minute? Contact EstateKit before signing.</p>
-        </>
-      )}
-      <p className="ct-note">We record when you open and sign this agreement, and the device and internet address used, as proof of signature.</p>
-    </div>
-  );
+  return page;
 }
 
 export default function ContractPage() {
   const { token = "" } = useParams();
   const [session] = useState(visitId);
-  const [clauses, setClauses] = useState<HTMLElement | null>(null);
+  const [pages, setPages] = useState<HTMLElement | null>(null);
+  const [signing, setSigning] = useState(false);
   const { data, isLoading, isError, refetch } = useQuery<SharedContract | null>({
     queryKey: ["contract", token],
     queryFn: () => viewContract(token, session),
@@ -172,63 +94,75 @@ export default function ContractPage() {
   });
 
   const live = data && data.status !== "cancelled" ? data : null;
-  const progress = useReading(token, !!live && !live.staff, clauses, session);
+  const page = useReading(token, !!live && !live.staff, pages, session);
 
   useEffect(() => {
     if (data) document.title = `${data.title} · ${data.reference}`;
   }, [data]);
 
   if (!data) {
-    const heading = isLoading ? "Loading your agreement…" : isError ? "We couldn't load this agreement" : "This link isn't valid";
+    const heading = isLoading ? "Opening your agreement…" : isError ? "We couldn't open this agreement" : "This link isn't valid";
     const detail = isLoading ? "" : isError ? "Check your signal and refresh the page." : "Ask your EstateKit contact for a new one.";
     return (
-      <div className="ct-viewer">
+      <div className="ct-viewer ct-done">
         <div className="ct-message" role="status"><h1>{heading}</h1>{detail && <p>{detail}</p>}</div>
       </div>
     );
   }
   if (data.status === "cancelled") {
     return (
-      <div className="ct-viewer">
+      <div className="ct-viewer ct-done">
         <div className="ct-message">
-          <span className="ct-label">Reference {data.reference}</span>
-          <h1 style={{ marginTop: 8 }}>This agreement has been cancelled</h1>
-          <p>It can't be signed any more. Ask your EstateKit contact if you were expecting it.</p>
+          <h1>This agreement has been cancelled</h1>
+          <p>Reference {data.reference}. It can't be signed any more. Ask your EstateKit contact if you were expecting it.</p>
         </div>
       </div>
     );
   }
 
-  const unsigned = data.status === "open";
+  const canSign = data.status === "open" && !data.staff;
+  const sign = async (name: string, signature: string, initials: string) => {
+    await signContract({ token, session, name, signature, initials });
+    await refetch();
+    setSigning(false);
+    // Once the pages have settled with the signature on them.
+    setTimeout(() => document.querySelector("article .ct-parties")?.scrollIntoView({ block: "center" }), 150);
+  };
+
   return (
-    <div className="ct-viewer">
-      {unsigned && !data.staff && <div className="ct-progress" aria-hidden><div style={{ width: `${progress}%` }} /></div>}
-      {data.staff && <div className="ct-banner">You're viewing this as EstateKit staff, so this visit isn't logged and you can't sign it here.</div>}
-      {!unsigned && (
-        <div className="ct-banner ct-signed-banner">
-          Signed agreement. Keep this link for your records.
-          <Button size="small" sx={{ ml: 1, color: INK }} onClick={() => window.print()}>Save as PDF</Button>
-        </div>
-      )}
+    <div className={canSign ? "ct-viewer" : "ct-viewer ct-done"}>
+      <div className="ct-bar">
+        <span className="ct-file">{data.staff ? "Staff view: not logged" : `${data.title} ${data.reference}.pdf`}</span>
+        <span className="ct-count">{page.at} / {page.of}</span>
+        <button type="button" onClick={() => window.print()}>Save as PDF</button>
+      </div>
       <ContractSheet
         doc={data.document}
         reference={data.reference}
         issuedAt={data.issuedAt}
-        issuedBy={data.issuedBy}
         documentHash={data.documentHash}
         signed={data.signed}
-        clausesRef={setClauses}
-        signing={data.staff
-          ? <p className="ct-note">The client signs here.</p>
-          : <SigningForm token={token} session={session} signerName={data.signerName} onSigned={refetch} />}
+        pagesRef={setPages}
+        clientField={canSign
+          ? <button type="button" className="ct-field" onClick={() => setSigning(true)}>Sign here</button>
+          : <div className="ct-field-empty">The client signs here</div>}
+        issuerField={<div className="ct-mark" />}
       />
-      {unsigned && !data.staff && progress < 100 && (
-        <div className="ct-bar">
-          <div className="ct-bar-inner">
-            <span>{data.reference}. Please read, then sign at the end.</span>
-            <Button size="small" sx={{ color: INK, whiteSpace: "nowrap", flexShrink: 0 }} onClick={() => document.getElementById("sign")?.scrollIntoView({ behavior: "smooth" })}>Go to signature</Button>
-          </div>
-        </div>
+      <p className="ct-viewer-note">We record when this agreement is opened, how long it's read, and the date, time, device and internet address used to sign it, as proof of signature.</p>
+      {canSign && <div className="ct-actionbar"><button type="button" onClick={() => setSigning(true)}>Sign</button></div>}
+      {signing && (
+        <SignDialog
+          title="Sign this agreement"
+          action="Sign agreement"
+          name={data.signerName}
+          askName
+          askInitials={!!data.document.initials}
+          note={data.document.initials
+            ? 'Your initials confirm that "Your part", "Mandate Guarantee", "No other guarantees" and "Liability" were pointed out to you. By signing, you agree to this agreement, and your signature has the same effect as signing by hand.'
+            : "By signing, you agree to this agreement. Your signature has the same effect as signing by hand."}
+          onCancel={() => setSigning(false)}
+          onSign={sign}
+        />
       )}
     </div>
   );

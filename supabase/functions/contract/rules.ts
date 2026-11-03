@@ -3,10 +3,6 @@ import { cleanLeadPhone } from "../public-submit-lead/phone.ts";
 // The rules behind signing a contract, kept apart so they can be tested.
 
 const MAX_SIGNATURE_CHARS = 500_000;
-export const CODE_MINUTES = 10;
-export const MAX_CODE_TRIES = 5;
-const MAX_CODES_AN_HOUR = 5;
-const CODE_GAP_MS = 30_000;
 /** Longer than the page's gap between reports, shorter than leaving it open. */
 const MAX_SECONDS_A_REPORT = 60;
 
@@ -26,7 +22,6 @@ export async function sha256(text: string): Promise<string> {
 }
 
 export const documentHash = (document: unknown) => sha256(canonical(document));
-export const codeHash = (contractId: string, code: string) => sha256(`${contractId}:${code}`);
 
 /** International digits, so 083… and +2783… are the same number. "" if it can't be one. */
 export function phoneDigits(raw: string): string {
@@ -44,15 +39,8 @@ export const validSignature = (png: unknown): png is string =>
 export const validSignerName = (name: unknown): name is string =>
   typeof name === "string" && name.length <= 120 && name.trim().split(/\s+/).filter((w) => /\p{L}/u.test(w)).length >= 2;
 
-/** Why another code can't go out yet, or null if it can. Protects the WhatsApp number every agent's alerts use. */
-export function codeRefusal(sentAt: string[], now: number): string | null {
-  const times = sentAt.map((t) => new Date(t).getTime());
-  if (times.some((t) => now - t < CODE_GAP_MS)) return "We've just sent you a code. Check WhatsApp, or try again in 30 seconds.";
-  if (times.filter((t) => now - t < 3_600_000).length >= MAX_CODES_AN_HOUR) return "Too many codes have been sent. Try again in an hour.";
-  return null;
-}
-
-export const newCode = () => String(crypto.getRandomValues(new Uint32Array(1))[0] % 1_000_000).padStart(6, "0");
+export const validInitials = (s: unknown): s is string =>
+  typeof s === "string" && s.length <= 12 && /\p{L}/u.test(s);
 
 /** How much of a report of reading time to believe. */
 export const cleanSeconds = (n: unknown) => Math.min(Math.max(0, Math.round(Number(n)) || 0), MAX_SECONDS_A_REPORT);
