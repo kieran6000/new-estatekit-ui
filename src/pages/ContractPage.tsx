@@ -136,6 +136,7 @@ export default function ContractPage() {
         <span className="ct-count">{page.at} / {page.of}</span>
         <button type="button" onClick={() => window.print()}>Save as PDF</button>
       </div>
+      {data.staff && <p className="ct-staff-note">You're logged in to EstateKit, so you can't sign here and this visit isn't counted. Your client will see a Sign button. To try it as a client, open this link in a private window.</p>}
       <ContractSheet
         doc={data.document}
         reference={data.reference}

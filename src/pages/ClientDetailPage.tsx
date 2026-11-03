@@ -76,6 +76,7 @@ import { accentEdge, readableOn } from "../lib/contrast";
 import BrandLogo from "../components/BrandLogo";
 import FundingChip from "../components/FundingChip";
 import ContractsSection from "../components/ContractsSection";
+import InvoicesSection from "../components/InvoicesSection";
 
 /** Digits in international form, so 083… and +2783… compare equal. */
 const digits = (s: string) => {
@@ -101,7 +102,7 @@ type TabKey = ClientTab;
 
 /** Operators: one account, at /clients/<their-name>/<tab>. Overview (the
  *  numbers and their ads), History (what changed on their ads), Brief
- *  (onboarding answers), Contract and Settings (everything editable). Dates and where
+ *  (onboarding answers), Contract & invoices and Settings (everything editable). Dates and where
  *  you are in their ads are in the address too, so a link opens the same
  *  view and Back steps through it. */
 export default function ClientDetailPage() {
@@ -186,7 +187,7 @@ export default function ClientDetailPage() {
                 <Tab value="overview" label="Overview" />
                 <Tab value="history" label="History" />
                 <Tab value="brief" label="Brief" />
-                <Tab value="contract" label="Contract" />
+                <Tab value="contract" label="Contract & invoices" />
                 <Tab value="settings" label="Settings" />
               </Tabs>
             </Box>
@@ -203,16 +204,22 @@ export default function ClientDetailPage() {
                 </Box>
               </Cols>
             )}
-            {tab === "contract" && (
-              <ContractsSection client={{
+            {tab === "contract" && (() => {
+              const client = {
                 agentId,
                 name: data.profile.display_name ?? "",
                 company: data.profile.company,
                 phone: data.profile.whatsapp_number,
                 email: data.profile.email,
                 area: data.profile.area,
-              }} />
-            )}
+              };
+              return (
+                <>
+                  <ContractsSection client={client} heading="Contracts" />
+                  <InvoicesSection client={client} />
+                </>
+              );
+            })()}
             {tab === "settings" && <SettingsTab data={data} />}
           </Box>
         </>
