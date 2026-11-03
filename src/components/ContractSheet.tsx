@@ -1,11 +1,14 @@
 import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { deviceName, type SignedRecord } from "../api/contracts";
-import type { ContractDocument } from "../lib/contractTemplate";
+import { SIGNATURE_DATE, type ContractDocument } from "../lib/contractTemplate";
 import "../pages/contract.css";
 
 const SA_TIME: Intl.DateTimeFormatOptions = { timeZone: "Africa/Johannesburg" };
 const dateOnly = (iso: string) => new Date(iso).toLocaleDateString("en-ZA", { ...SA_TIME, day: "numeric", month: "long", year: "numeric" });
 const dateTime = (iso: string) => `${dateOnly(iso)}, ${new Date(iso).toLocaleTimeString("en-ZA", { ...SA_TIME, hour: "2-digit", minute: "2-digit", second: "2-digit" })} SAST`;
+
+/** **word** as bold. */
+const rich = (text: string) => text.split("**").map((part, i) => (i % 2 ? <b key={i}>{part}</b> : part));
 
 /** The agreement as PDF pages: the client's page, the team's preview and the
  *  signed copy all use this, so what's previewed is what's signed. The fields
@@ -27,7 +30,7 @@ export default function ContractSheet({ doc, reference, issuedAt, documentHash, 
         <header className="ct-letterhead">
           <div>
             <p className="ct-brand">{doc.provider}</p>
-            <p className="ct-brand-sub">{doc.title}</p>
+            <p className="ct-brand-sub">{doc.providerLine ?? doc.title}</p>
           </div>
           <div className="ct-ref">
             Ref: <b>{reference}</b><br />
@@ -36,20 +39,47 @@ export default function ContractSheet({ doc, reference, issuedAt, documentHash, 
           </div>
         </header>
         <h1>{doc.title}</h1>
-        <p className="ct-sub">Between {doc.provider} and {doc.client}.</p>
-        <table className="ct-table">
-          <tbody>
-            <tr><th scope="row">Prepared for</th><td>{doc.company ? `${doc.client}, ${doc.company}` : doc.client}</td></tr>
-            {doc.summary.map((s) => <tr key={s.label}><th scope="row">{s.label}</th><td>{s.value}</td></tr>)}
-          </tbody>
-        </table>
+        <p className="ct-sub">Between {doc.provider} and {doc.company ? `${doc.client}, ${doc.company}` : doc.client}.</p>
+        {doc.summary.length > 0 && (
+          <table className="ct-table">
+            <tbody>
+              <tr><th scope="row">Prepared for</th><td>{doc.company ? `${doc.client}, ${doc.company}` : doc.client}</td></tr>
+              {doc.summary.map((s) => <tr key={s.label}><th scope="row">{s.label}</th><td>{s.value}</td></tr>)}
+            </tbody>
+          </table>
+        )}
       </>,
     ];
+    const signedDate = signed ? dateOnly(signed.at) : "When signed";
     doc.sections.forEach((section, i) => {
+      const heading = section.plain ? section.heading : `${i + 1}. ${section.heading}`;
+      if (section.table) {
+        const { head, rows } = section.table;
+        list.push(
+          <>
+            <h2>{heading}</h2>
+            <table className="ct-table ct-table-3">
+              <thead><tr>{head.map((h, c) => <th scope="col" key={c}>{h}</th>)}</tr></thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row[0]}>
+                    {row.map((cell, c) => (c === 0 ? <th scope="row" key={c}>{cell}</th> : <td key={c}>{cell === SIGNATURE_DATE ? signedDate : cell}</td>))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>,
+        );
+      }
       section.clauses.forEach((clause, j) => {
-        const line = <div className="ct-clause"><span>{i + 1}.{j + 1}</span><p>{clause}</p></div>;
+        const text = clause.startsWith("**Client initials:**") ? clause.replace("______", signed?.initials ? `**${signed.initials}**` : "______") : clause;
+        const line = !section.plain
+          ? <div className="ct-clause"><span>{i + 1}.{j + 1}</span><p>{clause}</p></div>
+          : text.startsWith("• ")
+            ? <div className="ct-bullet"><span>•</span><p>{rich(text.slice(2))}</p></div>
+            : <p className="ct-para">{rich(text)}</p>;
         // A heading never ends a page on its own: it stays with its first clause.
-        list.push(j === 0 ? <><h2>{i + 1}. {section.heading}</h2>{line}</> : line);
+        list.push(j === 0 ? <><h2>{heading}</h2>{line}</> : line);
       });
     });
     list.push(
@@ -61,12 +91,14 @@ export default function ContractSheet({ doc, reference, issuedAt, documentHash, 
             {signed ? <div className="ct-mark"><img src={signed.signature} alt={`Signature of ${signed.name}`} /></div> : clientField}
             <div className="ct-party-line">{signed?.name ?? doc.client}</div>
             <div className="ct-party-note">{signed ? dateTime(signed.at) : "Date: when signed"}</div>
+            {doc.initials && <div className="ct-party-note">Place: signed electronically</div>}
           </div>
           <div>
             <p className="ct-party-label">For {doc.provider}</p>
             {doc.issuer?.signature ? <div className="ct-mark"><img src={doc.issuer.signature} alt={`Signature of ${doc.issuer.name}`} /></div> : issuerField ?? <div className="ct-mark" />}
             <div className="ct-party-line">{doc.issuer?.name || doc.provider}</div>
-            <div className="ct-party-note">{dateOnly(issuedAt)}</div>
+            <div className="ct-party-note">{doc.initials ? `Date: ${dateOnly(issuedAt)}` : dateOnly(issuedAt)}</div>
+            {doc.initials && <div className="ct-party-note">Place: signed electronically</div>}
           </div>
         </div>
       </>,
@@ -79,6 +111,7 @@ export default function ContractSheet({ doc, reference, issuedAt, documentHash, 
             <tbody>
               <tr><th scope="row">Reference</th><td>{reference}</td></tr>
               <tr><th scope="row">Signed by</th><td>{signed.name}</td></tr>
+              {signed.initials && <tr><th scope="row">Initials</th><td>{signed.initials}</td></tr>}
               <tr><th scope="row">Date and time</th><td>{dateTime(signed.at)}</td></tr>
               <tr><th scope="row">Link issued to</th><td>WhatsApp number {signed.maskedPhone}</td></tr>
               <tr><th scope="row">Device</th><td>{deviceName(signed.userAgent)}</td></tr>
@@ -134,7 +167,7 @@ export default function ContractSheet({ doc, reference, issuedAt, documentHash, 
         <article className="ct-page" key={n}>
           {page.map((i) => <div className="ct-block" key={i}>{blocks[i]}</div>)}
           <footer className="ct-foot">
-            <span>{doc.provider} · {doc.title} · Ref {reference}</span>
+            <span>{doc.title} · Ref {reference}</span>
             <span>Page {n + 1} of {shown.length}</span>
           </footer>
         </article>

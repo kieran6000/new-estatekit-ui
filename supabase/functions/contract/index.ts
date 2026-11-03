@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { cleanScroll, cleanSeconds, documentHash, firstIp, maskPhone, phoneDigits, validSignature, validSignerName } from "./rules.ts";
+import { cleanScroll, cleanSeconds, documentHash, firstIp, maskPhone, phoneDigits, validInitials, validSignature, validSignerName } from "./rules.ts";
 
 // Contracts clients read and sign (Accounts → Contracts).
 //
@@ -10,9 +10,9 @@ import { cleanScroll, cleanSeconds, documentHash, firstIp, maskPhone, phoneDigit
 //   { action: "preview", token }       what a WhatsApp link preview may show
 //   { action: "view", token, session } the contract; a new visit is logged
 //   { action: "beat", token, session, seconds, scroll }  time on the page, how far read
-//   { action: "sign", token, session, name, signature, agreed }
-//   { action: "my_signature" }         operator only: their saved signature and name
-//   { action: "save_signature", signature }  operator only
+//   { action: "sign", token, session, name, signature, initials, agreed }
+//   { action: "my_signature" }         operator only: EstateKit's signature, on every contract
+//   { action: "save_signature", signature }  only the account it belongs to
 //
 // verify_jwt is off because clients aren't signed in. Operator actions check
 // the caller themselves, and an operator looking at a contract isn't logged:
@@ -26,6 +26,8 @@ const CORS = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, x-client-info, apikey",
 };
 const APP = "https://leads.estatekit.co";
+// The agreement names Kieran as the provider, so only that account's handwriting goes on it.
+const PROVIDER_ACCOUNT = "c5beabe6-e009-4880-8506-59383f053312";
 const TEXTMEBOT_URL = "https://api.textmebot.com/send.php";
 
 const json = (body: unknown, status = 200) =>
@@ -92,6 +94,7 @@ Deno.serve(async (req) => {
       const who = await caller(req);
       if (!who?.isOperator) return json({ error: "Only EstateKit staff can do this." }, 403);
       if (body.action === "save_signature") {
+        if (who.id !== PROVIDER_ACCOUNT) return json({ error: "Only Kieran can change this signature." }, 403);
         if (!validSignature(body.signature)) return json({ error: "That signature didn't save. Try again." }, 400);
         const { error } = await supabase.from("contract_staff_signatures").upsert({ agent_id: who.id, signature_png: body.signature, updated_at: new Date().toISOString() });
         if (error) {
@@ -100,8 +103,8 @@ Deno.serve(async (req) => {
         }
         return json({ ok: true });
       }
-      const { data } = await supabase.from("contract_staff_signatures").select("signature_png").eq("agent_id", who.id).maybeSingle();
-      return json({ name: who.name, signature: data?.signature_png ?? null });
+      const { data } = await supabase.from("contract_staff_signatures").select("signature_png").eq("agent_id", PROVIDER_ACCOUNT).maybeSingle();
+      return json({ signature: data?.signature_png ?? null, canChange: who.id === PROVIDER_ACCOUNT });
     }
 
     if (body.action === "create") {
@@ -200,7 +203,7 @@ Deno.serve(async (req) => {
         signerName: row.signer_name,
         maskedPhone: maskPhone(row.signer_phone),
         signed: row.signed_at
-          ? { at: row.signed_at, name: row.signed_name, signature: row.signature_png, maskedPhone: maskPhone(row.signed_phone ?? row.signer_phone), ip: row.signed_ip, userAgent: row.signed_user_agent }
+          ? { at: row.signed_at, name: row.signed_name, initials: row.signed_initials, signature: row.signature_png, maskedPhone: maskPhone(row.signed_phone ?? row.signer_phone), ip: row.signed_ip, userAgent: row.signed_user_agent }
           : null,
       });
     }
@@ -227,6 +230,8 @@ Deno.serve(async (req) => {
       if (body.agreed !== true) return json({ error: "Tick the box to confirm you agree." }, 400);
       if (!validSignerName(body.name)) return json({ error: "Type your full name, first name and surname." }, 400);
       if (!validSignature(body.signature)) return json({ error: "Add your signature first." }, 400);
+      const needsInitials = !!(row.document as { initials?: boolean }).initials;
+      if (needsInitials && !validInitials(body.initials)) return json({ error: "Add your initials." }, 400);
 
       // The wording they read is still the wording that was issued.
       if (await documentHash(row.document) !== row.document_hash) {
@@ -237,7 +242,7 @@ Deno.serve(async (req) => {
       const { ip, user_agent } = place(req);
       const { data: signed, error } = await supabase
         .from("contracts")
-        .update({ signed_at: new Date().toISOString(), signed_name: body.name.trim().replace(/\s+/g, " "), signature_png: body.signature, signed_phone: row.signer_phone, signed_ip: ip, signed_user_agent: user_agent })
+        .update({ signed_at: new Date().toISOString(), signed_name: body.name.trim().replace(/\s+/g, " "), signature_png: body.signature, signed_initials: needsInitials ? String(body.initials).trim() : null, signed_phone: row.signer_phone, signed_ip: ip, signed_user_agent: user_agent })
         .eq("id", row.id)
         .is("signed_at", null)
         .is("voided_at", null)
@@ -249,10 +254,6 @@ Deno.serve(async (req) => {
       await logEvent(row.id, "signed", { ip, user_agent });
 
       const link = `${APP}/c/${token}`;
-      // Their account's "View contract" link, unless a contract is already filed there.
-      if (row.agent_id) {
-        await supabase.from("agent_profiles").update({ contract_pdf_url: link }).eq("agent_id", row.agent_id).is("contract_pdf_url", null);
-      }
       const first = String(row.signer_name).split(/\s+/)[0];
       EdgeRuntime.waitUntil(sendWhatsApp(row.signer_phone, `Hi ${first}, your EstateKit agreement ${row.reference} is signed. Keep this link for your signed copy:\n${link}`));
       return json({ ok: true });

@@ -76,21 +76,25 @@ const wordCount = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
 
 /** `askName` is for clients, who confirm their name. Typing is left out where
  *  the signature has to be the person's own handwriting (`handwrittenOnly`). */
-export default function SignDialog({ title, action, name: startName, askName, handwrittenOnly, note, onCancel, onSign }: {
+export default function SignDialog({ title, action, name: startName, askName, askInitials, handwrittenOnly, note, onCancel, onSign }: {
   title: string;
   action: string;
   name: string;
   askName?: boolean;
+  askInitials?: boolean;
   handwrittenOnly?: boolean;
   note?: string;
   onCancel: () => void;
-  onSign: (name: string, signature: string) => Promise<void>;
+  onSign: (name: string, signature: string, initials: string) => Promise<void>;
 }) {
   const ways: { key: Way; label: string }[] = handwrittenOnly
     ? [{ key: "draw", label: "Draw" }, { key: "photo", label: "Photo" }]
     : [{ key: "draw", label: "Draw" }, { key: "type", label: "Type" }, { key: "photo", label: "Photo" }];
   const [way, setWay] = useState<Way>("draw");
   const [name, setName] = useState(startName);
+  // Follows the name until they change it themselves.
+  const [ownInitials, setOwnInitials] = useState<string | null>(null);
+  const initials = ownInitials ?? name.trim().split(/\s+/).filter(Boolean).map((w) => w[0].toUpperCase()).join("");
   const [drawn, setDrawn] = useState<string | null>(null);
   const [typed, setTyped] = useState<string | null>(null);
   const [photo, setPhoto] = useState<string | null>(null);
@@ -108,7 +112,7 @@ export default function SignDialog({ title, action, name: startName, askName, ha
   }, [way, name]);
 
   const signature = way === "draw" ? drawn : way === "type" ? typed : photo;
-  const ready = !!signature && (!askName || wordCount(name) >= 2);
+  const ready = !!signature && (!askName || wordCount(name) >= 2) && (!askInitials || !!initials.trim());
 
   const choosePhoto = async (file: File | undefined) => {
     if (!file) return;
@@ -121,7 +125,7 @@ export default function SignDialog({ title, action, name: startName, askName, ha
     setBusy(true);
     setError(null);
     try {
-      await onSign(name.trim().replace(/\s+/g, " "), signature!);
+      await onSign(name.trim().replace(/\s+/g, " "), signature!, initials.trim());
     } catch (e) {
       setError((e as Error).message);
       setBusy(false);
@@ -132,7 +136,12 @@ export default function SignDialog({ title, action, name: startName, askName, ha
     <Dialog open fullWidth maxWidth="xs" onClose={busy ? undefined : onCancel} sx={{ "& .MuiDialog-paper": { m: 1.5, width: "calc(100% - 24px)" } }}>
       <DialogTitle>{title}</DialogTitle>
       <DialogContent>
-        {askName && <TextField label="Your full name" fullWidth value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" sx={{ mt: 1, mb: 1 }} />}
+        {askName && (
+          <div style={{ display: "grid", gridTemplateColumns: askInitials ? "minmax(0, 1fr) 88px" : "minmax(0, 1fr)", gap: 8, marginTop: 8, marginBottom: 8 }}>
+            <TextField label="Your full name" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />
+            {askInitials && <TextField label="Initials" value={initials} onChange={(e) => setOwnInitials(e.target.value.slice(0, 12))} />}
+          </div>
+        )}
         <Tabs value={way} onChange={(_e, v) => { setWay(v); setError(null); }} variant="fullWidth" sx={{ mb: 1.5 }}>
           {ways.map((w) => <Tab key={w.key} value={w.key} label={w.label} />)}
         </Tabs>

@@ -363,7 +363,6 @@ function SettingsTab({ data }: { data: Data }) {
     { id: "access", title: "Login & team", sub: "How they sign in, and who works with them.", body: <><LoginSection data={data} /><TeamSection agentId={data.profile.agent_id} name={data.profile.display_name || "This agent"} /></> },
     { id: "ads", title: "Ads & Facebook", sub: "Their ad account, Facebook page and where their leads come from.", body: <><AdAccountSection data={data} /><FacebookSection data={data} /><LandingPagesSection data={data} /></> },
     { id: "messages", title: "Messages", sub: "Automations and emails that go to their leads.", body: <MessagesSection data={data} /> },
-    { id: "billing", title: "Billing & contract", sub: "Their plan, renewal and payments.", body: <><ContractSection data={data} /><BillingSection data={data} /></> },
     { id: "account", title: "Account", sub: "Pause or close their account.", body: <AccountStatusSection profile={data.profile} /> },
   ];
   const [current, setCurrent] = useState(groups[0].id);
@@ -1108,57 +1107,6 @@ function FacebookSection({ data }: { data: Data }) {
   );
 }
 
-/** Plan, renewal date and the signed agreement (moved here from the Account page). */
-function ContractSection({ data }: { data: Data }) {
-  const { profile: p } = data;
-  const save = useClientSaver(p.agent_id);
-  const showSnack = useSnack();
-  const [uploading, setUploading] = useState(false);
-
-  async function onPdf(file: File | undefined) {
-    if (!file) return;
-    if (!file.name.toLowerCase().endsWith(".pdf")) { showSnack("Only PDF files are allowed"); return; }
-    if (file.size > 10 * 1024 * 1024) { showSnack("File must be under 10 MB"); return; }
-    setUploading(true);
-    await save(async () => {
-      const path = `${p.agent_id}/contract-${Date.now()}.pdf`;
-      const { error } = await supabase.storage.from("logos").upload(path, file, { upsert: true, contentType: "application/pdf" });
-      if (error) throw error;
-      const url = supabase.storage.from("logos").getPublicUrl(path).data.publicUrl;
-      await updateClientProfile(p.agent_id, { contract_pdf_url: url });
-    }, "Contract uploaded");
-    setUploading(false);
-  }
-
-  return (
-    <EditableSection
-      title="Contract"
-      view={
-        <>
-          <KV
-            rows={[
-              ["Plan", p.tier === "paid" ? "Paid" : "Free"],
-              ["Renewal date", p.renewal_date ? new Date(p.renewal_date + "T00:00:00").toLocaleDateString("en-ZA", { day: "numeric", month: "long", year: "numeric" }) : "Not set"],
-              ["Agreement", p.contract_pdf_url ? <ExtLink key="pdf" href={p.contract_pdf_url}>View PDF</ExtLink> : "Not uploaded"],
-            ]}
-          />
-          <Button component="label" size="small" variant="outlined" startIcon={uploading ? <CircularProgress size={14} /> : <UploadFileIcon />} disabled={uploading} sx={{ mt: 1.5 }}>
-            {p.contract_pdf_url ? "Replace PDF" : "Upload PDF"}
-            <input type="file" hidden accept=".pdf,application/pdf" onChange={(e) => { onPdf(e.target.files?.[0]); e.target.value = ""; }} />
-          </Button>
-        </>
-      }
-      fields={[{ key: "renewal", label: "Renewal date (YYYY-MM-DD)", value: p.renewal_date || "", placeholder: "e.g. 2026-12-01" }]}
-      onSave={async (v) => {
-        if (v.renewal && !/^\d{4}-\d{2}-\d{2}$/.test(v.renewal)) return "Use the format YYYY-MM-DD, e.g. 2026-12-01.";
-        const ok = await save(() => updateClientProfile(p.agent_id, { renewal_date: v.renewal || null }));
-        if (!ok) return "Not saved. Try again.";
-      }}
-    />
-  );
-}
-
-
 const SOURCE_LABEL: Record<BriefSource, string> = {
   call: "added here",
   signup: "sign-up page",
@@ -1351,49 +1299,6 @@ function ContactSection({ data }: { data: Data }) {
   );
 }
 
-function BillingSection({ data }: { data: Data }) {
-  const { profile: p, dossier: d } = data;
-  const save = useClientSaver(p.agent_id);
-  const b = d?.billing;
-  const plan = d?.package || b?.plan || "";
-  const payment = b?.status || d?.audit?.payment || "";
-  return (
-    <EditableSection
-      title="Package & billing"
-      view={
-        <KV
-          rows={[
-            ["Package", plan],
-            ["Payment status", payment],
-            ["Invoice day", b?.invoiceDay],
-            ["Last payment", b?.lastPayment],
-            ["Next payment", b?.nextPayment],
-            ["Billing note", b?.notes],
-          ]}
-        />
-      }
-      fields={[
-        { key: "plan", label: "Package", value: plan, placeholder: "e.g. R3 000/mo" },
-        { key: "status", label: "Payment status", value: payment, placeholder: "e.g. Paid, Overdue, Paused" },
-        { key: "invoiceDay", label: "Invoice day", value: b?.invoiceDay || "", placeholder: "e.g. 27th" },
-        { key: "lastPayment", label: "Last payment", value: b?.lastPayment || "" },
-        { key: "nextPayment", label: "Next payment", value: b?.nextPayment || "" },
-        { key: "notes", label: "Billing note", value: b?.notes || "", multiline: true },
-      ]}
-      onSave={async (v) => {
-        const ok = await save(() =>
-          saveClientDossier(p.agent_id, d, {
-            package: v.plan || null,
-            billing: { ...(b ?? {}), plan: v.plan || undefined, status: v.status || undefined, invoiceDay: v.invoiceDay || undefined, lastPayment: v.lastPayment || undefined, nextPayment: v.nextPayment || undefined, notes: v.notes || undefined },
-            // The old audit value only filled in a missing status; once edited here, this is the answer.
-            audit: d?.audit ? { ...d.audit, payment: v.status || undefined } : null,
-          }),
-        );
-        if (!ok) return "Not saved. Try again.";
-      }}
-    />
-  );
-}
 
 function OnboardingSection({ data, which }: { data: Data; which: "onboarding" | "onboardingExtra" }) {
   const { profile: p, dossier: d } = data;

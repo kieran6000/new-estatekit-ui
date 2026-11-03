@@ -76,12 +76,13 @@ export const createContract = (c: { agentId: string | null; title: string; signe
   call<{ id: string; reference: string }>({ action: "create", ...c });
 export const markContractShared = (id: string, how: "whatsapp" | "copied") => call<void>({ action: "shared", id, how });
 export const cancelContract = (id: string) => call<void>({ action: "void", id });
-export const getMySignature = () => call<{ name: string; signature: string | null }>({ action: "my_signature" });
+export const getMySignature = () => call<{ signature: string | null; canChange: boolean }>({ action: "my_signature" });
 export const saveMySignature = (signature: string) => call<void>({ action: "save_signature", signature });
 
 export interface SignedRecord {
   at: string;
   name: string;
+  initials: string | null;
   signature: string;
   maskedPhone: string;
   ip: string | null;
@@ -114,7 +115,7 @@ export async function viewContract(token: string, session: string): Promise<Shar
   }
 }
 
-export const signContract = (s: { token: string; session: string; name: string; signature: string }) =>
+export const signContract = (s: { token: string; session: string; name: string; signature: string; initials: string }) =>
   call<void>({ action: "sign", agreed: true, ...s });
 
 /** Reading time and how far they got. keepalive lets it leave as the page closes. */

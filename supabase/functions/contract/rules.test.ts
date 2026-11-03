@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canonical, cleanScroll, cleanSeconds, documentHash, firstIp, maskPhone, phoneDigits, validSignature, validSignerName } from "./rules";
+import { canonical, cleanScroll, cleanSeconds, documentHash, firstIp, maskPhone, phoneDigits, validInitials, validSignature, validSignerName } from "./rules";
 
 describe("a contract's fingerprint", () => {
   it("is the same when the database reorders the keys", async () => {
@@ -36,6 +36,14 @@ describe("what a signature needs", () => {
     expect(validSignature("data:text/html;base64,PHNjcmlwdD4=")).toBe(false);
     expect(validSignature(`data:image/png;base64,${"A".repeat(500_001)}`)).toBe(false);
     expect(validSignature(null)).toBe(false);
+  });
+
+  it("wants initials made of letters", () => {
+    expect(validInitials("SD")).toBe(true);
+    expect(validInitials("É.v.d.M")).toBe(true);
+    expect(validInitials("")).toBe(false);
+    expect(validInitials("123")).toBe(false);
+    expect(validInitials(null)).toBe(false);
   });
 
   it("wants a full name", () => {

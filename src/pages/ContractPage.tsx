@@ -121,8 +121,8 @@ export default function ContractPage() {
   }
 
   const canSign = data.status === "open" && !data.staff;
-  const sign = async (name: string, signature: string) => {
-    await signContract({ token, session, name, signature });
+  const sign = async (name: string, signature: string, initials: string) => {
+    await signContract({ token, session, name, signature, initials });
     await refetch();
     setSigning(false);
     // Once the pages have settled with the signature on them.
@@ -148,6 +148,7 @@ export default function ContractPage() {
           : <div className="ct-field-empty">The client signs here</div>}
         issuerField={<div className="ct-mark" />}
       />
+      <p className="ct-viewer-note">We record when this agreement is opened, how long it's read, and the date, time, device and internet address used to sign it, as proof of signature.</p>
       {canSign && <div className="ct-actionbar"><button type="button" onClick={() => setSigning(true)}>Sign</button></div>}
       {signing && (
         <SignDialog
@@ -155,7 +156,10 @@ export default function ContractPage() {
           action="Sign agreement"
           name={data.signerName}
           askName
-          note="By signing, you agree to this agreement. Your signature has the same effect as signing by hand. We record the date, time and device."
+          askInitials={!!data.document.initials}
+          note={data.document.initials
+            ? 'Your initials confirm that "Your part", "Mandate Guarantee", "No other guarantees" and "Liability" were pointed out to you. By signing, you agree to this agreement, and your signature has the same effect as signing by hand.'
+            : "By signing, you agree to this agreement. Your signature has the same effect as signing by hand."}
           onCancel={() => setSigning(false)}
           onSign={sign}
         />

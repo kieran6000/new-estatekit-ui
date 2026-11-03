@@ -5,7 +5,6 @@ import {
   Button,
   Card,
   CardContent,
-  Chip,
   CircularProgress,
   Divider,
   IconButton,
@@ -478,56 +477,6 @@ export default function AccountPage() {
               </CardContent>
             </Card>
 
-            <Card variant="outlined" sx={{ mb: 3 }}>
-              <CardContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                  Contract
-                </Typography>
-
-                <Box>
-                  <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>
-                    Plan
-                  </Typography>
-                  <Chip
-                    label={profile?.tier === "paid" ? "Paid" : "Free"}
-                    color={profile?.tier === "paid" ? "success" : "default"}
-                    size="small"
-                  />
-                </Box>
-
-                {profile?.renewalDate && (
-                  <Box>
-                    <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>
-                      Renewal date
-                    </Typography>
-                    <Typography sx={{ fontSize: 14 }}>
-                      {new Date(profile.renewalDate + "T00:00:00").toLocaleDateString("en-ZA", { day: "numeric", month: "long", year: "numeric" })}
-                    </Typography>
-                  </Box>
-                )}
-
-                <Box>
-                  <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>
-                    Agreement PDF
-                  </Typography>
-                  {profile?.contractPdfUrl ? (
-                    <Typography
-                      component="a"
-                      href={profile.contractPdfUrl}
-                      target="_blank"
-                      rel="noopener"
-                      sx={{ fontSize: 14, color: "primary.main" }}
-                    >
-                      View contract
-                    </Typography>
-                  ) : (
-                    <Typography variant="body2" color="text.disabled">
-                      No contract uploaded
-                    </Typography>
-                  )}
-                </Box>
-              </CardContent>
-            </Card>
 
             {isOperator && (
               <Card variant="outlined" sx={{ mb: 3 }}>

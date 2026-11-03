@@ -39,6 +39,9 @@ export const validSignature = (png: unknown): png is string =>
 export const validSignerName = (name: unknown): name is string =>
   typeof name === "string" && name.length <= 120 && name.trim().split(/\s+/).filter((w) => /\p{L}/u.test(w)).length >= 2;
 
+export const validInitials = (s: unknown): s is string =>
+  typeof s === "string" && s.length <= 12 && /\p{L}/u.test(s);
+
 /** How much of a report of reading time to believe. */
 export const cleanSeconds = (n: unknown) => Math.min(Math.max(0, Math.round(Number(n)) || 0), MAX_SECONDS_A_REPORT);
 export const cleanScroll = (n: unknown) => Math.min(Math.max(0, Math.round(Number(n)) || 0), 100);
