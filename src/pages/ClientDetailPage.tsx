@@ -723,6 +723,7 @@ function OverviewTab({ data }: { data: Data }) {
       </Box>
 
       <AdsTable
+        agentId={agentId}
         adAccountId={acct ?? null}
         since={sinceDay}
         until={lastDay}
