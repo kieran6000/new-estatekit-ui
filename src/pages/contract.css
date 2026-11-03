@@ -1,0 +1,138 @@
+/* The contract as a document: same in light and dark, and on paper. Literal
+   colours are on purpose here, as on the printed weekly report. */
+
+.ct-viewer {
+  min-height: 100vh;
+  background: #e9ebee;
+  color: #14181f;
+  padding: 24px 12px 96px;
+}
+
+.ct-sheet {
+  background: #fff;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 48px 56px;
+  border: 1px solid #d5d9df;
+  font-family: "Source Serif 4", Georgia, "Noto Serif", "Times New Roman", serif;
+  font-size: 16.5px;
+  line-height: 1.6;
+}
+
+.ct-label {
+  font-family: Roboto, Arial, sans-serif;
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #5b6472;
+}
+
+.ct-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  padding-bottom: 12px;
+  border-bottom: 3px solid #14181f;
+}
+.ct-brand { font-family: Roboto, Arial, sans-serif; font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
+.ct-ref { font-family: Roboto, Arial, sans-serif; font-size: 13px; color: #3c4451; white-space: nowrap; }
+
+.ct-title { font-size: 34px; line-height: 1.15; font-weight: 400; margin: 28px 0 6px; letter-spacing: -0.01em; }
+.ct-between { margin: 0 0 24px; color: #3c4451; }
+
+.ct-terms { margin: 0 0 36px; border-top: 1px solid #14181f; }
+.ct-terms > div {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid #d5d9df;
+}
+.ct-terms dt { font-family: Roboto, Arial, sans-serif; font-size: 13.5px; color: #5b6472; }
+.ct-terms dd { margin: 0; font-weight: 700; font-size: 15.5px; }
+
+.ct-section { margin: 0 0 26px; }
+.ct-section h2 { font-size: 18px; font-weight: 700; margin: 0 0 8px; break-after: avoid; }
+.ct-clause { display: grid; grid-template-columns: 2.6em minmax(0, 1fr); margin: 0 0 8px; }
+.ct-clause span { color: #5b6472; font-size: 14.5px; line-height: 1.8; }
+.ct-clause p { margin: 0; }
+
+.ct-execution { margin-top: 36px; padding-top: 22px; border-top: 3px solid #14181f; break-inside: avoid; }
+.ct-execution h2 { font-size: 22px; font-weight: 400; margin: 0 0 4px; }
+.ct-execution .ct-sub { color: #3c4451; margin: 0 0 20px; }
+
+.ct-form { font-family: Roboto, Arial, sans-serif; font-size: 15px; line-height: 1.5; }
+.ct-form-label { display: block; font-weight: 500; margin: 0 0 6px; font-size: 14.5px; }
+.ct-pad-wrap { position: relative; border: 1px solid #8a93a0; border-radius: 4px; background: #fafbfc; height: 170px; overflow: hidden; }
+.ct-pad-wrap:focus-within { border-color: #14181f; }
+.ct-pad { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
+.ct-pad-line { position: absolute; left: 16px; right: 16px; bottom: 42px; border-bottom: 1px solid #8a93a0; pointer-events: none; }
+.ct-pad-x { position: absolute; left: 18px; bottom: 46px; font-size: 18px; color: #5b6472; pointer-events: none; }
+.ct-pad-hint { position: absolute; left: 16px; bottom: 14px; font-size: 13px; color: #5b6472; pointer-events: none; }
+
+.ct-parties { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; margin-top: 8px; }
+.ct-party img { display: block; height: 72px; max-width: 100%; object-fit: contain; object-position: left bottom; }
+.ct-party-mark { height: 72px; display: flex; align-items: flex-end; font-style: italic; font-size: 24px; }
+.ct-party-line { border-top: 1px solid #14181f; margin-top: 2px; padding-top: 6px; font-size: 15px; font-weight: 700; }
+.ct-party-note { font-family: Roboto, Arial, sans-serif; font-size: 13px; color: #5b6472; line-height: 1.45; margin-top: 2px; }
+
+.ct-record { margin-top: 32px; border: 1px solid #14181f; padding: 18px 20px; break-inside: avoid; font-family: Roboto, Arial, sans-serif; }
+.ct-record h3 { font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; margin: 0 0 10px; font-weight: 700; }
+.ct-record dl { margin: 0; }
+.ct-record dl > div { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 12px; padding: 6px 0; border-top: 1px solid #e3e6ea; font-size: 13.5px; }
+.ct-record dt { color: #5b6472; }
+.ct-record dd { margin: 0; overflow-wrap: anywhere; }
+.ct-record .ct-hash { font-family: Consolas, Menlo, monospace; font-size: 12px; }
+
+.ct-note { font-family: Roboto, Arial, sans-serif; font-size: 13px; line-height: 1.5; color: #5b6472; margin: 14px 0 0; }
+
+.ct-banner {
+  max-width: 760px;
+  margin: 0 auto 12px;
+  padding: 10px 14px;
+  background: #fff;
+  border: 1px solid #d5d9df;
+  font: 14px/1.45 Roboto, Arial, sans-serif;
+}
+
+.ct-progress { position: fixed; top: 0; left: 0; right: 0; height: 3px; background: transparent; z-index: 5; }
+.ct-progress > div { height: 100%; background: #14181f; transition: width 0.15s linear; }
+
+.ct-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  background: #fff;
+  border-top: 1px solid #c4c9d0;
+  padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  display: flex;
+  justify-content: center;
+}
+.ct-bar-inner { width: 100%; max-width: 760px; display: flex; align-items: center; justify-content: space-between; gap: 12px; font: 14px/1.3 Roboto, Arial, sans-serif; }
+
+.ct-message { max-width: 560px; margin: 12vh auto 0; padding: 36px 32px; background: #fff; border: 1px solid #d5d9df; font: 16px/1.5 Roboto, Arial, sans-serif; }
+.ct-message h1 { font-size: 22px; font-weight: 500; margin: 0 0 8px; }
+.ct-message p { margin: 0; color: #3c4451; }
+
+@media (max-width: 600px) {
+  .ct-viewer { padding: 0 0 96px; background: #fff; }
+  .ct-sheet { border: 0; padding: 22px 18px 32px; font-size: 16.5px; }
+  .ct-banner { border-width: 0 0 1px; margin: 0; }
+  .ct-title { font-size: 29px; margin-top: 22px; }
+  .ct-parties { grid-template-columns: minmax(0, 1fr); gap: 22px; }
+  .ct-terms > div, .ct-record dl > div { grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); }
+  .ct-clause { grid-template-columns: 2.3em minmax(0, 1fr); }
+  .ct-message { margin: 0; border: 0; min-height: 100vh; }
+}
+
+@media print {
+  @page { margin: 18mm 16mm; }
+  .ct-viewer { background: #fff; padding: 0; min-height: 0; }
+  .ct-sheet { border: 0; padding: 0; max-width: none; font-size: 11.5pt; }
+  .ct-no-print, .ct-bar, .ct-progress, .ct-banner { display: none !important; }
+  .ct-clause { break-inside: avoid; }
+}

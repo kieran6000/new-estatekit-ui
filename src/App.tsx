@@ -32,6 +32,8 @@ import SoldPage from "./pages/SoldPage";
 import PlanPage from "./pages/PlanPage";
 import WeeklyReportPage from "./pages/WeeklyReportPage";
 import SharedReportPage from "./pages/SharedReportPage";
+import ContractPage from "./pages/ContractPage";
+import ContractsAdminPage from "./pages/ContractsAdminPage";
 import WeeklyReportsAdminPage from "./pages/WeeklyReportsAdminPage";
 import AuditLogPage from "./pages/AuditLogPage";
 
@@ -116,6 +118,8 @@ export default function App() {
       <Route path="/plan/general/:slug" element={<PlanPage />} />
       <Route path="/plan/:token" element={<PlanPage />} />
       <Route path="/r/:token" element={<SharedReportPage />} />
+      <Route path="/c/:token" element={<ContractPage />} />
+      <Route path="/contract/:token" element={<ContractPage />} />
 
       {!user ? (
         <Route path="*" element={<LoginPage />} />
@@ -146,6 +150,7 @@ export default function App() {
             <Route path="/admin/clients" element={<Navigate to="/clients" replace />} />
             <Route path="/admin/clients/:agentId/*" element={<OldClientLink />} />
             <Route path="/admin/reports" element={<OperatorOnly><WeeklyReportsAdminPage /></OperatorOnly>} />
+            <Route path="/admin/contracts" element={<OperatorOnly><ContractsAdminPage /></OperatorOnly>} />
             <Route path="/account" element={<AccountRoute />} />
             <Route path="/account/audit" element={<OperatorOnly><AuditLogPage /></OperatorOnly>} />
             <Route path="/setup" element={<SetupPage />} />

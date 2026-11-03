@@ -304,7 +304,8 @@ export default function ClientsPage() {
           <Typography sx={{ fontSize: 18, fontWeight: 500 }}>Accounts</Typography>
           {clients && <Typography sx={{ ml: 1, fontSize: 14, color: tokens.ink3 }}>{clients.length - deactivatedCount}</Typography>}
           <Box sx={{ flex: 1 }} />
-          {/* Weekly reports lives here, not in the menu: it's an Accounts job. */}
+          {/* Weekly reports and contracts live here, not in the menu: they're Accounts jobs. */}
+          <Button size="small" sx={{ mr: 1 }} onClick={() => navigate("/admin/contracts")}>Contracts</Button>
           <Button size="small" variant="outlined" startIcon={<SendOutlinedIcon />} onClick={() => navigate("/admin/reports")}>Send weekly reports</Button>
         </Toolbar>
       </AppBar>

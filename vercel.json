@@ -4,6 +4,7 @@
     { "source": "/o/:id", "destination": "https://yfcnsvrhojpysrzqrkdi.supabase.co/functions/v1/email-open?l=:id" },
     { "source": "/oe/:id", "destination": "https://yfcnsvrhojpysrzqrkdi.supabase.co/functions/v1/email-open?e=:id" },
     { "source": "/w/:id","destination": "https://yfcnsvrhojpysrzqrkdi.supabase.co/functions/v1/email-click?l=:id" },
+    { "source": "/c/:token", "destination": "/api/contract-page?token=:token" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
