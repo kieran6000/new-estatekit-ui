@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canonical, cleanScroll, cleanSeconds, documentHash, firstIp, maskPhone, phoneDigits, validInitials, validSignature, validSignerName } from "./rules";
+import { canonical, cleanScroll, cleanSeconds, documentHash, firstIp, maskPhone, newReference, phoneDigits, validInitials, validSignature, validSignerName } from "./rules";
 
 describe("a contract's fingerprint", () => {
   it("is the same when the database reorders the keys", async () => {
@@ -51,6 +51,14 @@ describe("what a signature needs", () => {
     expect(validSignerName("Élise  van der Merwe")).toBe(true);
     expect(validSignerName("Siva")).toBe(false);
     expect(validSignerName("12 34")).toBe(false);
+  });
+});
+
+describe("a contract's reference", () => {
+  it("is the year and six random digits, never counting up", () => {
+    const made = Array.from({ length: 200 }, () => newReference(2026));
+    for (const r of made) expect(r).toMatch(/^EK-2026-[1-9]\d{5}$/);
+    expect(new Set(made).size).toBeGreaterThan(190);
   });
 });
 

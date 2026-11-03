@@ -39,6 +39,10 @@ export const validSignature = (png: unknown): png is string =>
 export const validSignerName = (name: unknown): name is string =>
   typeof name === "string" && name.length <= 120 && name.trim().split(/\s+/).filter((w) => /\p{L}/u.test(w)).length >= 2;
 
+/** Random, so a reference says nothing about how many contracts exist. */
+export const newReference = (year = new Date().getFullYear()) =>
+  `EK-${year}-${100_000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900_000)}`;
+
 export const validInitials = (s: unknown): s is string =>
   typeof s === "string" && s.length <= 12 && /\p{L}/u.test(s);
 

@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { cleanScroll, cleanSeconds, documentHash, firstIp, maskPhone, phoneDigits, validInitials, validSignature, validSignerName } from "./rules.ts";
+import { cleanScroll, cleanSeconds, documentHash, firstIp, maskPhone, newReference, phoneDigits, validInitials, validSignature, validSignerName } from "./rules.ts";
 
 // Contracts clients read and sign (Accounts → Contracts).
 //
@@ -118,23 +118,26 @@ Deno.serve(async (req) => {
       if (!title || !signerName || typeof body.document !== "object" || !body.document) return json({ error: "Bad request" }, 400);
       if (!phone) return json({ error: "That WhatsApp number doesn't look right. Check it and try again." }, 400);
 
-      const { data: row, error } = await supabase
-        .from("contracts")
-        .insert({
-          token: crypto.randomUUID().replace(/-/g, ""),
-          agent_id: agentId,
-          title,
-          signer_name: signerName,
-          signer_company: body.company ? String(body.company).trim().slice(0, 160) : null,
-          signer_phone: phone,
-          signer_email: body.email ? String(body.email).trim().slice(0, 160) : null,
-          document: body.document,
-          document_hash: await documentHash(body.document),
-          created_by: who.id,
-          created_by_name: who.name,
-        })
-        .select("id, reference")
-        .single();
+      const fields = {
+        token: crypto.randomUUID().replace(/-/g, ""),
+        agent_id: agentId,
+        title,
+        signer_name: signerName,
+        signer_company: body.company ? String(body.company).trim().slice(0, 160) : null,
+        signer_phone: phone,
+        signer_email: body.email ? String(body.email).trim().slice(0, 160) : null,
+        document: body.document,
+        document_hash: await documentHash(body.document),
+        created_by: who.id,
+        created_by_name: who.name,
+      };
+      // In the rare case a random reference is already taken, pick another.
+      let row: { id: string; reference: string } | null = null;
+      let error: { code?: string; message: string } | null = null;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        ({ data: row, error } = await supabase.from("contracts").insert({ ...fields, reference: newReference() }).select("id, reference").single());
+        if (error?.code !== "23505") break;
+      }
       if (error || !row) {
         console.error("contract insert failed", error);
         return json({ error: "Couldn't save the contract. Try again." }, 500);
