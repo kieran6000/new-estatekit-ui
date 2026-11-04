@@ -24,13 +24,13 @@ export default function NoteBox({ leadId, token, leadCreatedAt, value, onChange,
   sx?: object;
 }) {
   const [editing, setEditing] = useState(false);
-  const { data: versions = [] } = useQuery({
+  const { data: versions } = useQuery({
     queryKey: ["noteHistory", leadId],
     queryFn: () => noteHistory(leadId, token),
     staleTime: 60_000,
     retry: false,
   });
-  const blocks = useMemo(() => stampNote(value, versions, leadCreatedAt), [value, versions, leadCreatedAt]);
+  const blocks = useMemo(() => (versions ? stampNote(value, versions, leadCreatedAt) : []), [value, versions, leadCreatedAt]);
   const fontSize = size === "small" ? 14 : 16;
 
   if (editing || !value.trim() || !blocks.some((b) => b.at)) {
