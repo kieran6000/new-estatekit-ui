@@ -1,27 +1,38 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, InputAdornment, Paper, TextField, Typography, useMediaQuery } from "@mui/material";
+import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, InputAdornment, Menu, MenuItem, Paper, TextField, Typography, useMediaQuery } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
-import ContentCopyIcon from "@mui/icons-material/ContentCopy";
-import OpenInNewIcon from "@mui/icons-material/OpenInNew";
-import WhatsAppIcon from "@mui/icons-material/WhatsApp";
+import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
 import { cancelInvoice, createInvoice, deleteInvoice, InvoicesNotSetUp, listInvoices, markInvoicePaid, markInvoiceShared, type InvoiceRow } from "../api/invoices";
 import { buildInvoice, DEFAULT_AMOUNT, DEFAULT_DESCRIPTION, DEFAULT_ITEM, DEFAULT_PERIOD, defaultDueDate, invoiceStatus, longDate, money, todaySA, whatsappDigits } from "../lib/invoiceTemplate";
 import { useSnack } from "../hooks/useSnack";
-import { timeAgo } from "../lib/timeAgo";
-import { Row, Step, toneColours, when, type ContractClient } from "./ContractsSection";
+import { tokens } from "../theme";
+import { toneColours, type ContractClient } from "./ContractsSection";
 import InvoiceSheet from "./InvoiceSheet";
 
 const linkFor = (i: InvoiceRow) => `${window.location.origin}/i/${i.token}`;
 
-function InvoiceCard({ i }: { i: InvoiceRow }) {
+const COLUMNS = { xs: "minmax(0, 1fr) auto 40px", sm: "120px minmax(0, 1fr) 100px 170px 40px" };
+const shortDate = (d: string) => new Date(d).toLocaleDateString("en-GB", { timeZone: "Africa/Johannesburg", day: "numeric", month: "short", year: "numeric" });
+
+function InvoiceListRow({ i }: { i: InvoiceRow }) {
   const qc = useQueryClient();
   const showSnack = useSnack();
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [menu, setMenu] = useState<HTMLElement | null>(null);
   const status = invoiceStatus(i);
   const live = !i.voided_at;
   const openable = live && !i.paid_at;
+  const detail = i.paid_at
+    ? `On ${shortDate(i.paid_at)}`
+    : i.voided_at
+      ? `On ${shortDate(i.voided_at)}`
+      : i.first_opened_at
+        ? `Opened ${i.open_count} ${i.open_count === 1 ? "time" : "times"}`
+        : i.shared_at
+          ? `Sent ${shortDate(i.shared_at)}`
+          : null;
 
   const refresh = () => qc.invalidateQueries({ queryKey: ["invoices"] });
   const shared = () => { if (!i.shared_at) markInvoiceShared(i.id).then(refresh).catch(() => {}); };
@@ -59,40 +70,33 @@ function InvoiceCard({ i }: { i: InvoiceRow }) {
   };
 
   return (
-    <Paper variant="outlined" sx={{ borderRadius: "6px", p: 2 }}>
-      <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1.5, mb: 1.5 }}>
-        <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Typography sx={{ fontWeight: 500, fontSize: 15 }}>{money(i.amount)}</Typography>
-          <Typography sx={{ fontSize: 13, color: "text.secondary" }}>{i.document.item} · {i.reference}</Typography>
+    <Box sx={{ display: "grid", gridTemplateColumns: COLUMNS, columnGap: 1.5, alignItems: "center", py: 1.25, px: 2, borderTop: `1px solid ${tokens.divider2}` }}>
+      <Typography sx={{ display: { xs: "none", sm: "block" }, fontSize: 14 }}>{longDate(i.due_date)}</Typography>
+      <Box sx={{ minWidth: 0 }}>
+        <Typography sx={{ fontSize: 14, fontWeight: 500 }}>{i.document.item}</Typography>
+        <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>{i.reference}</Typography>
+        <Typography sx={{ display: { sm: "none" }, fontSize: 12.5, color: "text.secondary" }}>Due {longDate(i.due_date)}</Typography>
+      </Box>
+      <Typography sx={{ fontSize: 14, fontWeight: 500, fontVariantNumeric: "tabular-nums", textAlign: { xs: "right", sm: "left" } }}>{money(i.amount)}</Typography>
+      <Box sx={{ gridRow: { xs: 2, sm: "auto" }, gridColumn: { xs: "1 / -1", sm: "auto" }, mt: { xs: 0.5, sm: 0 } }}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
+          <Box sx={{ width: 8, height: 8, flex: "none", borderRadius: "50%", bgcolor: toneColours[status.tone].color }} />
+          <Typography sx={{ fontSize: 14 }}>{status.label}</Typography>
         </Box>
-        <Chip size="small" label={status.label} sx={{ ...toneColours[status.tone], fontWeight: 500, borderRadius: "4px" }} />
+        {detail && <Typography sx={{ fontSize: 12.5, color: "text.secondary", pl: "14px" }}>{detail}</Typography>}
       </Box>
-
-      {live && (
-        <Box sx={{ display: "flex", flexWrap: "wrap", columnGap: 2, rowGap: 0.5, mb: 1.5 }}>
-          <Step done={!!i.shared_at} label="Sent" />
-          <Step done={!!i.first_opened_at} label="Opened" />
-          <Step done={!!i.paid_at} label="Paid" />
-        </Box>
-      )}
-
-      <Box>
-        <Row k="Due" v={longDate(i.due_date)} />
-        {i.shared_at && <Row k="Sent" v={when(i.shared_at)} />}
-        <Row k="Opened" v={i.first_opened_at ? `${i.open_count} ${i.open_count === 1 ? "time" : "times"}, last ${timeAgo(i.last_opened_at ?? i.first_opened_at)}` : "Not yet"} />
-        {i.paid_at && <Row k="Paid" v={when(i.paid_at)} />}
-        {i.voided_at && <Row k="Cancelled" v={when(i.voided_at)} />}
-      </Box>
-
-      <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1, mt: 1.5 }}>
-        {openable && <Button size="small" variant="contained" disableElevation startIcon={<WhatsAppIcon />} onClick={sendOnWhatsApp}>Send on WhatsApp</Button>}
-        {openable && <Button size="small" variant="outlined" startIcon={<ContentCopyIcon />} onClick={copy}>Copy link</Button>}
-        <Button size="small" variant="outlined" startIcon={<OpenInNewIcon />} component="a" href={linkFor(i)} target="_blank" rel="noopener">View</Button>
-        {openable && <Button size="small" onClick={() => run(markInvoicePaid(i.id, true), "Marked as paid")}>Mark as paid</Button>}
-        {live && i.paid_at && <Button size="small" onClick={() => run(markInvoicePaid(i.id, false), "Marked as not paid")}>Mark as not paid</Button>}
-        {openable && <Button size="small" color="error" onClick={() => setConfirmCancel(true)}>Cancel it</Button>}
-        {i.voided_at && <Button size="small" color="error" onClick={() => setConfirmDelete(true)}>Delete</Button>}
-      </Box>
+      <IconButton aria-label={`Options for ${i.reference}`} size="small" onClick={(e) => setMenu(e.currentTarget)} sx={{ gridColumn: { xs: 3, sm: "auto" }, gridRow: { xs: 1, sm: "auto" } }}>
+        <MoreHorizIcon />
+      </IconButton>
+      <Menu anchorEl={menu} open={!!menu} onClose={() => setMenu(null)} onClick={() => setMenu(null)} anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}>
+        {openable && <MenuItem onClick={sendOnWhatsApp}>Send on WhatsApp</MenuItem>}
+        {openable && <MenuItem onClick={copy}>Copy link</MenuItem>}
+        <MenuItem component="a" href={linkFor(i)} target="_blank" rel="noopener">View invoice</MenuItem>
+        {openable && <MenuItem onClick={() => run(markInvoicePaid(i.id, true), "Marked as paid")}>Mark as paid</MenuItem>}
+        {live && i.paid_at && <MenuItem onClick={() => run(markInvoicePaid(i.id, false), "Marked as not paid")}>Mark as not paid</MenuItem>}
+        {openable && <MenuItem onClick={() => setConfirmCancel(true)} sx={{ color: "error.main" }}>Cancel it</MenuItem>}
+        {i.voided_at && <MenuItem onClick={() => setConfirmDelete(true)} sx={{ color: "error.main" }}>Delete</MenuItem>}
+      </Menu>
 
       <Dialog open={confirmCancel} onClose={() => setConfirmCancel(false)} maxWidth="xs" fullWidth>
         <DialogTitle>Cancel this invoice?</DialogTitle>
@@ -115,7 +119,7 @@ function InvoiceCard({ i }: { i: InvoiceRow }) {
           <Button color="error" onClick={remove}>Delete invoice</Button>
         </DialogActions>
       </Dialog>
-    </Paper>
+    </Box>
   );
 }
 
@@ -221,7 +225,14 @@ export default function InvoicesSection({ client }: { client: ContractClient }) 
         </Typography>
       )}
       {data?.length === 0 && <Typography sx={{ fontSize: 14, color: "text.secondary" }}>No invoices here yet.</Typography>}
-      {data?.map((i) => <InvoiceCard key={i.id} i={i} />)}
+      {!!data?.length && (
+        <Paper variant="outlined" sx={{ borderRadius: "8px", overflow: "hidden" }}>
+          <Box sx={{ display: { xs: "none", sm: "grid" }, gridTemplateColumns: COLUMNS, columnGap: 1.5, px: 2, py: 1 }}>
+            {["Due date", "Item", "Amount", "Status"].map((h) => <Typography key={h} sx={{ fontSize: 13, fontWeight: 600 }}>{h}</Typography>)}
+          </Box>
+          {data.map((i) => <InvoiceListRow key={i.id} i={i} />)}
+        </Paper>
+      )}
       {creating && <NewInvoiceDialog onClose={() => setCreating(false)} client={client} />}
     </Box>
   );

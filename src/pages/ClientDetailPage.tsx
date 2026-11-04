@@ -75,7 +75,7 @@ import { MAX_IMAGE_BYTES, uploadImage } from "../lib/image";
 import { accentEdge, readableOn } from "../lib/contrast";
 import BrandLogo from "../components/BrandLogo";
 import FundingChip from "../components/FundingChip";
-import LeadHeatMap from "../components/LeadHeatMap";
+import LeadAreaMap from "../components/LeadAreaMap";
 import StatusStrip from "../components/StatusStrip";
 import { isCity } from "../lib/geo";
 import CreditCardOutlinedIcon from "@mui/icons-material/CreditCardOutlined";
@@ -108,7 +108,7 @@ type TabKey = ClientTab;
 
 /** Operators: one account, at /clients/<their-name>/<tab>. Overview (the
  *  numbers and their ads), History (what changed on their ads), Brief
- *  (onboarding answers), Contract & invoices and Settings (everything editable). Dates and where
+ *  (onboarding answers), Paperwork (contracts and invoices) and Settings (everything editable). Dates and where
  *  you are in their ads are in the address too, so a link opens the same
  *  view and Back steps through it. */
 export default function ClientDetailPage() {
@@ -193,7 +193,7 @@ export default function ClientDetailPage() {
                 <Tab value="overview" label="Overview" />
                 <Tab value="history" label="History" />
                 <Tab value="brief" label="Brief" />
-                <Tab value="contract" label="Contract & invoices" />
+                <Tab value="contract" label="Paperwork" />
                 <Tab value="settings" label="Settings" />
               </Tabs>
             </Box>
@@ -202,13 +202,11 @@ export default function ClientDetailPage() {
             {tab === "overview" && <OverviewTab data={data} />}
             {tab === "history" && <HistoryTab data={data} />}
             {tab === "brief" && (
-              <Cols>
+              <Box sx={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
                 <BriefSection data={data} />
-                <Box sx={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-                  <OtherAnswersSection data={data} />
-                  {data.dossier?.onboardingExtra && <OnboardingSection data={data} which="onboardingExtra" />}
-                </Box>
-              </Cols>
+                <OtherAnswersSection data={data} />
+                {data.dossier?.onboardingExtra && <OnboardingSection data={data} which="onboardingExtra" />}
+              </Box>
             )}
             {tab === "contract" && (() => {
               const client = {
@@ -592,6 +590,20 @@ function EditableSection({
   );
 }
 
+/** Label on top, answer underneath, in tidy columns. */
+function InfoGrid({ rows }: { rows: [string, ReactNode][] }) {
+  return (
+    <Box component="dl" sx={{ m: 0, display: "grid", gridTemplateColumns: { xs: "repeat(2, minmax(0, 1fr))", md: "repeat(3, minmax(0, 1fr))" }, columnGap: 3, rowGap: 2 }}>
+      {rows.map(([k, v]) => (
+        <Box key={k} sx={{ minWidth: 0 }}>
+          <Box component="dt" sx={{ fontSize: 13.5, fontWeight: 600, color: tokens.ink }}>{k}</Box>
+          <Box component="dd" sx={{ m: 0, mt: 0.25, fontSize: 14, color: v ? tokens.ink : tokens.ink3, overflowWrap: "anywhere" }}>{v || "—"}</Box>
+        </Box>
+      ))}
+    </Box>
+  );
+}
+
 function KV({ rows, labelWidth = "38%" }: { rows: [string, ReactNode][]; labelWidth?: string }) {
   const shown = rows.filter(([, v]) => v !== null && v !== undefined && v !== "" && v !== false);
   if (!shown.length) return <Empty>Nothing on file.</Empty>;
@@ -703,7 +715,7 @@ function OverviewTab({ data }: { data: Data }) {
     <>
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" }, gap: 2, alignItems: "stretch" }}>
         <AdAccountCard data={data} />
-        <LeadHeatMap agentId={agentId} areas={areas} />
+        <LeadAreaMap agentId={agentId} areas={areas} />
       </Box>
 
       <Box sx={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 1.5, flexWrap: "wrap" }}>
@@ -825,9 +837,18 @@ const ACCOUNT_STATUS: Record<number, string> = {
   101: "Closed",
 };
 
-/** The card's maker, from Facebook's label ("Visa •••• 1234"). */
-const cardBrand = (label: string | null | undefined) =>
-  /visa/i.test(label ?? "") ? "VISA" : /master/i.test(label ?? "") ? "MC" : /amex|american express/i.test(label ?? "") ? "AMEX" : null;
+const CARD_BRANDS: { test: RegExp; name: string; badge: string; bg: string }[] = [
+  { test: /visa/i, name: "Visa", badge: "VISA", bg: "#1434CB" },
+  { test: /master/i, name: "Mastercard", badge: "MC", bg: "#252525" },
+  { test: /amex|american express/i, name: "Amex", badge: "AMEX", bg: "#006FCF" },
+];
+/** "VISA *6818" from Facebook, written the way people read a card. */
+function cardFrom(label: string | null | undefined) {
+  const brand = CARD_BRANDS.find((b) => b.test.test(label ?? "")) ?? null;
+  const last4 = (label ?? "").match(/(\d{4})\s*$/)?.[1];
+  return { brand, text: brand && last4 ? `${brand.name} ···· ${last4}` : label ?? null };
+}
+const rands = (n: number) => "R " + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
 
 /** Is their ad account fine, how does it pay, and what's owing. */
 function AdAccountCard({ data }: { data: Data }) {
@@ -850,20 +871,16 @@ function AdAccountCard({ data }: { data: Data }) {
   const avgDaily = daily30 ? (spendBetween(daily30, since30, ymd(new Date(Date.now() + 864e5))) ?? 0) / 30 : null;
   const problem = adAccountProblem(a, avgDaily);
   const kind = fundingKind(a?.fundingType);
-  const brand = cardBrand(a?.fundingLabel);
+  const card = cardFrom(a?.fundingLabel);
   const PayIcon = kind === "Prepaid" ? TollOutlinedIcon : kind === "Card" ? CreditCardOutlinedIcon : AccountBalanceOutlinedIcon;
-  const due = a?.balance != null && a.balance > 0 ? a.balance : 0;
+  const healthy = a?.accountStatus === 1;
   const rows: [string, ReactNode][] = [
-    ["Pays by", (
-      <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 1 }}>
-        <Box component="span" sx={{ width: 40, height: 26, flex: "none", borderRadius: "4px", border: `1px solid ${tokens.divider}`, display: "inline-flex", alignItems: "center", justifyContent: "center", color: tokens.ink2, fontSize: 10.5, fontWeight: 800, letterSpacing: "0.03em" }}>
-          {brand ?? <PayIcon sx={{ fontSize: 17 }} />}
-        </Box>
-        {a?.fundingLabel?.replace(/^\s*(visa|mastercard|master card|american express|amex)\s*/i, "") || (kind === "Prepaid" ? "Prepaid funds" : kind) || "Not set up"}
+    ["Facebook status", (
+      <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 0.75 }}>
+        <Box component="span" sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: healthy ? tokens.green : tokens.amber }} />
+        {a?.accountStatus != null ? ACCOUNT_STATUS[a.accountStatus] ?? "Unknown" : "Unknown"}
       </Box>
     )],
-    ["Amount due", <Box component="span" sx={{ fontSize: 18, fontWeight: 600, fontVariantNumeric: "tabular-nums", color: problem && due ? "warning.dark" : "text.primary" }}>{due ? money(due) : "Nothing due"}</Box>],
-    ["Facebook status", a?.accountStatus != null ? ACCOUNT_STATUS[a.accountStatus] ?? "Unknown" : "Unknown"],
     ["Spent all time", a?.amountSpent != null ? money(a.amountSpent) : "—"],
     ["Spending limit", a?.spendCap ? money(a.spendCap) : "None"],
   ];
@@ -876,15 +893,33 @@ function AdAccountCard({ data }: { data: Data }) {
         {!acct ? (
           <Empty>No ad account linked. Add it under Settings → Facebook.</Empty>
         ) : isLoading ? (
-          <Skeleton variant="rectangular" height={280} sx={{ borderRadius: "6px" }} />
+          <Skeleton variant="rectangular" height={300} sx={{ borderRadius: "6px" }} />
         ) : isError || a?.note ? (
           <Empty>Facebook won't show us this ad account. Check it's shared with EstateKit's Business Manager.</Empty>
         ) : (
           <>
-            <StatusStrip ok={!problem}>{problem ?? "All good. No payment problems."}</StatusStrip>
-            <Box sx={{ flex: 1, display: "flex", flexDirection: "column", mt: 0.75 }}>
+            <Typography sx={{ fontSize: 14, fontWeight: 600 }}>Current balance</Typography>
+            <Typography sx={{ fontSize: 30, lineHeight: 1.25, mt: 0.5, fontVariantNumeric: "tabular-nums" }}>{rands(Math.max(a?.balance ?? 0, 0))}</Typography>
+            {problem ? (
+              <Box sx={{ mt: 1 }}><StatusStrip ok={false}>{problem}</StatusStrip></Box>
+            ) : (
+              <Typography sx={{ fontSize: 13, color: tokens.ink2 }}>No payment due right now</Typography>
+            )}
+            <Box sx={{ mt: 2, pt: 1.75, borderTop: `1px solid ${tokens.divider2}` }}>
+              <Typography sx={{ fontSize: 14, fontWeight: 600, mb: 1 }}>How they pay</Typography>
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
+                <Box sx={{ width: 40, height: 26, flex: "none", borderRadius: "4px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10.5, fontWeight: 800, fontStyle: "italic", color: card.brand ? "#fff" : tokens.ink2, bgcolor: card.brand?.bg ?? "transparent", border: card.brand ? "none" : `1px solid ${tokens.divider}` }}>
+                  {card.brand ? card.brand.badge : <PayIcon sx={{ fontSize: 17 }} />}
+                </Box>
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography sx={{ fontSize: 14, fontWeight: 500, overflowWrap: "anywhere" }}>{card.text || (kind === "Prepaid" ? "Prepaid funds" : kind) || "Not set up"}</Typography>
+                  {kind === "Card" && <Typography sx={{ fontSize: 12.5, color: tokens.ink2 }}>Charged automatically</Typography>}
+                </Box>
+              </Box>
+            </Box>
+            <Box sx={{ flex: 1, display: "flex", flexDirection: "column", mt: 1.5 }}>
               {rows.map(([label, value]) => (
-                <Box key={label} sx={{ flex: 1, minHeight: 44, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 2, "& + &": { borderTop: `1px solid ${tokens.divider2}` } }}>
+                <Box key={label} sx={{ flex: 1, minHeight: 40, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 2, borderTop: `1px solid ${tokens.divider2}` }}>
                   <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>{label}</Typography>
                   <Typography component="div" sx={{ fontSize: 14, fontWeight: 500, textAlign: "right", minWidth: 0 }}>{value}</Typography>
                 </Box>
@@ -1212,10 +1247,7 @@ function BriefSection({ data }: { data: Data }) {
       return [
         f.label,
         b ? (
-          <Box component="span" key={f.key}>
-            {b.value}
-            <Box component="span" sx={{ color: tokens.ink3, fontSize: 12 }}> · {SOURCE_LABEL[b.source]}</Box>
-          </Box>
+          <Box component="span" key={f.key} title={`From ${SOURCE_LABEL[b.source]}`}>{b.value}</Box>
         ) : null,
       ] as [string, ReactNode];
     });
@@ -1225,11 +1257,11 @@ function BriefSection({ data }: { data: Data }) {
       title="Brief"
       sub={sub}
       view={
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
-          <KV labelWidth="42%" rows={rowsFor("signup")} />
-          <Box>
-            <Typography sx={{ fontSize: 12, fontWeight: 600, color: tokens.ink2, mb: 0.75 }}>From the onboarding call</Typography>
-            <KV labelWidth="42%" rows={rowsFor("call")} />
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 2.5 }}>
+          <InfoGrid rows={rowsFor("signup")} />
+          <Box sx={{ pt: 2, borderTop: `1px solid ${tokens.divider2}` }}>
+            <Typography sx={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: tokens.ink2, mb: 1.5 }}>From the onboarding call</Typography>
+            <InfoGrid rows={rowsFor("call")} />
           </Box>
         </Box>
       }

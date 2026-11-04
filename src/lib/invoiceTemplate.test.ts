@@ -34,8 +34,8 @@ describe("where an invoice has got to", () => {
   it.each([
     [{}, "Not sent yet"],
     [{ shared_at: at }, "Sent, not opened"],
-    [{ shared_at: at, first_opened_at: at }, "Opened, not paid"],
-    [{ due_date: "2026-11-02" }, "Overdue"],
+    [{ shared_at: at, first_opened_at: at }, "Opened"],
+    [{ due_date: "2026-11-02" }, "Past due date"],
     [{ due_date: "2026-11-02", paid_at: at }, "Paid"],
     [{ due_date: "2026-11-02", voided_at: at }, "Cancelled"],
   ])("%o is %s", (change, label) => {

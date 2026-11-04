@@ -1,5 +1,5 @@
 import { supabase } from "../api/_client";
-import { addressKey, type LatLng } from "./geo";
+import { addressKey, CLOSE_BY_KM, type LatLng, type Zone } from "./geo";
 
 // Google's map, geocoder and Street View photo, with the key that's locked to
 // our own site. Each address is only looked up once (geocode_cache). Anything
@@ -208,7 +208,8 @@ export const metresToPixels = (metres: number, lat: number, zoom: number) =>
 export const streetPhotoUrl = (at: LatLng, width: number, height: number) =>
   `https://maps.googleapis.com/maps/api/streetview?size=${width}x${height}&location=${at.lat},${at.lng}&source=outdoor&return_error_code=true&key=${KEY}`;
 
-export const LEAD_DOT = { inside: "#15803d", outside: "#dc2626", neutral: "#475569" };
+export const ZONE_COLOR = "#0b57d0";
+const DOT_COLOR = "#1f2937";
 
 // Nearly blank: land, water, main roads and town names. Nothing else competes with the dots.
 const QUIET_MAP = [
@@ -226,18 +227,24 @@ const QUIET_MAP = [
   { featureType: "administrative.locality", elementType: "labels.icon", stylers: [{ visibility: "off" }] },
 ];
 
-/** A dot for each lead on a quiet map, sized to fit them all. */
-export async function drawLeadMap(el: HTMLElement, leads: (LatLng & { color: string })[], onReady: () => void): Promise<void> {
+/** Their area as one soft circle, with a dot for each lead, on a quiet map. The
+ *  map is framed on the circle and what's close by. With no area, it fits the leads. */
+export async function drawLeadMap(el: HTMLElement, zone: Zone | null, leads: LatLng[], onReady: () => void): Promise<void> {
   const maps = await loadGoogleMaps();
   const { Map } = await maps.importLibrary("maps");
   const { Marker } = await maps.importLibrary("marker");
   const map = new Map(el, { disableDefaultUI: true, keyboardShortcuts: false, clickableIcons: false, gestureHandling: "cooperative", styles: QUIET_MAP });
   map.addListener("tilesloaded", onReady);
-  const bounds = new maps.LatLngBounds();
-  for (const p of leads) bounds.extend({ lat: p.lat, lng: p.lng });
-  map.fitBounds(bounds, 28);
-  maps.event.addListenerOnce(map, "idle", () => { if (map.getZoom() > 12) map.setZoom(12); });
-  for (const { color, ...position } of leads) {
-    new Marker({ map, position, clickable: false, icon: { path: maps.SymbolPath.CIRCLE, scale: 5, fillColor: color, fillOpacity: 0.9, strokeColor: "#ffffff", strokeWeight: 1.5 } });
+  if (zone) {
+    new maps.Circle({ map, center: zone.center, radius: zone.km * 1000, fillColor: ZONE_COLOR, fillOpacity: 0.12, strokeColor: ZONE_COLOR, strokeOpacity: 0.45, strokeWeight: 1.5, clickable: false });
+    map.fitBounds(new maps.Circle({ center: zone.center, radius: (zone.km + CLOSE_BY_KM) * 1000 }).getBounds(), 8);
+  } else {
+    const bounds = new maps.LatLngBounds();
+    for (const p of leads) bounds.extend(p);
+    map.fitBounds(bounds, 28);
+  }
+  maps.event.addListenerOnce(map, "idle", () => { if (map.getZoom() > 13) map.setZoom(13); });
+  for (const position of leads) {
+    new Marker({ map, position, clickable: false, icon: { path: maps.SymbolPath.CIRCLE, scale: 5, fillColor: DOT_COLOR, fillOpacity: 0.9, strokeColor: "#ffffff", strokeWeight: 1.5 } });
   }
 }
