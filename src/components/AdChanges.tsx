@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Box, Button, Chip, Skeleton, Tooltip, Typography, useMediaQuery } from "@mui/material";
 import { useQuery } from "@tanstack/react-query";
 import GpsFixedIcon from "@mui/icons-material/GpsFixed";
@@ -16,7 +16,8 @@ import { tokens } from "../theme";
 
 const DAYS_SHOWN = 5;
 const CHANGES_PER_DAY = 3;
-const BAR_HEIGHT = 96;
+const BAR_HEIGHT = 72;
+const BAR_MAX_WIDTH = 28;
 const GUTTER = 58;
 const saDay = (iso: string | number | Date) => new Date(iso).toLocaleDateString("en-CA", { timeZone: "Africa/Johannesburg" });
 const niceDay = (day: string) => new Date(`${day}T12:00:00Z`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
@@ -59,7 +60,7 @@ function Thumb({ src, label, onFail }: { src: string | null; label: string; onFa
   );
 }
 
-function ChangeLine({ it }: { it: AdHistoryItem }) {
+function ChangeLine({ it, times }: { it: AdHistoryItem; times: number }) {
   const Icon = KIND_ICON[changeKind(it)];
   const change = plainChange(it);
   const images = changedImages(it);
@@ -69,7 +70,7 @@ function ChangeLine({ it }: { it: AdHistoryItem }) {
       <Icon sx={{ fontSize: 18, color: tokens.ink3, mt: "2px", flex: "none" }} />
       <Box sx={{ minWidth: 0 }}>
         <Typography sx={{ fontSize: 14 }}>
-          {it.what}
+          {it.what}{times > 1 && <Box component="span" sx={{ color: tokens.ink2 }}> × {times}</Box>}
           {change && <Box component="span" sx={{ color: tokens.ink2 }}> · {change.from ? `${change.from} → ` : ""}<b>{change.to || "—"}</b></Box>}
           {images && <Box component="span" sx={{ color: tokens.ink2 }}> · Picture changed</Box>}
         </Typography>
@@ -90,7 +91,17 @@ function ChangeLine({ it }: { it: AdHistoryItem }) {
 
 function DayRow({ day, items, leads, spent }: { day: string; items: AdHistoryItem[]; leads: number; spent: number | null }) {
   const [open, setOpen] = useState(false);
-  const shown = open ? items : items.slice(0, CHANGES_PER_DAY);
+  const groups = useMemo(() => {
+    const seen = new Map<string, { it: AdHistoryItem; times: number }>();
+    for (const it of items) {
+      const key = [it.what, it.objectName, it.change?.from, it.change?.to].join("|");
+      const hit = seen.get(key);
+      if (hit) hit.times += 1;
+      else seen.set(key, { it, times: 1 });
+    }
+    return [...seen.values()];
+  }, [items]);
+  const shown = open ? groups : groups.slice(0, CHANGES_PER_DAY);
   return (
     <Box sx={{ display: "grid", gridTemplateColumns: { xs: "minmax(0, 1fr)", sm: "130px minmax(0, 1fr)" }, columnGap: 2, rowGap: 0.75, py: 1.5, borderTop: `1px solid ${tokens.divider2}` }}>
       <Box>
@@ -99,10 +110,10 @@ function DayRow({ day, items, leads, spent }: { day: string; items: AdHistoryIte
       </Box>
       <Box sx={{ minWidth: 0 }}>
         <Box sx={{ display: "flex", flexDirection: "column", gap: 0.875 }}>
-          {shown.map((it, i) => <ChangeLine key={i} it={it} />)}
+          {shown.map((g, i) => <ChangeLine key={i} it={g.it} times={g.times} />)}
         </Box>
-        {items.length > CHANGES_PER_DAY && (
-          <Button size="small" onClick={() => setOpen((v) => !v)} sx={{ mt: 0.5, ml: -0.75 }}>{open ? "Show fewer" : `${items.length - CHANGES_PER_DAY} more that day`}</Button>
+        {groups.length > CHANGES_PER_DAY && (
+          <Button size="small" onClick={() => setOpen((v) => !v)} sx={{ mt: 0.5, ml: -0.75 }}>{open ? "Show fewer" : `${groups.length - CHANGES_PER_DAY} more that day`}</Button>
         )}
       </Box>
     </Box>
@@ -116,6 +127,7 @@ export default function AdChanges({ agentId, acct, since, until }: { agentId: st
   const [picked, setPicked] = useState<{ start: string; end: string } | null>(null);
   const [showAll, setShowAll] = useState(false);
   const phone = useMediaQuery("(max-width:600px)");
+  useEffect(() => { setPicked(null); setShowAll(false); }, [since, until]);
 
   const history = useQuery({ queryKey: ["adHistory", acct, since, until], queryFn: () => getAdHistory(acct!, since, until), enabled: !!acct, staleTime: 5 * 60_000, retry: false });
   const leads = useQuery({ queryKey: ["leadsPerDay", agentId, since], queryFn: () => leadsPerDay(agentId, since), staleTime: 5 * 60_000 });
@@ -206,8 +218,8 @@ export default function AdChanges({ agentId, acct, since, until }: { agentId: st
                           aria-label={b.changes ? `${plural(b.changes, "change")}, ${shortDay(b.start)}` : undefined}
                           sx={{ flex: "1 1 0", minWidth: 0, p: 0, border: 0, font: "inherit", color: "inherit", borderRadius: "4px", bgcolor: on ? tokens.primaryBg : "transparent", cursor: b.changes ? "pointer" : "default", display: "block", position: "relative", "&:hover": { bgcolor: on ? tokens.primaryBg : tokens.surface2 } }}
                         >
-                          <Box sx={{ height: BAR_HEIGHT, display: "flex", alignItems: "flex-end", px: "1px", borderBottom: `1px solid ${tokens.divider}` }}>
-                            <Box sx={{ width: "100%", height: `${(b.leads / top) * 100}%`, minHeight: b.leads ? 3 : 0, borderRadius: "3px 3px 0 0", bgcolor: tokens.primary }} />
+                          <Box sx={{ height: BAR_HEIGHT, display: "flex", alignItems: "flex-end", justifyContent: "center", px: "1px", borderBottom: `1px solid ${tokens.divider}` }}>
+                            <Box sx={{ width: "100%", maxWidth: BAR_MAX_WIDTH, height: `${(b.leads / top) * 100}%`, minHeight: b.leads ? 3 : 0, borderRadius: "3px 3px 0 0", bgcolor: tokens.primary }} />
                           </Box>
                           <Box sx={{ height: 30, display: "flex", alignItems: "center", justifyContent: "center" }}>
                             {b.changes > 0 && (
@@ -219,7 +231,7 @@ export default function AdChanges({ agentId, acct, since, until }: { agentId: st
                           {/* The date, along the bottom. */}
                           <Box sx={{ height: 20, position: "relative" }}>
                             {i % labelEvery === 0 && (
-                              <Box component="span" sx={{ position: "absolute", left: 0, top: 2, fontSize: 12, fontWeight: 500, color: tokens.ink2, whiteSpace: "nowrap" }}>{shortDay(b.start)}</Box>
+                              <Box component="span" sx={{ position: "absolute", left: "50%", transform: "translateX(-50%)", top: 2, fontSize: 12, fontWeight: 500, color: tokens.ink2, whiteSpace: "nowrap" }}>{shortDay(b.start)}</Box>
                             )}
                           </Box>
                         </Box>
