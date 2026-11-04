@@ -43,7 +43,6 @@ import {
   fundingKind,
   getClient,
   hasPaymentProblem,
-  getResultsBetween,
   getSpendDaily,
   saveClientDossier,
   spendBetween,
@@ -62,7 +61,6 @@ import { resolveRange, useDateRange, ymd } from "../lib/range";
 import { useAuth } from "../hooks/useAuth";
 import { useSnack } from "../hooks/useSnack";
 import { trackActivity } from "../lib/activity";
-import { timeAgo } from "../lib/timeAgo";
 import RangePicker from "../components/RangePicker";
 import AdsTable, { type AdsView } from "../components/AdsTable";
 import { clientPath, isAgentId, resolveClient, CLIENT_TABS, type ClientTab } from "../lib/clientSlug";
@@ -76,6 +74,8 @@ import { accentEdge, readableOn } from "../lib/contrast";
 import BrandLogo from "../components/BrandLogo";
 import FundingChip from "../components/FundingChip";
 import LeadAreaMap from "../components/LeadAreaMap";
+import LeadFunnel from "../components/LeadFunnel";
+import { plainChange, worthShowing } from "../lib/adHistory";
 import StatusStrip from "../components/StatusStrip";
 import { isCity } from "../lib/geo";
 import CreditCardOutlinedIcon from "@mui/icons-material/CreditCardOutlined";
@@ -126,7 +126,7 @@ export default function ClientDetailPage() {
   // Tabs are pages: Back goes to the tab you were on. Only the dates carry
   // over (where you were in the ads is Overview's own).
   const dates = new URLSearchParams([...params].filter(([k]) => k === "range" || k === "from" || k === "to")).toString();
-  const pick = (t: TabKey) => navigate(`${clientPath(agentId, profiles, t)}${(t === "overview" || t === "history") && dates ? `?${dates}` : ""}`);
+  const pick = (t: TabKey) => navigate(`${clientPath(agentId, profiles, t)}${t === "overview" && dates ? `?${dates}` : ""}`);
 
   // Old addresses (the id, or no tab) move to /clients/<name>/<tab>.
   if (profiles && agentId) {
@@ -191,7 +191,6 @@ export default function ClientDetailPage() {
             <Box sx={{ maxWidth: 1440, mx: "auto", px: { xs: 0.5, md: 2 } }}>
               <Tabs value={tab} onChange={(_e, v) => pick(v)} variant="scrollable" allowScrollButtonsMobile>
                 <Tab value="overview" label="Overview" />
-                <Tab value="history" label="History" />
                 <Tab value="brief" label="Brief" />
                 <Tab value="contract" label="Paperwork" />
                 <Tab value="settings" label="Settings" />
@@ -200,7 +199,6 @@ export default function ClientDetailPage() {
           </Box>
           <Box sx={{ p: { xs: 1.5, md: 2.5 }, maxWidth: 1440, mx: "auto", display: "flex", flexDirection: "column", gap: 2 }}>
             {tab === "overview" && <OverviewTab data={data} />}
-            {tab === "history" && <HistoryTab data={data} />}
             {tab === "brief" && (
               <Box sx={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
                 <BriefSection data={data} />
@@ -358,14 +356,6 @@ function Header({ data }: { data: Data }) {
 /* ───────────────────────── building blocks ───────────────────────── */
 
 /** Two columns on a computer, one on a phone. */
-function Cols({ children }: { children: ReactNode }) {
-  return (
-    <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" }, gap: 2, alignItems: "start" }}>
-      {children}
-    </Box>
-  );
-}
-
 /** Settings in groups, each with a heading and a line on what's in it, and
  *  (on a computer) a menu on the left that jumps to a group and shows which
  *  one you're in. */
@@ -375,7 +365,7 @@ function SettingsTab({ data }: { data: Data }) {
     { id: "profile", title: "Profile", sub: "Who they are, how to reach them, and how their pages look.", body: <><ProfileSection data={data} /><ContactSection data={data} /><BrandingSection data={data} /></> },
     { id: "access", title: "Login & team", sub: "How they sign in, and who works with them.", body: <><LoginSection data={data} /><TeamSection agentId={data.profile.agent_id} name={data.profile.display_name || "This agent"} /></> },
     { id: "ads", title: "Ads & Facebook", sub: "Their ad account, Facebook page and where their leads come from.", body: <><AdAccountSection data={data} /><FacebookSection data={data} /><LandingPagesSection data={data} /></> },
-    { id: "messages", title: "Messages", sub: "Automations and emails that go to their leads.", body: <MessagesSection data={data} /> },
+    { id: "messages", title: "Messages", sub: "Automations and emails that go to their leads.", body: <><MessagesSection data={data} /><EmailStatsSection data={data} since={new Date(Date.now() - 30 * 864e5)} until={new Date()} /></> },
     { id: "account", title: "Account", sub: "Pause or close their account.", body: <AccountStatusSection profile={data.profile} /> },
   ];
   const [current, setCurrent] = useState(groups[0].id);
@@ -623,29 +613,6 @@ function Empty({ children }: { children: ReactNode }) {
   return <Typography sx={{ fontSize: 13.5, color: tokens.ink3 }}>{children}</Typography>;
 }
 
-function Bars({ data }: { data: Record<string, number> }) {
-  const entries = Object.entries(data).sort((a, b) => b[1] - a[1]);
-  if (!entries.length) return <Empty>No leads yet.</Empty>;
-  const total = entries.reduce((a, [, n]) => a + n, 0);
-  return (
-    <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
-      {entries.map(([k, n]) => (
-        <Box key={k}>
-          <Box sx={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
-            <span>{k}</span>
-            <Box component="span" sx={{ color: tokens.ink2, fontVariantNumeric: "tabular-nums" }}>
-              {n} · {Math.round((n / total) * 100)}%
-            </Box>
-          </Box>
-          <Box sx={{ height: 6, bgcolor: tokens.surface2, borderRadius: 3, mt: 0.375, overflow: "hidden" }}>
-            <Box sx={{ height: "100%", width: `${Math.max(2, (n / total) * 100)}%`, bgcolor: tokens.ink3, borderRadius: 3 }} />
-          </Box>
-        </Box>
-      ))}
-    </Box>
-  );
-}
-
 function ExtLink({ href, children }: { href: string; children: ReactNode }) {
   return (
     <Link href={href} target="_blank" rel="noopener" underline="hover" sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, fontSize: 13.5 }}>
@@ -706,17 +673,14 @@ function OverviewTab({ data }: { data: Data }) {
   const city = brief.city?.value?.trim();
   const areas = (brief.suburbs?.value ?? "").split(/[;,\n]/).map((s) => s.trim()).filter(Boolean)
     .map((name) => ({ name, address: city && !isCity(name) && !name.toLowerCase().includes(city.toLowerCase()) ? `${name}, ${city}` : name }));
-  const { data: r, isLoading } = useQuery({
-    queryKey: ["resultsBetween", agentId, sinceDay, ymd(until)],
-    queryFn: () => getResultsBetween(agentId, since, until),
-    staleTime: 60_000,
-  });
   return (
     <>
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" }, gap: 2, alignItems: "stretch" }}>
         <AdAccountCard data={data} />
         <LeadAreaMap agentId={agentId} areas={areas} />
       </Box>
+
+      <LeadFunnel byStage={data.live?.by_stage ?? {}} lastLeadAt={data.live?.last_lead_at} />
 
       <Box sx={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 1.5, flexWrap: "wrap" }}>
         <RangePicker value={range} onChange={setRange} />
@@ -733,95 +697,72 @@ function OverviewTab({ data }: { data: Data }) {
         pageAvatar={clientPicture(p)}
       />
 
-      <Cols>
-        <Section title="Leads by stage" sub="All time">
-          <Bars data={data.live?.by_stage ?? {}} />
-          <Typography sx={{ fontSize: 12.5, color: tokens.ink3, mt: 1.5 }}>
-            {data.live?.leads_total ?? 0} leads in total · last lead {data.live?.last_lead_at ? timeAgo(data.live.last_lead_at) : "never"}
-          </Typography>
-          <Typography sx={{ fontSize: 12.5, color: tokens.ink3, mt: 0.5 }}>
-            In the dates above: {isLoading ? "…" : `${r?.booked ?? 0} booked, ${r?.mandates ?? 0} ${r?.mandates === 1 ? "mandate" : "mandates"}`}
-          </Typography>
-        </Section>
-        <EmailStatsSection data={data} since={since} until={until} />
-      </Cols>
+      <RecentChanges acct={acct} since={sinceDay} until={lastDay} />
     </>
   );
 }
 
-/** What changed on their ads, from Facebook's activity log (Ads Manager's
- *  Account history), newest first, by day. */
-function HistoryTab({ data }: { data: Data }) {
-  const acct = data.profile.fb_ad_account_id;
-  const [range, setRange] = useRangeParam();
-  const { since, until } = resolveRange(range);
-  const sinceDay = ymd(since);
-  const lastDay = ymd(new Date(until.getTime() - 1));
+const CHANGES_SHOWN = 8;
+
+/** What changed on their ads, from Facebook's activity log, newest first. */
+function RecentChanges({ acct, since, until }: { acct: string | null | undefined; since: string; until: string }) {
+  const [showAll, setShowAll] = useState(false);
   const { data: h, isLoading, isError } = useQuery({
-    queryKey: ["adHistory", acct, sinceDay, lastDay],
-    queryFn: () => getAdHistory(acct!, sinceDay, lastDay),
+    queryKey: ["adHistory", acct, since, until],
+    queryFn: () => getAdHistory(acct!, since, until),
     enabled: !!acct,
     staleTime: 5 * 60_000,
     retry: false,
   });
-  const items = h?.items ?? [];
-  const days = new Map<string, typeof items>();
-  for (const it of items) {
-    const d = new Date(it.at).toLocaleDateString("en-ZA", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
-    days.set(d, [...(days.get(d) ?? []), it]);
-  }
+  const items = (h?.items ?? []).filter(worthShowing);
+  const shown = showAll ? items : items.slice(0, CHANGES_SHOWN);
   // Facebook's log uses its old names: a campaign group is a campaign, a
   // "campaign" is an ad set, an ad group is an ad.
   const OBJECT: Record<string, string> = { CAMPAIGN_GROUP: "Campaign", CAMPAIGN: "Ad set", ADGROUP: "Ad", AD_SET: "Ad set", AD: "Ad", ACCOUNT: "Ad account", AD_ACCOUNT: "Ad account" };
-
+  const columns = "120px minmax(0, 1.7fr) minmax(0, 1fr) 150px";
   return (
-    <>
-      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 1.5, flexWrap: "wrap" }}>
-        <RangePicker value={range} onChange={setRange} />
-      </Box>
-      <Section title="Change history" sub="From Facebook's activity log">
-        {!acct ? (
-          <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>No ad account linked. Add it under Settings → Ads &amp; Facebook.</Typography>
-        ) : isLoading ? (
-          [0, 1, 2, 3].map((i) => <Skeleton key={i} height={48} />)
-        ) : isError || h?.note ? (
-          <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>
-            {h?.note === "busy" ? "Facebook is busy right now. Try again in a few minutes." : "Couldn't read the history from Meta. Try again in a minute."}
-          </Typography>
-        ) : !items.length ? (
-          <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>No changes in these dates.</Typography>
-        ) : (
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 2.5 }}>
-            {[...days.entries()].map(([day, list]) => (
-              <Box key={day}>
-                <Typography sx={{ fontSize: 13, fontWeight: 600, color: tokens.ink2, mb: 0.5 }}>{day}</Typography>
-                {list.map((it, i) => (
-                  <Box key={i} sx={{ display: "grid", gridTemplateColumns: { xs: "56px 1fr", sm: "64px minmax(0, 1fr) 200px" }, gap: 1.5, py: 1.25, borderTop: `1px solid ${tokens.divider2}`, alignItems: "start" }}>
-                    <Typography sx={{ fontSize: 13, color: tokens.ink3, fontVariantNumeric: "tabular-nums" }}>
-                      {new Date(it.at).toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit" })}
-                    </Typography>
-                    <Box sx={{ minWidth: 0 }}>
-                      <Typography sx={{ fontSize: 14, fontWeight: 500 }}>{it.what}</Typography>
-                      <Typography sx={{ fontSize: 13, color: tokens.ink2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {OBJECT[it.objectType] ?? it.objectType}: {it.objectName}
-                      </Typography>
-                      {it.change && (it.change.from || it.change.to) && (
-                        <Typography sx={{ fontSize: 13, mt: 0.25 }}>
-                          <Box component="span" sx={{ color: tokens.ink3, textDecoration: "line-through" }}>{it.change.from || "—"}</Box>
-                          {"  →  "}
-                          <b>{it.change.to || "—"}</b>
-                        </Typography>
-                      )}
-                    </Box>
-                    <Typography sx={{ fontSize: 13, color: tokens.ink2, display: { xs: "none", sm: "block" }, textAlign: "right" }}>by {it.who || "Facebook"}</Typography>
-                  </Box>
-                ))}
-              </Box>
-            ))}
+    <Section title="Recent changes" sub="In the dates above">
+      {!acct ? (
+        <Empty>No ad account linked. Add it under Settings → Ads & Facebook.</Empty>
+      ) : isLoading ? (
+        [0, 1, 2].map((i) => <Skeleton key={i} height={44} />)
+      ) : isError || h?.note ? (
+        <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>
+          {h?.note === "busy" ? "Facebook is busy right now. Try again in a few minutes." : "Couldn't read the changes from Facebook. Try again in a minute."}
+        </Typography>
+      ) : !items.length ? (
+        <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>No changes in these dates.</Typography>
+      ) : (
+        <>
+          <Box sx={{ display: { xs: "none", md: "grid" }, gridTemplateColumns: columns, columnGap: 2, pb: 1 }}>
+            {["Date", "What changed", "Change", "By"].map((c) => <Typography key={c} sx={{ fontSize: 13, fontWeight: 600 }}>{c}</Typography>)}
           </Box>
-        )}
-      </Section>
-    </>
+          {shown.map((it, i) => {
+            const change = plainChange(it);
+            return (
+              <Box key={i} sx={{ display: "grid", gridTemplateColumns: { xs: "minmax(0, 1fr)", md: columns }, columnGap: 2, rowGap: 0.25, py: 1.25, borderTop: `1px solid ${tokens.divider2}`, alignItems: "center" }}>
+                <Typography sx={{ fontSize: 13, color: tokens.ink2, fontVariantNumeric: "tabular-nums", order: { xs: 3, md: 0 } }}>
+                  {new Date(it.at).toLocaleString("en-GB", { timeZone: "Africa/Johannesburg", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                </Typography>
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography sx={{ fontSize: 14, fontWeight: 500 }}>{it.what}</Typography>
+                  <Typography sx={{ fontSize: 13, color: tokens.ink2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{OBJECT[it.objectType] ?? "Item"}: {it.objectName}</Typography>
+                </Box>
+                <Typography sx={{ fontSize: 14 }}>
+                  {change && (change.from ? <><Box component="span" sx={{ color: tokens.ink2 }}>{change.from} → </Box><b>{change.to || "—"}</b></> : <b>{change.to}</b>)}
+                </Typography>
+                <Typography sx={{ fontSize: 13, color: tokens.ink2, display: { xs: "none", md: "block" }, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.who || "Facebook"}</Typography>
+              </Box>
+            );
+          })}
+          {items.length > CHANGES_SHOWN && (
+            <Button size="small" onClick={() => setShowAll((v) => !v)} sx={{ mt: 0.75 }}>
+              {showAll ? "Show fewer" : `Show all ${items.length}`}
+            </Button>
+          )}
+        </>
+      )}
+    </Section>
   );
 }
 
@@ -874,56 +815,48 @@ function AdAccountCard({ data }: { data: Data }) {
   const card = cardFrom(a?.fundingLabel);
   const PayIcon = kind === "Prepaid" ? TollOutlinedIcon : kind === "Card" ? CreditCardOutlinedIcon : AccountBalanceOutlinedIcon;
   const healthy = a?.accountStatus === 1;
-  const rows: [string, ReactNode][] = [
-    ["Facebook status", (
-      <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 0.75 }}>
-        <Box component="span" sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: healthy ? tokens.green : tokens.amber }} />
-        {a?.accountStatus != null ? ACCOUNT_STATUS[a.accountStatus] ?? "Unknown" : "Unknown"}
-      </Box>
-    )],
-    ["Spent all time", a?.amountSpent != null ? money(a.amountSpent) : "—"],
-    ["Spending limit", a?.spendCap ? money(a.spendCap) : "None"],
-  ];
+  const status = a?.accountStatus != null ? ACCOUNT_STATUS[a.accountStatus] ?? "Unknown" : "Unknown";
   return (
     <Box sx={{ bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "8px", overflow: "hidden", minWidth: 0, height: "100%", display: "flex", flexDirection: "column" }}>
-      <Box sx={{ px: 2, pt: 1.5, pb: 1, minHeight: 44, display: "flex", alignItems: "center" }}>
+      <Box sx={{ px: 2, pt: 1.5, pb: 0.5, minHeight: 40, display: "flex", alignItems: "center" }}>
         <Typography sx={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: tokens.ink2 }}>Ad account</Typography>
       </Box>
-      <Box sx={{ px: 2, pb: 1, flex: 1, display: "flex", flexDirection: "column" }}>
+      <Box sx={{ px: 2, pb: 1.75, flex: 1, display: "flex", flexDirection: "column" }}>
         {!acct ? (
           <Empty>No ad account linked. Add it under Settings → Facebook.</Empty>
         ) : isLoading ? (
-          <Skeleton variant="rectangular" height={300} sx={{ borderRadius: "6px" }} />
+          <Skeleton variant="rectangular" height={120} sx={{ borderRadius: "6px" }} />
         ) : isError || a?.note ? (
           <Empty>Facebook won't show us this ad account. Check it's shared with EstateKit's Business Manager.</Empty>
         ) : (
           <>
-            <Typography sx={{ fontSize: 14, fontWeight: 600 }}>Current balance</Typography>
-            <Typography sx={{ fontSize: 30, lineHeight: 1.25, mt: 0.5, fontVariantNumeric: "tabular-nums" }}>{rands(Math.max(a?.balance ?? 0, 0))}</Typography>
-            {problem ? (
-              <Box sx={{ mt: 1 }}><StatusStrip ok={false}>{problem}</StatusStrip></Box>
-            ) : (
-              <Typography sx={{ fontSize: 13, color: tokens.ink2 }}>No payment due right now</Typography>
-            )}
-            <Box sx={{ mt: 2, pt: 1.75, borderTop: `1px solid ${tokens.divider2}` }}>
-              <Typography sx={{ fontSize: 14, fontWeight: 600, mb: 1 }}>How they pay</Typography>
-              <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
-                <Box sx={{ width: 40, height: 26, flex: "none", borderRadius: "4px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10.5, fontWeight: 800, fontStyle: "italic", color: card.brand ? "#fff" : tokens.ink2, bgcolor: card.brand?.bg ?? "transparent", border: card.brand ? "none" : `1px solid ${tokens.divider}` }}>
-                  {card.brand ? card.brand.badge : <PayIcon sx={{ fontSize: 17 }} />}
-                </Box>
-                <Box sx={{ minWidth: 0 }}>
-                  <Typography sx={{ fontSize: 14, fontWeight: 500, overflowWrap: "anywhere" }}>{card.text || (kind === "Prepaid" ? "Prepaid funds" : kind) || "Not set up"}</Typography>
-                  {kind === "Card" && <Typography sx={{ fontSize: 12.5, color: tokens.ink2 }}>Charged automatically</Typography>}
+            <Box sx={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 2, flex: 1 }}>
+              <Box>
+                <Typography sx={{ fontSize: 13, color: tokens.ink2 }}>Current balance</Typography>
+                <Typography sx={{ fontSize: 26, lineHeight: 1.25, fontVariantNumeric: "tabular-nums" }}>{rands(Math.max(a?.balance ?? 0, 0))}</Typography>
+                {!problem && <Typography sx={{ fontSize: 13, color: tokens.ink2 }}>No payment due right now</Typography>}
+              </Box>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography sx={{ fontSize: 13, color: tokens.ink2, mb: 0.5 }}>How they pay</Typography>
+                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                  <Box sx={{ width: 40, height: 26, flex: "none", borderRadius: "4px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10.5, fontWeight: 800, fontStyle: "italic", color: card.brand ? "#fff" : tokens.ink2, bgcolor: card.brand?.bg ?? "transparent", border: card.brand ? "none" : `1px solid ${tokens.divider}` }}>
+                    {card.brand ? card.brand.badge : <PayIcon sx={{ fontSize: 17 }} />}
+                  </Box>
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography sx={{ fontSize: 14, fontWeight: 500, overflowWrap: "anywhere" }}>{card.text || (kind === "Prepaid" ? "Prepaid funds" : kind) || "Not set up"}</Typography>
+                    {kind === "Card" && <Typography sx={{ fontSize: 12.5, color: tokens.ink2 }}>Charged automatically</Typography>}
+                  </Box>
                 </Box>
               </Box>
             </Box>
-            <Box sx={{ flex: 1, display: "flex", flexDirection: "column", mt: 1.5 }}>
-              {rows.map(([label, value]) => (
-                <Box key={label} sx={{ flex: 1, minHeight: 40, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 2, borderTop: `1px solid ${tokens.divider2}` }}>
-                  <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>{label}</Typography>
-                  <Typography component="div" sx={{ fontSize: 14, fontWeight: 500, textAlign: "right", minWidth: 0 }}>{value}</Typography>
-                </Box>
-              ))}
+            {problem && <Box sx={{ mt: 1.25 }}><StatusStrip ok={false}>{problem}</StatusStrip></Box>}
+            <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", columnGap: 2, rowGap: 0.25, mt: 1.25, pt: 1.25, borderTop: `1px solid ${tokens.divider2}`, fontSize: 13, color: tokens.ink2 }}>
+              <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 0.75 }}>
+                <Box component="span" sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: healthy ? tokens.green : tokens.amber }} />
+                {status}
+              </Box>
+              {a?.amountSpent != null && <span>Spent {money(a.amountSpent)}</span>}
+              <span>{a?.spendCap ? `Limit ${money(a.spendCap)}` : "No spending limit"}</span>
             </Box>
           </>
         )}
@@ -1004,7 +937,7 @@ function EmailStatsSection({ data, since, until }: { data: Data; since: Date; un
   });
   const pct = (n: number) => (st && st.sent > 0 ? ` (${Math.round((n / st.sent) * 100)}%)` : "");
   return (
-    <Section title="Emails to leads & marketing plan">
+    <Section title="Emails to leads & marketing plan" sub="Last 30 days">
       {isLoading ? (
         <Skeleton height={80} />
       ) : !st?.sent ? (

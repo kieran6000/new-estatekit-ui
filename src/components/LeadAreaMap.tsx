@@ -35,9 +35,9 @@ const within = (p: LatLng, z: Zone, extraKm: number) => distanceKm(p, z.center) 
 
 function Count({ n, label, strong }: { n: number; label: string; strong?: boolean }) {
   return (
-    <Box sx={{ flex: 1, minWidth: 0, textAlign: "center", py: 0.5, "& + &": { borderLeft: `1px solid ${tokens.divider2}` } }}>
-      <Typography sx={{ fontSize: 24, fontWeight: 600, lineHeight: 1.2, fontVariantNumeric: "tabular-nums", color: strong ? "text.primary" : tokens.ink2 }}>{n}</Typography>
-      <Typography sx={{ fontSize: 13, color: tokens.ink2 }}>{label}</Typography>
+    <Box sx={{ flex: 1, minWidth: 0 }}>
+      <Typography sx={{ fontSize: 22, fontWeight: 600, lineHeight: 1.2, fontVariantNumeric: "tabular-nums", color: strong ? "text.primary" : tokens.ink2 }}>{n}</Typography>
+      <Typography sx={{ fontSize: 12.5, color: tokens.ink2 }}>{label}</Typography>
     </Box>
   );
 }
@@ -78,41 +78,43 @@ export default function LeadAreaMap({ agentId, areas }: { agentId: string; areas
 
   return (
     <Box sx={{ bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "8px", overflow: "hidden", minWidth: 0, height: "100%", display: "flex", flexDirection: "column" }}>
-      <Box sx={{ px: 2, pt: 1.5, pb: 1, minHeight: 44, display: "flex", alignItems: "center" }}>
+      <Box sx={{ px: 2, pt: 1.5, pb: 0.5, minHeight: 40, display: "flex", alignItems: "center" }}>
         <Typography sx={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: tokens.ink2, flex: 1 }}>Where their leads are</Typography>
         <Typography sx={{ fontSize: 11.5, color: tokens.ink3 }}>All time</Typography>
       </Box>
-      <Box sx={{ px: 2, pb: 2, flex: 1, display: "flex", flexDirection: "column" }}>
+      <Box sx={{ px: 2, pb: 1.75, flex: 1, display: "flex", flexDirection: "column" }}>
         {isLoading ? (
-          <Skeleton variant="rectangular" height={300} sx={{ borderRadius: "6px" }} />
+          <Skeleton variant="rectangular" height={120} sx={{ borderRadius: "6px" }} />
         ) : failed || isError ? (
           <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>The map couldn't load. Try again in a minute.</Typography>
         ) : !leads.length ? (
           <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>No leads with an address yet.</Typography>
         ) : (
-          <>
-            <Box sx={{ position: "relative", flex: 1, minHeight: 220, borderRadius: "6px", overflow: "hidden", border: `1px solid ${tokens.divider}` }}>
-              <Box ref={setEl} role="img" aria-label="Map of their area and where their leads are" sx={{ position: "absolute", inset: 0 }} />
+          <Box sx={{ display: "flex", gap: 2, flex: 1, minWidth: 0 }}>
+            <Box sx={{ position: "relative", width: { xs: 110, sm: 170 }, minHeight: 116, flex: "none", borderRadius: "6px", overflow: "hidden", border: `1px solid ${tokens.divider}` }}>
+              <Box ref={setEl} role="img" aria-label="Small map of their area and where their leads are" sx={{ position: "absolute", inset: 0 }} />
               {!ready && <Skeleton variant="rectangular" sx={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} />}
             </Box>
-            {zone ? (
-              <>
-                <Box sx={{ display: "flex", mt: 1.5 }}>
-                  <Count n={count("in")} label="In their area" strong />
-                  <Count n={count("near")} label="Close by" />
-                  <Count n={count("far")} label="Further away" />
-                </Box>
-                <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, mt: 1.25, minWidth: 0 }}>
-                  <Box sx={{ width: 12, height: 12, flex: "none", borderRadius: "50%", bgcolor: `${ZONE_COLOR}22`, border: `1px solid ${ZONE_COLOR}88` }} />
-                  <Typography title={areas.map((a) => a.name).join(", ")} sx={{ fontSize: 13, color: tokens.ink2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    Their area: {areas.map((a) => a.name).join(", ")}
-                  </Typography>
-                </Box>
-              </>
-            ) : (
-              <Typography sx={{ fontSize: 13, color: tokens.ink2, mt: 1.25 }}>Add their suburbs in the Brief tab to see their area on this map.</Typography>
-            )}
-          </>
+            <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", justifyContent: "center" }}>
+              {zone ? (
+                <>
+                  <Box sx={{ display: "flex", gap: 1 }}>
+                    <Count n={count("in")} label="In their area" strong />
+                    <Count n={count("near")} label="Close by" />
+                    <Count n={count("far")} label="Further away" />
+                  </Box>
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, mt: 1.25, minWidth: 0 }}>
+                    <Box sx={{ width: 12, height: 12, flex: "none", borderRadius: "50%", bgcolor: `${ZONE_COLOR}22`, border: `1px solid ${ZONE_COLOR}88` }} />
+                    <Typography title={areas.map((a) => a.name).join(", ")} sx={{ fontSize: 13, color: tokens.ink2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {areas.map((a) => a.name).join(", ")}
+                    </Typography>
+                  </Box>
+                </>
+              ) : (
+                <Typography sx={{ fontSize: 13, color: tokens.ink2 }}>Add their suburbs in the Brief tab to see their area here.</Typography>
+              )}
+            </Box>
+          </Box>
         )}
       </Box>
     </Box>

@@ -27,8 +27,8 @@ export function resolveClient(who: string, all: Sluggable[]): string | null {
   return all.find((p) => clientSlug(p, all) === who)?.agent_id ?? null;
 }
 
-export type ClientTab = "overview" | "history" | "brief" | "contract" | "settings";
-export const CLIENT_TABS: ClientTab[] = ["overview", "history", "brief", "contract", "settings"];
+export type ClientTab = "overview" | "brief" | "contract" | "settings";
+export const CLIENT_TABS: ClientTab[] = ["overview", "brief", "contract", "settings"];
 
 /** /clients/<slug>/<tab>, falling back to the id while names are loading. */
 export function clientPath(agentId: string, all: Sluggable[] | undefined, tab: ClientTab = "overview"): string {

@@ -41,6 +41,18 @@ async function mayReadAccount(req: Request, adAccountId: string): Promise<boolea
   return own !== "" && own === String(adAccountId).replace(/^act_/, "").trim();
 }
 
+/** Facebook sends some values, like budgets, wrapped in an object. Finds the number inside. */
+// deno-lint-ignore no-explicit-any
+function flat(v: any): string {
+  if (v == null) return "";
+  if (typeof v !== "object") return String(v);
+  for (const inner of Object.values(v)) {
+    const s = flat(inner);
+    if (/^\d+(\.\d+)?$/.test(s)) return s;
+  }
+  return "";
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   try {
@@ -75,7 +87,7 @@ Deno.serve(async (req) => {
         let change: { from: string; to: string } | null = null;
         try {
           const x = typeof a.extra_data === "string" ? JSON.parse(a.extra_data) : a.extra_data;
-          if (x && ("old_value" in x || "new_value" in x)) change = { from: String(x.old_value ?? ""), to: String(x.new_value ?? "") };
+          if (x && ("old_value" in x || "new_value" in x)) change = { from: flat(x.old_value), to: flat(x.new_value) };
         } catch { /* not JSON */ }
         return {
           at: a.event_time,

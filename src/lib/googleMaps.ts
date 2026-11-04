@@ -221,11 +221,7 @@ const QUIET_MAP = [
   { featureType: "poi", stylers: [{ visibility: "off" }] },
   { featureType: "transit", stylers: [{ visibility: "off" }] },
   { featureType: "administrative", elementType: "geometry", stylers: [{ visibility: "off" }] },
-  { featureType: "administrative.locality", elementType: "labels.text", stylers: [{ visibility: "on" }] },
-  { featureType: "administrative.locality", elementType: "labels.text.fill", stylers: [{ color: "#6b7280" }] },
-  { featureType: "administrative.locality", elementType: "labels.text.stroke", stylers: [{ color: "#f4f5f7" }] },
-  { featureType: "administrative.locality", elementType: "labels.icon", stylers: [{ visibility: "off" }] },
-];
+  ];
 
 /** Their area as one soft circle, with a dot for each lead, on a quiet map. The
  *  map is framed on the circle and what's close by. With no area, it fits the leads. */
@@ -233,11 +229,11 @@ export async function drawLeadMap(el: HTMLElement, zone: Zone | null, leads: Lat
   const maps = await loadGoogleMaps();
   const { Map } = await maps.importLibrary("maps");
   const { Marker } = await maps.importLibrary("marker");
-  const map = new Map(el, { disableDefaultUI: true, keyboardShortcuts: false, clickableIcons: false, gestureHandling: "cooperative", styles: QUIET_MAP });
+  const map = new Map(el, { disableDefaultUI: true, keyboardShortcuts: false, clickableIcons: false, gestureHandling: "none", styles: QUIET_MAP });
   map.addListener("tilesloaded", onReady);
   if (zone) {
     new maps.Circle({ map, center: zone.center, radius: zone.km * 1000, fillColor: ZONE_COLOR, fillOpacity: 0.12, strokeColor: ZONE_COLOR, strokeOpacity: 0.45, strokeWeight: 1.5, clickable: false });
-    map.fitBounds(new maps.Circle({ center: zone.center, radius: (zone.km + CLOSE_BY_KM) * 1000 }).getBounds(), 8);
+    map.fitBounds(new maps.Circle({ center: zone.center, radius: (zone.km + CLOSE_BY_KM) * 1000 }).getBounds(), 2);
   } else {
     const bounds = new maps.LatLngBounds();
     for (const p of leads) bounds.extend(p);
@@ -245,6 +241,6 @@ export async function drawLeadMap(el: HTMLElement, zone: Zone | null, leads: Lat
   }
   maps.event.addListenerOnce(map, "idle", () => { if (map.getZoom() > 13) map.setZoom(13); });
   for (const position of leads) {
-    new Marker({ map, position, clickable: false, icon: { path: maps.SymbolPath.CIRCLE, scale: 5, fillColor: DOT_COLOR, fillOpacity: 0.9, strokeColor: "#ffffff", strokeWeight: 1.5 } });
+    new Marker({ map, position, clickable: false, icon: { path: maps.SymbolPath.CIRCLE, scale: 3.5, fillColor: DOT_COLOR, fillOpacity: 0.9, strokeColor: "#ffffff", strokeWeight: 1 } });
   }
 }
