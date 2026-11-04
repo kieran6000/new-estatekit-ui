@@ -30,24 +30,8 @@ const CITIES = /^(centurion|pretoria|tshwane|midrand|johannesburg|joburg|jhb|san
 export const isCity = (name: string) => CITIES.test(name.trim());
 export const areaKm = (name: string) => (isCity(name) ? CITY_KM : AREA_KM);
 
-export interface AreaCount<T> { area: T; leads: number }
-
-/** Which of their chosen areas each lead falls in (the closest one), how many
- *  fall in none of them, and the busiest areas first. */
-export function leadsByArea<T extends { at: LatLng; km: number }>(leads: LatLng[], areas: T[]): { counts: AreaCount<T>[]; inArea: number; outside: number } {
-  const counts = areas.map((area) => ({ area, leads: 0 }));
-  let inArea = 0;
-  for (const lead of leads) {
-    let best: AreaCount<T> | null = null;
-    let bestKm = Infinity;
-    for (const c of counts) {
-      const km = distanceKm(lead, c.area.at);
-      if (km <= c.area.km && km < bestKm) { best = c; bestKm = km; }
-    }
-    if (best) { best.leads += 1; inArea += 1; }
-  }
-  return { counts: [...counts].sort((a, b) => b.leads - a.leads), inArea, outside: leads.length - inArea };
-}
+/** Is this lead in one of the areas they asked for? */
+export const inAnyArea = (lead: LatLng, areas: { at: LatLng; km: number }[]) => areas.some((a) => distanceKm(lead, a.at) <= a.km);
 
 /** The middle of a set of points, not pulled off course by a far-away one. */
 export function middleOf(points: LatLng[]): LatLng | null {

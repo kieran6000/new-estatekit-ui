@@ -1,5 +1,5 @@
 import { supabase } from "../api/_client";
-import { addressKey, distanceKm, type LatLng } from "./geo";
+import { addressKey, type LatLng } from "./geo";
 
 // Google's map, geocoder and Street View photo, with the key that's locked to
 // our own site. Each address is only looked up once (geocode_cache). Anything
@@ -208,43 +208,36 @@ export const metresToPixels = (metres: number, lat: number, zoom: number) =>
 export const streetPhotoUrl = (at: LatLng, width: number, height: number) =>
   `https://maps.googleapis.com/maps/api/streetview?size=${width}x${height}&location=${at.lat},${at.lng}&source=outdoor&return_error_code=true&key=${KEY}`;
 
-const HEAT = [
-  { size: 1, color: "#fbbf24", opacity: 0.22 },
-  { size: 0.62, color: "#f97316", opacity: 0.26 },
-  { size: 0.3, color: "#dc2626", opacity: 0.34 },
+export const LEAD_DOT = { inside: "#15803d", outside: "#dc2626", neutral: "#475569" };
+
+// Nearly blank: land, water, main roads and town names. Nothing else competes with the dots.
+const QUIET_MAP = [
+  { elementType: "geometry", stylers: [{ color: "#f4f5f7" }] },
+  { elementType: "labels", stylers: [{ visibility: "off" }] },
+  { featureType: "water", elementType: "geometry", stylers: [{ color: "#dbe4ee" }] },
+  { featureType: "road", stylers: [{ visibility: "off" }] },
+  { featureType: "road.highway", elementType: "geometry", stylers: [{ visibility: "on" }, { color: "#e3e6ea" }] },
+  { featureType: "poi", stylers: [{ visibility: "off" }] },
+  { featureType: "transit", stylers: [{ visibility: "off" }] },
+  { featureType: "administrative", elementType: "geometry", stylers: [{ visibility: "off" }] },
+  { featureType: "administrative.locality", elementType: "labels.text", stylers: [{ visibility: "on" }] },
+  { featureType: "administrative.locality", elementType: "labels.text.fill", stylers: [{ color: "#6b7280" }] },
+  { featureType: "administrative.locality", elementType: "labels.text.stroke", stylers: [{ color: "#f4f5f7" }] },
+  { featureType: "administrative.locality", elementType: "labels.icon", stylers: [{ visibility: "off" }] },
 ];
 
-/** Where leads are, as soft colour that builds up to red where there are many,
- *  with a thin outline round each area the agent asked for. */
-export async function drawHeatMap(el: HTMLElement, leads: LatLng[], areas: (LatLng & { metres: number })[], onReady: () => void): Promise<void> {
+/** A dot for each lead on a quiet map, sized to fit them all. */
+export async function drawLeadMap(el: HTMLElement, leads: (LatLng & { color: string })[], onReady: () => void): Promise<void> {
   const maps = await loadGoogleMaps();
   const { Map } = await maps.importLibrary("maps");
-  const map = new Map(el, {
-    disableDefaultUI: true,
-    zoomControl: true,
-    keyboardShortcuts: false,
-    clickableIcons: false,
-    gestureHandling: "cooperative",
-    styles: [
-      { stylers: [{ saturation: -80 }] },
-      { featureType: "poi", stylers: [{ visibility: "off" }] },
-      { featureType: "transit", stylers: [{ visibility: "off" }] },
-    ],
-  });
+  const { Marker } = await maps.importLibrary("marker");
+  const map = new Map(el, { disableDefaultUI: true, keyboardShortcuts: false, clickableIcons: false, gestureHandling: "cooperative", styles: QUIET_MAP });
   map.addListener("tilesloaded", onReady);
   const bounds = new maps.LatLngBounds();
-  for (const p of [...leads, ...areas]) bounds.extend({ lat: p.lat, lng: p.lng });
-  map.fitBounds(bounds, 24);
-  maps.event.addListenerOnce(map, "idle", () => { if (map.getZoom() > 13) map.setZoom(13); });
-  for (const { metres, ...center } of areas) {
-    new maps.Circle({ map, center, radius: metres, fillOpacity: 0, strokeColor: PIN_BLUE, strokeOpacity: 0.55, strokeWeight: 1.5, clickable: false });
-  }
-  // The further out the map is, the bigger each lead is drawn, so it can always be seen.
-  const across = maps.geometry
-    ? maps.geometry.spherical.computeDistanceBetween(bounds.getNorthEast(), bounds.getSouthWest())
-    : distanceKm({ lat: bounds.getNorthEast().lat(), lng: bounds.getNorthEast().lng() }, { lat: bounds.getSouthWest().lat(), lng: bounds.getSouthWest().lng() }) * 1000;
-  const metres = Math.max(900, across * 0.05);
-  for (const center of leads) {
-    for (const h of HEAT) new maps.Circle({ map, center, radius: metres * h.size, fillColor: h.color, fillOpacity: h.opacity, strokeOpacity: 0, clickable: false });
+  for (const p of leads) bounds.extend({ lat: p.lat, lng: p.lng });
+  map.fitBounds(bounds, 28);
+  maps.event.addListenerOnce(map, "idle", () => { if (map.getZoom() > 12) map.setZoom(12); });
+  for (const { color, ...position } of leads) {
+    new Marker({ map, position, clickable: false, icon: { path: maps.SymbolPath.CIRCLE, scale: 5, fillColor: color, fillOpacity: 0.9, strokeColor: "#ffffff", strokeWeight: 1.5 } });
   }
 }

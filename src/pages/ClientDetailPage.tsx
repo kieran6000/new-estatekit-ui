@@ -76,12 +76,11 @@ import { accentEdge, readableOn } from "../lib/contrast";
 import BrandLogo from "../components/BrandLogo";
 import FundingChip from "../components/FundingChip";
 import LeadHeatMap from "../components/LeadHeatMap";
+import StatusStrip from "../components/StatusStrip";
 import { isCity } from "../lib/geo";
 import CreditCardOutlinedIcon from "@mui/icons-material/CreditCardOutlined";
 import TollOutlinedIcon from "@mui/icons-material/TollOutlined";
 import AccountBalanceOutlinedIcon from "@mui/icons-material/AccountBalanceOutlined";
-import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
-import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutlined";
 import ContractsSection from "../components/ContractsSection";
 import InvoicesSection from "../components/InvoicesSection";
 
@@ -702,10 +701,10 @@ function OverviewTab({ data }: { data: Data }) {
   });
   return (
     <>
-      <Cols>
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" }, gap: 2, alignItems: "stretch" }}>
         <AdAccountCard data={data} />
         <LeadHeatMap agentId={agentId} areas={areas} />
-      </Cols>
+      </Box>
 
       <Box sx={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 1.5, flexWrap: "wrap" }}>
         <RangePicker value={range} onChange={setRange} />
@@ -854,45 +853,47 @@ function AdAccountCard({ data }: { data: Data }) {
   const brand = cardBrand(a?.fundingLabel);
   const PayIcon = kind === "Prepaid" ? TollOutlinedIcon : kind === "Card" ? CreditCardOutlinedIcon : AccountBalanceOutlinedIcon;
   const due = a?.balance != null && a.balance > 0 ? a.balance : 0;
+  const rows: [string, ReactNode][] = [
+    ["Pays by", (
+      <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 1 }}>
+        <Box component="span" sx={{ width: 40, height: 26, flex: "none", borderRadius: "4px", border: `1px solid ${tokens.divider}`, display: "inline-flex", alignItems: "center", justifyContent: "center", color: tokens.ink2, fontSize: 10.5, fontWeight: 800, letterSpacing: "0.03em" }}>
+          {brand ?? <PayIcon sx={{ fontSize: 17 }} />}
+        </Box>
+        {a?.fundingLabel?.replace(/^\s*(visa|mastercard|master card|american express|amex)\s*/i, "") || (kind === "Prepaid" ? "Prepaid funds" : kind) || "Not set up"}
+      </Box>
+    )],
+    ["Amount due", <Box component="span" sx={{ fontSize: 18, fontWeight: 600, fontVariantNumeric: "tabular-nums", color: problem && due ? "warning.dark" : "text.primary" }}>{due ? money(due) : "Nothing due"}</Box>],
+    ["Facebook status", a?.accountStatus != null ? ACCOUNT_STATUS[a.accountStatus] ?? "Unknown" : "Unknown"],
+    ["Spent all time", a?.amountSpent != null ? money(a.amountSpent) : "—"],
+    ["Spending limit", a?.spendCap ? money(a.spendCap) : "None"],
+  ];
   return (
-    <Section title="Ad account">
-      {!acct ? (
-        <Empty>No ad account linked. Add it under Settings → Facebook.</Empty>
-      ) : isLoading ? (
-        <Skeleton height={190} />
-      ) : isError || a?.note ? (
-        <Empty>Facebook won't show us this ad account. Check it's shared with EstateKit's Business Manager.</Empty>
-      ) : (
-        <>
-          <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1, p: 1.25, borderRadius: "8px", bgcolor: problem ? tokens.amberTint : tokens.greenTint, border: `1px solid ${problem ? tokens.amberBorder : tokens.greenBorder}` }}>
-            {problem ? <WarningAmberRoundedIcon sx={{ fontSize: 20, color: "warning.dark" }} /> : <CheckCircleOutlineIcon sx={{ fontSize: 20, color: tokens.greenDark }} />}
-            <Typography sx={{ fontSize: 14, fontWeight: 500 }}>{problem ?? "All good. No payment problems."}</Typography>
-          </Box>
-          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, minmax(0, 1fr))" }, gap: 2, mt: 2 }}>
-            <Box sx={{ minWidth: 0 }}>
-              <Typography sx={{ fontSize: 12.5, color: tokens.ink2, mb: 0.75 }}>Pays by</Typography>
-              <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
-                <Box sx={{ width: 46, height: 30, flex: "none", borderRadius: "5px", border: `1px solid ${tokens.divider}`, display: "flex", alignItems: "center", justifyContent: "center", color: tokens.ink2 }}>
-                  {brand ? <Typography sx={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.03em" }}>{brand}</Typography> : <PayIcon sx={{ fontSize: 19 }} />}
+    <Box sx={{ bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "8px", overflow: "hidden", minWidth: 0, height: "100%", display: "flex", flexDirection: "column" }}>
+      <Box sx={{ px: 2, pt: 1.5, pb: 1, minHeight: 44, display: "flex", alignItems: "center" }}>
+        <Typography sx={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: tokens.ink2 }}>Ad account</Typography>
+      </Box>
+      <Box sx={{ px: 2, pb: 1, flex: 1, display: "flex", flexDirection: "column" }}>
+        {!acct ? (
+          <Empty>No ad account linked. Add it under Settings → Facebook.</Empty>
+        ) : isLoading ? (
+          <Skeleton variant="rectangular" height={280} sx={{ borderRadius: "6px" }} />
+        ) : isError || a?.note ? (
+          <Empty>Facebook won't show us this ad account. Check it's shared with EstateKit's Business Manager.</Empty>
+        ) : (
+          <>
+            <StatusStrip ok={!problem}>{problem ?? "All good. No payment problems."}</StatusStrip>
+            <Box sx={{ flex: 1, display: "flex", flexDirection: "column", mt: 0.75 }}>
+              {rows.map(([label, value]) => (
+                <Box key={label} sx={{ flex: 1, minHeight: 44, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 2, "& + &": { borderTop: `1px solid ${tokens.divider2}` } }}>
+                  <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>{label}</Typography>
+                  <Typography component="div" sx={{ fontSize: 14, fontWeight: 500, textAlign: "right", minWidth: 0 }}>{value}</Typography>
                 </Box>
-                <Typography sx={{ fontSize: 14, fontWeight: 500, minWidth: 0, overflowWrap: "anywhere" }}>{a?.fundingLabel || (kind === "Prepaid" ? "Prepaid funds" : kind) || "Not set up"}</Typography>
-              </Box>
+              ))}
             </Box>
-            <Box>
-              <Typography sx={{ fontSize: 12.5, color: tokens.ink2, mb: 0.5 }}>Amount due</Typography>
-              <Typography sx={{ fontSize: 22, fontWeight: 600, lineHeight: 1.2, fontVariantNumeric: "tabular-nums", color: problem && due ? "warning.dark" : "text.primary" }}>{due ? money(due) : "Nothing due"}</Typography>
-            </Box>
-          </Box>
-          <Box sx={{ mt: 2 }}>
-            <KV rows={[
-              ["Facebook status", a?.accountStatus != null ? ACCOUNT_STATUS[a.accountStatus] ?? "Unknown" : null],
-              ["Spent all time", a?.amountSpent != null ? money(a.amountSpent) : null],
-              ["Spending limit", a?.spendCap ? money(a.spendCap) : "None"],
-            ]} />
-          </Box>
-        </>
-      )}
-    </Section>
+          </>
+        )}
+      </Box>
+    </Box>
   );
 }
 
