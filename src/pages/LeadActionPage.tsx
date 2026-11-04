@@ -1,3 +1,4 @@
+import NoteBox from "../components/NoteBox";
 import { useEffect, useRef, useState } from "react";
 import { Navigate, Link as RouterLink, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -304,12 +305,12 @@ function LeadActionUI({
     if (canEdit) {
       updateNote.mutate(
         { id: lead.id, note: value },
-        { onSuccess: () => setSaveState("Saved"), onError: () => setSaveState("Save failed") },
+        { onSuccess: () => { setSaveState("Saved"); qc.invalidateQueries({ queryKey: ["noteHistory", lead.id] }); }, onError: () => setSaveState("Save failed") },
       );
     } else if (token) {
       // Signed out: the share token authorises the note write.
       saveNoteByToken(token, value)
-        .then(() => setSaveState("Saved"))
+        .then(() => { setSaveState("Saved"); qc.invalidateQueries({ queryKey: ["noteHistory", lead.id] }); })
         .catch(() => setSaveState("Save failed"));
     }
   }
@@ -541,16 +542,17 @@ function LeadActionUI({
               WhatsApp link too — saved via the share token when signed out. */}
           {canLog && (
             <Step n={3} label="Add a note" optional>
-              <TextField
+              <NoteBox
+                leadId={lead.id}
+                token={canEdit ? null : token}
+                leadCreatedAt={lead.created_at}
                 value={note}
-                onChange={(e) => onNoteChange(e.target.value)}
+                onChange={onNoteChange}
                 onBlur={() => saveNote(note)}
                 placeholder="Anything worth remembering…"
                 size="small"
-                fullWidth
-                multiline
                 minRows={2}
-                maxRows={4}
+                maxHeight={150}
                 helperText={saveState || " "}
                 sx={{ "& .MuiFormHelperText-root": { m: "2px 4px", fontSize: 11 } }}
               />
