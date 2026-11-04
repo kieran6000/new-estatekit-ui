@@ -1,8 +1,9 @@
+import NoteBox from "../components/NoteBox";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   AppBar, Box, Button, FormControl, IconButton, InputLabel, MenuItem,
-  Paper, Select, Skeleton, TextField, Toolbar, Typography,
+  Paper, Select, Skeleton, Toolbar, Typography,
 } from "@mui/material";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
@@ -106,7 +107,7 @@ export default function LeadDetailPage({ leadId, onClose, nav }: {
     updateNote.mutate(
       { id: lead!.id, note: value },
       {
-        onSuccess: () => setSaveState("Saved"),
+        onSuccess: () => { setSaveState("Saved"); qc.invalidateQueries({ queryKey: ["noteHistory", lead!.id] }); },
         onError: () => setSaveState("Save failed"),
       },
     );
@@ -243,13 +244,12 @@ export default function LeadDetailPage({ leadId, onClose, nav }: {
         </Section>
 
         <Section title="Notes">
-          <TextField
-            multiline
-            minRows={4}
-            fullWidth
+          <NoteBox
+            leadId={lead.id}
+            leadCreatedAt={lead.created_at}
             placeholder="Add a note about this lead…"
             value={note}
-            onChange={(e) => onNoteChange(e.target.value)}
+            onChange={onNoteChange}
             onBlur={() => saveNote(note)}
             sx={{ mx: 2, mt: 1, mb: 0.5, width: "calc(100% - 32px)" }}
           />

@@ -82,7 +82,7 @@ export default function FocusCallModal({
       logLeadCall(lead.id, lead.agent_id);
     }
     if (note.trim() && lead) {
-      const merged = (lead.note ? lead.note + " · " : "") + note.trim();
+      const merged = (lead.note ? lead.note + "\n\n" : "") + note.trim();
       await leadsApi.updateLead(lead.id, { note: merged });
     }
     setOutcomeOpen(true);

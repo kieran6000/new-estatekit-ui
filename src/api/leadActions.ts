@@ -94,3 +94,15 @@ async function getLeadByTokenLegacy(token: string): Promise<SharedLead | null> {
     pipelineKind: (pipeline?.kind as PipelineKind) ?? "seller",
   };
 }
+
+/** Every saved version of a lead's note, for dating its lines. Signed in, it comes
+ *  from the lead's history; on a WhatsApp link, through the link. Empty if it can't
+ *  be read: the note then just shows without dates. */
+export async function noteHistory(leadId: string, token?: string | null): Promise<{ to_value: string | null; created_at: string }[]> {
+  if (token) {
+    const { data, error } = await supabase.rpc("get_shared_note_history", { p_token: token });
+    if (!error) return (data ?? []) as { to_value: string | null; created_at: string }[];
+  }
+  const { data, error } = await supabase.from("lead_events").select("to_value, created_at").eq("lead_id", leadId).eq("event_type", "note_changed");
+  return error ? [] : (data ?? []);
+}
