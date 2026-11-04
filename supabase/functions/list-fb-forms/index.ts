@@ -94,7 +94,7 @@ function json(body: unknown, status = 200) {
   });
 }
 
-interface FbForm { id: string; name: string; status: string }
+interface FbForm { id: string; name: string; status: string; leads?: number }
 
 function messageOf(e: unknown): string {
   return (e as { message?: string })?.message || String(e);
@@ -104,7 +104,7 @@ async function fetchForms(pageId: string, token: string): Promise<FbForm[]> {
   // Facebook may return fewer than asked per page: follow its "next" link
   // (up to 10 pages) so no form is missing from the list.
   const out: FbForm[] = [];
-  let url: string | null = `${GRAPH}/${pageId}/leadgen_forms?fields=id,name,status&limit=100&access_token=${token}`;
+  let url: string | null = `${GRAPH}/${pageId}/leadgen_forms?fields=id,name,status,leads_count&limit=100&access_token=${token}`;
   for (let i = 0; url && i < 10; i++) {
     const res = await fetch(url);
     const data = await res.json();
@@ -112,7 +112,7 @@ async function fetchForms(pageId: string, token: string): Promise<FbForm[]> {
     if (!res.ok || data.error) {
       throw data.error || { message: `HTTP ${res.status}` };
     }
-    for (const f of data.data || []) out.push({ id: f.id, name: f.name, status: f.status });
+    for (const f of data.data || []) out.push({ id: f.id, name: f.name, status: f.status, ...(typeof f.leads_count === "number" ? { leads: f.leads_count } : {}) });
     url = data.paging?.next ?? null;
   }
   return out;
