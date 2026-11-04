@@ -64,7 +64,7 @@ import { trackActivity } from "../lib/activity";
 import RangePicker from "../components/RangePicker";
 import AdsTable, { type AdsView } from "../components/AdsTable";
 import { clientPath, isAgentId, resolveClient, CLIENT_TABS, type ClientTab } from "../lib/clientSlug";
-import { getAdHistory, type AdsLevel } from "../api/agentProfile";
+import { type AdsLevel } from "../api/agentProfile";
 import { listAgentProfiles } from "../api/_client";
 import type { DateRange, RangeKey } from "../lib/range";
 import { RANGE_LABELS } from "../lib/range";
@@ -75,7 +75,7 @@ import BrandLogo from "../components/BrandLogo";
 import FundingChip from "../components/FundingChip";
 import LeadAreaMap from "../components/LeadAreaMap";
 import LeadFunnel from "../components/LeadFunnel";
-import { plainChange, worthShowing } from "../lib/adHistory";
+import AdChanges from "../components/AdChanges";
 import StatusStrip from "../components/StatusStrip";
 import { isCity } from "../lib/geo";
 import CreditCardOutlinedIcon from "@mui/icons-material/CreditCardOutlined";
@@ -697,72 +697,8 @@ function OverviewTab({ data }: { data: Data }) {
         pageAvatar={clientPicture(p)}
       />
 
-      <RecentChanges acct={acct} since={sinceDay} until={lastDay} />
+      <AdChanges agentId={agentId} acct={acct} since={sinceDay} until={lastDay} />
     </>
-  );
-}
-
-const CHANGES_SHOWN = 8;
-
-/** What changed on their ads, from Facebook's activity log, newest first. */
-function RecentChanges({ acct, since, until }: { acct: string | null | undefined; since: string; until: string }) {
-  const [showAll, setShowAll] = useState(false);
-  const { data: h, isLoading, isError } = useQuery({
-    queryKey: ["adHistory", acct, since, until],
-    queryFn: () => getAdHistory(acct!, since, until),
-    enabled: !!acct,
-    staleTime: 5 * 60_000,
-    retry: false,
-  });
-  const items = (h?.items ?? []).filter(worthShowing);
-  const shown = showAll ? items : items.slice(0, CHANGES_SHOWN);
-  // Facebook's log uses its old names: a campaign group is a campaign, a
-  // "campaign" is an ad set, an ad group is an ad.
-  const OBJECT: Record<string, string> = { CAMPAIGN_GROUP: "Campaign", CAMPAIGN: "Ad set", ADGROUP: "Ad", AD_SET: "Ad set", AD: "Ad", ACCOUNT: "Ad account", AD_ACCOUNT: "Ad account" };
-  const columns = "120px minmax(0, 1.7fr) minmax(0, 1fr) 150px";
-  return (
-    <Section title="Recent changes" sub="In the dates above">
-      {!acct ? (
-        <Empty>No ad account linked. Add it under Settings → Ads & Facebook.</Empty>
-      ) : isLoading ? (
-        [0, 1, 2].map((i) => <Skeleton key={i} height={44} />)
-      ) : isError || h?.note ? (
-        <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>
-          {h?.note === "busy" ? "Facebook is busy right now. Try again in a few minutes." : "Couldn't read the changes from Facebook. Try again in a minute."}
-        </Typography>
-      ) : !items.length ? (
-        <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>No changes in these dates.</Typography>
-      ) : (
-        <>
-          <Box sx={{ display: { xs: "none", md: "grid" }, gridTemplateColumns: columns, columnGap: 2, pb: 1 }}>
-            {["Date", "What changed", "Change", "By"].map((c) => <Typography key={c} sx={{ fontSize: 13, fontWeight: 600 }}>{c}</Typography>)}
-          </Box>
-          {shown.map((it, i) => {
-            const change = plainChange(it);
-            return (
-              <Box key={i} sx={{ display: "grid", gridTemplateColumns: { xs: "minmax(0, 1fr)", md: columns }, columnGap: 2, rowGap: 0.25, py: 1.25, borderTop: `1px solid ${tokens.divider2}`, alignItems: "center" }}>
-                <Typography sx={{ fontSize: 13, color: tokens.ink2, fontVariantNumeric: "tabular-nums", order: { xs: 3, md: 0 } }}>
-                  {new Date(it.at).toLocaleString("en-GB", { timeZone: "Africa/Johannesburg", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
-                </Typography>
-                <Box sx={{ minWidth: 0 }}>
-                  <Typography sx={{ fontSize: 14, fontWeight: 500 }}>{it.what}</Typography>
-                  <Typography sx={{ fontSize: 13, color: tokens.ink2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{OBJECT[it.objectType] ?? "Item"}: {it.objectName}</Typography>
-                </Box>
-                <Typography sx={{ fontSize: 14 }}>
-                  {change && (change.from ? <><Box component="span" sx={{ color: tokens.ink2 }}>{change.from} → </Box><b>{change.to || "—"}</b></> : <b>{change.to}</b>)}
-                </Typography>
-                <Typography sx={{ fontSize: 13, color: tokens.ink2, display: { xs: "none", md: "block" }, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.who || "Facebook"}</Typography>
-              </Box>
-            );
-          })}
-          {items.length > CHANGES_SHOWN && (
-            <Button size="small" onClick={() => setShowAll((v) => !v)} sx={{ mt: 0.75 }}>
-              {showAll ? "Show fewer" : `Show all ${items.length}`}
-            </Button>
-          )}
-        </>
-      )}
-    </Section>
   );
 }
 

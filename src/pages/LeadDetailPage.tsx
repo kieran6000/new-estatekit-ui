@@ -28,7 +28,7 @@ import { getPipelinePublic } from "../api/pipelines";
 import { useSnack } from "../hooks/useSnack";
 import { PIPELINE_STAGES, stageLabel } from "../types";
 import { stageForKind, stepForStage, whenToCall } from "../lib/stageLogic";
-import { prettyAnswer, maskPhone } from "../lib/format";
+import { prettyAnswer, maskPhone, telHref } from "../lib/format";
 import { describeAttribution, type AdAttribution } from "../lib/adAttribution";
 import { timeAgo, whenLabel } from "../lib/timeAgo";
 import { useIsOperator } from "../hooks/useAutomations";
@@ -195,7 +195,7 @@ export default function LeadDetailPage({ leadId, onClose, nav }: {
           <Box
             component="a"
            
-            href={`tel:${lead.phone.replace(/\s/g, "")}`}
+            href={telHref(lead.phone)}
             onClick={() => {
               logLeadCall(lead.id, lead.agent_id);
               setTimeout(() => setOutcomeOpen(true), 150);

@@ -10,7 +10,7 @@ import PersonIcon from "@mui/icons-material/Person";
 import { tokens } from "../theme";
 import { useLeads } from "../hooks/useLeads";
 import { useCanSeeFullPhone } from "../hooks/useTier";
-import { maskPhone } from "../lib/format";
+import { maskPhone, telHref } from "../lib/format";
 import { logLeadCall } from "../api/leadEvents";
 import LeadDetailPage from "./LeadDetailPage";
 import { calendarItems, DURATION, layoutDay, overdue, weekStart, type CalItem, type CalKind } from "../lib/calendar";
@@ -407,7 +407,7 @@ function CallButton({ it, big }: { it: CalItem; big?: boolean }) {
   return (
     <Button
       component="a"
-      href={`tel:${it.lead.phone.replace(/\s/g, "")}`}
+      href={telHref(it.lead.phone)}
       onClick={() => logLeadCall(it.lead.id, it.lead.agent_id)}
       variant="contained"
       startIcon={<PhoneIcon />}

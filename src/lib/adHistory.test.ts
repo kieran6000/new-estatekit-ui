@@ -21,6 +21,7 @@ describe("ad history wording", () => {
   it("leaves out the steps of an ad going through review", () => {
     expect(worthShowing(item("Ad status updated", "Inactive", "Pending Process"))).toBe(false);
     expect(worthShowing(item("Updated status of ad after it finishes Ad Review", "Inactive", "Active"))).toBe(false);
+    expect(worthShowing(item("Ad delivered", "", "Started delivery"))).toBe(false);
     expect(worthShowing(item("Ad status updated", "Pending Process", "Active"))).toBe(true);
   });
 });

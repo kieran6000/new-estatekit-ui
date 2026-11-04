@@ -22,6 +22,6 @@ export function plainChange(item: { what: string; type: string; change: { from: 
 
 /** Facebook logs each step of an ad going through review. Only the result matters. */
 export function worthShowing(item: { what: string; type: string; change: { from: string; to: string } | null }): boolean {
-  if (/after it finishes ad review/i.test(item.what)) return false;
+  if (/after it finishes ad review|^ad delivered/i.test(item.what)) return false;
   return plainChange(item)?.to !== "In review";
 }
