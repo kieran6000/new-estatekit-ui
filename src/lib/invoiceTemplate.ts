@@ -3,7 +3,7 @@
 
 export const INVOICE_BANK = {
   bank: "FNB (First National Bank)",
-  holder: "Kieran Ouseb",
+  holder: "Sibusiso Moyo",
   account: "63184740017",
   branch: "250655",
   country: "South Africa",
