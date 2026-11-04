@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link as RouterLink, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  AppBar,
   Avatar,
   Box,
   Button,
@@ -16,17 +15,14 @@ import {
   Tab,
   Tabs,
   TextField,
-  Toolbar,
   Tooltip,
   Typography,
   useMediaQuery,
 } from "@mui/material";
-import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import WhatsAppIcon from "@mui/icons-material/WhatsApp";
 import PhoneIcon from "@mui/icons-material/Phone";
 import MailOutlineIcon from "@mui/icons-material/MailOutlined";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
-import LoginIcon from "@mui/icons-material/Login";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import PhotoCameraOutlinedIcon from "@mui/icons-material/PhotoCameraOutlined";
 import LockResetIcon from "@mui/icons-material/LockReset";
@@ -53,7 +49,7 @@ import {
 } from "../api/clients";
 import { getFbAdAccount, setAgentPassword } from "../api/agentProfile";
 import { listAccountWorkflows } from "../api/workflows";
-import { setActiveAgent, supabase } from "../api/_client";
+import { supabase } from "../api/_client";
 import { getEmailStats } from "../api/leadEvents";
 import { listSignupRequests } from "../api/signup";
 import { BRIEF_FIELDS, BRIEF_QUESTIONS, buildBrief, type BriefSource } from "../lib/brief";
@@ -145,30 +141,6 @@ export default function ClientDetailPage() {
 
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: "background.default" }}>
-      <AppBar position="sticky">
-        <Toolbar sx={{ height: 56, minHeight: "56px !important" }}>
-          <IconButton onClick={() => navigate("/clients")} aria-label="Back to accounts">
-            <ArrowBackIcon />
-          </IconButton>
-          <Typography sx={{ fontSize: 18, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {data?.profile.display_name || "Account"}
-          </Typography>
-          <Box sx={{ flex: 1 }} />
-          {agentId && (
-            <Button
-              component="a"
-              href={`/report/${agentId}`}
-              target="_blank"
-              rel="noopener"
-              size="small"
-              sx={{ color: "inherit", whiteSpace: "nowrap" }}
-            >
-              Weekly report
-            </Button>
-          )}
-        </Toolbar>
-      </AppBar>
-
       {isLoading && (
         <Box sx={{ display: "flex", justifyContent: "center", p: 6 }}>
           <CircularProgress />
@@ -259,20 +231,12 @@ function useClientSaver(agentId: string) {
 function Header({ data }: { data: Data }) {
   const { profile: p, dossier: d } = data;
   const { user } = useAuth();
-  const qc = useQueryClient();
-  const navigate = useNavigate();
   const save = useClientSaver(p.agent_id);
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const name = p.display_name || p.whatsapp_number || "Unnamed account";
   const phone = p.whatsapp_number || d?.contact.phones[0] || "";
   const email = p.email || d?.contact.emails[0] || "";
-
-  function openDashboard() {
-    setActiveAgent(p.agent_id === user?.id ? null : p.agent_id);
-    qc.invalidateQueries();
-    navigate("/leads");
-  }
 
   async function onPhoto(file: File | undefined) {
     if (!file || !user) return;
@@ -320,7 +284,7 @@ function Header({ data }: { data: Data }) {
           </Box>
         </Box>
         <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
-          <Button variant="contained" startIcon={<LoginIcon />} onClick={openDashboard} sx={{ width: { xs: "100%", sm: "auto" }, minHeight: 44 }}>Open their dashboard</Button>
+          <Button variant="outlined" component="a" href={`/report/${p.agent_id}`} target="_blank" rel="noopener">Weekly report</Button>
           {p.fb_ad_account_id && (
             <Button variant="outlined" endIcon={<OpenInNewIcon />} href={adsManagerUrl(p.fb_ad_account_id)} target="_blank" rel="noopener">
               Ads Manager

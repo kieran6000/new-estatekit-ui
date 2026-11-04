@@ -41,17 +41,30 @@ async function mayReadAccount(req: Request, adAccountId: string): Promise<boolea
   return own !== "" && own === String(adAccountId).replace(/^act_/, "").trim();
 }
 
-/** Facebook sends some values, like budgets, wrapped in an object. Finds the number inside. */
+/** Facebook wraps some values, like budgets and targeting, in objects and lists.
+ *  Gives the plain value: a number, or wording like "Locations: Centurion". */
 // deno-lint-ignore no-explicit-any
-function flat(v: any): string {
+function readable(v: any): string {
   if (v == null) return "";
   if (typeof v !== "object") return String(v);
-  for (const inner of Object.values(v)) {
-    const s = flat(inner);
-    if (/^\d+(\.\d+)?$/.test(s)) return s;
+  if (Array.isArray(v)) return v.map(readable).filter(Boolean).join(", ");
+  if ("content" in v) {
+    const inner = readable(v.children);
+    return inner ? `${v.content}: ${inner}` : String(v.content ?? "");
   }
-  return "";
+  for (const key of ["old_value", "new_value", "amount", "value", "budget"]) {
+    if (key in v) return readable(v[key]);
+  }
+  return Object.entries(v)
+    .filter(([k]) => !/currency|type|offset|^id$|_id$/i.test(k))
+    .map(([, inner]) => readable(inner))
+    .filter(Boolean)
+    .join(", ");
 }
+const short = (s: string) => (s.length > 240 ? s.slice(0, 239) + "…" : s);
+
+// One busy day can fill a page, so a page isn't enough to reach back through the dates.
+const MAX_PAGES = 15;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
@@ -83,11 +96,20 @@ Deno.serve(async (req) => {
         continue;
       }
       // deno-lint-ignore no-explicit-any
-      const items = (data.data || []).map((a: any) => {
+      const raw: any[] = [...(data.data || [])];
+      let next: string | undefined = data.paging?.next;
+      for (let page = 1; next && page < MAX_PAGES; page++) {
+        const more = await (await fetch(next)).json();
+        if (more.error) break; // Show what we have.
+        raw.push(...(more.data || []));
+        next = more.paging?.next;
+      }
+      // deno-lint-ignore no-explicit-any
+      const items = raw.map((a: any) => {
         let change: { from: string; to: string } | null = null;
         try {
           const x = typeof a.extra_data === "string" ? JSON.parse(a.extra_data) : a.extra_data;
-          if (x && ("old_value" in x || "new_value" in x)) change = { from: flat(x.old_value), to: flat(x.new_value) };
+          if (x && ("old_value" in x || "new_value" in x)) change = { from: short(readable(x.old_value)), to: short(readable(x.new_value)) };
         } catch { /* not JSON */ }
         return {
           at: a.event_time,
