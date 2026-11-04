@@ -1,5 +1,5 @@
 import { supabase } from "../api/_client";
-import { addressKey, type LatLng } from "./geo";
+import { addressKey, CLOSE_BY_KM, type LatLng, type Zone } from "./geo";
 
 // Google's map, geocoder and Street View photo, with the key that's locked to
 // our own site. Each address is only looked up once (geocode_cache). Anything
@@ -111,6 +111,33 @@ export async function geocodeAddress(address: string): Promise<Geocoded | null> 
   return found;
 }
 
+const LOOKUP_LIMIT_MS = 4000;
+
+/** Where many addresses are. Saved ones come straight from geocode_cache; up to
+ *  maxNew others are looked up, one at a time, and saved so that's only once. */
+export async function geocodeMany(addresses: string[], maxNew: number): Promise<Map<string, Geocoded>> {
+  const found = new Map<string, Geocoded>();
+  const wanted = [...new Map(addresses.map((a) => [addressKey(a), a])).entries()];
+  const saved = new Set<string>();
+  for (let i = 0; i < wanted.length; i += 100) {
+    const { data } = await supabase.from("geocode_cache").select("address_key, lat, lng, exact").in("address_key", wanted.slice(i, i + 100).map(([k]) => k));
+    for (const row of (data ?? []) as (CacheRow & { address_key: string })[]) {
+      saved.add(row.address_key);
+      if (row.lat != null && row.lng != null) found.set(row.address_key, { lat: row.lat, lng: row.lng, exact: row.exact });
+    }
+  }
+  for (const [key, address] of wanted.filter(([k]) => !saved.has(k)).slice(0, maxNew)) {
+    // Google can go quiet without saying no. Show what we have rather than wait.
+    const at = await Promise.race([
+      geocodeAddress(address).catch(() => null),
+      new Promise<"quiet">((done) => setTimeout(() => done("quiet"), LOOKUP_LIMIT_MS)),
+    ]);
+    if (at === "quiet") break;
+    if (at) found.set(key, at);
+  }
+  return found;
+}
+
 export const HOUSE_PIN = `data:image/svg+xml,${encodeURIComponent(
   `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="46" viewBox="0 0 40 46"><path d="M4 0h32a4 4 0 0 1 4 4v30a4 4 0 0 1-4 4h-9l-7 8-7-8H4a4 4 0 0 1-4-4V4a4 4 0 0 1 4-4z" fill="#0b57d0"/><path d="M20 8 8 19h4v11h6v-7h4v7h6V19h4z" fill="#fff"/></svg>`,
 )}`;
@@ -180,3 +207,40 @@ export const metresToPixels = (metres: number, lat: number, zoom: number) =>
  *  isn't one, so the <img> can hide itself. */
 export const streetPhotoUrl = (at: LatLng, width: number, height: number) =>
   `https://maps.googleapis.com/maps/api/streetview?size=${width}x${height}&location=${at.lat},${at.lng}&source=outdoor&return_error_code=true&key=${KEY}`;
+
+export const ZONE_COLOR = "#0b57d0";
+const DOT_COLOR = "#1f2937";
+
+// Nearly blank: land, water, main roads and town names. Nothing else competes with the dots.
+const QUIET_MAP = [
+  { elementType: "geometry", stylers: [{ color: "#f4f5f7" }] },
+  { elementType: "labels", stylers: [{ visibility: "off" }] },
+  { featureType: "water", elementType: "geometry", stylers: [{ color: "#dbe4ee" }] },
+  { featureType: "road", stylers: [{ visibility: "off" }] },
+  { featureType: "road.highway", elementType: "geometry", stylers: [{ visibility: "on" }, { color: "#e3e6ea" }] },
+  { featureType: "poi", stylers: [{ visibility: "off" }] },
+  { featureType: "transit", stylers: [{ visibility: "off" }] },
+  { featureType: "administrative", elementType: "geometry", stylers: [{ visibility: "off" }] },
+  ];
+
+/** Their area as one soft circle, with a dot for each lead, on a quiet map. The
+ *  map is framed on the circle and what's close by. With no area, it fits the leads. */
+export async function drawLeadMap(el: HTMLElement, zone: Zone | null, leads: LatLng[], onReady: () => void): Promise<void> {
+  const maps = await loadGoogleMaps();
+  const { Map } = await maps.importLibrary("maps");
+  const { Marker } = await maps.importLibrary("marker");
+  const map = new Map(el, { disableDefaultUI: true, keyboardShortcuts: false, clickableIcons: false, gestureHandling: "none", styles: QUIET_MAP });
+  map.addListener("tilesloaded", onReady);
+  if (zone) {
+    new maps.Circle({ map, center: zone.center, radius: zone.km * 1000, fillColor: ZONE_COLOR, fillOpacity: 0.12, strokeColor: ZONE_COLOR, strokeOpacity: 0.45, strokeWeight: 1.5, clickable: false });
+    map.fitBounds(new maps.Circle({ center: zone.center, radius: (zone.km + CLOSE_BY_KM) * 1000 }).getBounds(), 2);
+  } else {
+    const bounds = new maps.LatLngBounds();
+    for (const p of leads) bounds.extend(p);
+    map.fitBounds(bounds, 28);
+  }
+  maps.event.addListenerOnce(map, "idle", () => { if (map.getZoom() > 13) map.setZoom(13); });
+  for (const position of leads) {
+    new Marker({ map, position, clickable: false, icon: { path: maps.SymbolPath.CIRCLE, scale: 3.5, fillColor: DOT_COLOR, fillOpacity: 0.9, strokeColor: "#ffffff", strokeWeight: 1 } });
+  }
+}

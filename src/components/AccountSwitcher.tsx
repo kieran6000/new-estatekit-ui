@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useLocation, useNavigate } from "react-router-dom";
+import { clientPath, CLIENT_TABS, type ClientTab } from "../lib/clientSlug";
 import {
   Avatar,
   Box,
@@ -47,6 +49,8 @@ export default function AccountSwitcher({ variant = "dark", staff = true }: { va
   // A mouse/trackpad exists → safe to auto-focus search. On touch it isn't.
   const canHover = useMediaQuery("(hover: hover) and (pointer: fine)");
   const qc = useQueryClient();
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
   const [active, setActive] = useState(getActiveAgentIdSync() || user?.id || "");
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [search, setSearch] = useState("");
@@ -71,6 +75,18 @@ export default function AccountSwitcher({ variant = "dark", staff = true }: { va
     qc.invalidateQueries();
     setAnchor(null);
     setSearch("");
+    // On a client's page, stay on the same tab for the account you picked.
+    if (pathname.startsWith("/clients/")) {
+      const tab = pathname.split("/")[3] as ClientTab;
+      if (agentId === user?.id) navigate("/clients");
+      else navigate(clientPath(agentId, profiles, CLIENT_TABS.includes(tab) ? tab : "overview"));
+    }
+  }
+
+  function seeAll() {
+    setAnchor(null);
+    setSearch("");
+    navigate("/clients");
   }
 
   if (profiles.length < 2) return null;
@@ -82,6 +98,8 @@ export default function AccountSwitcher({ variant = "dark", staff = true }: { va
   const activeName = activeProfile ? name(activeProfile) : "Select account";
   const activeInitial = activeName[0].toUpperCase();
   const activeArea = cityOf(activeProfile?.area) || activeProfile?.company || "";
+  // In someone else's account: said here, so it's never mistaken for your own.
+  const managing = !!active && active !== user?.id;
   // The person first, then their Facebook page picture, then the brand logo —
   // a logo is a poor stand-in for a face in a list of people.
   const activePfp = activeProfile?.avatar_url || pageAvatar(activeProfile?.fb_page_id) || activeProfile?.sidebar_logo_url || null;
@@ -105,7 +123,7 @@ export default function AccountSwitcher({ variant = "dark", staff = true }: { va
           width: "100%",
           p: "8px 10px",
           bgcolor: variant === "dark" ? "#ffffff15" : tokens.surface,
-          border: variant === "dark" ? "1px solid #fcfdff45" : `1px solid ${tokens.outline}`,
+          border: managing ? "1.5px solid #f59e0b" : variant === "dark" ? "1px solid #fcfdff45" : `1px solid ${tokens.outline}`,
           borderRadius: "6px",
           cursor: "pointer",
           textAlign: "left",
@@ -119,9 +137,9 @@ export default function AccountSwitcher({ variant = "dark", staff = true }: { va
           <Typography sx={{ fontSize: 13, fontWeight: 600, color: variant === "dark" ? "#fff" : tokens.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {activeName}
           </Typography>
-          {activeArea && (
+          {(managing || activeArea) && (
             <Typography sx={{ fontSize: 11, color: variant === "dark" ? "rgba(255,255,255,.85)" : tokens.ink2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {activeArea}
+              {[managing ? "Managing" : "", activeArea].filter(Boolean).join(" · ")}
             </Typography>
           )}
         </Box>
@@ -201,6 +219,12 @@ export default function AccountSwitcher({ variant = "dark", staff = true }: { va
             </Typography>
           )}
         </List>
+        {staff && (
+          <>
+            <Divider />
+            <ListItemButton onClick={seeAll} sx={{ py: 1.25, px: 2, fontSize: 14, fontWeight: 500 }}>See all accounts</ListItemButton>
+          </>
+        )}
       </Popover>
     </Box>
   );

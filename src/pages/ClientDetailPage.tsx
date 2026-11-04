@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link as RouterLink, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  AppBar,
   Avatar,
   Box,
   Button,
@@ -16,17 +15,14 @@ import {
   Tab,
   Tabs,
   TextField,
-  Toolbar,
   Tooltip,
   Typography,
   useMediaQuery,
 } from "@mui/material";
-import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import WhatsAppIcon from "@mui/icons-material/WhatsApp";
 import PhoneIcon from "@mui/icons-material/Phone";
 import MailOutlineIcon from "@mui/icons-material/MailOutlined";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
-import LoginIcon from "@mui/icons-material/Login";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import PhotoCameraOutlinedIcon from "@mui/icons-material/PhotoCameraOutlined";
 import LockResetIcon from "@mui/icons-material/LockReset";
@@ -37,12 +33,12 @@ import { tokens } from "../theme";
 import { AccountStatusSection, DeactivatedBanner } from "../components/AccountStatus";
 import TeamSection from "../components/TeamSection";
 import {
+  adAccountProblem,
   adsManagerUrl,
   clientPicture,
   fundingKind,
   getClient,
   hasPaymentProblem,
-  getResultsBetween,
   getSpendDaily,
   saveClientDossier,
   spendBetween,
@@ -53,7 +49,7 @@ import {
 } from "../api/clients";
 import { getFbAdAccount, setAgentPassword } from "../api/agentProfile";
 import { listAccountWorkflows } from "../api/workflows";
-import { setActiveAgent, supabase } from "../api/_client";
+import { supabase } from "../api/_client";
 import { getEmailStats } from "../api/leadEvents";
 import { listSignupRequests } from "../api/signup";
 import { BRIEF_FIELDS, BRIEF_QUESTIONS, buildBrief, type BriefSource } from "../lib/brief";
@@ -61,20 +57,26 @@ import { resolveRange, useDateRange, ymd } from "../lib/range";
 import { useAuth } from "../hooks/useAuth";
 import { useSnack } from "../hooks/useSnack";
 import { trackActivity } from "../lib/activity";
-import { timeAgo } from "../lib/timeAgo";
 import RangePicker from "../components/RangePicker";
 import AdsTable, { type AdsView } from "../components/AdsTable";
 import { clientPath, isAgentId, resolveClient, CLIENT_TABS, type ClientTab } from "../lib/clientSlug";
-import { getAdHistory, getAdsTable, type AdsLevel } from "../api/agentProfile";
+import { type AdsLevel } from "../api/agentProfile";
 import { listAgentProfiles } from "../api/_client";
 import type { DateRange, RangeKey } from "../lib/range";
 import { RANGE_LABELS } from "../lib/range";
 import { useFollowAccount } from "../hooks/useFollowLeadAccount";
-import { formatMetric, metricValues, type MetricKey } from "../lib/adTargets";
 import { MAX_IMAGE_BYTES, uploadImage } from "../lib/image";
 import { accentEdge, readableOn } from "../lib/contrast";
 import BrandLogo from "../components/BrandLogo";
 import FundingChip from "../components/FundingChip";
+import LeadAreaMap from "../components/LeadAreaMap";
+import LeadFunnel from "../components/LeadFunnel";
+import AdChanges from "../components/AdChanges";
+import StatusStrip from "../components/StatusStrip";
+import { isCity } from "../lib/geo";
+import CreditCardOutlinedIcon from "@mui/icons-material/CreditCardOutlined";
+import TollOutlinedIcon from "@mui/icons-material/TollOutlined";
+import AccountBalanceOutlinedIcon from "@mui/icons-material/AccountBalanceOutlined";
 import ContractsSection from "../components/ContractsSection";
 import InvoicesSection from "../components/InvoicesSection";
 
@@ -102,7 +104,7 @@ type TabKey = ClientTab;
 
 /** Operators: one account, at /clients/<their-name>/<tab>. Overview (the
  *  numbers and their ads), History (what changed on their ads), Brief
- *  (onboarding answers), Contract & invoices and Settings (everything editable). Dates and where
+ *  (onboarding answers), Paperwork (contracts and invoices) and Settings (everything editable). Dates and where
  *  you are in their ads are in the address too, so a link opens the same
  *  view and Back steps through it. */
 export default function ClientDetailPage() {
@@ -120,7 +122,7 @@ export default function ClientDetailPage() {
   // Tabs are pages: Back goes to the tab you were on. Only the dates carry
   // over (where you were in the ads is Overview's own).
   const dates = new URLSearchParams([...params].filter(([k]) => k === "range" || k === "from" || k === "to")).toString();
-  const pick = (t: TabKey) => navigate(`${clientPath(agentId, profiles, t)}${(t === "overview" || t === "history") && dates ? `?${dates}` : ""}`);
+  const pick = (t: TabKey) => navigate(`${clientPath(agentId, profiles, t)}${t === "overview" && dates ? `?${dates}` : ""}`);
 
   // Old addresses (the id, or no tab) move to /clients/<name>/<tab>.
   if (profiles && agentId) {
@@ -139,30 +141,6 @@ export default function ClientDetailPage() {
 
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: "background.default" }}>
-      <AppBar position="sticky">
-        <Toolbar sx={{ height: 56, minHeight: "56px !important" }}>
-          <IconButton onClick={() => navigate("/clients")} aria-label="Back to accounts">
-            <ArrowBackIcon />
-          </IconButton>
-          <Typography sx={{ fontSize: 18, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {data?.profile.display_name || "Account"}
-          </Typography>
-          <Box sx={{ flex: 1 }} />
-          {agentId && (
-            <Button
-              component="a"
-              href={`/report/${agentId}`}
-              target="_blank"
-              rel="noopener"
-              size="small"
-              sx={{ color: "inherit", whiteSpace: "nowrap" }}
-            >
-              Weekly report
-            </Button>
-          )}
-        </Toolbar>
-      </AppBar>
-
       {isLoading && (
         <Box sx={{ display: "flex", justifyContent: "center", p: 6 }}>
           <CircularProgress />
@@ -185,24 +163,20 @@ export default function ClientDetailPage() {
             <Box sx={{ maxWidth: 1440, mx: "auto", px: { xs: 0.5, md: 2 } }}>
               <Tabs value={tab} onChange={(_e, v) => pick(v)} variant="scrollable" allowScrollButtonsMobile>
                 <Tab value="overview" label="Overview" />
-                <Tab value="history" label="History" />
                 <Tab value="brief" label="Brief" />
-                <Tab value="contract" label="Contract & invoices" />
+                <Tab value="contract" label="Paperwork" />
                 <Tab value="settings" label="Settings" />
               </Tabs>
             </Box>
           </Box>
           <Box sx={{ p: { xs: 1.5, md: 2.5 }, maxWidth: 1440, mx: "auto", display: "flex", flexDirection: "column", gap: 2 }}>
             {tab === "overview" && <OverviewTab data={data} />}
-            {tab === "history" && <HistoryTab data={data} />}
             {tab === "brief" && (
-              <Cols>
+              <Box sx={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
                 <BriefSection data={data} />
-                <Box sx={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-                  <OtherAnswersSection data={data} />
-                  {data.dossier?.onboardingExtra && <OnboardingSection data={data} which="onboardingExtra" />}
-                </Box>
-              </Cols>
+                <OtherAnswersSection data={data} />
+                {data.dossier?.onboardingExtra && <OnboardingSection data={data} which="onboardingExtra" />}
+              </Box>
             )}
             {tab === "contract" && (() => {
               const client = {
@@ -257,20 +231,12 @@ function useClientSaver(agentId: string) {
 function Header({ data }: { data: Data }) {
   const { profile: p, dossier: d } = data;
   const { user } = useAuth();
-  const qc = useQueryClient();
-  const navigate = useNavigate();
   const save = useClientSaver(p.agent_id);
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const name = p.display_name || p.whatsapp_number || "Unnamed account";
   const phone = p.whatsapp_number || d?.contact.phones[0] || "";
   const email = p.email || d?.contact.emails[0] || "";
-
-  function openDashboard() {
-    setActiveAgent(p.agent_id === user?.id ? null : p.agent_id);
-    qc.invalidateQueries();
-    navigate("/leads");
-  }
 
   async function onPhoto(file: File | undefined) {
     if (!file || !user) return;
@@ -318,7 +284,7 @@ function Header({ data }: { data: Data }) {
           </Box>
         </Box>
         <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
-          <Button variant="contained" startIcon={<LoginIcon />} onClick={openDashboard} sx={{ width: { xs: "100%", sm: "auto" }, minHeight: 44 }}>Open their dashboard</Button>
+          <Button variant="outlined" component="a" href={`/report/${p.agent_id}`} target="_blank" rel="noopener">Weekly report</Button>
           {p.fb_ad_account_id && (
             <Button variant="outlined" endIcon={<OpenInNewIcon />} href={adsManagerUrl(p.fb_ad_account_id)} target="_blank" rel="noopener">
               Ads Manager
@@ -354,14 +320,6 @@ function Header({ data }: { data: Data }) {
 /* ───────────────────────── building blocks ───────────────────────── */
 
 /** Two columns on a computer, one on a phone. */
-function Cols({ children }: { children: ReactNode }) {
-  return (
-    <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" }, gap: 2, alignItems: "start" }}>
-      {children}
-    </Box>
-  );
-}
-
 /** Settings in groups, each with a heading and a line on what's in it, and
  *  (on a computer) a menu on the left that jumps to a group and shows which
  *  one you're in. */
@@ -371,7 +329,7 @@ function SettingsTab({ data }: { data: Data }) {
     { id: "profile", title: "Profile", sub: "Who they are, how to reach them, and how their pages look.", body: <><ProfileSection data={data} /><ContactSection data={data} /><BrandingSection data={data} /></> },
     { id: "access", title: "Login & team", sub: "How they sign in, and who works with them.", body: <><LoginSection data={data} /><TeamSection agentId={data.profile.agent_id} name={data.profile.display_name || "This agent"} /></> },
     { id: "ads", title: "Ads & Facebook", sub: "Their ad account, Facebook page and where their leads come from.", body: <><AdAccountSection data={data} /><FacebookSection data={data} /><LandingPagesSection data={data} /></> },
-    { id: "messages", title: "Messages", sub: "Automations and emails that go to their leads.", body: <MessagesSection data={data} /> },
+    { id: "messages", title: "Messages", sub: "Automations and emails that go to their leads.", body: <><MessagesSection data={data} /><EmailStatsSection data={data} since={new Date(Date.now() - 30 * 864e5)} until={new Date()} /></> },
     { id: "account", title: "Account", sub: "Pause or close their account.", body: <AccountStatusSection profile={data.profile} /> },
   ];
   const [current, setCurrent] = useState(groups[0].id);
@@ -586,6 +544,20 @@ function EditableSection({
   );
 }
 
+/** Label on top, answer underneath, in tidy columns. */
+function InfoGrid({ rows }: { rows: [string, ReactNode][] }) {
+  return (
+    <Box component="dl" sx={{ m: 0, display: "grid", gridTemplateColumns: { xs: "repeat(2, minmax(0, 1fr))", md: "repeat(3, minmax(0, 1fr))" }, columnGap: 3, rowGap: 2 }}>
+      {rows.map(([k, v]) => (
+        <Box key={k} sx={{ minWidth: 0 }}>
+          <Box component="dt" sx={{ fontSize: 13.5, fontWeight: 600, color: tokens.ink }}>{k}</Box>
+          <Box component="dd" sx={{ m: 0, mt: 0.25, fontSize: 14, color: v ? tokens.ink : tokens.ink3, overflowWrap: "anywhere" }}>{v || "—"}</Box>
+        </Box>
+      ))}
+    </Box>
+  );
+}
+
 function KV({ rows, labelWidth = "38%" }: { rows: [string, ReactNode][]; labelWidth?: string }) {
   const shown = rows.filter(([, v]) => v !== null && v !== undefined && v !== "" && v !== false);
   if (!shown.length) return <Empty>Nothing on file.</Empty>;
@@ -605,29 +577,6 @@ function Empty({ children }: { children: ReactNode }) {
   return <Typography sx={{ fontSize: 13.5, color: tokens.ink3 }}>{children}</Typography>;
 }
 
-function Bars({ data }: { data: Record<string, number> }) {
-  const entries = Object.entries(data).sort((a, b) => b[1] - a[1]);
-  if (!entries.length) return <Empty>No leads yet.</Empty>;
-  const total = entries.reduce((a, [, n]) => a + n, 0);
-  return (
-    <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
-      {entries.map(([k, n]) => (
-        <Box key={k}>
-          <Box sx={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
-            <span>{k}</span>
-            <Box component="span" sx={{ color: tokens.ink2, fontVariantNumeric: "tabular-nums" }}>
-              {n} · {Math.round((n / total) * 100)}%
-            </Box>
-          </Box>
-          <Box sx={{ height: 6, bgcolor: tokens.surface2, borderRadius: 3, mt: 0.375, overflow: "hidden" }}>
-            <Box sx={{ height: "100%", width: `${Math.max(2, (n / total) * 100)}%`, bgcolor: tokens.ink3, borderRadius: 3 }} />
-          </Box>
-        </Box>
-      ))}
-    </Box>
-  );
-}
-
 function ExtLink({ href, children }: { href: string; children: ReactNode }) {
   return (
     <Link href={href} target="_blank" rel="noopener" underline="hover" sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, fontSize: 13.5 }}>
@@ -638,17 +587,6 @@ function ExtLink({ href, children }: { href: string; children: ReactNode }) {
 }
 
 /* ───────────────────────── overview ───────────────────────── */
-
-function Tile({ label, value, tone, hint }: { label: string; value: ReactNode; tone?: "warning"; hint?: string }) {
-  return (
-    <Box sx={{ bgcolor: "background.paper", border: `1px solid ${tone === "warning" ? tokens.amberBorder : tokens.divider}`, borderRadius: "8px", px: 2, py: 1.5, minWidth: 0 }}>
-      <Typography component="div" sx={{ fontSize: 22, fontWeight: 600, lineHeight: 1.2, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{value}</Typography>
-      <Tooltip title={hint ?? ""} disableHoverListener={!hint}>
-        <Typography sx={{ fontSize: 12.5, color: tokens.ink2, mt: 0.25 }}>{label}</Typography>
-      </Tooltip>
-    </Box>
-  );
-}
 
 /** The dates, from the address (?range=7d, or ?range=custom&from=&to=),
  *  else the last ones used here. Changing them changes the address. */
@@ -694,39 +632,22 @@ function OverviewTab({ data }: { data: Data }) {
     return n;
   });
 
-  // The account's Facebook totals (shared with the table's Campaigns view).
-  const { data: fb, isLoading: fbLoading } = useQuery({
-    queryKey: ["adsTable", acct, sinceDay, lastDay, "campaign", "", ""],
-    queryFn: () => getAdsTable(acct!, sinceDay, lastDay, { level: "campaign" }),
-    enabled: !!acct,
-    staleTime: 10 * 60_000,
-    retry: false,
-  });
-  const { data: r, isLoading } = useQuery({
-    queryKey: ["resultsBetween", agentId, sinceDay, ymd(until)],
-    queryFn: () => getResultsBetween(agentId, since, until),
-    staleTime: 60_000,
-  });
-  const a = fb?.account ? metricValues(fb.account) : null;
-  const fbTile = (k: MetricKey) => (!acct ? "—" : fbLoading ? <Skeleton width={70} /> : a ? formatMetric(k, a[k]) : "—");
-  const v = (n: number | undefined) => (isLoading ? <Skeleton width={40} /> : (n ?? 0));
-
+  const { data: requests = [] } = useQuery({ queryKey: ["signupRequests"], queryFn: listSignupRequests, staleTime: 5 * 60_000 });
+  const brief = briefFor(data, requests);
+  const city = brief.city?.value?.trim();
+  const areas = (brief.suburbs?.value ?? "").split(/[;,\n]/).map((s) => s.trim()).filter(Boolean)
+    .map((name) => ({ name, address: city && !isCity(name) && !name.toLowerCase().includes(city.toLowerCase()) ? `${name}, ${city}` : name }));
   return (
     <>
-      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 1.5, flexWrap: "wrap" }}>
-        <RangePicker value={range} onChange={setRange} />
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" }, gap: 2, alignItems: "stretch" }}>
+        <AdAccountCard data={data} />
+        <LeadAreaMap agentId={agentId} areas={areas} />
       </Box>
 
-      {/* Facebook's numbers, in Facebook's words; then what came of the leads here. */}
-      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, 1fr)", sm: "repeat(4, 1fr)", xl: "repeat(8, 1fr)" }, gap: 1.5 }}>
-        <Tile label="Amount spent" value={fbTile("spend")} />
-        <Tile label="Leads" value={fbTile("leads")} />
-        <Tile label="Cost per lead" value={fbTile("cpl")} />
-        <Tile label="Impressions" value={fbTile("impressions")} />
-        <Tile label="Reach" value={fbTile("reach")} />
-        <Tile label="CTR (link click-through rate)" value={fbTile("ctr")} />
-        <Tile label="Booked" value={v(r?.booked)} hint="Leads booked for an appointment in EstateKit" />
-        <Tile label="Mandates" value={v(r?.mandates)} hint="Mandates signed in EstateKit" />
+      <LeadFunnel byStage={data.live?.by_stage ?? {}} lastLeadAt={data.live?.last_lead_at} />
+
+      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 1.5, flexWrap: "wrap" }}>
+        <RangePicker value={range} onChange={setRange} />
       </Box>
 
       <AdsTable
@@ -740,91 +661,7 @@ function OverviewTab({ data }: { data: Data }) {
         pageAvatar={clientPicture(p)}
       />
 
-      <Cols>
-        <Section title="Leads by stage" sub="All time">
-          <Bars data={data.live?.by_stage ?? {}} />
-          <Typography sx={{ fontSize: 12.5, color: tokens.ink3, mt: 1.5 }}>
-            {data.live?.leads_total ?? 0} leads in total · last lead {data.live?.last_lead_at ? timeAgo(data.live.last_lead_at) : "never"}
-          </Typography>
-        </Section>
-        <EmailStatsSection data={data} since={since} until={until} />
-      </Cols>
-    </>
-  );
-}
-
-/** What changed on their ads, from Facebook's activity log (Ads Manager's
- *  Account history), newest first, by day. */
-function HistoryTab({ data }: { data: Data }) {
-  const acct = data.profile.fb_ad_account_id;
-  const [range, setRange] = useRangeParam();
-  const { since, until } = resolveRange(range);
-  const sinceDay = ymd(since);
-  const lastDay = ymd(new Date(until.getTime() - 1));
-  const { data: h, isLoading, isError } = useQuery({
-    queryKey: ["adHistory", acct, sinceDay, lastDay],
-    queryFn: () => getAdHistory(acct!, sinceDay, lastDay),
-    enabled: !!acct,
-    staleTime: 5 * 60_000,
-    retry: false,
-  });
-  const items = h?.items ?? [];
-  const days = new Map<string, typeof items>();
-  for (const it of items) {
-    const d = new Date(it.at).toLocaleDateString("en-ZA", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
-    days.set(d, [...(days.get(d) ?? []), it]);
-  }
-  // Facebook's log uses its old names: a campaign group is a campaign, a
-  // "campaign" is an ad set, an ad group is an ad.
-  const OBJECT: Record<string, string> = { CAMPAIGN_GROUP: "Campaign", CAMPAIGN: "Ad set", ADGROUP: "Ad", AD_SET: "Ad set", AD: "Ad", ACCOUNT: "Ad account", AD_ACCOUNT: "Ad account" };
-
-  return (
-    <>
-      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 1.5, flexWrap: "wrap" }}>
-        <RangePicker value={range} onChange={setRange} />
-      </Box>
-      <Section title="Change history" sub="From Facebook's activity log">
-        {!acct ? (
-          <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>No ad account linked. Add it under Settings → Ads &amp; Facebook.</Typography>
-        ) : isLoading ? (
-          [0, 1, 2, 3].map((i) => <Skeleton key={i} height={48} />)
-        ) : isError || h?.note ? (
-          <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>
-            {h?.note === "busy" ? "Facebook is busy right now. Try again in a few minutes." : "Couldn't read the history from Meta. Try again in a minute."}
-          </Typography>
-        ) : !items.length ? (
-          <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>No changes in these dates.</Typography>
-        ) : (
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 2.5 }}>
-            {[...days.entries()].map(([day, list]) => (
-              <Box key={day}>
-                <Typography sx={{ fontSize: 13, fontWeight: 600, color: tokens.ink2, mb: 0.5 }}>{day}</Typography>
-                {list.map((it, i) => (
-                  <Box key={i} sx={{ display: "grid", gridTemplateColumns: { xs: "56px 1fr", sm: "64px minmax(0, 1fr) 200px" }, gap: 1.5, py: 1.25, borderTop: `1px solid ${tokens.divider2}`, alignItems: "start" }}>
-                    <Typography sx={{ fontSize: 13, color: tokens.ink3, fontVariantNumeric: "tabular-nums" }}>
-                      {new Date(it.at).toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit" })}
-                    </Typography>
-                    <Box sx={{ minWidth: 0 }}>
-                      <Typography sx={{ fontSize: 14, fontWeight: 500 }}>{it.what}</Typography>
-                      <Typography sx={{ fontSize: 13, color: tokens.ink2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {OBJECT[it.objectType] ?? it.objectType}: {it.objectName}
-                      </Typography>
-                      {it.change && (it.change.from || it.change.to) && (
-                        <Typography sx={{ fontSize: 13, mt: 0.25 }}>
-                          <Box component="span" sx={{ color: tokens.ink3, textDecoration: "line-through" }}>{it.change.from || "—"}</Box>
-                          {"  →  "}
-                          <b>{it.change.to || "—"}</b>
-                        </Typography>
-                      )}
-                    </Box>
-                    <Typography sx={{ fontSize: 13, color: tokens.ink2, display: { xs: "none", sm: "block" }, textAlign: "right" }}>by {it.who || "Facebook"}</Typography>
-                  </Box>
-                ))}
-              </Box>
-            ))}
-          </Box>
-        )}
-      </Section>
+      <AdChanges agentId={agentId} acct={acct} since={sinceDay} until={lastDay} />
     </>
   );
 }
@@ -840,6 +677,93 @@ const ACCOUNT_STATUS: Record<number, string> = {
   100: "Closing",
   101: "Closed",
 };
+
+const CARD_BRANDS: { test: RegExp; name: string; badge: string; bg: string }[] = [
+  { test: /visa/i, name: "Visa", badge: "VISA", bg: "#1434CB" },
+  { test: /master/i, name: "Mastercard", badge: "MC", bg: "#252525" },
+  { test: /amex|american express/i, name: "Amex", badge: "AMEX", bg: "#006FCF" },
+];
+/** "VISA *6818" from Facebook, written the way people read a card. */
+function cardFrom(label: string | null | undefined) {
+  const brand = CARD_BRANDS.find((b) => b.test.test(label ?? "")) ?? null;
+  const last4 = (label ?? "").match(/(\d{4})\s*$/)?.[1];
+  return { brand, text: brand && last4 ? `${brand.name} ···· ${last4}` : label ?? null };
+}
+const rands = (n: number) => "R " + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+
+/** Is their ad account fine, how does it pay, and what's owing. */
+function AdAccountCard({ data }: { data: Data }) {
+  const acct = data.profile.fb_ad_account_id;
+  const { data: a, isLoading, isError } = useQuery({
+    queryKey: ["fbAdAccount", acct],
+    queryFn: () => getFbAdAccount(acct!),
+    enabled: !!acct,
+    staleTime: 60 * 60_000,
+    retry: false,
+  });
+  const since30 = ymd(new Date(Date.now() - 29 * 864e5));
+  const { data: daily30 } = useQuery({
+    queryKey: ["spendDaily", acct, since30],
+    queryFn: () => getSpendDaily(acct!, since30),
+    enabled: !!acct,
+    staleTime: 30 * 60_000,
+    retry: false,
+  });
+  const avgDaily = daily30 ? (spendBetween(daily30, since30, ymd(new Date(Date.now() + 864e5))) ?? 0) / 30 : null;
+  const problem = adAccountProblem(a, avgDaily);
+  const kind = fundingKind(a?.fundingType);
+  const card = cardFrom(a?.fundingLabel);
+  const PayIcon = kind === "Prepaid" ? TollOutlinedIcon : kind === "Card" ? CreditCardOutlinedIcon : AccountBalanceOutlinedIcon;
+  const healthy = a?.accountStatus === 1;
+  const status = a?.accountStatus != null ? ACCOUNT_STATUS[a.accountStatus] ?? "Unknown" : "Unknown";
+  return (
+    <Box sx={{ bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "8px", overflow: "hidden", minWidth: 0, height: "100%", display: "flex", flexDirection: "column" }}>
+      <Box sx={{ px: 2, pt: 1.5, pb: 0.5, minHeight: 40, display: "flex", alignItems: "center" }}>
+        <Typography sx={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: tokens.ink2 }}>Ad account</Typography>
+      </Box>
+      <Box sx={{ px: 2, pb: 1.75, flex: 1, display: "flex", flexDirection: "column" }}>
+        {!acct ? (
+          <Empty>No ad account linked. Add it under Settings → Facebook.</Empty>
+        ) : isLoading ? (
+          <Skeleton variant="rectangular" height={120} sx={{ borderRadius: "6px" }} />
+        ) : isError || a?.note ? (
+          <Empty>Facebook won't show us this ad account. Check it's shared with EstateKit's Business Manager.</Empty>
+        ) : (
+          <>
+            <Box sx={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 2, flex: 1 }}>
+              <Box>
+                <Typography sx={{ fontSize: 13, color: tokens.ink2 }}>Current balance</Typography>
+                <Typography sx={{ fontSize: 26, lineHeight: 1.25, fontVariantNumeric: "tabular-nums" }}>{rands(Math.max(a?.balance ?? 0, 0))}</Typography>
+                {!problem && <Typography sx={{ fontSize: 13, color: tokens.ink2 }}>No payment due right now</Typography>}
+              </Box>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography sx={{ fontSize: 13, color: tokens.ink2, mb: 0.5 }}>How they pay</Typography>
+                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                  <Box sx={{ width: 40, height: 26, flex: "none", borderRadius: "4px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10.5, fontWeight: 800, fontStyle: "italic", color: card.brand ? "#fff" : tokens.ink2, bgcolor: card.brand?.bg ?? "transparent", border: card.brand ? "none" : `1px solid ${tokens.divider}` }}>
+                    {card.brand ? card.brand.badge : <PayIcon sx={{ fontSize: 17 }} />}
+                  </Box>
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography sx={{ fontSize: 14, fontWeight: 500, overflowWrap: "anywhere" }}>{card.text || (kind === "Prepaid" ? "Prepaid funds" : kind) || "Not set up"}</Typography>
+                    {kind === "Card" && <Typography sx={{ fontSize: 12.5, color: tokens.ink2 }}>Charged automatically</Typography>}
+                  </Box>
+                </Box>
+              </Box>
+            </Box>
+            {problem && <Box sx={{ mt: 1.25 }}><StatusStrip ok={false}>{problem}</StatusStrip></Box>}
+            <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", columnGap: 2, rowGap: 0.25, mt: 1.25, pt: 1.25, borderTop: `1px solid ${tokens.divider2}`, fontSize: 13, color: tokens.ink2 }}>
+              <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 0.75 }}>
+                <Box component="span" sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: healthy ? tokens.green : tokens.amber }} />
+                {status}
+              </Box>
+              {a?.amountSpent != null && <span>Spent {money(a.amountSpent)}</span>}
+              <span>{a?.spendCap ? `Limit ${money(a.spendCap)}` : "No spending limit"}</span>
+            </Box>
+          </>
+        )}
+      </Box>
+    </Box>
+  );
+}
 
 function AdAccountSection({ data }: { data: Data }) {
   const acct = data.profile.fb_ad_account_id;
@@ -913,7 +837,7 @@ function EmailStatsSection({ data, since, until }: { data: Data; since: Date; un
   });
   const pct = (n: number) => (st && st.sent > 0 ? ` (${Math.round((n / st.sent) * 100)}%)` : "");
   return (
-    <Section title="Emails to leads & marketing plan">
+    <Section title="Emails to leads & marketing plan" sub="Last 30 days">
       {isLoading ? (
         <Skeleton height={80} />
       ) : !st?.sent ? (
@@ -1124,6 +1048,15 @@ const SOURCE_LABEL: Record<BriefSource, string> = {
   profile: "their account",
 };
 
+function signupFor(p: Data["profile"], requests: Awaited<ReturnType<typeof listSignupRequests>>) {
+  const wa = digits(p.whatsapp_number || "");
+  return requests.find((x) => (wa && digits(x.whatsapp) === wa) || (x.email && p.email && x.email.toLowerCase() === p.email.toLowerCase())) ?? null;
+}
+
+function briefFor({ profile: p, dossier: d }: Data, requests: Awaited<ReturnType<typeof listSignupRequests>>) {
+  return buildBrief({ signup: signupFor(p, requests), onboarding: d?.onboarding ?? [], targetAreas: d?.oldDashboard?.targetAreas ?? [], company: p.company });
+}
+
 /** The brief: the same data points for every client (src/lib/brief.ts),
  *  from the sign-up page, the older onboarding form or the onboarding call.
  *  Editing saves under the standard names, which then win. */
@@ -1131,10 +1064,9 @@ function BriefSection({ data }: { data: Data }) {
   const { profile: p, dossier: d } = data;
   const save = useClientSaver(p.agent_id);
   const { data: requests = [] } = useQuery({ queryKey: ["signupRequests"], queryFn: listSignupRequests, staleTime: 5 * 60_000 });
-  const wa = digits(p.whatsapp_number || "");
-  const signup = requests.find((x) => (wa && digits(x.whatsapp) === wa) || (x.email && p.email && x.email.toLowerCase() === p.email.toLowerCase())) ?? null;
+  const signup = signupFor(p, requests);
   const onboarding = d?.onboarding ?? [];
-  const brief = buildBrief({ signup, onboarding, targetAreas: d?.oldDashboard?.targetAreas ?? [], company: p.company });
+  const brief = briefFor(data, requests);
   const submitted = onboarding.find((x) => x.q === "Submitted")?.a;
   const sub = signup
     ? `Signed up ${new Date(signup.created_at).toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" })}`
@@ -1148,10 +1080,7 @@ function BriefSection({ data }: { data: Data }) {
       return [
         f.label,
         b ? (
-          <Box component="span" key={f.key}>
-            {b.value}
-            <Box component="span" sx={{ color: tokens.ink3, fontSize: 12 }}> · {SOURCE_LABEL[b.source]}</Box>
-          </Box>
+          <Box component="span" key={f.key} title={`From ${SOURCE_LABEL[b.source]}`}>{b.value}</Box>
         ) : null,
       ] as [string, ReactNode];
     });
@@ -1161,11 +1090,11 @@ function BriefSection({ data }: { data: Data }) {
       title="Brief"
       sub={sub}
       view={
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
-          <KV labelWidth="42%" rows={rowsFor("signup")} />
-          <Box>
-            <Typography sx={{ fontSize: 12, fontWeight: 600, color: tokens.ink2, mb: 0.75 }}>From the onboarding call</Typography>
-            <KV labelWidth="42%" rows={rowsFor("call")} />
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 2.5 }}>
+          <InfoGrid rows={rowsFor("signup")} />
+          <Box sx={{ pt: 2, borderTop: `1px solid ${tokens.divider2}` }}>
+            <Typography sx={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: tokens.ink2, mb: 1.5 }}>From the onboarding call</Typography>
+            <InfoGrid rows={rowsFor("call")} />
           </Box>
         </Box>
       }
