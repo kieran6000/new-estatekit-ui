@@ -47,17 +47,13 @@ async function leadsPerDay(agentId: string, since: string): Promise<Record<strin
   return out;
 }
 
-/** An ad's picture. Facebook's addresses expire, so an old one just says so. */
-function Thumb({ src, label }: { src: string | null; label: string }) {
-  const [failed, setFailed] = useState(false);
+/** An ad's picture. Facebook's addresses expire or get refused, so one that
+ *  doesn't load tells the row, which then leaves the pictures out. */
+function Thumb({ src, label, onFail }: { src: string | null; label: string; onFail: () => void }) {
   if (!src) return null;
   return (
     <Box sx={{ width: 64, flex: "none" }}>
-      {failed ? (
-        <Box sx={{ width: 64, height: 64, borderRadius: "6px", bgcolor: tokens.surface2, color: tokens.ink3, fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", px: 0.5 }}>No preview</Box>
-      ) : (
-        <Box component="img" src={src} alt={`The ad's picture, ${label.toLowerCase()}`} loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(true)} sx={{ display: "block", width: 64, height: 64, objectFit: "cover", borderRadius: "6px", border: `1px solid ${tokens.divider}` }} />
-      )}
+      <Box component="img" src={src} alt={`The ad's picture, ${label.toLowerCase()}`} loading="lazy" referrerPolicy="no-referrer" onError={onFail} sx={{ display: "block", width: 64, height: 64, objectFit: "cover", borderRadius: "6px", border: `1px solid ${tokens.divider}` }} />
       <Typography sx={{ fontSize: 11.5, color: tokens.ink2, textAlign: "center", mt: 0.25 }}>{label}</Typography>
     </Box>
   );
@@ -67,6 +63,7 @@ function ChangeLine({ it }: { it: AdHistoryItem }) {
   const Icon = KIND_ICON[changeKind(it)];
   const change = plainChange(it);
   const images = changedImages(it);
+  const [noPictures, setNoPictures] = useState(false);
   return (
     <Box sx={{ display: "flex", gap: 1, minWidth: 0 }}>
       <Icon sx={{ fontSize: 18, color: tokens.ink3, mt: "2px", flex: "none" }} />
@@ -74,15 +71,16 @@ function ChangeLine({ it }: { it: AdHistoryItem }) {
         <Typography sx={{ fontSize: 14 }}>
           {it.what}
           {change && <Box component="span" sx={{ color: tokens.ink2 }}> · {change.from ? `${change.from} → ` : ""}<b>{change.to || "—"}</b></Box>}
+          {images && <Box component="span" sx={{ color: tokens.ink2 }}> · Picture changed</Box>}
         </Typography>
         <Typography sx={{ fontSize: 12.5, color: tokens.ink2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {OBJECT[it.objectType] ?? "Item"}: {it.objectName} · {new Date(it.at).toLocaleTimeString("en-GB", { timeZone: "Africa/Johannesburg", hour: "2-digit", minute: "2-digit" })} · {it.who || "Facebook"}
         </Typography>
-        {images && (
+        {images && !noPictures && (
           <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 0.75 }}>
-            <Thumb src={images.from} label="Before" />
+            <Thumb src={images.from} label="Before" onFail={() => setNoPictures(true)} />
             {images.from && images.to && <Box component="span" sx={{ color: tokens.ink3, mb: 2 }}>→</Box>}
-            <Thumb src={images.to} label="After" />
+            <Thumb src={images.to} label="After" onFail={() => setNoPictures(true)} />
           </Box>
         )}
       </Box>
