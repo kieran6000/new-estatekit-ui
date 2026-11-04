@@ -1,5 +1,5 @@
 import { supabase } from "../api/_client";
-import { addressKey, type LatLng } from "./geo";
+import { addressKey, distanceKm, type LatLng } from "./geo";
 
 // Google's map, geocoder and Street View photo, with the key that's locked to
 // our own site. Each address is only looked up once (geocode_cache). Anything
@@ -111,6 +111,33 @@ export async function geocodeAddress(address: string): Promise<Geocoded | null> 
   return found;
 }
 
+const LOOKUP_LIMIT_MS = 4000;
+
+/** Where many addresses are. Saved ones come straight from geocode_cache; up to
+ *  maxNew others are looked up, one at a time, and saved so that's only once. */
+export async function geocodeMany(addresses: string[], maxNew: number): Promise<Map<string, Geocoded>> {
+  const found = new Map<string, Geocoded>();
+  const wanted = [...new Map(addresses.map((a) => [addressKey(a), a])).entries()];
+  const saved = new Set<string>();
+  for (let i = 0; i < wanted.length; i += 100) {
+    const { data } = await supabase.from("geocode_cache").select("address_key, lat, lng, exact").in("address_key", wanted.slice(i, i + 100).map(([k]) => k));
+    for (const row of (data ?? []) as (CacheRow & { address_key: string })[]) {
+      saved.add(row.address_key);
+      if (row.lat != null && row.lng != null) found.set(row.address_key, { lat: row.lat, lng: row.lng, exact: row.exact });
+    }
+  }
+  for (const [key, address] of wanted.filter(([k]) => !saved.has(k)).slice(0, maxNew)) {
+    // Google can go quiet without saying no. Show what we have rather than wait.
+    const at = await Promise.race([
+      geocodeAddress(address).catch(() => null),
+      new Promise<"quiet">((done) => setTimeout(() => done("quiet"), LOOKUP_LIMIT_MS)),
+    ]);
+    if (at === "quiet") break;
+    if (at) found.set(key, at);
+  }
+  return found;
+}
+
 export const HOUSE_PIN = `data:image/svg+xml,${encodeURIComponent(
   `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="46" viewBox="0 0 40 46"><path d="M4 0h32a4 4 0 0 1 4 4v30a4 4 0 0 1-4 4h-9l-7 8-7-8H4a4 4 0 0 1-4-4V4a4 4 0 0 1 4-4z" fill="#0b57d0"/><path d="M20 8 8 19h4v11h6v-7h4v7h6V19h4z" fill="#fff"/></svg>`,
 )}`;
@@ -180,3 +207,44 @@ export const metresToPixels = (metres: number, lat: number, zoom: number) =>
  *  isn't one, so the <img> can hide itself. */
 export const streetPhotoUrl = (at: LatLng, width: number, height: number) =>
   `https://maps.googleapis.com/maps/api/streetview?size=${width}x${height}&location=${at.lat},${at.lng}&source=outdoor&return_error_code=true&key=${KEY}`;
+
+const HEAT = [
+  { size: 1, color: "#fbbf24", opacity: 0.22 },
+  { size: 0.62, color: "#f97316", opacity: 0.26 },
+  { size: 0.3, color: "#dc2626", opacity: 0.34 },
+];
+
+/** Where leads are, as soft colour that builds up to red where there are many,
+ *  with a thin outline round each area the agent asked for. */
+export async function drawHeatMap(el: HTMLElement, leads: LatLng[], areas: (LatLng & { metres: number })[], onReady: () => void): Promise<void> {
+  const maps = await loadGoogleMaps();
+  const { Map } = await maps.importLibrary("maps");
+  const map = new Map(el, {
+    disableDefaultUI: true,
+    zoomControl: true,
+    keyboardShortcuts: false,
+    clickableIcons: false,
+    gestureHandling: "cooperative",
+    styles: [
+      { stylers: [{ saturation: -80 }] },
+      { featureType: "poi", stylers: [{ visibility: "off" }] },
+      { featureType: "transit", stylers: [{ visibility: "off" }] },
+    ],
+  });
+  map.addListener("tilesloaded", onReady);
+  const bounds = new maps.LatLngBounds();
+  for (const p of [...leads, ...areas]) bounds.extend({ lat: p.lat, lng: p.lng });
+  map.fitBounds(bounds, 24);
+  maps.event.addListenerOnce(map, "idle", () => { if (map.getZoom() > 13) map.setZoom(13); });
+  for (const { metres, ...center } of areas) {
+    new maps.Circle({ map, center, radius: metres, fillOpacity: 0, strokeColor: PIN_BLUE, strokeOpacity: 0.55, strokeWeight: 1.5, clickable: false });
+  }
+  // The further out the map is, the bigger each lead is drawn, so it can always be seen.
+  const across = maps.geometry
+    ? maps.geometry.spherical.computeDistanceBetween(bounds.getNorthEast(), bounds.getSouthWest())
+    : distanceKm({ lat: bounds.getNorthEast().lat(), lng: bounds.getNorthEast().lng() }, { lat: bounds.getSouthWest().lat(), lng: bounds.getSouthWest().lng() }) * 1000;
+  const metres = Math.max(900, across * 0.05);
+  for (const center of leads) {
+    for (const h of HEAT) new maps.Circle({ map, center, radius: metres * h.size, fillColor: h.color, fillOpacity: h.opacity, strokeOpacity: 0, clickable: false });
+  }
+}

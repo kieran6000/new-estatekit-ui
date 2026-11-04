@@ -37,6 +37,7 @@ import { tokens } from "../theme";
 import { AccountStatusSection, DeactivatedBanner } from "../components/AccountStatus";
 import TeamSection from "../components/TeamSection";
 import {
+  adAccountProblem,
   adsManagerUrl,
   clientPicture,
   fundingKind,
@@ -65,16 +66,22 @@ import { timeAgo } from "../lib/timeAgo";
 import RangePicker from "../components/RangePicker";
 import AdsTable, { type AdsView } from "../components/AdsTable";
 import { clientPath, isAgentId, resolveClient, CLIENT_TABS, type ClientTab } from "../lib/clientSlug";
-import { getAdHistory, getAdsTable, type AdsLevel } from "../api/agentProfile";
+import { getAdHistory, type AdsLevel } from "../api/agentProfile";
 import { listAgentProfiles } from "../api/_client";
 import type { DateRange, RangeKey } from "../lib/range";
 import { RANGE_LABELS } from "../lib/range";
 import { useFollowAccount } from "../hooks/useFollowLeadAccount";
-import { formatMetric, metricValues, type MetricKey } from "../lib/adTargets";
 import { MAX_IMAGE_BYTES, uploadImage } from "../lib/image";
 import { accentEdge, readableOn } from "../lib/contrast";
 import BrandLogo from "../components/BrandLogo";
 import FundingChip from "../components/FundingChip";
+import LeadHeatMap from "../components/LeadHeatMap";
+import { isCity } from "../lib/geo";
+import CreditCardOutlinedIcon from "@mui/icons-material/CreditCardOutlined";
+import TollOutlinedIcon from "@mui/icons-material/TollOutlined";
+import AccountBalanceOutlinedIcon from "@mui/icons-material/AccountBalanceOutlined";
+import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
+import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutlined";
 import ContractsSection from "../components/ContractsSection";
 import InvoicesSection from "../components/InvoicesSection";
 
@@ -639,17 +646,6 @@ function ExtLink({ href, children }: { href: string; children: ReactNode }) {
 
 /* ───────────────────────── overview ───────────────────────── */
 
-function Tile({ label, value, tone, hint }: { label: string; value: ReactNode; tone?: "warning"; hint?: string }) {
-  return (
-    <Box sx={{ bgcolor: "background.paper", border: `1px solid ${tone === "warning" ? tokens.amberBorder : tokens.divider}`, borderRadius: "8px", px: 2, py: 1.5, minWidth: 0 }}>
-      <Typography component="div" sx={{ fontSize: 22, fontWeight: 600, lineHeight: 1.2, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{value}</Typography>
-      <Tooltip title={hint ?? ""} disableHoverListener={!hint}>
-        <Typography sx={{ fontSize: 12.5, color: tokens.ink2, mt: 0.25 }}>{label}</Typography>
-      </Tooltip>
-    </Box>
-  );
-}
-
 /** The dates, from the address (?range=7d, or ?range=custom&from=&to=),
  *  else the last ones used here. Changing them changes the address. */
 function useRangeParam(): [DateRange, (r: DateRange) => void] {
@@ -694,39 +690,25 @@ function OverviewTab({ data }: { data: Data }) {
     return n;
   });
 
-  // The account's Facebook totals (shared with the table's Campaigns view).
-  const { data: fb, isLoading: fbLoading } = useQuery({
-    queryKey: ["adsTable", acct, sinceDay, lastDay, "campaign", "", ""],
-    queryFn: () => getAdsTable(acct!, sinceDay, lastDay, { level: "campaign" }),
-    enabled: !!acct,
-    staleTime: 10 * 60_000,
-    retry: false,
-  });
+  const { data: requests = [] } = useQuery({ queryKey: ["signupRequests"], queryFn: listSignupRequests, staleTime: 5 * 60_000 });
+  const brief = briefFor(data, requests);
+  const city = brief.city?.value?.trim();
+  const areas = (brief.suburbs?.value ?? "").split(/[;,\n]/).map((s) => s.trim()).filter(Boolean)
+    .map((name) => ({ name, address: city && !isCity(name) && !name.toLowerCase().includes(city.toLowerCase()) ? `${name}, ${city}` : name }));
   const { data: r, isLoading } = useQuery({
     queryKey: ["resultsBetween", agentId, sinceDay, ymd(until)],
     queryFn: () => getResultsBetween(agentId, since, until),
     staleTime: 60_000,
   });
-  const a = fb?.account ? metricValues(fb.account) : null;
-  const fbTile = (k: MetricKey) => (!acct ? "—" : fbLoading ? <Skeleton width={70} /> : a ? formatMetric(k, a[k]) : "—");
-  const v = (n: number | undefined) => (isLoading ? <Skeleton width={40} /> : (n ?? 0));
-
   return (
     <>
+      <Cols>
+        <AdAccountCard data={data} />
+        <LeadHeatMap agentId={agentId} areas={areas} />
+      </Cols>
+
       <Box sx={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 1.5, flexWrap: "wrap" }}>
         <RangePicker value={range} onChange={setRange} />
-      </Box>
-
-      {/* Facebook's numbers, in Facebook's words; then what came of the leads here. */}
-      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, 1fr)", sm: "repeat(4, 1fr)", xl: "repeat(8, 1fr)" }, gap: 1.5 }}>
-        <Tile label="Amount spent" value={fbTile("spend")} />
-        <Tile label="Leads" value={fbTile("leads")} />
-        <Tile label="Cost per lead" value={fbTile("cpl")} />
-        <Tile label="Impressions" value={fbTile("impressions")} />
-        <Tile label="Reach" value={fbTile("reach")} />
-        <Tile label="CTR (link click-through rate)" value={fbTile("ctr")} />
-        <Tile label="Booked" value={v(r?.booked)} hint="Leads booked for an appointment in EstateKit" />
-        <Tile label="Mandates" value={v(r?.mandates)} hint="Mandates signed in EstateKit" />
       </Box>
 
       <AdsTable
@@ -745,6 +727,9 @@ function OverviewTab({ data }: { data: Data }) {
           <Bars data={data.live?.by_stage ?? {}} />
           <Typography sx={{ fontSize: 12.5, color: tokens.ink3, mt: 1.5 }}>
             {data.live?.leads_total ?? 0} leads in total · last lead {data.live?.last_lead_at ? timeAgo(data.live.last_lead_at) : "never"}
+          </Typography>
+          <Typography sx={{ fontSize: 12.5, color: tokens.ink3, mt: 0.5 }}>
+            In the dates above: {isLoading ? "…" : `${r?.booked ?? 0} booked, ${r?.mandates ?? 0} ${r?.mandates === 1 ? "mandate" : "mandates"}`}
           </Typography>
         </Section>
         <EmailStatsSection data={data} since={since} until={until} />
@@ -840,6 +825,76 @@ const ACCOUNT_STATUS: Record<number, string> = {
   100: "Closing",
   101: "Closed",
 };
+
+/** The card's maker, from Facebook's label ("Visa •••• 1234"). */
+const cardBrand = (label: string | null | undefined) =>
+  /visa/i.test(label ?? "") ? "VISA" : /master/i.test(label ?? "") ? "MC" : /amex|american express/i.test(label ?? "") ? "AMEX" : null;
+
+/** Is their ad account fine, how does it pay, and what's owing. */
+function AdAccountCard({ data }: { data: Data }) {
+  const acct = data.profile.fb_ad_account_id;
+  const { data: a, isLoading, isError } = useQuery({
+    queryKey: ["fbAdAccount", acct],
+    queryFn: () => getFbAdAccount(acct!),
+    enabled: !!acct,
+    staleTime: 60 * 60_000,
+    retry: false,
+  });
+  const since30 = ymd(new Date(Date.now() - 29 * 864e5));
+  const { data: daily30 } = useQuery({
+    queryKey: ["spendDaily", acct, since30],
+    queryFn: () => getSpendDaily(acct!, since30),
+    enabled: !!acct,
+    staleTime: 30 * 60_000,
+    retry: false,
+  });
+  const avgDaily = daily30 ? (spendBetween(daily30, since30, ymd(new Date(Date.now() + 864e5))) ?? 0) / 30 : null;
+  const problem = adAccountProblem(a, avgDaily);
+  const kind = fundingKind(a?.fundingType);
+  const brand = cardBrand(a?.fundingLabel);
+  const PayIcon = kind === "Prepaid" ? TollOutlinedIcon : kind === "Card" ? CreditCardOutlinedIcon : AccountBalanceOutlinedIcon;
+  const due = a?.balance != null && a.balance > 0 ? a.balance : 0;
+  return (
+    <Section title="Ad account">
+      {!acct ? (
+        <Empty>No ad account linked. Add it under Settings → Facebook.</Empty>
+      ) : isLoading ? (
+        <Skeleton height={190} />
+      ) : isError || a?.note ? (
+        <Empty>Facebook won't show us this ad account. Check it's shared with EstateKit's Business Manager.</Empty>
+      ) : (
+        <>
+          <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1, p: 1.25, borderRadius: "8px", bgcolor: problem ? tokens.amberTint : tokens.greenTint, border: `1px solid ${problem ? tokens.amberBorder : tokens.greenBorder}` }}>
+            {problem ? <WarningAmberRoundedIcon sx={{ fontSize: 20, color: "warning.dark" }} /> : <CheckCircleOutlineIcon sx={{ fontSize: 20, color: tokens.greenDark }} />}
+            <Typography sx={{ fontSize: 14, fontWeight: 500 }}>{problem ?? "All good. No payment problems."}</Typography>
+          </Box>
+          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, minmax(0, 1fr))" }, gap: 2, mt: 2 }}>
+            <Box sx={{ minWidth: 0 }}>
+              <Typography sx={{ fontSize: 12.5, color: tokens.ink2, mb: 0.75 }}>Pays by</Typography>
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
+                <Box sx={{ width: 46, height: 30, flex: "none", borderRadius: "5px", border: `1px solid ${tokens.divider}`, display: "flex", alignItems: "center", justifyContent: "center", color: tokens.ink2 }}>
+                  {brand ? <Typography sx={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.03em" }}>{brand}</Typography> : <PayIcon sx={{ fontSize: 19 }} />}
+                </Box>
+                <Typography sx={{ fontSize: 14, fontWeight: 500, minWidth: 0, overflowWrap: "anywhere" }}>{a?.fundingLabel || (kind === "Prepaid" ? "Prepaid funds" : kind) || "Not set up"}</Typography>
+              </Box>
+            </Box>
+            <Box>
+              <Typography sx={{ fontSize: 12.5, color: tokens.ink2, mb: 0.5 }}>Amount due</Typography>
+              <Typography sx={{ fontSize: 22, fontWeight: 600, lineHeight: 1.2, fontVariantNumeric: "tabular-nums", color: problem && due ? "warning.dark" : "text.primary" }}>{due ? money(due) : "Nothing due"}</Typography>
+            </Box>
+          </Box>
+          <Box sx={{ mt: 2 }}>
+            <KV rows={[
+              ["Facebook status", a?.accountStatus != null ? ACCOUNT_STATUS[a.accountStatus] ?? "Unknown" : null],
+              ["Spent all time", a?.amountSpent != null ? money(a.amountSpent) : null],
+              ["Spending limit", a?.spendCap ? money(a.spendCap) : "None"],
+            ]} />
+          </Box>
+        </>
+      )}
+    </Section>
+  );
+}
 
 function AdAccountSection({ data }: { data: Data }) {
   const acct = data.profile.fb_ad_account_id;
@@ -1124,6 +1179,15 @@ const SOURCE_LABEL: Record<BriefSource, string> = {
   profile: "their account",
 };
 
+function signupFor(p: Data["profile"], requests: Awaited<ReturnType<typeof listSignupRequests>>) {
+  const wa = digits(p.whatsapp_number || "");
+  return requests.find((x) => (wa && digits(x.whatsapp) === wa) || (x.email && p.email && x.email.toLowerCase() === p.email.toLowerCase())) ?? null;
+}
+
+function briefFor({ profile: p, dossier: d }: Data, requests: Awaited<ReturnType<typeof listSignupRequests>>) {
+  return buildBrief({ signup: signupFor(p, requests), onboarding: d?.onboarding ?? [], targetAreas: d?.oldDashboard?.targetAreas ?? [], company: p.company });
+}
+
 /** The brief: the same data points for every client (src/lib/brief.ts),
  *  from the sign-up page, the older onboarding form or the onboarding call.
  *  Editing saves under the standard names, which then win. */
@@ -1131,10 +1195,9 @@ function BriefSection({ data }: { data: Data }) {
   const { profile: p, dossier: d } = data;
   const save = useClientSaver(p.agent_id);
   const { data: requests = [] } = useQuery({ queryKey: ["signupRequests"], queryFn: listSignupRequests, staleTime: 5 * 60_000 });
-  const wa = digits(p.whatsapp_number || "");
-  const signup = requests.find((x) => (wa && digits(x.whatsapp) === wa) || (x.email && p.email && x.email.toLowerCase() === p.email.toLowerCase())) ?? null;
+  const signup = signupFor(p, requests);
   const onboarding = d?.onboarding ?? [];
-  const brief = buildBrief({ signup, onboarding, targetAreas: d?.oldDashboard?.targetAreas ?? [], company: p.company });
+  const brief = briefFor(data, requests);
   const submitted = onboarding.find((x) => x.q === "Submitted")?.a;
   const sub = signup
     ? `Signed up ${new Date(signup.created_at).toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" })}`

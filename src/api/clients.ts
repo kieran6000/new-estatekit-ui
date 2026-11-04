@@ -166,6 +166,24 @@ export function hasPaymentProblem(
   return due > Math.max(500, (avgDailySpend ?? 0) * 7);
 }
 
+/** What's wrong with the ad account, in plain words, or null if nothing is. */
+export function adAccountProblem(
+  a: { accountStatus?: number | null; disableReason?: number | null; balance?: number | null } | null | undefined,
+  avgDailySpend: number | null | undefined,
+): string | null {
+  if (!a) return null;
+  switch (a.accountStatus) {
+    case 2: return a.disableReason === 3 ? "Facebook switched this account off because of a payment problem." : "Facebook has switched this account off.";
+    case 3: return "Facebook says a bill hasn't been paid. Their ads may stop.";
+    case 7: return "Facebook is reviewing this account.";
+    case 8: return "A payment to Facebook is still going through.";
+    case 9: return "A payment failed. Facebook is giving them a little time to fix it.";
+    case 100: return "This account is being closed.";
+    case 101: return "This account is closed.";
+  }
+  return hasPaymentProblem(a, avgDailySpend) ? "More is owing than usual, so a charge may not have gone through." : null;
+}
+
 /** Their Ads Manager, opened on this ad account. */
 export const adsManagerUrl = (adAccountId: string) =>
   `https://adsmanager.facebook.com/adsmanager/manage/campaigns?act=${adAccountId.replace(/^act_/, "")}`;
