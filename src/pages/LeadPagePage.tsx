@@ -1370,8 +1370,9 @@ function AddPageDialog({
                 fullWidth
               >
                 {fbForms.map((f) => (
-                  <MenuItem key={f.id} value={f.id}>
-                    {f.name}
+                  <MenuItem key={f.id} value={f.id} sx={{ display: "flex", justifyContent: "space-between", gap: 2 }}>
+                    <span>{f.name}</span>
+                    {f.leads !== undefined && <Typography component="span" sx={{ fontSize: 13, color: "text.secondary", whiteSpace: "nowrap" }}>{f.leads} {f.leads === 1 ? "lead" : "leads"}</Typography>}
                   </MenuItem>
                 ))}
               </TextField>

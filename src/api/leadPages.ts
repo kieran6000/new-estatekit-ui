@@ -235,6 +235,8 @@ export interface FbForm {
   id: string;
   name: string;
   status: string;
+  /** How many leads Facebook says the form has had. Missing if it didn't say. */
+  leads?: number;
 }
 
 export interface FbFormQuestion {
