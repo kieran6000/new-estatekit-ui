@@ -160,18 +160,38 @@ export interface SourceAd {
   postUrl: string;
 }
 
-/** The leads one Facebook ad brought in between two days (South African time), newest first. */
-export async function listLeadIdsForAd(agentId: string, adId: string, since: string, until: string): Promise<string[]> {
-  const { data, error } = await supabase
-    .from("leads")
-    .select("id")
-    .eq("agent_id", agentId)
-    .eq("fb_ad_id", adId)
-    .gte("created_at", `${since}T00:00:00+02:00`)
-    .lte("created_at", `${until}T23:59:59.999+02:00`)
-    .order("created_at", { ascending: false });
-  if (error) throw new Error(error.message);
-  return (data ?? []).map((l) => l.id);
+const BOOKED_STAGES = ["Booked", "Viewing Booked", "Mandate Signed"];
+const MANDATE_STAGE = "Mandate Signed";
+export type AdLeadMetric = "leads" | "booked" | "mandates";
+
+/** The leads some Facebook ads brought in between two days, newest first: all
+ *  of them, or those booked or signed, by the stage they're in now or any move
+ *  into one. Counts them the way the ads table's Booked and Mandates columns do. */
+export async function listLeadIdsForAds(agentId: string, adIds: string[], since: string, until: string, metric: AdLeadMetric = "leads"): Promise<string[]> {
+  if (!adIds.length) return [];
+  const leads: { id: string; stage: string; created_at: string }[] = [];
+  const end = new Date(`${until}T00:00:00Z`);
+  end.setUTCDate(end.getUTCDate() + 1);
+  for (let i = 0; i < adIds.length; i += 200) {
+    let q = supabase.from("leads").select("id, stage, created_at").eq("agent_id", agentId).in("fb_ad_id", adIds.slice(i, i + 200));
+    q = metric === "leads"
+      ? q.gte("created_at", `${since}T00:00:00+02:00`).lte("created_at", `${until}T23:59:59.999+02:00`)
+      : q.gte("created_at", `${since}T00:00:00Z`).lt("created_at", end.toISOString());
+    const { data, error } = await q;
+    if (error) throw new Error(error.message);
+    leads.push(...((data ?? []) as typeof leads));
+  }
+  leads.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+  if (metric === "leads") return leads.map((l) => l.id);
+  const wanted = metric === "booked" ? BOOKED_STAGES : [MANDATE_STAGE];
+  const hit = new Set(leads.filter((l) => wanted.includes(l.stage)).map((l) => l.id));
+  const ids = leads.map((l) => l.id);
+  for (let i = 0; i < ids.length; i += 300) {
+    const { data, error } = await supabase.from("lead_events").select("lead_id").in("lead_id", ids.slice(i, i + 300)).eq("event_type", "stage_changed").in("to_value", wanted);
+    if (error) throw new Error(error.message);
+    for (const e of data ?? []) hit.add(e.lead_id as string);
+  }
+  return ids.filter((id) => hit.has(id));
 }
 
 /** The Facebook ad this lead came from, resolved from its fb_lead_id. */

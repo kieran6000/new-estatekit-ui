@@ -95,7 +95,7 @@ const LAUNCH: Record<string, "campaigns" | "adSets" | "ads"> = { create_campaign
  *  something was created isn't a change, and neither is switching an ad on or off. */
 export function isKeyChange(item: Item): boolean {
   if (LAUNCH[item.type]) return true;
-  if (/scheduling/i.test(item.type)) return false;
+  if (/scheduling|audience/i.test(`${item.type} ${item.what}`)) return false;
   const kind = changeKind(item);
   if (kind === "budget" || kind === "targeting" || kind === "bidding") return !!item.change?.from && item.change.from !== item.change.to;
   if (item.type === "update_ad_creative") return !!changedImages(item)?.from && !!changedImages(item)?.to;

@@ -86,6 +86,7 @@ describe("the changes that matter", () => {
     expect(isKeyChange(change("Ad status updated", "update_ad_run_status", "Off", "On"))).toBe(false);
     expect(isKeyChange(change("Ad set budget scheduling enabled", "update_campaign_budget_scheduling_state", "", "false"))).toBe(false);
     expect(isKeyChange({ what: "Image added to the library", type: "add_images", change: null })).toBe(false);
+    expect(isKeyChange(change("Custom audience updated", "update_audience", "a", "b"))).toBe(false);
   });
   it("hides a save where nothing changed", () => {
     expect(worthShowing(change("Ad updated", "update_ad_creative", "https://a/1.png", "https://a/1.png"))).toBe(false);
