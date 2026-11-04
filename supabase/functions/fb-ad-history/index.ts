@@ -50,7 +50,8 @@ function readable(v: any): string {
   if (Array.isArray(v)) return v.map(readable).filter(Boolean).join(", ");
   if ("content" in v) {
     const inner = readable(v.children);
-    return inner ? `${v.content}: ${inner}` : String(v.content ?? "");
+    const label = String(v.content ?? "").replace(/:\s*$/, "");
+    return inner ? `${label}: ${inner}` : label;
   }
   for (const key of ["old_value", "new_value", "amount", "value", "budget"]) {
     if (key in v) return readable(v[key]);
@@ -61,7 +62,8 @@ function readable(v: any): string {
     .filter(Boolean)
     .join(", ");
 }
-const short = (s: string) => (s.length > 240 ? s.slice(0, 239) + "…" : s);
+// Long enough to compare a full targeting list, not just its start.
+const short = (s: string) => (s.length > 3000 ? s.slice(0, 2999) + "…" : s);
 
 // One busy day can fill a page, so a page isn't enough to reach back through the dates.
 const MAX_PAGES = 15;

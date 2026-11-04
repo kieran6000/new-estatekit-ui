@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { changedImages, changeKind, plainChange, scaleTop, timelineSteps, worthShowing } from "./adHistory";
+import { changedImages, changeKind, isKeyChange, summariseDay, targetingDiff, plainChange, scaleTop, timelineSteps, worthShowing } from "./adHistory";
 
 const item = (what: string, from: string, to: string) => ({ what, type: "", change: { from, to } });
 
@@ -71,5 +71,42 @@ describe("the timeline", () => {
     expect(scaleTop(7)).toBe(8);
     expect(scaleTop(0)).toBe(4);
     expect(scaleTop(130)).toBe(150);
+  });
+});
+
+describe("the changes that matter", () => {
+  const change = (what: string, type: string, from: string, to: string) => ({ what, type, change: { from, to } });
+  it("keeps real changes and new launches", () => {
+    expect(isKeyChange(change("Campaign budget updated", "update_campaign_budget", "7000", "10000"))).toBe(true);
+    expect(isKeyChange(change("Ad set targeting updated", "update_ad_set_target_spec", "Age: 30", "Age: 40"))).toBe(true);
+    expect(isKeyChange({ what: "Ad created", type: "create_ad", change: null })).toBe(true);
+  });
+  it("leaves out settings filled in at creation, on and off, and housekeeping", () => {
+    expect(isKeyChange(change("Ad set bid strategy updated", "update_ad_set_bid_strategy", "", "LOWEST_COST_BID_STRATEGY"))).toBe(false);
+    expect(isKeyChange(change("Ad status updated", "update_ad_run_status", "Off", "On"))).toBe(false);
+    expect(isKeyChange(change("Ad set budget scheduling enabled", "update_campaign_budget_scheduling_state", "", "false"))).toBe(false);
+    expect(isKeyChange({ what: "Image added to the library", type: "add_images", change: null })).toBe(false);
+  });
+  it("hides a save where nothing changed", () => {
+    expect(worthShowing(change("Ad updated", "update_ad_creative", "https://a/1.png", "https://a/1.png"))).toBe(false);
+  });
+  it("says what targeting added and removed", () => {
+    const d = targetingDiff("Location: South Africa: Centurion (Afrique du Sud) Gauteng; Irene Gauteng, Age: 30 - 65", "Location: South Africa: Centurion Gauteng; Valhalla Gauteng, Age: 30 - 65");
+    expect(d).toEqual({ added: ["Valhalla Gauteng"], removed: ["Irene Gauteng"] });
+  });
+  it("doesn't show code from custom audiences", () => {
+    expect(targetingDiff("", '"id":102, {"type":"page"}, Irene')).toEqual({ added: ["Irene"], removed: [] });
+  });
+  it("adds up ads whose picture changed", () => {
+    const pic = (objectName: string) => ({ ...change("Ad updated", "update_ad_creative", "https://a/1.png", "https://a/2.png"), objectName });
+    expect(summariseDay([pic("A"), pic("A"), pic("B")])).toMatchObject({ pictures: 2, rows: [] });
+  });
+  it("adds up launches and joins repeats", () => {
+    const made = { what: "Ad created", type: "create_ad", change: null, objectName: "A" };
+    const budget = { ...change("Budget", "update_ad_set_budget", "1", "2"), objectName: "B" };
+    const { launch, rows } = summariseDay([made, made, budget, budget]);
+    expect(launch).toEqual({ campaigns: 0, adSets: 0, ads: 2 });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].times).toBe(2);
   });
 });
