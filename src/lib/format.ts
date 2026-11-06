@@ -23,3 +23,17 @@ export function fillMessage(text: string, lead: string, agentName: string | null
   const agent = (agentName || "").trim().split(/\s+/)[0] || "Our team";
   return (text || "").replaceAll("{name}", lead || "there").replaceAll("{agent}", agent);
 }
+
+/** South African numbers with the country code: "082 668 5452", "+27 082 668 5452"
+ *  and "82 668 5452" → "27826685452". */
+export function intlDigits(phone: string): string {
+  const d = phone.replace(/\D/g, "");
+  if (d.length === 10 && d.startsWith("0")) return "27" + d.slice(1);
+  if (d.length === 12 && d.startsWith("270")) return "27" + d.slice(3);
+  if (d.length === 9 && /^[6-8]/.test(d) && !phone.trim().startsWith("+")) return "27" + d;
+  return d;
+}
+
+/** A link that dials a lead. It needs the +: without it a phone treats 2782… as
+ *  a local number, and the call fails as invalid. */
+export const telHref = (phone: string) => `tel:+${intlDigits(phone)}`;

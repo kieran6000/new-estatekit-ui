@@ -90,8 +90,8 @@ export function invoiceStatus(
 ): { label: string; tone: "green" | "blue" | "amber" | "grey" | "red" } {
   if (i.paid_at) return { label: "Paid", tone: "green" };
   if (i.voided_at) return { label: "Cancelled", tone: "grey" };
-  if (i.due_date < today) return { label: "Overdue", tone: "red" };
-  if (i.first_opened_at) return { label: "Opened, not paid", tone: "amber" };
+  if (i.due_date < today) return { label: "Past due date", tone: "amber" };
+  if (i.first_opened_at) return { label: "Opened", tone: "blue" };
   if (i.shared_at) return { label: "Sent, not opened", tone: "blue" };
   return { label: "Not sent yet", tone: "grey" };
 }

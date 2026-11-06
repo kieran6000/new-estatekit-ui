@@ -85,7 +85,7 @@ import { useAddPipeline, usePipelines, useSyncPipelineSheet } from "../hooks/use
 import { deletePipeline, pipelineUsage, renamePipeline } from "../api/pipelines";
 import { useIsOperator } from "../hooks/useAutomations";
 import { useSnack } from "../hooks/useSnack";
-import { maskPhone } from "../lib/format";
+import { maskPhone, telHref } from "../lib/format";
 import { useCanSeeFullPhone } from "../hooks/useTier";
 import { getPendingCall, clearPendingCall, type PendingCall } from "../lib/pendingCall";
 import { bulkUpdateLeads, searchLeadsEverywhere, type LeadSearchHit } from "../api/leads";
@@ -1221,7 +1221,7 @@ function LeadsTable({
           {!selectable && !DEAD_STAGES.includes(l.stage) && (
             <Box
               component="a"
-              href={`tel:${l.phone.replace(/\s/g, "")}`}
+              href={telHref(l.phone)}
               onClick={(e) => { e.stopPropagation(); setTimeout(() => onCall(l.id), 150); }}
               sx={{
                 display: "inline-flex",
@@ -1428,7 +1428,7 @@ function MobileLeadsList({
       {!selectable && !DEAD_STAGES.includes(l.stage) && (
         <Box
           component="a"
-          href={`tel:${l.phone.replace(/\s/g, "")}`}
+          href={telHref(l.phone)}
           onClick={(e) => { e.stopPropagation(); setTimeout(() => onCall(l.id), 150); }}
           data-tour="call"
           sx={{

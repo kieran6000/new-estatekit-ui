@@ -16,7 +16,7 @@ import {
   BottomNavigationAction,
   Paper,
 } from "@mui/material";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import ContactsIcon from "@mui/icons-material/Contacts";
 import ContactsOutlinedIcon from "@mui/icons-material/ContactsOutlined";
 import CalendarMonthOutlinedIcon from "@mui/icons-material/CalendarMonthOutlined";
@@ -45,7 +45,7 @@ import { getMyProfile } from "../api/agentProfile";
 import { listMySoldListings } from "../api/soldListings";
 import { setupProgress } from "../lib/setup";
 import { useCalendarReady } from "../hooks/useCalendarReady";
-import { getActiveAgentIdSync, listAgentProfiles, setActiveAgent, supabase } from "../api/_client";
+import { getActiveAgentIdSync, listAgentProfiles, supabase } from "../api/_client";
 import { clientPath } from "../lib/clientSlug";
 import { isLightColor, readableOn, softInkOn } from "../lib/contrast";
 import BrandLogo from "./BrandLogo";
@@ -75,7 +75,6 @@ export default function AppShell() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const queryClient = useQueryClient();
   const { data: isOperator } = useIsOperator();
   // Staff switch into any account; a team lead into their members' (only).
   const isTeamLead = useIsTeamLead();
@@ -138,7 +137,8 @@ export default function AppShell() {
 
   const adminNav = [
     ...(staffMode ? [] : [{ key: "overview", label: "Overview", icon: <DashboardOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <DashboardIcon sx={{ fontSize: SZ }} />, to: myClientPage }]),
-    { key: "clients", label: "Accounts", icon: <GroupsOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <GroupsIcon sx={{ fontSize: SZ }} />, to: "/clients" },
+    // Staff with no account open start here. Otherwise the switcher at the top lists everyone.
+    ...(staffMode ? [{ key: "clients", label: "Accounts", icon: <GroupsOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <GroupsIcon sx={{ fontSize: SZ }} />, to: "/clients" }] : []),
     { key: "automations", label: "Automations", icon: <SettingsOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <SettingsIcon sx={{ fontSize: SZ }} />, to: "/admin/automations" },
   ];
 
@@ -164,7 +164,6 @@ export default function AppShell() {
     ...(isOperator
       ? [
           { key: "overview", label: "Overview", icon: <DashboardOutlinedIcon />, activeIcon: <DashboardIcon />, to: myClientPage },
-          { key: "clients", label: "Accounts", icon: <GroupsOutlinedIcon />, activeIcon: <GroupsIcon />, to: "/clients" },
         ]
       : [{ key: "account", label: "Account", icon: <AccountCircleOutlinedIcon />, activeIcon: <AccountCircleIcon />, to: "/account" }]),
   ];
@@ -196,51 +195,6 @@ export default function AppShell() {
           {canSwitch && (
             <Box sx={{ px: 1.25 }}>
               <AccountSwitcher variant={light ? "light" : "dark"} staff={!!isOperator} />
-            </Box>
-          )}
-
-          {isManagingOther && (
-            <Box
-              sx={{
-                mx: 1.25,
-                mt: 0.75,
-                px: 1.25,
-                py: 0.75,
-                bgcolor: "#fef3c7",
-                border: "1px solid #f59e0b",
-                borderRadius: "6px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 1,
-              }}
-            >
-              <Typography sx={{ fontSize: 11, fontWeight: 600, color: "#78350f", lineHeight: 1.3 }}>
-                Managing: {profile?.displayName || "another agent"}
-              </Typography>
-              <Box
-                component="button"
-                onClick={() => {
-                  setActiveAgent(null);
-                  queryClient.invalidateQueries();
-                  window.location.reload();
-                }}
-                sx={{
-                  fontSize: 10,
-                  fontWeight: 600,
-                  color: "#78350f",
-                  bgcolor: "transparent",
-                  border: "1px solid #b45309",
-                  borderRadius: "4px",
-                  px: 0.75,
-                  py: 0.25,
-                  cursor: "pointer",
-                  whiteSpace: "nowrap",
-                  "&:hover": { bgcolor: "#fde68a" },
-                }}
-              >
-                Back
-              </Box>
             </Box>
           )}
 

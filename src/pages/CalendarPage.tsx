@@ -12,7 +12,7 @@ import { tokens } from "../theme";
 import { useLeads } from "../hooks/useLeads";
 import { useCanSeeFullPhone } from "../hooks/useTier";
 import { useConnectGoogleCalendar, useGoogleCalendarReturn, useGoogleCalendarStatus, useGoogleEvents } from "../hooks/useGoogleCalendar";
-import { maskPhone } from "../lib/format";
+import { maskPhone, telHref } from "../lib/format";
 import { logLeadCall } from "../api/leadEvents";
 import type { GoogleEvent } from "../api/googleCalendar";
 import GoogleCalendarIcon from "../components/GoogleCalendarIcon";
@@ -494,7 +494,7 @@ function CallButton({ it, big }: { it: CalItem; big?: boolean }) {
   return (
     <Button
       component="a"
-      href={`tel:${it.lead.phone.replace(/\s/g, "")}`}
+      href={telHref(it.lead.phone)}
       onClick={() => logLeadCall(it.lead.id, it.lead.agent_id)}
       variant="contained"
       startIcon={<PhoneIcon />}

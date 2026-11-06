@@ -1,3 +1,4 @@
+import NoteBox from "../components/NoteBox";
 import { useEffect, useRef, useState } from "react";
 import { Navigate, Link as RouterLink, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -34,7 +35,7 @@ import { usePipelines } from "../hooks/usePipelines";
 import { getPipelinePublic } from "../api/pipelines";
 import { useSnack } from "../hooks/useSnack";
 import { MAIN_OUTCOME_OPTIONS, stepForStage, type MainOutcomeOption } from "../lib/stageLogic";
-import { prettyAnswer } from "../lib/format";
+import { prettyAnswer, intlDigits, telHref } from "../lib/format";
 import { timeAgo, whenLabel, isUpcoming } from "../lib/timeAgo";
 import { trackActivity } from "../lib/activity";
 import { armPendingCall, clearPendingCall } from "../lib/pendingCall";
@@ -304,12 +305,12 @@ function LeadActionUI({
     if (canEdit) {
       updateNote.mutate(
         { id: lead.id, note: value },
-        { onSuccess: () => setSaveState("Saved"), onError: () => setSaveState("Save failed") },
+        { onSuccess: () => { setSaveState("Saved"); qc.invalidateQueries({ queryKey: ["noteHistory", lead.id] }); }, onError: () => setSaveState("Save failed") },
       );
     } else if (token) {
       // Signed out: the share token authorises the note write.
       saveNoteByToken(token, value)
-        .then(() => setSaveState("Saved"))
+        .then(() => { setSaveState("Saved"); qc.invalidateQueries({ queryKey: ["noteHistory", lead.id] }); })
         .catch(() => setSaveState("Save failed"));
     }
   }
@@ -433,7 +434,7 @@ function LeadActionUI({
 
             <Divider sx={{ my: 1 }} />
 
-            <InfoLine icon={<CallIcon fontSize="small" />} value={showIntl(digits)} href={`tel:+${digits}`} strong />
+            <InfoLine icon={<CallIcon fontSize="small" />} value={showIntl(digits)} href={telHref(lead.phone)} strong />
             {lead.email && <InfoLine icon={<EmailOutlinedIcon fontSize="small" />} value={lead.email} href={`mailto:${lead.email}`} />}
             {addressAnswer && <InfoLine icon={<PlaceIcon fontSize="small" />} value={addressAnswer.a} />}
 
@@ -455,7 +456,7 @@ function LeadActionUI({
             <Box sx={{ display: "flex", gap: 1 }}>
               <Button
                 component="a"
-                href={`tel:${digits}`}
+                href={telHref(lead.phone)}
                 onClick={onCallTap}
                 variant="contained"
                 fullWidth
@@ -541,16 +542,17 @@ function LeadActionUI({
               WhatsApp link too — saved via the share token when signed out. */}
           {canLog && (
             <Step n={3} label="Add a note" optional>
-              <TextField
+              <NoteBox
+                leadId={lead.id}
+                token={canEdit ? null : token}
+                leadCreatedAt={lead.created_at}
                 value={note}
-                onChange={(e) => onNoteChange(e.target.value)}
+                onChange={onNoteChange}
                 onBlur={() => saveNote(note)}
                 placeholder="Anything worth remembering…"
                 size="small"
-                fullWidth
-                multiline
                 minRows={2}
-                maxRows={4}
+                maxHeight={150}
                 helperText={saveState || " "}
                 sx={{ "& .MuiFormHelperText-root": { m: "2px 4px", fontSize: 11 } }}
               />
@@ -784,15 +786,6 @@ function Step({ n, label, optional, children }: { n: number; label: string; opti
   );
 }
 
-/** South African numbers with the country code: "082 668 5452", "+27 082 668 5452"
- *  and "82 668 5452" → "27826685452". */
-function intlDigits(phone: string): string {
-  const d = phone.replace(/\D/g, "");
-  if (d.length === 10 && d.startsWith("0")) return "27" + d.slice(1);
-  if (d.length === 12 && d.startsWith("270")) return "27" + d.slice(3);
-  if (d.length === 9 && /^[6-8]/.test(d) && !phone.trim().startsWith("+")) return "27" + d;
-  return d;
-}
 /** "27826685452" → "+27 82 668 5452". */
 function showIntl(d: string): string {
   return d.length === 11 && d.startsWith("27") ? `+27 ${d.slice(2, 4)} ${d.slice(4, 7)} ${d.slice(7)}` : `+${d}`;

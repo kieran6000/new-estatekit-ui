@@ -4,7 +4,7 @@ import CloseIcon from "@mui/icons-material/Close";
 import CallIcon from "@mui/icons-material/Call";
 import * as leadsApi from "../api/leads";
 import { dueLeads, pipelineKindFor } from "../lib/stageLogic";
-import { prettyAnswer, maskPhone } from "../lib/format";
+import { prettyAnswer, maskPhone, telHref } from "../lib/format";
 import { timeAgo } from "../lib/timeAgo";
 import { trackActivity } from "../lib/activity";
 import { logLeadCall } from "../api/leadEvents";
@@ -82,7 +82,7 @@ export default function FocusCallModal({
       logLeadCall(lead.id, lead.agent_id);
     }
     if (note.trim() && lead) {
-      const merged = (lead.note ? lead.note + " · " : "") + note.trim();
+      const merged = (lead.note ? lead.note + "\n\n" : "") + note.trim();
       await leadsApi.updateLead(lead.id, { note: merged });
     }
     setOutcomeOpen(true);
@@ -200,7 +200,7 @@ export default function FocusCallModal({
               </Box>
               <Box
                 component="a"
-                href={`tel:${lead.phone.replace(/\s/g, "")}`}
+                href={telHref(lead.phone)}
                 onClick={saveNoteAndCall}
                 sx={{
                   flex: 1,

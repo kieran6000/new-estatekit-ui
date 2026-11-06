@@ -29,7 +29,7 @@ import { getAdsTable, setAdBudget, setAdStatus, type AdsLevel, type AdsRow } fro
 import { METRICS, adsMoney, formatMetric, metricValues, sumRows, toneOf, type MetricKey, type Tone } from "../lib/adTargets";
 import { ALL_COLUMNS, COLUMN_LABEL, PRESETS, choiceLabel, loadPrefs, savePrefs, visibleColumns, type ColId, type ColumnPrefs, type PresetKey } from "../lib/adColumns";
 import { useSnack } from "../hooks/useSnack";
-import { listLeadIdsForAd } from "../api/leads";
+import { listLeadIdsForAds, type AdLeadMetric } from "../api/leads";
 import LeadDetailPage from "../pages/LeadDetailPage";
 import { useIsOperator } from "../hooks/useAutomations";
 
@@ -55,13 +55,14 @@ const LEVEL_WORD: Record<AdsLevel, { one: string; many: string; title: string }>
 };
 
 // Ads Manager's "Delivery" words.
-const DELIVERY: Record<string, { label: string; color: string }> = {
-  ACTIVE: { label: "Active", color: "#31a24c" },
+// A solid dot is a settled state; a hollow ring is one still getting ready.
+const DELIVERY: Record<string, { label: string; color: string; ring?: boolean }> = {
+  ACTIVE: { label: "Active", color: "#066b46" },
   PAUSED: { label: "Off", color: "#bec3c9" },
   CAMPAIGN_PAUSED: { label: "Campaign off", color: "#bec3c9" },
   ADSET_PAUSED: { label: "Ad set off", color: "#bec3c9" },
-  IN_PROCESS: { label: "In process", color: "#f7b928" },
-  PENDING_REVIEW: { label: "In review", color: "#f7b928" },
+  IN_PROCESS: { label: "Preparing", color: "#066b46", ring: true },
+  PENDING_REVIEW: { label: "In review", color: "#8a6d00", ring: true },
   WITH_ISSUES: { label: "With issues", color: "#e41e3f" },
   DISAPPROVED: { label: "Rejected", color: "#e41e3f" },
 };
@@ -174,6 +175,7 @@ export default function AdsTable({ agentId, adAccountId, since, until, view, onV
   const [confirm, setConfirm] = useState<{ row: AdsRow; on: boolean } | null>(null);
   // An ad's Results number opens its leads in the usual lead panel, 1 of N.
   const [adLeads, setAdLeads] = useState<{ ids: string[]; i: number } | null>(null);
+  const [opening, setOpening] = useState<string | null>(null);
   // Editing a daily budget, as in Ads Manager: the pencil in the cell opens it.
   const isOperator = useIsOperator();
   const budgetInput = useRef<HTMLInputElement>(null);
@@ -257,14 +259,23 @@ export default function AdsTable({ agentId, adAccountId, since, until, view, onV
     }
   }
 
-  async function openAdLeads(row: AdsRow) {
+  // Results, Booked and Mandates open their leads, at every level. A campaign
+  // or ad set is whichever ads are in it.
+  async function openRowLeads(row: AdsRow, metric: AdLeadMetric) {
+    if (!adAccountId) return;
+    setOpening(`${row.id}:${metric}`);
     try {
-      const ids = await listLeadIdsForAd(agentId, row.id, since, until);
+      const adIds = view.level === "ad"
+        ? [row.id]
+        : (await getAdsTable(adAccountId, since, until, view.level === "campaign" ? { level: "ad", campaignIds: [row.id] } : { level: "ad", adsetIds: [row.id] })).rows.map((a) => a.id);
+      const ids = await listLeadIdsForAds(agentId, adIds, since, until, metric);
       if (ids.length) setAdLeads({ ids, i: 0 });
-      else showSnack("These leads aren't in EstateKit yet. Facebook can take a few minutes to send them.");
+      else showSnack(metric === "leads" ? "These leads aren't in EstateKit yet. Facebook can take a few minutes to send them." : "Couldn't find these leads. Their ad may have been deleted.");
     } catch (e) {
       console.error(e);
       showSnack("Couldn't open these leads. Try again.");
+    } finally {
+      setOpening(null);
     }
   }
 
@@ -335,7 +346,12 @@ export default function AdsTable({ agentId, adAccountId, since, until, view, onV
   const cell = (id: ColId, r: AdsRow, v: ReturnType<typeof metricValues>) => {
     if (id === "delivery") {
       const d = DELIVERY[r.delivery] ?? { label: r.delivery.toLowerCase().replace(/_/g, " "), color: "#bec3c9" };
-      return <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}><Box component="span" sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: d.color, flex: "none" }} />{d.label}</Box>;
+      return (
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          <Box component="span" aria-hidden sx={{ width: 10, height: 10, borderRadius: "50%", flex: "none", boxSizing: "border-box", ...(d.ring ? { border: `2px solid ${d.color}` } : { bgcolor: d.color }) }} />
+          {d.label}
+        </Box>
+      );
     }
     if (id === "budget") {
       if (r.dailyBudget) {
@@ -363,13 +379,14 @@ export default function AdsTable({ agentId, adAccountId, since, until, view, onV
     }
     if (id === "ends") return <Box sx={{ color: FB.text }}>{r.ends ? fbDate(r.ends) : "Ongoing"}</Box>;
     const sub = id === "leads" ? (r.leads ? r.resultType || "Leads" : "") : id === "cpl" ? (r.leads ? perResult(r.resultType || "Leads") : "") : undefined;
-    if (id === "leads" && view.level === "ad" && r.leads) {
+    if ((id === "leads" || id === "booked" || id === "mandates") && v[id]) {
+      const metric = id as AdLeadMetric;
       return (
         <Tooltip title="See these leads">
           <ButtonBase
             disableRipple
-            onClick={(e) => { e.stopPropagation(); void openAdLeads(r); }}
-            sx={{ display: "block", ml: "auto", font: "inherit", textAlign: "right", "& > div:first-of-type": { color: FB.link }, "&:hover > div:first-of-type": { textDecoration: "underline" }, "&.Mui-focusVisible": { outline: `2px solid ${FB.link}`, outlineOffset: 2 } }}
+            onClick={(e) => { e.stopPropagation(); void openRowLeads(r, metric); }}
+            sx={{ display: "block", ml: "auto", font: "inherit", textAlign: "right", opacity: opening === `${r.id}:${metric}` ? 0.5 : 1, "& > div:first-of-type": { color: FB.link }, "&:hover > div:first-of-type": { textDecoration: "underline" }, "&.Mui-focusVisible": { outline: `2px solid ${FB.link}`, outlineOffset: 2 } }}
           >
             <Num v={formatMetric(id, v[id])} sub={sub} />
           </ButtonBase>

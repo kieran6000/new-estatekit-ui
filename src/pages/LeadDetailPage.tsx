@@ -1,8 +1,9 @@
+import NoteBox from "../components/NoteBox";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   AppBar, Box, Button, FormControl, IconButton, InputLabel, MenuItem,
-  Paper, Select, Skeleton, TextField, Toolbar, Typography,
+  Paper, Select, Skeleton, Toolbar, Typography,
 } from "@mui/material";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
@@ -28,7 +29,7 @@ import { getPipelinePublic } from "../api/pipelines";
 import { useSnack } from "../hooks/useSnack";
 import { PIPELINE_STAGES, stageLabel } from "../types";
 import { stageForKind, stepForStage, whenToCall } from "../lib/stageLogic";
-import { prettyAnswer, maskPhone } from "../lib/format";
+import { prettyAnswer, maskPhone, telHref } from "../lib/format";
 import { describeAttribution, type AdAttribution } from "../lib/adAttribution";
 import { timeAgo, whenLabel } from "../lib/timeAgo";
 import { useIsOperator } from "../hooks/useAutomations";
@@ -106,7 +107,7 @@ export default function LeadDetailPage({ leadId, onClose, nav }: {
     updateNote.mutate(
       { id: lead!.id, note: value },
       {
-        onSuccess: () => setSaveState("Saved"),
+        onSuccess: () => { setSaveState("Saved"); qc.invalidateQueries({ queryKey: ["noteHistory", lead!.id] }); },
         onError: () => setSaveState("Save failed"),
       },
     );
@@ -195,7 +196,7 @@ export default function LeadDetailPage({ leadId, onClose, nav }: {
           <Box
             component="a"
            
-            href={`tel:${lead.phone.replace(/\s/g, "")}`}
+            href={telHref(lead.phone)}
             onClick={() => {
               logLeadCall(lead.id, lead.agent_id);
               setTimeout(() => setOutcomeOpen(true), 150);
@@ -243,13 +244,12 @@ export default function LeadDetailPage({ leadId, onClose, nav }: {
         </Section>
 
         <Section title="Notes">
-          <TextField
-            multiline
-            minRows={4}
-            fullWidth
+          <NoteBox
+            leadId={lead.id}
+            leadCreatedAt={lead.created_at}
             placeholder="Add a note about this lead…"
             value={note}
-            onChange={(e) => onNoteChange(e.target.value)}
+            onChange={onNoteChange}
             onBlur={() => saveNote(note)}
             sx={{ mx: 2, mt: 1, mb: 0.5, width: "calc(100% - 32px)" }}
           />
