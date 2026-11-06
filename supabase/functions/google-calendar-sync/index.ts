@@ -4,7 +4,7 @@
 // claimed batch at a time (../_shared/calendarSync.ts does each row), then
 // takes out the upcoming entries of deleted leads (google_calendar_trash).
 // Auth: the cron's x-cron-key (GOOGLE_CALENDAR_CRON_KEY, generated in the
-// vault by migration 20261104_0001). Nobody else can run it.
+// vault by migration 20261104_0002). Nobody else can run it.
 // Needs GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in the vault.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";

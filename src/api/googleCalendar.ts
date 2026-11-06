@@ -4,7 +4,7 @@ import { supabase } from "./_client";
 // their appointments, the call times leads pick and their follow-up
 // reminders go into it by themselves. See supabase/functions/google-calendar
 // (connect, disconnect, events, sync), google-calendar-callback and
-// google-calendar-sync (the cron), and migration 20261104_0001.
+// google-calendar-sync (the cron), and migration 20261104_0002.
 
 export interface GoogleCalendarStatus {
   /** Google keys are in the vault: connecting can work at all. */
