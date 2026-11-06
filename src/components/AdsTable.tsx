@@ -55,13 +55,14 @@ const LEVEL_WORD: Record<AdsLevel, { one: string; many: string; title: string }>
 };
 
 // Ads Manager's "Delivery" words.
-const DELIVERY: Record<string, { label: string; color: string }> = {
-  ACTIVE: { label: "Active", color: "#31a24c" },
+// A solid dot is a settled state; a hollow ring is one still getting ready.
+const DELIVERY: Record<string, { label: string; color: string; ring?: boolean }> = {
+  ACTIVE: { label: "Active", color: "#066b46" },
   PAUSED: { label: "Off", color: "#bec3c9" },
   CAMPAIGN_PAUSED: { label: "Campaign off", color: "#bec3c9" },
   ADSET_PAUSED: { label: "Ad set off", color: "#bec3c9" },
-  IN_PROCESS: { label: "In process", color: "#f7b928" },
-  PENDING_REVIEW: { label: "In review", color: "#f7b928" },
+  IN_PROCESS: { label: "Preparing", color: "#066b46", ring: true },
+  PENDING_REVIEW: { label: "In review", color: "#8a6d00", ring: true },
   WITH_ISSUES: { label: "With issues", color: "#e41e3f" },
   DISAPPROVED: { label: "Rejected", color: "#e41e3f" },
 };
@@ -345,7 +346,12 @@ export default function AdsTable({ agentId, adAccountId, since, until, view, onV
   const cell = (id: ColId, r: AdsRow, v: ReturnType<typeof metricValues>) => {
     if (id === "delivery") {
       const d = DELIVERY[r.delivery] ?? { label: r.delivery.toLowerCase().replace(/_/g, " "), color: "#bec3c9" };
-      return <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}><Box component="span" sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: d.color, flex: "none" }} />{d.label}</Box>;
+      return (
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          <Box component="span" aria-hidden sx={{ width: 10, height: 10, borderRadius: "50%", flex: "none", boxSizing: "border-box", ...(d.ring ? { border: `2px solid ${d.color}` } : { bgcolor: d.color }) }} />
+          {d.label}
+        </Box>
+      );
     }
     if (id === "budget") {
       if (r.dailyBudget) {
