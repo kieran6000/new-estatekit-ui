@@ -514,8 +514,10 @@ wording (`template_override`). A per-account pause, a **panic stop**
 ### Account (`/account`, `AccountPage.tsx`)
 Full name, email, WhatsApp number, area, company, FB Page ID, FB Ad Account ID,
 renewal date, logo, profile photo (separate from the logo), accent colour,
-contract PDF. Operator extras: **agent passwords** (`AgentPasswords.tsx` via
-`admin-set-password`). `DevTierToggle` is demo-only.
+contract PDF. **Google Calendar** (`GoogleCalendarCard.tsx`): connect,
+reconnect, what's coming up in it, disconnect (see §11). Operator extras:
+**agent passwords** (`AgentPasswords.tsx` via `admin-set-password`).
+`DevTierToggle` is demo-only.
 
 ---
 
@@ -826,6 +828,82 @@ Sign-up funnel events: `powered_by_clicked` (placement, ref) →
 `signup_submitted` (wants, budget) → `signup_whatsapp_clicked`, plus
 `signup_save_failed`. `signup_from` / `signup_ref` are registered as super
 properties, so every event and replay carries the source page.
+
+### Google Calendar
+Each agent connects **their own** Google account once (Account → Google
+Calendar, also Get set up item 7). From then on three kinds of entry go into
+their primary calendar by themselves, and move or go when the lead changes:
+
+| Kind | When | Entry |
+|---|---|---|
+| `appointment` | Booked / Viewing Booked with a time | 1 hour, address as the location, popups 60 + 15 min before |
+| `call` | the call time the lead picked (not once Lost) | 15 min, popup 10 min before |
+| `followup` | the reminder "How did it go?" sets (Spoke, following up → tomorrow / in 2 days / next week / a date), or a workflow's | 15 min, marked free, popup on the dot; not for Lost / won leads, not when it's the same moment as the appointment or call |
+
+The rules are one pure function, `entryTime` / `desiredEvent` in
+`supabase/functions/_shared/calendarEvents.ts` (tested); the Calendar tab
+(`src/lib/calendar.ts`) shows the same moments. Past entries are history:
+never moved or deleted. Nothing is created in the past ("No answer" = retry
+now: that's the call list's job).
+
+**Flow.** `leads` trigger `queue_calendar_sync` → `google_calendar_queue`
+(lead, kind) → worked by `_shared/calendarSync.ts`, from either the cron
+`google-calendar-sync-every-minute` (only fires when the queue has work; sends
+`x-cron-key` = vault `GOOGLE_CALENDAR_CRON_KEY`) or straight after a stage
+change in the app (`google-calendar` action `sync`, called from
+`useUpdateLeadStage`; the result is added as a second line under the snack,
+keeping its Undo). Rows are claimed (`google_calendar_claim`, 90s) so the two
+never work one row at once; failures back off 2/4/8/16/32 min, then give up.
+Creates use our own event id (`eventIdFor`), so retries can't duplicate.
+The `/l/` WhatsApp-link page saves via `log-outcome`, so those reach Google
+through the cron (within a minute).
+
+**Tokens.** `access_type=offline` + `prompt=consent` + PKCE: Google returns a
+refresh token every time, so agents never reconnect unless they remove
+EstateKit in their Google account. Refresh and access tokens are sealed with
+AES-256-GCM (vault `GOOGLE_TOKEN_KEY`) before they're stored. When Google
+refuses the refresh token (`invalid_grant`) or the calendar box was unticked,
+the connection is kept with `needs_reconnect = true`: syncing stops and the
+app shows Reconnect. **The Google Cloud OAuth app must be "In production"**:
+in Testing, Google expires refresh tokens after 7 days.
+
+**Tables** (all deny-all RLS, server only): `google_calendar_connections`
+(one per agent), `google_calendar_events` (our Google event per lead + kind,
+with `html_link`), `google_calendar_queue`, `google_calendar_trash` (upcoming
+events of deleted leads, so they still come out), `google_oauth_states`. The
+app reads only `google_calendar_status(agent?)` (own, or any for an operator;
+never tokens) and `google_calendar_ready()`.
+
+**Functions.** `google-calendar` (JWT on; user): `connect`, `disconnect`
+(upcoming entries come out, Google is told to forget us), `events` (the
+signed-in person's own Google events for the Calendar tab, ours left out,
+never for an account an operator is switched into), `sync`.
+`google-calendar-callback` (JWT off; one-time state + PKCE).
+`google-calendar-sync` (JWT off; cron key). Shared code in
+`supabase/functions/_shared/`, so deploy with the CLI (it bundles it).
+
+**Setting it up** (once): a Google Cloud OAuth client (Web application) with
+the Calendar API enabled; scopes `openid`, `email`, `…/auth/calendar.events`;
+both redirect URIs below; then vault secrets `GOOGLE_CLIENT_ID` and
+`GOOGLE_CLIENT_SECRET`. Until both exist the feature is hidden from agents
+(operators see "Not switched on yet" on Account).
+
+**Return address (redirect URI).** Two, both reaching `google-calendar-callback`:
+- `https://yfcnsvrhojpysrzqrkdi.supabase.co/functions/v1/google-calendar-callback`
+  (the default). Works anywhere, but Google's page says "continue to …supabase.co"
+  while unverified, and verification asks you to own that domain.
+- `https://leads.estatekit.co/oauth/google/calendar` (a rewrite in `vercel.json`).
+  Shows our domain and can be verified. Switch to it by setting the vault
+  secret `GOOGLE_REDIRECT_URI` to exactly that URL, **only after**
+  `https://leads.estatekit.co/oauth/google/calendar?ping=1` answers `{"ok":true}`
+  (proves the rewrite is live and passes the query string). Delete the secret to
+  switch back. Each Connect remembers the address it started with
+  (`google_oauth_states.redirect_uri`), so switching never breaks one in flight.
+
+**Verification** (needed to drop the "unverified app" warning and the 100-user
+cap): estatekit.co verified in Search Console, the own-domain return address,
+and a privacy policy that says how Google Calendar data is used (the
+`/privacy` page doesn't yet).
 
 ---
 

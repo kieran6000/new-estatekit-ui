@@ -1,6 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as leadsApi from "../api/leads";
+import { syncLeadToGoogle } from "../api/googleCalendar";
 import { computeStagePatch } from "../lib/stageLogic";
+import { calendarNote } from "../lib/googleCalendarNote";
+import { GCAL_EVENTS_KEY, GCAL_STATUS_KEY, statusQuery, useCalendarOwner } from "./useGoogleCalendar";
+import { useSnackNote } from "./useSnack";
 import type { LeadRow, Stage, StageChangeExtra } from "../types";
 
 const LEADS_KEY = ["leads"] as const;
@@ -63,9 +67,44 @@ function resolvePatch({ stage, extra, applySOP = true, override }: StageChangeAr
   return applySOP ? computeStagePatch(stage, extra) : {};
 }
 
+// Once a session: a broken Google connection is worth one nudge, not one per call.
+let reconnectNudged = false;
+
+/** After a stage change is saved: when the account has Google Calendar
+ *  connected, put the lead's appointment / follow-up in now (not within the
+ *  minute) and add what happened under the snack. Any failure here is
+ *  harmless: the cron (google-calendar-sync) catches up by itself. */
+function useCalendarAfterSave() {
+  const qc = useQueryClient();
+  const addNote = useSnackNote();
+  const { agentId, managingOther } = useCalendarOwner();
+  return async (leadId: string) => {
+    if (!agentId) return;
+    try {
+      const status = await qc.fetchQuery({ ...statusQuery(agentId, managingOther), staleTime: 5 * 60_000 });
+      if (!status?.connected) return;
+      if (status.needsReconnect) {
+        if (!reconnectNudged && !managingOther) addNote("Google Calendar needs reconnecting: Account → Google Calendar");
+        reconnectNudged = true;
+        return;
+      }
+      const results = await syncLeadToGoogle(leadId);
+      const note = calendarNote(results, { theirs: managingOther });
+      if (note) addNote(note);
+      if (results.length) {
+        void qc.invalidateQueries({ queryKey: [GCAL_STATUS_KEY] });
+        void qc.invalidateQueries({ queryKey: [GCAL_EVENTS_KEY] });
+      }
+    } catch (e) {
+      console.warn("calendar sync after save", e);
+    }
+  };
+}
+
 /** Optimistically updates the cached lead list, patches the mock store, rolls back on failure. */
 export function useUpdateLeadStage() {
   const qc = useQueryClient();
+  const calendarAfterSave = useCalendarAfterSave();
   return useMutation({
     mutationFn: async (args: StageChangeArgs) => {
       const patch = resolvePatch(args);
@@ -82,6 +121,9 @@ export function useUpdateLeadStage() {
     onError: (_err, vars, ctx) => {
       if (ctx?.prev) qc.setQueryData(LEADS_KEY, ctx.prev);
       if (ctx?.prevSingle !== undefined) qc.setQueryData([LEAD_BY_ID_KEY, vars.id], ctx.prevSingle);
+    },
+    onSuccess: (_d, vars) => {
+      void calendarAfterSave(vars.id);
     },
     onSettled: (_d, _e, vars) => {
       qc.invalidateQueries({ queryKey: LEADS_KEY });

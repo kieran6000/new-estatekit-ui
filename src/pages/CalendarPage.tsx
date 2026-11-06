@@ -7,13 +7,17 @@ import PhoneIcon from "@mui/icons-material/Phone";
 import CloseIcon from "@mui/icons-material/Close";
 import ScheduleIcon from "@mui/icons-material/Schedule";
 import PersonIcon from "@mui/icons-material/Person";
+import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import { tokens } from "../theme";
 import { useLeads } from "../hooks/useLeads";
 import { useCanSeeFullPhone } from "../hooks/useTier";
+import { useConnectGoogleCalendar, useGoogleCalendarReturn, useGoogleCalendarStatus, useGoogleEvents } from "../hooks/useGoogleCalendar";
 import { maskPhone, telHref } from "../lib/format";
 import { logLeadCall } from "../api/leadEvents";
+import type { GoogleEvent } from "../api/googleCalendar";
+import GoogleCalendarIcon from "../components/GoogleCalendarIcon";
 import LeadDetailPage from "./LeadDetailPage";
-import { calendarItems, DURATION, layoutDay, overdue, weekStart, type CalItem, type CalKind } from "../lib/calendar";
+import { allDayCovers, calendarItems, DURATION, KIND_STYLE, layoutBlocks, overdue, spanOnDay, syncKind, weekStart, type CalItem } from "../lib/calendar";
 
 // Calendar, laid out like Google Calendar (what agents already know): days
 // across, hours down, each appointment, viewing, picked call time and
@@ -24,18 +28,15 @@ import { calendarItems, DURATION, layoutDay, overdue, weekStart, type CalItem, t
 //            change the week; a swipe on the hours changes the day. Today
 //            top right. A block opens a bottom sheet with a big
 //            Call button. Overdue follow-ups sit in a bar at the bottom.
-// The same dates go into Google Calendar when it's connected (Get set up).
+// With Google Calendar connected (Account), the same entries are in their
+// Google Calendar (a card links to it), and their own Google events show here
+// too, in grey, so the whole day is in one place. Only the signed-in person's
+// own: never an account an operator is switched into.
 // It keeps its place: the day, Week/Day and the overdue list live in the URL
 // (?d=2026-10-27&v=day&late=1) and the scroll in this tab's session, so the
 // back arrow on a lead lands where they found it, with that lead highlighted.
 
-// Google Calendar's own event colours (Peacock, Grape, Basil, Tomato).
-const KIND: Record<CalKind, { color: string; word: string }> = {
-  appointment: { color: "#039be5", word: "Appointment" },
-  viewing: { color: "#8e24aa", word: "Viewing" },
-  call: { color: "#0b8043", word: "Call" },
-  followup: { color: "#d50000", word: "Follow up" },
-};
+const KIND = KIND_STYLE;
 
 const clock = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 const hourLabel = (h: number) => (h === 0 ? "" : h < 12 ? `${h} AM` : h === 12 ? "12 PM" : `${h - 12} PM`);
@@ -52,6 +53,9 @@ const MEMO = "ek.calendar.memo";
 type Memo = { key: string; top: number; lead?: string };
 const readMemo = (): Memo | null => { try { return JSON.parse(sessionStorage.getItem(MEMO) || "null"); } catch { return null; } };
 const writeMemo = (m: Memo) => { try { sessionStorage.setItem(MEMO, JSON.stringify(m)); } catch { /* private mode */ } };
+
+/** What a tap opened: one of ours, or one of their own Google events. */
+type Opened = { el: HTMLElement; it: CalItem; g?: undefined } | { el: HTMLElement; g: GoogleEvent; it?: undefined };
 
 export default function CalendarPage() {
   const navigate = useNavigate();
@@ -76,13 +80,27 @@ export default function CalendarPage() {
   };
   const setWeekView = (w: boolean) => setParam("v", w ? null : "day");
   const setShowLate = (v: boolean) => setParam("late", v ? "1" : null);
-  const [open, setOpen] = useState<{ el: HTMLElement; it: CalItem } | null>(null);
+  const [open, setOpen] = useState<Opened | null>(null);
   const [memo] = useState(readMemo); // what they had when they left (read once)
   const [flash, setFlash] = useState<string | undefined>(memo?.lead);
   // Used once: opening Calendar from the menu later starts fresh.
   useEffect(() => { try { sessionStorage.removeItem(MEMO); } catch { /* private mode */ } }, []);
   const body = useRef<HTMLDivElement>(null);
   const touch = useRef<{ x: number; y: number } | null>(null);
+
+  // Google Calendar: back from connecting, the connection, and their own events.
+  useGoogleCalendarReturn();
+  const { status: gStatus, managingOther } = useGoogleCalendarStatus();
+  const { connect: connectGoogle, busy: connectingGoogle } = useConnectGoogleCalendar("/calendar");
+  const gOn = !!gStatus?.connected && !gStatus.needsReconnect && !managingOther;
+  const gFrom = weekStart(anchor);
+  const { data: gWin } = useGoogleEvents(gFrom, addDays(gFrom, 7), gOn);
+  const gEvents = useMemo(() => (gOn ? gWin?.events ?? [] : []), [gOn, gWin]);
+  const syncedLink = useMemo(
+    () => new Map((gOn ? gWin?.synced ?? [] : []).map((s) => [`${s.lead_id}:${s.kind}`, s.html_link])),
+    [gOn, gWin],
+  );
+  const offerGoogle = !managingOther && !!gStatus?.ready && (!gStatus.connected || gStatus.needsReconnect);
 
   const HOUR = phone ? 60 : 48; // px per hour: taller on phones so short calls are easy to tap
   const week = !phone && weekView;
@@ -98,10 +116,15 @@ export default function CalendarPage() {
     ? first.toLocaleDateString("en-ZA", { month: "long", year: "numeric" })
     : `${first.toLocaleDateString("en-ZA", { month: "short" })} – ${last.toLocaleDateString("en-ZA", { month: "short", year: "numeric" })}`;
   const shownItems = items.filter((it) => days.some((d) => sameDay(it.at, d)));
+  const allDayOn = (d: Date) => gEvents.filter((e) => e.allDay && allDayCovers(e.start, e.end, d));
+  const timedOn = (d: Date) => gEvents.filter((e) => !e.allDay).map((e) => ({ e, span: spanOnDay(e.start, e.end, d) })).filter((x) => x.span);
+  const shownAllDay = days.some((d) => allDayOn(d).length > 0);
+  const gStarts = days.flatMap((d) => timedOn(d).map((x) => x.span!.start));
 
   // Open where the action is: an hour before the first thing shown, else an
   // hour before now (today), else 8 AM.
-  const firstAt = shownItems.length ? Math.min(...shownItems.map((it) => minutes(it.at))) : null;
+  const starts = [...shownItems.map((it) => minutes(it.at)), ...gStarts];
+  const firstAt = starts.length ? Math.min(...starts) : null;
   const scrollTo = firstAt != null ? firstAt - 60 : days.some((d) => sameDay(d, today)) ? minutes(now) - 60 : 8 * 60;
   const dayKey = days[0].toDateString() + days.length;
   // Coming back to the same day: put them back exactly where they were.
@@ -152,14 +175,27 @@ export default function CalendarPage() {
   };
   const onTouchEnd = swipe(step);
 
-  const card = open && (
+  const card = open?.it ? (
     <EventCard
       it={open.it}
       phone={phone}
       canSeeFullPhone={canSeeFullPhone}
+      googleLink={syncedLink.get(`${open.it.lead.id}:${syncKind(open.it.kind)}`)}
       onOpen={() => openLead(open.it.lead.id)}
       onClose={() => setOpen(null)}
     />
+  ) : open?.g ? (
+    <GoogleEventCard ev={open.g} phone={phone} onClose={() => setOpen(null)} />
+  ) : null;
+
+  const allDayChip = (e: GoogleEvent) => (
+    <Box key={e.id} component="button" type="button" onClick={(ev: React.MouseEvent<HTMLElement>) => setOpen({ el: ev.currentTarget, g: e })}
+      sx={{ display: "block", width: "100%", minHeight: phone ? 32 : 22, textAlign: "left", font: "inherit", fontSize: phone ? 13.5 : 12, lineHeight: 1.3,
+        px: 0.75, py: 0.25, borderRadius: "6px", cursor: "pointer", color: "text.primary", bgcolor: tokens.surface2,
+        border: `1px solid ${tokens.divider}`, borderLeft: `4px solid ${tokens.outline}`, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+        "&:hover": { bgcolor: tokens.hover } }}>
+      {e.title}
+    </Box>
   );
 
   return (
@@ -183,6 +219,13 @@ export default function CalendarPage() {
                 {late.length} overdue
               </Button>
             )}
+            {offerGoogle && (
+              <Button variant="outlined" onClick={connectGoogle} disabled={connectingGoogle} startIcon={<GoogleCalendarIcon size={18} />}
+                sx={{ borderRadius: "999px", px: 2, height: 40, whiteSpace: "nowrap", textTransform: "none", fontWeight: 500, fontSize: 14,
+                  color: gStatus?.needsReconnect ? tokens.amber : "inherit", borderColor: gStatus?.needsReconnect ? tokens.amberBorder : "currentColor" }}>
+                {gStatus?.needsReconnect ? "Reconnect Google Calendar" : "Connect Google Calendar"}
+              </Button>
+            )}
             <Select value={week ? "week" : "day"} onChange={(e) => setWeekView(e.target.value === "week")}
               sx={{ color: "inherit", borderRadius: "999px", height: 40, ".MuiOutlinedInput-notchedOutline": { borderColor: "currentColor" }, ".MuiSvgIcon-root": { color: "inherit" }, fontSize: 14, minWidth: 100 }}>
               <MenuItem value="day">Day</MenuItem>
@@ -192,42 +235,63 @@ export default function CalendarPage() {
         )}
       </AppBar>
 
-      {phone && <WeekStrip anchor={anchor} today={today} items={items} onPick={setAnchor} onTouchStart={onTouchStart} onTouchEnd={swipe(7)} />}
+      {phone && (
+        <WeekStrip anchor={anchor} today={today} busy={(d) => items.some((it) => sameDay(it.at, d)) || allDayOn(d).length > 0 || timedOn(d).length > 0}
+          onPick={setAnchor} onTouchStart={onTouchStart} onTouchEnd={swipe(7)} />
+      )}
+      {/* Phones: the day's all-day Google events, above the hours. */}
+      {phone && allDayOn(anchor).length > 0 && (
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5, px: 1.5, py: 0.75, bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
+          {allDayOn(anchor).map(allDayChip)}
+        </Box>
+      )}
 
       {isLoading ? (
         <Box sx={{ p: 2 }}><Skeleton variant="rounded" height={480} /></Box>
       ) : (
         <Box ref={body} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} sx={{ flex: 1, minHeight: 0, overflowY: "auto", bgcolor: "background.paper", position: "relative" }}>
-          {/* Desktop day headings: MON 26 … today's number in a blue circle.
-              Inside the scroll area (sticky) so they line up with the columns.
-              Phones have the week row above instead. */}
+          {/* Desktop day headings: MON 26 … today's number in a blue circle,
+              then any all-day Google events. Inside the scroll area (sticky)
+              so they line up with the columns. Phones have the week row above. */}
           {!phone && (
-            <Box sx={{ display: "flex", borderBottom: `1px solid ${tokens.divider}`, position: "sticky", top: 0, zIndex: 3, bgcolor: "background.paper" }}>
-              <Box sx={{ width: 56, flex: "none", display: "flex", alignItems: "flex-end", justifyContent: "flex-end", pr: 1, pb: 0.5, fontSize: 10, color: "text.secondary" }}>GMT+02</Box>
-              {days.map((d) => {
-                const isToday = sameDay(d, today);
-                return (
-                  <Box key={d.toISOString()} sx={{ flex: 1, minWidth: 0, textAlign: "center", py: 1, borderLeft: `1px solid ${tokens.divider2}` }}>
-                    <Typography sx={{ fontSize: 11, fontWeight: 500, color: isToday ? tokens.primary : "text.secondary" }}>
-                      {d.toLocaleDateString("en-ZA", { weekday: "short" }).toUpperCase()}
-                    </Typography>
-                    <Box
-                      component="button"
-                      type="button"
-                      onClick={() => { setAnchor(d); setWeekView(false); }}
-                      aria-label={`Show ${d.toLocaleDateString("en-ZA", { weekday: "long", day: "numeric", month: "long" })}`}
-                      sx={{ mx: "auto", mt: 0.25, width: 44, height: 44, borderRadius: "50%", display: "grid", placeItems: "center", fontSize: 24, font: "inherit", border: 0, cursor: "pointer",
-                        bgcolor: isToday ? tokens.primary : "transparent", color: isToday ? tokens.onPrimary : "text.primary", "&:hover": { bgcolor: isToday ? tokens.primary : tokens.divider2 } }}
-                    >
-                      <Box component="span" sx={{ fontSize: 24 }}>{d.getDate()}</Box>
+            <Box sx={{ position: "sticky", top: 0, zIndex: 3, bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
+              <Box sx={{ display: "flex" }}>
+                <Box sx={{ width: 56, flex: "none", display: "flex", alignItems: "flex-end", justifyContent: "flex-end", pr: 1, pb: 0.5, fontSize: 10, color: "text.secondary" }}>GMT+02</Box>
+                {days.map((d) => {
+                  const isToday = sameDay(d, today);
+                  return (
+                    <Box key={d.toISOString()} sx={{ flex: 1, minWidth: 0, textAlign: "center", py: 1, borderLeft: `1px solid ${tokens.divider2}` }}>
+                      <Typography sx={{ fontSize: 11, fontWeight: 500, color: isToday ? tokens.primary : "text.secondary" }}>
+                        {d.toLocaleDateString("en-ZA", { weekday: "short" }).toUpperCase()}
+                      </Typography>
+                      <Box
+                        component="button"
+                        type="button"
+                        onClick={() => { setAnchor(d); setWeekView(false); }}
+                        aria-label={`Show ${d.toLocaleDateString("en-ZA", { weekday: "long", day: "numeric", month: "long" })}`}
+                        sx={{ mx: "auto", mt: 0.25, width: 44, height: 44, borderRadius: "50%", display: "grid", placeItems: "center", fontSize: 24, font: "inherit", border: 0, cursor: "pointer",
+                          bgcolor: isToday ? tokens.primary : "transparent", color: isToday ? tokens.onPrimary : "text.primary", "&:hover": { bgcolor: isToday ? tokens.primary : tokens.divider2 } }}
+                      >
+                        <Box component="span" sx={{ fontSize: 24 }}>{d.getDate()}</Box>
+                      </Box>
                     </Box>
-                  </Box>
-                );
-              })}
+                  );
+                })}
+              </Box>
+              {shownAllDay && (
+                <Box sx={{ display: "flex", borderTop: `1px solid ${tokens.divider2}` }}>
+                  <Box sx={{ width: 56, flex: "none" }} />
+                  {days.map((d) => (
+                    <Box key={d.toISOString()} sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 0.25, p: 0.25, borderLeft: `1px solid ${tokens.divider2}` }}>
+                      {allDayOn(d).map(allDayChip)}
+                    </Box>
+                  ))}
+                </Box>
+              )}
             </Box>
           )}
 
-          {phone && shownItems.length === 0 && (
+          {phone && shownItems.length === 0 && timedOn(anchor).length === 0 && allDayOn(anchor).length === 0 && (
             <Typography sx={{ position: "sticky", top: 0, zIndex: 3, textAlign: "center", py: 1, fontSize: 14, color: "text.secondary", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider2}` }}>
               Nothing on {sameDay(anchor, today) ? "today" : anchor.toLocaleDateString("en-ZA", { weekday: "long" })}
             </Typography>
@@ -241,42 +305,65 @@ export default function CalendarPage() {
               ))}
             </Box>
             {days.map((d) => {
-              const placed = layoutDay(items.filter((it) => sameDay(it.at, d)));
+              // Ours and theirs share the width where they overlap, as in Google.
+              const placed = layoutBlocks([
+                ...items.filter((it) => sameDay(it.at, d)).map((it) => {
+                  const start = minutes(it.at);
+                  return { key: `${it.lead.id}-${it.kind}`, start, end: Math.min(24 * 60, start + DURATION[it.kind]), it, g: undefined as GoogleEvent | undefined };
+                }),
+                ...timedOn(d).map(({ e, span }) => ({ key: `g-${e.id}`, start: span!.start, end: span!.end, it: undefined as CalItem | undefined, g: e })),
+              ]);
               const isToday = sameDay(d, today);
               return (
                 <Box key={d.toISOString()} sx={{ flex: 1, minWidth: 0, position: "relative", height: 24 * HOUR, borderLeft: `1px solid ${tokens.divider2}`,
                   backgroundImage: `repeating-linear-gradient(to bottom, ${tokens.divider2} 0, ${tokens.divider2} 1px, transparent 1px, transparent ${HOUR}px)` }}>
                   {placed.map((p) => {
-                    const k = KIND[p.it.kind];
                     // Never smaller than a comfortable tap, even for a 15-minute call.
                     const height = Math.max(phone ? 40 : 22, ((p.end - p.start) / 60) * HOUR - 2);
                     const roomy = height > 34;
+                    const box = {
+                      position: "absolute", top: (p.start / 60) * HOUR + 1, height,
+                      left: `calc(${(p.lane / p.lanes) * 100}% + 2px)`, width: `calc(${100 / p.lanes}% - 6px)`,
+                      borderRadius: "6px", px: 0.75, py: roomy ? 0.5 : 0.15,
+                      textAlign: "left", font: "inherit", fontSize: phone ? 13.5 : 12, lineHeight: 1.25, overflow: "hidden", cursor: "pointer",
+                    } as const;
+                    if (p.g) {
+                      const g = p.g;
+                      return (
+                        <Box key={p.key} component="button" type="button" onClick={(e: React.MouseEvent<HTMLElement>) => setOpen({ el: e.currentTarget, g })}
+                          sx={{ ...box, zIndex: 1, color: "text.primary", bgcolor: tokens.surface2, border: `1px solid ${tokens.divider}`, borderLeft: `4px solid ${tokens.outline}`,
+                            "&:hover": { bgcolor: tokens.hover } }}>
+                          <Box sx={{ fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{g.title}</Box>
+                          {roomy && <Box sx={{ color: "text.secondary", whiteSpace: "nowrap" }}>{clock(p.start)} – {clock(p.end)}</Box>}
+                        </Box>
+                      );
+                    }
+                    const it = p.it!;
+                    const k = KIND[it.kind];
                     return (
                       <Box
-                        key={`${p.it.lead.id}-${p.it.kind}`}
+                        key={p.key}
                         component="button"
                         type="button"
-                        data-cal-lead={p.it.lead.id}
-                        onClick={(e: React.MouseEvent<HTMLElement>) => setOpen({ el: e.currentTarget, it: p.it })}
+                        data-cal-lead={it.lead.id}
+                        onClick={(e: React.MouseEvent<HTMLElement>) => setOpen({ el: e.currentTarget, it })}
                         sx={{
-                          position: "absolute", top: (p.start / 60) * HOUR + 1, height, zIndex: 1,
-                          left: `calc(${(p.lane / p.lanes) * 100}% + 2px)`, width: `calc(${100 / p.lanes}% - 6px)`,
-                          bgcolor: k.color, color: "#fff", border: 0, borderRadius: "6px", px: 0.75, py: roomy ? 0.5 : 0.15,
-                          textAlign: "left", font: "inherit", fontSize: phone ? 13.5 : 12, lineHeight: 1.25, overflow: "hidden", cursor: "pointer",
-                          boxShadow: flash === p.it.lead.id || panelLead === p.it.lead.id ? `0 0 0 2px #fff, 0 0 0 5px ${k.color}` : "0 0 0 1px rgba(255,255,255,.35)",
+                          ...box, zIndex: 2,
+                          bgcolor: k.color, color: "#fff", border: 0,
+                          boxShadow: flash === it.lead.id || panelLead === it.lead.id ? `0 0 0 2px #fff, 0 0 0 5px ${k.color}` : "0 0 0 1px rgba(255,255,255,.35)",
                           transition: "box-shadow .6s ease", "&:hover": { filter: "brightness(1.08)" },
                         }}
                       >
                         <Box sx={{ fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                          {k.word}: {p.it.lead.name}
+                          {k.word}: {it.lead.name}
                         </Box>
-                        {roomy && <Box sx={{ opacity: 0.9, whiteSpace: "nowrap" }}>{clock(minutes(p.it.at))}{p.end - p.start >= 30 ? ` – ${clock(p.end)}` : ""}</Box>}
+                        {roomy && <Box sx={{ opacity: 0.9, whiteSpace: "nowrap" }}>{clock(minutes(it.at))}{p.end - p.start >= 30 ? ` – ${clock(p.end)}` : ""}</Box>}
                       </Box>
                     );
                   })}
                   {/* Now: Google's red line with a dot. */}
                   {isToday && (
-                    <Box sx={{ position: "absolute", left: 0, right: 0, top: (minutes(now) / 60) * HOUR, height: 2, bgcolor: "#ea4335", zIndex: 2, pointerEvents: "none",
+                    <Box sx={{ position: "absolute", left: 0, right: 0, top: (minutes(now) / 60) * HOUR, height: 2, bgcolor: "#ea4335", zIndex: 3, pointerEvents: "none",
                       "&::before": { content: '""', position: "absolute", left: -6, top: -5, width: 12, height: 12, borderRadius: "50%", bgcolor: "#ea4335" } }} />
                   )}
                 </Box>
@@ -356,8 +443,8 @@ function TodayButton({ onClick }: { onClick: () => void }) {
 
 /** Phones: the week's dates in a row, M T W T F S S, a dot under days with
  *  something on. Tap a date to see it; swipe for the next / previous week. */
-function WeekStrip({ anchor, today, items, onPick, onTouchStart, onTouchEnd }: {
-  anchor: Date; today: Date; items: CalItem[]; onPick: (d: Date) => void;
+function WeekStrip({ anchor, today, busy, onPick, onTouchStart, onTouchEnd }: {
+  anchor: Date; today: Date; busy: (d: Date) => boolean; onPick: (d: Date) => void;
   onTouchStart: (e: React.TouchEvent) => void; onTouchEnd: (e: React.TouchEvent) => void;
 }) {
   const start = weekStart(anchor);
@@ -367,7 +454,7 @@ function WeekStrip({ anchor, today, items, onPick, onTouchStart, onTouchEnd }: {
         const d = addDays(start, i);
         const picked = sameDay(d, anchor);
         const isToday = sameDay(d, today);
-        const busy = items.some((it) => sameDay(it.at, d));
+        const on = busy(d);
         return (
           <Box key={i} component="button" type="button" onClick={() => onPick(d)}
             aria-label={d.toLocaleDateString("en-ZA", { weekday: "long", day: "numeric", month: "long" })}
@@ -380,7 +467,7 @@ function WeekStrip({ anchor, today, items, onPick, onTouchStart, onTouchEnd }: {
               bgcolor: picked ? tokens.primary : "transparent", color: picked ? tokens.onPrimary : isToday ? tokens.primary : "text.primary" }}>
               {d.getDate()}
             </Box>
-            <Box component="span" sx={{ width: 5, height: 5, borderRadius: "50%", bgcolor: busy ? "text.secondary" : "transparent" }} />
+            <Box component="span" sx={{ width: 5, height: 5, borderRadius: "50%", bgcolor: on ? "text.secondary" : "transparent" }} />
           </Box>
         );
       })}
@@ -419,7 +506,18 @@ function CallButton({ it, big }: { it: CalItem; big?: boolean }) {
   );
 }
 
-function EventCard({ it, phone, canSeeFullPhone, onOpen, onClose }: { it: CalItem; phone: boolean; canSeeFullPhone: boolean; onOpen: () => void; onClose: () => void }) {
+/** "In your Google Calendar", opening that entry in Google. */
+function InGoogleLink({ href }: { href: string }) {
+  return (
+    <Box component="a" href={href} target="_blank" rel="noopener noreferrer"
+      sx={{ display: "flex", gap: 1, alignItems: "center", color: tokens.primary, textDecoration: "none", minHeight: 32, "&:hover": { textDecoration: "underline" } }}>
+      <GoogleCalendarIcon size={18} />
+      In your Google Calendar
+    </Box>
+  );
+}
+
+function EventCard({ it, phone, canSeeFullPhone, googleLink, onOpen, onClose }: { it: CalItem; phone: boolean; canSeeFullPhone: boolean; googleLink?: string | null; onOpen: () => void; onClose: () => void }) {
   const k = KIND[it.kind];
   const start = minutes(it.at);
   const end = Math.min(24 * 60, start + DURATION[it.kind]);
@@ -438,6 +536,7 @@ function EventCard({ it, phone, canSeeFullPhone, onOpen, onClose }: { it: CalIte
       <Box sx={{ display: "flex", flexDirection: "column", gap: 1, mt: 1.5, ml: 3.25, fontSize: 15 }}>
         <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}><PhoneIcon sx={{ fontSize: 18, color: "text.secondary" }} />{canSeeFullPhone ? it.lead.phone : maskPhone(it.lead.phone)}</Box>
         <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}><ScheduleIcon sx={{ fontSize: 18, color: "text.secondary" }} />{it.label}</Box>
+        {googleLink && <InGoogleLink href={googleLink} />}
       </Box>
       {phone ? (
         <Box sx={{ display: "flex", flexDirection: "column", gap: 1, mt: 2.5 }}>
@@ -448,6 +547,44 @@ function EventCard({ it, phone, canSeeFullPhone, onOpen, onClose }: { it: CalIte
         <Box sx={{ display: "flex", gap: 1, mt: 2, justifyContent: "flex-end" }}>
           <Button startIcon={<PersonIcon />} onClick={onOpen}>Open lead</Button>
           <CallButton it={it} />
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+/** One of their own Google events: what and when, and a way into Google. */
+function GoogleEventCard({ ev, phone, onClose }: { ev: GoogleEvent; phone: boolean; onClose: () => void }) {
+  const longDate = (d: Date) => d.toLocaleDateString("en-ZA", { weekday: "long", day: "numeric", month: "long" });
+  let when: string;
+  if (ev.allDay) {
+    const s = parseYmd(ev.start)!;
+    const lastDay = parseYmd(ev.end) ? addDays(parseYmd(ev.end)!, -1) : s;
+    when = sameDay(s, lastDay) || lastDay < s ? `${longDate(s)} · All day` : `${longDate(s)} – ${longDate(lastDay)}`;
+  } else {
+    const s = new Date(ev.start);
+    const e = new Date(ev.end);
+    when = sameDay(s, e) ? `${longDate(s)} · ${clock(minutes(s))} – ${clock(minutes(e))}` : `${longDate(s)}, ${clock(minutes(s))} – ${longDate(e)}, ${clock(minutes(e))}`;
+  }
+  return (
+    <Box>
+      <Box sx={{ display: "flex", gap: 1.5, alignItems: "flex-start" }}>
+        <Box sx={{ width: 14, height: 14, borderRadius: "4px", bgcolor: tokens.outline, mt: "8px", flex: "none" }} />
+        <Box sx={{ minWidth: 0, flex: 1 }}>
+          <Typography sx={{ fontSize: 20, lineHeight: 1.3, wordBreak: "break-word" }}>{ev.title}</Typography>
+          <Typography sx={{ fontSize: 14.5, color: "text.secondary", mt: 0.25 }}>{when}</Typography>
+        </Box>
+        <IconButton aria-label="Close" onClick={onClose} sx={{ width: 44, height: 44, mt: -1, mr: -1 }}><CloseIcon /></IconButton>
+      </Box>
+      <Box sx={{ display: "flex", gap: 1, alignItems: "center", mt: 1.5, ml: 3.25, fontSize: 15, color: "text.secondary" }}>
+        <GoogleCalendarIcon size={18} /> Your Google Calendar
+      </Box>
+      {ev.link && (
+        <Box sx={{ display: "flex", mt: phone ? 2.5 : 2, justifyContent: "flex-end" }}>
+          <Button component="a" href={ev.link} target="_blank" rel="noopener noreferrer" variant={phone ? "outlined" : "text"} fullWidth={phone}
+            startIcon={<OpenInNewIcon />} sx={phone ? { minHeight: 52, fontSize: 16 } : undefined}>
+            Open in Google Calendar
+          </Button>
         </Box>
       )}
     </Box>

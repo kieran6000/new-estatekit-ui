@@ -36,11 +36,15 @@ import AppearanceSetting from "../components/AppearanceSetting";
 import { tokens } from "../theme";
 import { MAX_IMAGE_BYTES, uploadImage } from "../lib/image";
 import BrandLogo from "../components/BrandLogo";
+import GoogleCalendarCard from "../components/GoogleCalendarCard";
+import { useGoogleCalendarReturn } from "../hooks/useGoogleCalendar";
 
 export default function AccountPage() {
   const { user, signOut } = useAuth();
   const queryClient = useQueryClient();
   const showSnack = useSnack();
+  // Back from Google's "allow" page.
+  useGoogleCalendarReturn();
   const { data: isOperator } = useIsOperator();
   const isDesktop = useMediaQuery("(min-width:900px)");
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -321,6 +325,8 @@ export default function AccountPage() {
                 <TextField label="Company / agency" value={form.company} onChange={(e) => update("company", e.target.value)} fullWidth />
               </CardContent>
             </Card>
+
+            <GoogleCalendarCard returnTo="/account" agentName={profile?.displayName || undefined} />
 
             <AppearanceSetting />
 
