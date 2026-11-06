@@ -302,8 +302,12 @@ function DatePickerRow({ buttonLabel, onSet }: { buttonLabel: string; onSet: (d:
       <Button
         variant="contained"
         onClick={() => {
-          if (!val) return;
-          onSet(new Date(val));
+          // "2026-11-06" on its own is read as midnight UTC (02:00 here),
+          // which is when the reminder (and its Google Calendar entry) would
+          // go off. A picked day means that morning, local time.
+          const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(val);
+          if (!m) return;
+          onSet(new Date(+m[1], +m[2] - 1, +m[3], 9, 0, 0, 0));
         }}
       >
         {buttonLabel}
