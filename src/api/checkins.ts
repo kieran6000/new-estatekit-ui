@@ -1,8 +1,8 @@
 import { supabase } from "./_client";
-import type { CheckinAnswers } from "../lib/checkin";
+import { cleanQuestions, DEFAULT_QUESTIONS, type CheckinAnswers, type CheckinQuestion } from "../lib/checkin";
 
 // Check-ins and the team's to-dos and notes for a client (the Check-ins tab),
-// and the client's form at /k/<token>. See migration 20261109_0001.
+// and the client's form at /k/<token>. See migrations 20261109_0001 and _0002.
 
 export interface CheckinRow {
   id: string;
@@ -15,11 +15,14 @@ export interface CheckinRow {
   answered_at: string | null;
   answers: CheckinAnswers | null;
   comment: string | null;
+  /** The questions it was sent with (older ones: the standard ones). */
+  questions: CheckinQuestion[] | null;
 }
 
 export interface ClientNote {
   id: string;
   kind: "todo" | "note";
+  /** A little HTML (see lib/richNote), or plain text for older ones. */
   body: string;
   link: string | null;
   created_at: string;
@@ -32,10 +35,26 @@ export interface ClientNote {
 export class CheckinsNotSetUp extends Error {}
 const notSetUp = (e: { message: string; code?: string }) => /does not exist|schema cache|42P01|PGRST205/i.test(`${e.message} ${e.code ?? ""}`);
 
+const ROW = "id, token, created_at, created_by_name, expires_at, shared_at, first_opened_at, answered_at, answers, comment, questions";
+const QUESTIONS_KEY = "checkin_questions";
+
+/** The questions new check-ins are sent with. */
+export async function getCheckinQuestions(): Promise<CheckinQuestion[]> {
+  const { data } = await supabase.from("app_settings").select("value").eq("key", QUESTIONS_KEY).maybeSingle();
+  if (!data?.value) return DEFAULT_QUESTIONS;
+  try { return cleanQuestions(JSON.parse(data.value)); } catch { return DEFAULT_QUESTIONS; }
+}
+
+export async function saveCheckinQuestions(questions: CheckinQuestion[]): Promise<void> {
+  const { error } = await supabase.from("app_settings").upsert({ key: QUESTIONS_KEY, value: JSON.stringify(cleanQuestions(questions)), updated_at: new Date().toISOString() });
+  if (error) {
+    console.error("saveCheckinQuestions failed:", error.message);
+    throw new Error("Couldn't save the questions. Try again.");
+  }
+}
+
 export async function listCheckins(agentId: string): Promise<CheckinRow[]> {
-  const { data, error } = await supabase.from("client_checkins")
-    .select("id, token, created_at, created_by_name, expires_at, shared_at, first_opened_at, answered_at, answers, comment")
-    .eq("agent_id", agentId).order("created_at", { ascending: false }).limit(200);
+  const { data, error } = await supabase.from("client_checkins").select(ROW).eq("agent_id", agentId).order("created_at", { ascending: false }).limit(200);
   if (error) {
     if (notSetUp(error)) throw new CheckinsNotSetUp(error.message);
     throw new Error(error.message);
@@ -43,10 +62,10 @@ export async function listCheckins(agentId: string): Promise<CheckinRow[]> {
   return (data ?? []) as CheckinRow[];
 }
 
+/** A link, not sent yet: it only counts as sent once someone says so. */
 export async function createCheckin(agentId: string, fromName: string): Promise<CheckinRow> {
-  const { data, error } = await supabase.from("client_checkins")
-    .insert({ agent_id: agentId, created_by_name: fromName || null })
-    .select("id, token, created_at, created_by_name, expires_at, shared_at, first_opened_at, answered_at, answers, comment").single();
+  const questions = await getCheckinQuestions();
+  const { data, error } = await supabase.from("client_checkins").insert({ agent_id: agentId, created_by_name: fromName || null, questions }).select(ROW).single();
   if (error) {
     console.error("createCheckin failed:", error.message);
     throw new Error("Couldn't make the check-in link. Try again.");
@@ -54,16 +73,11 @@ export async function createCheckin(agentId: string, fromName: string): Promise<
   return data as CheckinRow;
 }
 
-export async function markCheckinShared(id: string): Promise<void> {
-  const { error } = await supabase.from("client_checkins").update({ shared_at: new Date().toISOString() }).eq("id", id);
-  if (error) console.error("markCheckinShared failed:", error.message);
-}
-
-export async function deleteCheckin(id: string): Promise<void> {
-  const { error } = await supabase.from("client_checkins").delete().eq("id", id);
+export async function markCheckinSent(id: string, sent: boolean): Promise<void> {
+  const { error } = await supabase.from("client_checkins").update({ shared_at: sent ? new Date().toISOString() : null }).eq("id", id);
   if (error) {
-    console.error("deleteCheckin failed:", error.message);
-    throw new Error("Couldn't remove it. Try again.");
+    console.error("markCheckinSent failed:", error.message);
+    throw new Error("Couldn't save that. Try again.");
   }
 }
 
@@ -78,10 +92,18 @@ export async function listClientNotes(agentId: string): Promise<ClientNote[]> {
   return (data ?? []) as ClientNote[];
 }
 
-export async function addClientNote(agentId: string, kind: "todo" | "note", body: string, link: string | null, byName: string): Promise<void> {
-  const { error } = await supabase.from("client_notes").insert({ agent_id: agentId, kind, body: body.trim(), link: link || null, created_by_name: byName || null });
+export async function addClientNote(agentId: string, kind: "todo" | "note", body: string, byName: string): Promise<void> {
+  const { error } = await supabase.from("client_notes").insert({ agent_id: agentId, kind, body, created_by_name: byName || null });
   if (error) {
     console.error("addClientNote failed:", error.message);
+    throw new Error("Couldn't save that. Try again.");
+  }
+}
+
+export async function updateClientNote(id: string, body: string): Promise<void> {
+  const { error } = await supabase.from("client_notes").update({ body }).eq("id", id);
+  if (error) {
+    console.error("updateClientNote failed:", error.message);
     throw new Error("Couldn't save that. Try again.");
   }
 }
@@ -104,7 +126,7 @@ export async function deleteClientNote(id: string): Promise<void> {
 
 /* ── The client's form ── */
 
-export interface SharedCheckin { first_name: string; agent_id: string; status: "open" | "answered" | "expired" }
+export interface SharedCheckin { first_name: string; agent_id: string; status: "open" | "answered" | "expired"; questions?: CheckinQuestion[] }
 
 export async function getCheckin(token: string): Promise<SharedCheckin | null> {
   const { data, error } = await supabase.rpc("get_checkin", { p_token: token });
@@ -112,8 +134,8 @@ export async function getCheckin(token: string): Promise<SharedCheckin | null> {
   return (data as SharedCheckin | null) ?? null;
 }
 
-export async function submitCheckin(token: string, answers: CheckinAnswers, comment: string): Promise<"ok" | "answered" | "expired" | "invalid" | "incomplete"> {
-  const { data, error } = await supabase.rpc("submit_checkin", { p_token: token, p_answers: answers, p_comment: comment });
+export async function submitCheckin(token: string, answers: CheckinAnswers): Promise<"ok" | "answered" | "expired" | "invalid" | "incomplete"> {
+  const { data, error } = await supabase.rpc("submit_checkin", { p_token: token, p_answers: answers, p_comment: "" });
   if (error) throw new Error(error.message);
   return data as "ok" | "answered" | "expired" | "invalid" | "incomplete";
 }

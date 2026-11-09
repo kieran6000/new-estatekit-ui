@@ -1,36 +1,76 @@
-// The weekly check-in: the five questions from the team's Google form, what
-// the answers add up to, and when the next one is due.
+// The check-in: its questions (the team can change them), what a set of
+// answers adds up to, and where a client is up to. No weekly schedule: clients
+// answer when they answer, so it shows what happened and when.
 
-export type CheckinKey = "quality" | "volume" | "followup" | "confidence" | "happiness";
-export type CheckinAnswers = Record<CheckinKey, number>;
+export interface CheckinQuestion {
+  /** Stays the same when the wording changes, so answers line up over time. */
+  id: string;
+  type: "rating" | "text";
+  label: string;
+  /** For the team's view: "Lead quality". */
+  short: string;
+  /** Rating only: what 1 and 5 mean. */
+  low?: string;
+  high?: string;
+}
 
-export const QUESTIONS: { key: CheckinKey; label: string; short: string; low: string; high: string }[] = [
-  { key: "quality", label: "How good were your leads this week?", short: "Lead quality", low: "Poor", high: "Great" },
-  { key: "volume", label: "Did you get enough leads this week?", short: "Enough leads", low: "Far too few", high: "Plenty" },
-  { key: "followup", label: "How well did you follow up with your leads?", short: "Follow-up", low: "Hardly", high: "Every one" },
-  { key: "confidence", label: "How confident are you turning these leads into listings?", short: "Confidence", low: "Not at all", high: "Very" },
-  { key: "happiness", label: "How happy are you with EstateKit this week?", short: "Happy with us", low: "Unhappy", high: "Very happy" },
+/** Ratings are 1-5; written answers are text. */
+export type CheckinAnswers = Record<string, number | string>;
+
+export const DEFAULT_QUESTIONS: CheckinQuestion[] = [
+  { id: "quality", type: "rating", label: "How good were your leads this week?", short: "Lead quality", low: "Poor", high: "Great" },
+  { id: "volume", type: "rating", label: "Did you get enough leads this week?", short: "Enough leads", low: "Far too few", high: "Plenty" },
+  { id: "followup", type: "rating", label: "How well did you follow up with your leads?", short: "Follow-up", low: "Hardly", high: "Every one" },
+  { id: "confidence", type: "rating", label: "How confident are you turning these leads into listings?", short: "Confidence", low: "Not at all", high: "Very" },
+  { id: "happiness", type: "rating", label: "How happy are you with EstateKit this week?", short: "Happy with us", low: "Unhappy", high: "Very happy" },
+  { id: "better", type: "text", label: "One thing we could do better?", short: "Could do better" },
 ];
 
-export const COMMENT_QUESTION = "One thing we could do better? (optional)";
+/** The question that says whether they're happy with us, if it's still asked. */
+const HAPPINESS = "happiness";
+
+/** A fresh id for a new question. */
+export const newQuestionId = () => "q" + Math.random().toString(36).slice(2, 9);
+
+/** Questions as saved, checked over: anything broken is left out. */
+export function cleanQuestions(raw: unknown): CheckinQuestion[] {
+  if (!Array.isArray(raw)) return DEFAULT_QUESTIONS;
+  const seen = new Set<string>();
+  const out: CheckinQuestion[] = [];
+  for (const q of raw as Partial<CheckinQuestion>[]) {
+    const id = String(q?.id ?? "").trim();
+    const label = String(q?.label ?? "").trim();
+    if (!id || !label || seen.has(id)) continue;
+    seen.add(id);
+    const type = q.type === "text" ? "text" : "rating";
+    out.push({ id, type, label, short: String(q.short ?? "").trim() || label, ...(type === "rating" ? { low: String(q.low ?? "").trim() || "Poor", high: String(q.high ?? "").trim() || "Great" } : {}) });
+  }
+  return out.length ? out : DEFAULT_QUESTIONS;
+}
 
 export type Risk = "green" | "amber" | "red";
-export const RISK_WORDS: Record<Risk, string> = { green: "Happy", amber: "Keep an eye on", red: "At risk" };
 
-/** What a set of answers adds up to. Red if they're unhappy with us or most
- *  things are bad; green only if it's good overall with nothing poor. */
-export function scoreCheckin(a: CheckinAnswers): { average: number; risk: Risk; weak: CheckinKey[] } {
-  const values = QUESTIONS.map((q) => a[q.key]);
+/** What a set of answers adds up to: the average of the ratings, which are
+ *  weak (3 or less), and a colour. Red if they're unhappy with us or it's bad
+ *  overall; green only if it's good overall with nothing poor. */
+export function scoreCheckin(answers: CheckinAnswers, questions: CheckinQuestion[] = DEFAULT_QUESTIONS): { average: number; risk: Risk; weak: string[] } {
+  const rated = questions.filter((q) => q.type === "rating" && typeof answers[q.id] === "number");
+  const values = rated.map((q) => answers[q.id] as number);
+  if (!values.length) return { average: 0, risk: "amber", weak: [] };
   const average = Math.round((values.reduce((s, v) => s + v, 0) / values.length) * 10) / 10;
-  const weak = QUESTIONS.filter((q) => a[q.key] <= 3).map((q) => q.key);
+  const weak = rated.filter((q) => (answers[q.id] as number) <= 3).map((q) => q.id);
+  const happy = typeof answers[HAPPINESS] === "number" ? (answers[HAPPINESS] as number) : null;
   const anyPoor = values.some((v) => v <= 2);
-  const risk: Risk = a.happiness <= 2 || average < 2.5 ? "red" : average >= 4 && !anyPoor ? "green" : "amber";
+  const risk: Risk = (happy !== null && happy <= 2) || average < 2.5 ? "red" : average >= 4 && !anyPoor ? "green" : "amber";
   return { average, risk, weak };
 }
 
-export const CHECKIN_EVERY_DAYS = 7;
-/** Not answered after this long: worth a reminder. */
-export const REMIND_AFTER_DAYS = 2;
+/** The first written answer: what they said. */
+export function whatTheySaid(answers: CheckinAnswers | null, questions: CheckinQuestion[], comment?: string | null): string {
+  if (comment?.trim()) return comment.trim();
+  for (const q of questions) if (q.type === "text" && typeof answers?.[q.id] === "string" && (answers[q.id] as string).trim()) return (answers[q.id] as string).trim();
+  return "";
+}
 
 export interface CheckinRow {
   created_at: string;
@@ -39,29 +79,33 @@ export interface CheckinRow {
   expires_at: string;
 }
 
-const daysSince = (iso: string, now: Date) => (now.getTime() - Date.parse(iso)) / 864e5;
+/** Where they're up to, as plain facts: no schedule to fall behind on. */
+export function checkinState<T extends CheckinRow>(rows: T[], now = new Date()) {
+  const live = (r: T) => !r.answered_at && Date.parse(r.expires_at) > now.getTime();
+  const sent = rows.filter((r) => r.shared_at);
+  const answered = rows.filter((r) => r.answered_at);
+  return {
+    /** A link made but not marked as sent yet. */
+    draft: rows.find((r) => live(r) && !r.shared_at) ?? null,
+    /** Sent and still waiting for an answer. */
+    waiting: rows.find((r) => live(r) && !!r.shared_at) ?? null,
+    lastAnswered: answered[0] ?? null,
+    lastSent: sent[0] ?? null,
+    sentCount: sent.length,
+    answeredCount: answered.filter((r) => r.shared_at).length,
+  };
+}
 
-/** What to do next, from their check-ins (newest first). */
-export function nextStep(rows: CheckinRow[], now = new Date()):
-  | { kind: "send"; reason: "never" | "due"; days?: number }
-  | { kind: "waiting"; sentAt: string; remind: boolean }
-  | { kind: "done"; nextDue: string } {
-  const live = rows.find((r) => !r.answered_at && Date.parse(r.expires_at) > now.getTime());
-  const latest = rows[0];
-  if (!latest) return { kind: "send", reason: "never" };
-  if (live && daysSince(live.created_at, now) < CHECKIN_EVERY_DAYS) {
-    const sentAt = live.shared_at ?? live.created_at;
-    return { kind: "waiting", sentAt, remind: daysSince(sentAt, now) >= REMIND_AFTER_DAYS };
-  }
-  const last = Date.parse(latest.created_at);
-  const days = Math.floor(daysSince(latest.created_at, now));
-  if (days >= CHECKIN_EVERY_DAYS) return { kind: "send", reason: "due", days };
-  return { kind: "done", nextDue: new Date(last + CHECKIN_EVERY_DAYS * 864e5).toISOString() };
+/** "today", "yesterday", "12 days ago". */
+export function daysAgo(iso: string, now = new Date()): string {
+  const day = (d: Date) => Math.floor((d.getTime() + 2 * 3600_000) / 864e5); // South African days
+  const n = day(now) - day(new Date(iso));
+  return n <= 0 ? "today" : n === 1 ? "yesterday" : `${n} days ago`;
 }
 
 /** The WhatsApp message with their link. */
 export function checkinMessage(firstName: string, fromName: string, link: string): string {
   const hi = firstName ? `Hi ${firstName}` : "Hi";
   const from = fromName ? `, it's ${fromName} from EstateKit` : " from EstateKit";
-  return `${hi}${from}. Quick check-in on your week: it takes a minute, just tap the numbers, no typing needed.\n${link}`;
+  return `${hi}${from}. Quick check-in: it takes a minute, just tap the numbers, no typing needed.\n${link}`;
 }
