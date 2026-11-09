@@ -745,7 +745,19 @@ function AdAccountCard({ data }: { data: Data }) {
   return (
     <Box sx={{ bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "8px", overflow: "hidden", minWidth: 0, height: "100%", display: "flex", flexDirection: "column" }}>
       <Box sx={{ px: 2, pt: 1.5, pb: 0.5, minHeight: 40, display: "flex", alignItems: "center" }}>
-        <Typography sx={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: tokens.ink2 }}>Ad account</Typography>
+        <Typography sx={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: tokens.ink2, flex: 1 }}>Ad account</Typography>
+        {/* A problem shows as a small link up here, not a box that pushes the card around. */}
+        {acct && issue && (
+          <Tooltip title={`${issue.detail} Opens Facebook billing.`}>
+            <Box component="a" href={billingUrl(acct)} target="_blank" rel="noopener" role="alert"
+              sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, px: 1, py: 0.25, borderRadius: 999, fontSize: 13, fontWeight: 600, textDecoration: "none",
+                color: issue.tone === "red" ? tokens.red : tokens.amber, bgcolor: issue.tone === "red" ? tokens.redTint : tokens.amberTint, "&:hover": { textDecoration: "underline" } }}>
+              <WarningAmberRoundedIcon sx={{ fontSize: 16 }} />
+              {issue.title}
+              <OpenInNewIcon sx={{ fontSize: 14 }} />
+            </Box>
+          </Tooltip>
+        )}
       </Box>
       <Box sx={{ px: 2, pb: 1.75, flex: 1, display: "flex", flexDirection: "column" }}>
         {!acct ? (
@@ -762,24 +774,15 @@ function AdAccountCard({ data }: { data: Data }) {
           <Empty>Facebook won't show us this ad account. Check it's shared with EstateKit's Business Manager.</Empty>
         ) : (
           <>
-            {/* The one thing that stops (or is about to stop) their ads, big, the way Facebook's billing page shows it. */}
-            {issue && (
-              <Box role="alert" sx={{ display: "flex", gap: 1.25, alignItems: "flex-start", p: 1.5, mb: 1.75, borderRadius: "8px", bgcolor: issue.tone === "red" ? tokens.redTint : tokens.amberTint, borderLeft: `4px solid ${issue.tone === "red" ? tokens.red : tokens.amber}` }}>
-                <WarningAmberRoundedIcon sx={{ fontSize: 22, color: issue.tone === "red" ? tokens.red : tokens.amber, mt: "1px", flex: "none" }} />
-                <Box sx={{ flex: 1, minWidth: 0 }}>
-                  <Typography sx={{ fontSize: 15, fontWeight: 700 }}>{issue.title}</Typography>
-                  <Typography sx={{ fontSize: 13.5, mt: 0.25 }}>{issue.detail}</Typography>
-                  <Button size="small" variant="contained" disableElevation href={billingUrl(acct)} target="_blank" rel="noopener" endIcon={<OpenInNewIcon sx={{ fontSize: "16px !important" }} />} sx={{ mt: 1, bgcolor: issue.tone === "red" ? tokens.red : undefined }}>
-                    Open Facebook billing
-                  </Button>
-                </Box>
-              </Box>
-            )}
             <Box sx={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 2, flex: 1 }}>
               <Box>
                 <Typography sx={{ fontSize: 13, color: tokens.ink2 }}>Current balance</Typography>
                 <Typography sx={{ fontSize: 26, lineHeight: 1.25, fontVariantNumeric: "tabular-nums" }}>{rands(Math.max(a?.balance ?? 0, 0))}</Typography>
-                {!issue && <Typography sx={{ fontSize: 13, color: tokens.ink2 }}>No payment due right now</Typography>}
+                {issue ? (
+                  <Typography sx={{ fontSize: 13, fontWeight: 500, color: issue.tone === "red" ? tokens.red : tokens.amber }}>{issue.detail}</Typography>
+                ) : (
+                  <Typography sx={{ fontSize: 13, color: tokens.ink2 }}>No payment due right now</Typography>
+                )}
               </Box>
               <Box sx={{ minWidth: 0 }}>
                 <Typography sx={{ fontSize: 13, color: tokens.ink2, mb: 0.5 }}>How they pay</Typography>

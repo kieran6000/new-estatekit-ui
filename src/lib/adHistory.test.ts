@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { changedImages, changeKind, isKeyChange, summariseDay, targetingDiff, plainChange, scaleTop, timelineSteps, worthShowing } from "./adHistory";
+import { changedImages, monthCells, monthsBetween, changeKind, isKeyChange, summariseDay, targetingDiff, plainChange, scaleTop, timelineSteps, worthShowing } from "./adHistory";
 
 const item = (what: string, from: string, to: string) => ({ what, type: "", change: { from, to } });
 
@@ -109,5 +109,16 @@ describe("the changes that matter", () => {
     expect(launch).toEqual({ campaigns: 0, adSets: 0, ads: 2 });
     expect(rows).toHaveLength(1);
     expect(rows[0].times).toBe(2);
+  });
+});
+
+describe("the calendar", () => {
+  it("lists every month a range touches, across a new year", () => {
+    expect(monthsBetween("2026-11-20", "2027-02-03")).toEqual(["2026-11", "2026-12", "2027-01", "2027-02"]);
+  });
+  it("starts the month on the right weekday, Monday first", () => {
+    const cells = monthCells("2026-11"); // 1 Nov 2026 is a Sunday
+    expect(cells.slice(0, 7)).toEqual([null, null, null, null, null, null, "2026-11-01"]);
+    expect(cells.filter(Boolean)).toHaveLength(30);
   });
 });

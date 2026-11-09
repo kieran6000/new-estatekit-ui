@@ -1,15 +1,14 @@
 import { Fragment, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link as RouterLink } from "react-router-dom";
-import { Box, Button, ButtonBase, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Menu, MenuItem, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from "@mui/material";
+import { Box, Button, ButtonBase, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
-import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
-import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
+import CheckIcon from "@mui/icons-material/Check";
 import StarRoundedIcon from "@mui/icons-material/StarRounded";
-import WhatsAppIcon from "@mui/icons-material/WhatsApp";
+import SendRoundedIcon from "@mui/icons-material/SendRounded";
 import { listAgentProfiles } from "../api/_client";
 import {
   addClientNote, CheckinsNotSetUp, createCheckin, deleteClientNote, getCheckinQuestions, getReviewLink, listCheckins, listClientNotes,
@@ -18,7 +17,6 @@ import {
 import { useAuth } from "../hooks/useAuth";
 import { useSnack } from "../hooks/useSnack";
 import { checkinMessage, checkinState, cleanQuestions, daysAgo, DEFAULT_QUESTIONS, newQuestionId, scoreCheckin, whatTheySaid, type CheckinQuestion } from "../lib/checkin";
-import { waDigits } from "../lib/phone";
 import { isEmptyNote, noteForSaving } from "../lib/richNote";
 import { tokens } from "../theme";
 import { NoteEditor, NoteView } from "./RichNote";
@@ -181,18 +179,16 @@ function Stars({ n, size = 20 }: { n: number; size?: number }) {
   );
 }
 
-/** The one thing to do, top right: ask them on WhatsApp. Copying and the questions are in the ⋯ menu. */
-function SendAction({ agentId, clientName, clientPhone, rows, fromName, onEditQuestions }: {
-  agentId: string; clientName: string; clientPhone: string | null; rows: CheckinRow[]; fromName: string; onEditQuestions: () => void;
+/** Top right: one button that copies the check-in message, ready to paste in their WhatsApp. */
+function SendAction({ agentId, clientName, rows, fromName, onEditQuestions }: {
+  agentId: string; clientName: string; rows: CheckinRow[]; fromName: string; onEditQuestions: () => void;
 }) {
   const qc = useQueryClient();
   const showSnack = useSnack();
   const [busy, setBusy] = useState(false);
-  const [menu, setMenu] = useState<HTMLElement | null>(null);
+  const [copied, setCopied] = useState(false);
   const state = checkinState(rows);
   const first = clientName.trim().split(/\s+/)[0] ?? "";
-  const phone = waDigits(clientPhone);
-  const label = first ? `Ask ${first} how it's going` : "Ask how it's going";
 
   /** Their open check-in link, or a new one. Nobody has to say it was sent. */
   async function link(): Promise<CheckinRow> {
@@ -201,25 +197,14 @@ function SendAction({ agentId, clientName, clientPhone, rows, fromName, onEditQu
     void qc.invalidateQueries({ queryKey: ["checkins", agentId] });
     return c;
   }
-  async function openWhatsApp() {
-    setBusy(true);
-    const win = window.open("about:blank", "_blank"); // opened now: a phone blocks one opened after waiting
-    try {
-      const c = await link();
-      if (win) win.location.href = `https://wa.me/${phone}?text=${encodeURIComponent(checkinMessage(first, fromName, linkFor(c)))}`;
-    } catch (e) {
-      win?.close();
-      showSnack((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-  async function copy() {
+  async function send() {
     setBusy(true);
     try {
       const c = await link();
       await navigator.clipboard.writeText(checkinMessage(first, fromName, linkFor(c)));
-      showSnack(first ? `Copied. Paste it in ${first}'s WhatsApp chat.` : "Copied. Paste it in their WhatsApp chat.");
+      showSnack(first ? `Check-in copied. Paste it in your WhatsApp chat with ${first}.` : "Check-in copied. Paste it in their WhatsApp chat.");
+      setCopied(true);
+      setTimeout(() => setCopied(false), 4000);
     } catch (e) {
       showSnack(e instanceof Error && !/clipboard|document/i.test(e.message) ? e.message : "Couldn't copy it. Try again.");
     } finally {
@@ -228,13 +213,15 @@ function SendAction({ agentId, clientName, clientPhone, rows, fromName, onEditQu
   }
 
   return (
-    <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, my: -0.5 }}>
-      <Button size="small" variant="contained" disableElevation startIcon={phone ? <WhatsAppIcon /> : <ContentCopyIcon />} onClick={phone ? openWhatsApp : copy} disabled={busy}>{label}</Button>
-      <IconButton size="small" aria-label="More" onClick={(e) => setMenu(e.currentTarget)}><MoreHorizIcon fontSize="small" /></IconButton>
-      <Menu anchorEl={menu} open={!!menu} onClose={() => setMenu(null)} onClick={() => setMenu(null)} anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}>
-        {phone && <MenuItem onClick={copy}>Copy the message instead</MenuItem>}
-        <MenuItem onClick={onEditQuestions}>Change the questions</MenuItem>
-      </Menu>
+    <Box sx={{ display: "flex", alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end", gap: 1, my: -0.5 }}>
+      <Button size="small" onClick={onEditQuestions} sx={{ color: tokens.ink2 }}>Edit questions</Button>
+      <Tooltip title={copied ? "" : "Copies the message with their link, ready to paste in WhatsApp"}>
+        <Button size="small" variant="contained" disableElevation onClick={send} disabled={busy}
+          startIcon={copied ? <CheckIcon /> : <SendRoundedIcon />}
+          sx={copied ? { bgcolor: tokens.greenCall, "&:hover": { bgcolor: tokens.greenCallHover } } : undefined}>
+          {copied ? "Copied! Paste it in WhatsApp" : first ? `Send ${first} a check-in` : "Send a check-in"}
+        </Button>
+      </Tooltip>
     </Box>
   );
 }
@@ -268,7 +255,7 @@ function LatestCheckin({ r }: { r: CheckinRow }) {
       <Box sx={{ display: "flex", alignItems: "center", flexWrap: "wrap", columnGap: 1.25, rowGap: 0.25 }}>
         <Stars n={t.average} size={28} />
         <Typography sx={{ fontSize: 22, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{t.average}</Typography>
-        <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>{daysAgo(r.answered_at!).replace(/^./, (c) => c.toUpperCase())}</Typography>
+        <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>{day(r.answered_at!)} · {daysAgo(r.answered_at!)}</Typography>
       </Box>
       {said && <Typography sx={{ fontSize: 16.5, lineHeight: 1.55, mt: 1.25, whiteSpace: "pre-wrap" }}>“{said}”</Typography>}
       <Box sx={{ mt: 1.25 }}><Breakdown r={r} /></Box>
@@ -285,12 +272,15 @@ function EarlierCheckin({ r }: { r: CheckinRow }) {
   return (
     <Box sx={{ borderTop: `1px solid ${tokens.divider2}` }}>
       <ButtonBase onClick={() => setOpen(!open)} aria-expanded={open}
-        sx={{ width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 1.5, py: 1.1, px: 0.5, borderRadius: "6px", "&:hover": { bgcolor: tokens.surface2 } }}>
-        <Typography sx={{ fontSize: 13.5, color: tokens.ink2, width: 92, flex: "none" }}>{day(r.answered_at!)}</Typography>
+        sx={{ width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 1.5, py: 1.1, px: 0.75, borderRadius: "6px", cursor: "pointer", bgcolor: open ? tokens.surface2 : "transparent", "&:hover": { bgcolor: tokens.surface2 }, "&:hover .ek-open": { bgcolor: tokens.primaryBg } }}>
+        <Typography sx={{ fontSize: 13.5, fontWeight: 500, width: 92, flex: "none" }}>{day(r.answered_at!)}</Typography>
         <Stars n={t.average} size={15} />
         <Typography sx={{ fontSize: 13.5, fontWeight: 600, width: 26, flex: "none", fontVariantNumeric: "tabular-nums" }}>{t.average}</Typography>
         <Typography noWrap sx={{ fontSize: 13.5, color: tokens.ink2, flex: 1, minWidth: 0 }}>{open ? "" : said ? `“${said}”` : ""}</Typography>
-        <ExpandMoreIcon sx={{ fontSize: 18, color: tokens.ink3, flex: "none", transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }} />
+        <Box className="ek-open" sx={{ display: "flex", alignItems: "center", gap: 0.25, flex: "none", color: "primary.main", fontSize: 13, fontWeight: 600, px: 1, py: 0.25, borderRadius: 999, bgcolor: open ? tokens.primaryBg : "transparent" }}>
+          {open ? "Close" : "Open"}
+          <ExpandMoreIcon sx={{ fontSize: 18, transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }} />
+        </Box>
       </ButtonBase>
       {open && (
         <Box sx={{ pl: { sm: "112px" }, px: 0.5, pb: 1.5 }}>
@@ -302,7 +292,7 @@ function EarlierCheckin({ r }: { r: CheckinRow }) {
   );
 }
 
-function HowTheyFeel({ agentId, clientName, clientPhone, fromName }: { agentId: string; clientName: string; clientPhone: string | null; fromName: string }) {
+function HowTheyFeel({ agentId, clientName, fromName }: { agentId: string; clientName: string; fromName: string }) {
   const [editing, setEditing] = useState(false);
   const { data: rows = [], isLoading, error } = useQuery({ queryKey: ["checkins", agentId], queryFn: () => listCheckins(agentId), retry: (n, e) => !(e instanceof CheckinsNotSetUp) && n < 1 });
   const answered = rows.filter((r) => r.answered_at && r.answers);
@@ -310,7 +300,7 @@ function HowTheyFeel({ agentId, clientName, clientPhone, fromName }: { agentId: 
 
   if (error) return <Card title="What they told us"><Typography sx={{ fontSize: 14, color: tokens.ink2 }}>{error instanceof CheckinsNotSetUp ? "Check-ins aren't switched on yet." : "Couldn't load their check-ins. Refresh to try again."}</Typography></Card>;
   return (
-    <Card title={first ? `What ${first} told us` : "What they told us"} action={<SendAction agentId={agentId} clientName={clientName} clientPhone={clientPhone} rows={rows} fromName={fromName} onEditQuestions={() => setEditing(true)} />}>
+    <Card title={first ? `What ${first} told us` : "What they told us"} action={<SendAction agentId={agentId} clientName={clientName} rows={rows} fromName={fromName} onEditQuestions={() => setEditing(true)} />}>
       {editing && <EditQuestions onClose={() => setEditing(false)} />}
       {isLoading ? null : answered.length ? (
         <>
@@ -419,13 +409,13 @@ function ToDos({ agentId, byName }: { agentId: string; byName: string }) {
   );
 }
 
-export default function CheckInsTab({ agentId, clientName, clientPhone }: { agentId: string; clientName: string; clientPhone: string | null }) {
+export default function CheckInsTab({ agentId, clientName }: { agentId: string; clientName: string; clientPhone?: string | null }) {
   const { user } = useAuth();
   const { data: profiles } = useQuery({ queryKey: ["agentProfiles"], queryFn: listAgentProfiles, staleTime: 5 * 60_000 });
   const me = profiles?.find((p) => p.agent_id === user?.id)?.display_name?.trim().split(/\s+/)[0] ?? "";
   return (
     <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "minmax(0, 3fr) minmax(0, 2fr)" }, gap: 2, alignItems: "start" }}>
-      <HowTheyFeel agentId={agentId} clientName={clientName} clientPhone={clientPhone} fromName={me} />
+      <HowTheyFeel agentId={agentId} clientName={clientName} fromName={me} />
       <ToDos agentId={agentId} byName={me} />
     </Box>
   );

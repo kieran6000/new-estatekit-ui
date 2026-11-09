@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import RocketLaunchOutlinedIcon from "@mui/icons-material/RocketLaunchOutlined";
-import { Box, Button, Chip, Skeleton, Tooltip, Typography, useMediaQuery } from "@mui/material";
+import { Box, Button, Chip, Skeleton, Typography } from "@mui/material";
 import { useQuery } from "@tanstack/react-query";
 import GpsFixedIcon from "@mui/icons-material/GpsFixed";
 import ImageOutlinedIcon from "@mui/icons-material/ImageOutlined";
@@ -12,14 +12,12 @@ import TuneIcon from "@mui/icons-material/Tune";
 import { supabase } from "../api/_client";
 import { getAdHistory, type AdHistoryItem } from "../api/agentProfile";
 import { adsManagerUrl, getSpendDaily } from "../api/clients";
-import { addDays, changeKind, isKeyChange, plainChange, scaleTop, summariseDay, targetingDiff, timelineSteps, worthShowing, type ChangeKind } from "../lib/adHistory";
+import { addDays, changeKind, isKeyChange, plainChange, summariseDay, targetingDiff, worthShowing, type ChangeKind } from "../lib/adHistory";
+import ChangeCalendar, { type CalendarDay } from "./ChangeCalendar";
 import { tokens } from "../theme";
 
 const DAYS_SHOWN = 5;
 const CHANGES_PER_DAY = 3;
-const BAR_HEIGHT = 72;
-const BAR_MAX_WIDTH = 28;
-const GUTTER = 58;
 const saDay = (iso: string | number | Date) => new Date(iso).toLocaleDateString("en-CA", { timeZone: "Africa/Johannesburg" });
 const niceDay = (day: string) => new Date(`${day}T12:00:00Z`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
 const shortDay = (day: string) => new Date(`${day}T12:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
@@ -100,9 +98,8 @@ function DayRow({ day, items, leads, spent }: { day: string; items: AdHistoryIte
 /** What was changed on their ads and when, on a timeline with their leads, so
  *  whoever's looking can see what happened next for themselves. */
 export default function AdChanges({ agentId, acct, since, until }: { agentId: string; acct: string | null | undefined; since: string; until: string }) {
-  const [picked, setPicked] = useState<{ start: string; end: string } | null>(null);
+  const [picked, setPicked] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
-  const phone = useMediaQuery("(max-width:600px)");
   useEffect(() => { setPicked(null); setShowAll(false); }, [since, until]);
 
   const history = useQuery({ queryKey: ["adHistory", acct, since, until], queryFn: () => getAdHistory(acct!, since, until), enabled: !!acct, staleTime: 5 * 60_000, retry: false });
@@ -122,18 +119,18 @@ export default function AdChanges({ agentId, acct, since, until }: { agentId: st
   const leadMap = leads.data ?? {};
   const spendMap = spend.data ?? null;
 
-  const { unit, steps } = timelineSteps(since, until);
-  const bars = steps.map((b) => {
-    let n = 0, cost = 0;
-    for (let d = b.start; d <= b.end; d = addDays(d, 1)) { n += leadMap[d] ?? 0; cost += Number(spendMap?.[d]) || 0; }
-    const changes = byDay.filter(([d]) => d >= b.start && d <= b.end).reduce((sum, [, l]) => { const day = summariseDay(l); return sum + day.rows.length + (day.launch ? 1 : 0) + (day.pictures ? 1 : 0); }, 0);
-    return { ...b, leads: n, cost, changes };
-  });
-  const top = scaleTop(Math.max(...bars.map((b) => b.leads), 0));
-  const labelEvery = Math.max(1, Math.ceil(bars.length / (phone ? 4 : 8)));
-  const small = phone || bars.length > 40;
+  // Each day: leads, spend and how many changes, for the calendar.
+  const calendar = useMemo(() => {
+    const out: Record<string, CalendarDay> = {};
+    for (let d = since; d <= until; d = addDays(d, 1)) out[d] = { leads: leadMap[d] ?? 0, spent: spendMap ? Number(spendMap[d]) || 0 : null, changes: 0 };
+    for (const [d, list] of byDay) {
+      const day = summariseDay(list);
+      if (out[d]) out[d].changes = day.rows.length + (day.launch ? 1 : 0) + (day.pictures ? 1 : 0);
+    }
+    return out;
+  }, [since, until, leadMap, spendMap, byDay]);
 
-  const visible = byDay.filter(([d]) => !picked || (d >= picked.start && d <= picked.end));
+  const visible = byDay.filter(([d]) => !picked || d === picked);
   const shownDays = showAll ? visible : visible.slice(0, DAYS_SHOWN);
 
   return (
@@ -153,72 +150,10 @@ export default function AdChanges({ agentId, acct, since, until }: { agentId: st
           </Typography>
         ) : (
           <>
-            <Typography sx={{ fontSize: 13.5, color: tokens.ink2, mb: 1.25 }}>
-              Bars are leads each {unit}. Circles are changes: click one to see it.
-            </Typography>
+            <ChangeCalendar since={since} until={until} days={calendar} picked={picked} onPick={(d) => { setPicked(d); setShowAll(false); }} />
 
-            <Box sx={{ display: "flex", minWidth: 0 }}>
-              {/* The scale, and the name of the changes row. */}
-              <Box sx={{ width: GUTTER, flex: "none", pr: 1, textAlign: "right", fontSize: 12, color: tokens.ink2 }}>
-                <Box sx={{ height: BAR_HEIGHT, display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-                  <Box sx={{ lineHeight: 1, mt: "-2px" }}>{top}</Box>
-                  <Box sx={{ lineHeight: 1 }}>{top / 2}</Box>
-                  <Box sx={{ lineHeight: 1, mb: "-2px" }}>0</Box>
-                </Box>
-                <Box sx={{ height: 30, display: "flex", alignItems: "center", justifyContent: "flex-end", fontWeight: 600 }}>Changes</Box>
-              </Box>
-
-              <Box sx={{ position: "relative", flex: 1, minWidth: 0 }}>
-                {/* Lines at the top and middle of the scale. */}
-                {[0, BAR_HEIGHT / 2].map((y) => <Box key={y} sx={{ position: "absolute", top: y, left: 0, right: 0, borderTop: `1px solid ${tokens.divider2}` }} />)}
-                <Box sx={{ position: "relative", display: "flex", gap: "2px" }}>
-                  {bars.map((b, i) => {
-                    const on = picked?.start === b.start;
-                    return (
-                      <Tooltip
-                        key={b.start}
-                        arrow
-                        title={
-                          <Box sx={{ py: 0.25 }}>
-                            <Typography sx={{ fontSize: 12.5, fontWeight: 600 }}>{b.start === b.end ? niceDay(b.start) : `${shortDay(b.start)} to ${shortDay(b.end)}`}</Typography>
-                            <Typography sx={{ fontSize: 12.5 }}>{plural(b.leads, "lead")}{spendMap ? ` · ${rand(b.cost)} spent` : ""}</Typography>
-                            {b.changes > 0 && <Typography sx={{ fontSize: 12.5 }}>{plural(b.changes, "change")}. Click to see</Typography>}
-                          </Box>
-                        }
-                      >
-                        <Box
-                          component={b.changes ? "button" : "div"}
-                          type={b.changes ? "button" : undefined}
-                          onClick={b.changes ? () => { setPicked(on ? null : { start: b.start, end: b.end }); setShowAll(false); } : undefined}
-                          aria-label={b.changes ? `${plural(b.changes, "change")}, ${shortDay(b.start)}` : undefined}
-                          sx={{ flex: "1 1 0", minWidth: 0, p: 0, border: 0, font: "inherit", color: "inherit", borderRadius: "4px", bgcolor: on ? tokens.primaryBg : "transparent", cursor: b.changes ? "pointer" : "default", display: "block", position: "relative", "&:hover": { bgcolor: on ? tokens.primaryBg : tokens.surface2 } }}
-                        >
-                          <Box sx={{ height: BAR_HEIGHT, display: "flex", alignItems: "flex-end", justifyContent: "center", px: "1px", borderBottom: `1px solid ${tokens.divider}` }}>
-                            <Box sx={{ width: "100%", maxWidth: BAR_MAX_WIDTH, height: `${(b.leads / top) * 100}%`, minHeight: b.leads ? 3 : 0, borderRadius: "3px 3px 0 0", bgcolor: tokens.primary }} />
-                          </Box>
-                          <Box sx={{ height: 30, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                            {b.changes > 0 && (
-                              <Box sx={{ width: small ? 9 : 22, height: small ? 9 : 22, flex: "none", borderRadius: "50%", bgcolor: on ? tokens.primary : tokens.ink, color: tokens.surface, display: "flex", alignItems: "center", justifyContent: "center", fontSize: b.changes > 99 ? 9 : 11.5, fontWeight: 700 }}>
-                                {small ? "" : b.changes}
-                              </Box>
-                            )}
-                          </Box>
-                          {/* The date, along the bottom. */}
-                          <Box sx={{ height: 20, position: "relative" }}>
-                            {i % labelEvery === 0 && (
-                              <Box component="span" sx={{ position: "absolute", left: "50%", transform: "translateX(-50%)", top: 2, fontSize: 12, fontWeight: 500, color: tokens.ink2, whiteSpace: "nowrap" }}>{shortDay(b.start)}</Box>
-                            )}
-                          </Box>
-                        </Box>
-                      </Tooltip>
-                    );
-                  })}
-                </Box>
-              </Box>
-            </Box>
-
-            <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 0.75, mt: 1.5, mb: 1.25 }}>
-              {picked && <Chip size="small" label={picked.start === picked.end ? `${shortDay(picked.start)} only` : `${shortDay(picked.start)} to ${shortDay(picked.end)} only`} onDelete={() => setPicked(null)} sx={{ borderRadius: "6px" }} />}
+            <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 0.75, mt: 2, mb: 1 }}>
+              {picked && <Chip size="small" label={`Only ${niceDay(picked)}`} onDelete={() => setPicked(null)} sx={{ borderRadius: "6px" }} />}
             </Box>
 
             {!visible.length ? (

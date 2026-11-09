@@ -1,40 +1,57 @@
-import { Box, Typography } from "@mui/material";
-import ChevronRightIcon from "@mui/icons-material/ChevronRight";
-import { leadFunnel } from "../lib/leadFunnel";
+import { Box, Tooltip, Typography } from "@mui/material";
+import { stageCounts } from "../lib/leadFunnel";
 import { timeAgo } from "../lib/timeAgo";
 import { tokens } from "../theme";
 
-/** How far their leads have got, on one slim row. */
+/** The same colours as the stage chips on a lead. */
+const STAGE_COLOR: Record<string, string> = {
+  "New Lead": tokens.green,
+  "No Answer": tokens.amber,
+  Contacted: tokens.primary,
+  Booked: tokens.purple,
+  "Viewing Booked": tokens.purple,
+  "Offer Made": tokens.greenDark,
+  "Mandate Signed": tokens.greenDark,
+  Bought: tokens.greenDark,
+  Lost: tokens.ink3,
+  "Invalid Number": tokens.ink3,
+};
+const colorOf = (stage: string) => STAGE_COLOR[stage] ?? tokens.ink3;
+
+/** Where their leads are right now, by the pipeline's own stage names, on one slim row. */
 export default function LeadFunnel({ byStage, lastLeadAt, hasAdAccount = true }: { byStage: Record<string, number>; lastLeadAt?: string | null; hasAdAccount?: boolean }) {
-  const { steps, rest } = leadFunnel(byStage);
-  const total = steps[0].count;
+  const { total, stages } = stageCounts(byStage);
   return (
-    <Box sx={{ bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "8px", px: 2, py: 1.25, minWidth: 0 }}>
+    <Box sx={{ bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "8px", px: 2, py: 1.5, minWidth: 0 }}>
       {!total ? (
         <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>{hasAdAccount ? "No leads yet. Leads from their Facebook ads show here within about 5 minutes of coming in." : "No leads yet. Once their ad account is linked above and their ads run, leads show here."}</Typography>
       ) : (
-        <Box sx={{ display: "flex", alignItems: "center", flexWrap: "wrap", columnGap: 2, rowGap: 0.75 }}>
-          <Box sx={{ display: "flex", alignItems: "center", gap: { xs: 0.25, sm: 1 }, flex: "1 1 420px", minWidth: 0 }}>
-            {steps.map((s, i) => (
-              <Box key={s.label} sx={{ display: "contents" }}>
-                {i > 0 && <ChevronRightIcon sx={{ fontSize: 20, color: tokens.ink3, flex: "none" }} />}
-                <Box sx={{ flex: 1, minWidth: 0 }}>
-                  <Box sx={{ display: "flex", alignItems: "baseline", flexWrap: "wrap", columnGap: 0.75 }}>
-                    <Typography sx={{ fontSize: 22, fontWeight: 600, lineHeight: 1.2, fontVariantNumeric: "tabular-nums" }}>{s.count}</Typography>
-                    <Typography sx={{ fontSize: 13, fontWeight: 500 }}>{s.label}</Typography>
-                  </Box>
-                  <Box sx={{ height: 4, mt: 0.5, borderRadius: "2px", bgcolor: tokens.surface2, overflow: "hidden" }}>
-                    <Box sx={{ height: "100%", width: `${(s.count / total) * 100}%`, bgcolor: tokens.primary, borderRadius: "2px" }} />
-                  </Box>
-                </Box>
+        <>
+          <Box sx={{ display: "flex", alignItems: "flex-end", flexWrap: "wrap", columnGap: 3, rowGap: 1 }}>
+            <Box>
+              <Typography sx={{ fontSize: 26, fontWeight: 700, lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>{total}</Typography>
+              <Typography sx={{ fontSize: 13, color: tokens.ink2 }}>leads</Typography>
+            </Box>
+            {stages.map((s) => (
+              <Box key={s.stage}>
+                <Typography sx={{ fontSize: 18, fontWeight: 600, lineHeight: 1.2, fontVariantNumeric: "tabular-nums" }}>{s.count}</Typography>
+                <Typography sx={{ fontSize: 13, color: tokens.ink2, display: "flex", alignItems: "center", gap: 0.6, whiteSpace: "nowrap" }}>
+                  <Box component="span" sx={{ width: 8, height: 8, borderRadius: "2px", bgcolor: colorOf(s.stage), flex: "none" }} />
+                  {s.stage}
+                </Typography>
               </Box>
             ))}
+            <Typography sx={{ fontSize: 12, color: tokens.ink3, ml: "auto", alignSelf: "flex-end" }}>All time{lastLeadAt ? ` · last lead ${timeAgo(lastLeadAt)}` : ""}</Typography>
           </Box>
-          <Box sx={{ flex: "0 1 auto", minWidth: 0 }}>
-            {rest.length > 0 && <Typography sx={{ fontSize: 12.5, color: tokens.ink2 }}>{rest.map((s) => `${s.label} ${s.count}`).join(" · ")}</Typography>}
-            <Typography sx={{ fontSize: 12, color: tokens.ink3 }}>All time{lastLeadAt ? ` · last lead ${timeAgo(lastLeadAt)}` : ""}</Typography>
+          {/* One bar: how their leads split across the stages. */}
+          <Box sx={{ display: "flex", gap: "2px", height: 8, mt: 1.25, borderRadius: "4px", overflow: "hidden" }}>
+            {stages.map((s) => (
+              <Tooltip key={s.stage} title={`${s.stage}: ${s.count} of ${total}`}>
+                <Box sx={{ flex: `${s.count} 1 0`, minWidth: 3, bgcolor: colorOf(s.stage) }} />
+              </Tooltip>
+            ))}
           </Box>
-        </Box>
+        </>
       )}
     </Box>
   );
