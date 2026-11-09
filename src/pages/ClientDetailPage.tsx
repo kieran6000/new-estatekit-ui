@@ -667,7 +667,7 @@ function OverviewTab({ data }: { data: Data }) {
         <LeadAreaMap agentId={agentId} areas={areas} addAreasHref={spotLink(clientPath(agentId, profiles, "brief"), "brief.suburbs")} />
       </Box>
 
-      <LeadFunnel byStage={data.live?.by_stage ?? {}} lastLeadAt={data.live?.last_lead_at} hasAdAccount={!!acct} />
+      <LeadFunnel agentId={agentId} byStage={data.live?.by_stage ?? {}} lastLeadAt={data.live?.last_lead_at} hasAdAccount={!!acct} />
 
       {acct && (<>
       <Box sx={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 1.5, flexWrap: "wrap" }}>

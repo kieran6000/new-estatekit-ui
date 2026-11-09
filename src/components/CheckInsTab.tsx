@@ -7,7 +7,7 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import CheckIcon from "@mui/icons-material/Check";
-import SendRoundedIcon from "@mui/icons-material/SendRounded";
+import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
 import { listAgentProfiles } from "../api/_client";
 import {
   addClientNote, checkinIdOf, checkinLink, CheckinsNotSetUp, createCheckin, deleteClientNote, getCheckinQuestions, getReviewLink, listCheckins, listClientNotes,
@@ -101,11 +101,11 @@ const day = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { timeZon
 const linkFor = (c: CheckinRow) => `${window.location.origin}/k/${c.token}`;
 const questionsOf = (r: CheckinRow) => cleanQuestions(r.questions ?? DEFAULT_QUESTIONS);
 
-function Card({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
+function Card({ title, action, children, stackOnPhone }: { title: string; action?: React.ReactNode; children: React.ReactNode; /** On a phone, the action goes on its own line. */ stackOnPhone?: boolean }) {
   return (
     <Box sx={{ bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "8px", overflow: "hidden", minWidth: 0 }}>
-      <Box sx={{ px: 2, pt: 1.5, pb: 0.5, minHeight: 40, display: "flex", alignItems: "center", gap: 1 }}>
-        <Typography sx={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: tokens.ink2, flex: 1 }}>{title}</Typography>
+      <Box sx={{ px: 2, pt: 1.5, pb: 0.5, minHeight: 40, display: "flex", alignItems: "center", flexWrap: "wrap", columnGap: 1, rowGap: 1 }}>
+        <Typography sx={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: tokens.ink2, flex: "1 1 auto", minWidth: stackOnPhone ? { xs: "100%", sm: 0 } : 0 }}>{title}</Typography>
         {action}
       </Box>
       <Box sx={{ px: 2, pb: 2 }}>{children}</Box>
@@ -274,13 +274,13 @@ function SendAction({ agentId, clientName, rows, fromName, onEditQuestions }: {
   }
 
   return (
-    <Box sx={{ display: "flex", alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end", gap: 1, my: -0.5 }}>
-      <Button size="small" onClick={onEditQuestions} sx={{ color: tokens.ink2 }}>Edit questions</Button>
+    <Box sx={{ display: "flex", alignItems: "center", justifyContent: { xs: "space-between", sm: "flex-end" }, gap: 1, my: -0.5, width: { xs: "100%", sm: "auto" } }}>
+      <Button size="small" onClick={onEditQuestions} sx={{ color: tokens.ink2, ml: { xs: -0.75, sm: 0 } }}>Edit questions</Button>
       <Tooltip title={copied ? "" : "Copies the message with their link, ready to paste in WhatsApp"}>
         <Button size="small" variant="contained" disableElevation onClick={send} disabled={busy}
-          startIcon={copied ? <CheckIcon /> : <SendRoundedIcon />}
+          startIcon={copied ? <CheckIcon /> : <ContentCopyRoundedIcon />}
           sx={copied ? { bgcolor: tokens.greenCall, "&:hover": { bgcolor: tokens.greenCallHover } } : undefined}>
-          {copied ? "Copied! Paste it in WhatsApp" : first ? `Send ${first} a check-in` : "Send a check-in"}
+          {copied ? "Copied! Paste it in WhatsApp" : <>Send <Box component="span" sx={{ display: { xs: "none", sm: "inline" } }}>{first || ""}&nbsp;</Box>a check-in</>}
         </Button>
       </Tooltip>
     </Box>
@@ -366,7 +366,7 @@ function HowTheyFeel({ agentId, clientName, fromName }: { agentId: string; clien
 
   if (error) return <Card title="What they told us"><Typography sx={{ fontSize: 14, color: tokens.ink2 }}>{error instanceof CheckinsNotSetUp ? "Check-ins aren't switched on yet." : "Couldn't load their check-ins. Refresh to try again."}</Typography></Card>;
   return (
-    <Card title={first ? `What ${first} told us` : "What they told us"} action={<SendAction agentId={agentId} clientName={clientName} rows={rows} fromName={fromName} onEditQuestions={() => setEditing(true)} />}>
+    <Card stackOnPhone title={first ? `What ${first} told us` : "What they told us"} action={<SendAction agentId={agentId} clientName={clientName} rows={rows} fromName={fromName} onEditQuestions={() => setEditing(true)} />}>
       {editing && <EditQuestions onClose={() => setEditing(false)} />}
       {isLoading ? null : answered.length ? (
         <>
