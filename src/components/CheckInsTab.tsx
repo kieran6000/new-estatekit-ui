@@ -180,7 +180,7 @@ function Stars({ n, size = 20 }: { n: number; size?: number }) {
   );
 }
 
-/** The one thing to do, top right: send one, or see it's on its way. The rest is in the ⋯ menu. */
+/** The one thing to do, top right: ask them on WhatsApp. Copying and the questions are in the ⋯ menu. */
 function SendAction({ agentId, clientName, clientPhone, rows, fromName, onEditQuestions }: {
   agentId: string; clientName: string; clientPhone: string | null; rows: CheckinRow[]; fromName: string; onEditQuestions: () => void;
 }) {
@@ -191,13 +191,13 @@ function SendAction({ agentId, clientName, clientPhone, rows, fromName, onEditQu
   const state = checkinState(rows);
   const first = clientName.trim().split(/\s+/)[0] ?? "";
   const phone = waDigits(clientPhone);
-  const refresh = () => qc.invalidateQueries({ queryKey: ["checkins", agentId] });
+  const label = first ? `Ask ${first} how it's going` : "Ask how it's going";
 
+  /** Their open check-in link, or a new one. Nobody has to say it was sent. */
   async function link(): Promise<CheckinRow> {
-    if (state.waiting) return state.waiting;
-    if (state.draft) return state.draft;
-    const c = await createCheckin(agentId, fromName);
-    await refresh();
+    const c = state.waiting ?? state.draft ?? (await createCheckin(agentId, fromName));
+    if (!c.shared_at) await markCheckinSent(c.id, true).catch(() => {});
+    void qc.invalidateQueries({ queryKey: ["checkins", agentId] });
     return c;
   }
   async function openWhatsApp() {
@@ -218,30 +218,20 @@ function SendAction({ agentId, clientName, clientPhone, rows, fromName, onEditQu
     try {
       const c = await link();
       await navigator.clipboard.writeText(checkinMessage(first, fromName, linkFor(c)));
-      showSnack("Copied. Paste it in their WhatsApp chat.");
+      showSnack(first ? `Copied. Paste it in ${first}'s WhatsApp chat.` : "Copied. Paste it in their WhatsApp chat.");
     } catch (e) {
       showSnack(e instanceof Error && !/clipboard|document/i.test(e.message) ? e.message : "Couldn't copy it. Try again.");
     } finally {
       setBusy(false);
     }
   }
-  async function markSent(id: string, sent: boolean) {
-    try { await markCheckinSent(id, sent); await refresh(); } catch (e) { showSnack((e as Error).message); }
-  }
 
   return (
     <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, my: -0.5 }}>
-      {state.waiting ? (
-        <Typography sx={{ fontSize: 13.5, color: tokens.ink2 }}>Sent {daysAgo(state.waiting.shared_at!)} · waiting for them</Typography>
-      ) : phone ? (
-        <Button size="small" variant="contained" disableElevation startIcon={<WhatsAppIcon />} onClick={openWhatsApp} disabled={busy}>Send a check-in</Button>
-      ) : (
-        <Button size="small" variant="contained" disableElevation startIcon={<ContentCopyIcon />} onClick={copy} disabled={busy}>Copy a check-in</Button>
-      )}
+      <Button size="small" variant="contained" disableElevation startIcon={phone ? <WhatsAppIcon /> : <ContentCopyIcon />} onClick={phone ? openWhatsApp : copy} disabled={busy}>{label}</Button>
       <IconButton size="small" aria-label="More" onClick={(e) => setMenu(e.currentTarget)}><MoreHorizIcon fontSize="small" /></IconButton>
       <Menu anchorEl={menu} open={!!menu} onClose={() => setMenu(null)} onClick={() => setMenu(null)} anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}>
-        {(state.waiting || phone) && <MenuItem onClick={copy}>Copy the message</MenuItem>}
-        {state.waiting && <MenuItem onClick={() => markSent(state.waiting!.id, false)}>It wasn't sent</MenuItem>}
+        {phone && <MenuItem onClick={copy}>Copy the message instead</MenuItem>}
         <MenuItem onClick={onEditQuestions}>Change the questions</MenuItem>
       </Menu>
     </Box>
@@ -279,37 +269,21 @@ function CheckinCard({ r, first }: { r: CheckinRow; first: boolean }) {
 }
 
 function HowTheyFeel({ agentId, clientName, clientPhone, fromName }: { agentId: string; clientName: string; clientPhone: string | null; fromName: string }) {
-  const qc = useQueryClient();
-  const showSnack = useSnack();
   const [editing, setEditing] = useState(false);
   const { data: rows = [], isLoading, error } = useQuery({ queryKey: ["checkins", agentId], queryFn: () => listCheckins(agentId), retry: (n, e) => !(e instanceof CheckinsNotSetUp) && n < 1 });
   const answered = rows.filter((r) => r.answered_at && r.answers);
-  const state = checkinState(rows);
-  async function confirmSent(id: string) {
-    try { await markCheckinSent(id, true); await qc.invalidateQueries({ queryKey: ["checkins", agentId] }); } catch (e) { showSnack((e as Error).message); }
-  }
+  const first = clientName.trim().split(/\s+/)[0] ?? "";
 
-  if (error) return <Card title="How they're feeling"><Typography sx={{ fontSize: 14, color: tokens.ink2 }}>{error instanceof CheckinsNotSetUp ? "Check-ins aren't switched on yet." : "Couldn't load their check-ins. Refresh to try again."}</Typography></Card>;
+  if (error) return <Card title="What they told us"><Typography sx={{ fontSize: 14, color: tokens.ink2 }}>{error instanceof CheckinsNotSetUp ? "Check-ins aren't switched on yet." : "Couldn't load their check-ins. Refresh to try again."}</Typography></Card>;
   return (
-    <Card title="How they're feeling" action={<SendAction agentId={agentId} clientName={clientName} clientPhone={clientPhone} rows={rows} fromName={fromName} onEditQuestions={() => setEditing(true)} />}>
+    <Card title={first ? `What ${first} told us` : "What they told us"} action={<SendAction agentId={agentId} clientName={clientName} clientPhone={clientPhone} rows={rows} fromName={fromName} onEditQuestions={() => setEditing(true)} />}>
       {editing && <EditQuestions onClose={() => setEditing(false)} />}
-      {state.draft && (
-        <Box sx={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 1, mt: 1, px: 1.5, py: 1, borderRadius: "8px", bgcolor: tokens.surface2 }}>
-          <Typography sx={{ fontSize: 14, flex: 1 }}>Did the check-in go to them?</Typography>
-          <Button size="small" variant="outlined" onClick={() => confirmSent(state.draft!.id)}>Yes, it's sent</Button>
-        </Box>
-      )}
       {isLoading ? null : answered.length ? (
         <>
           {answered.map((r, i) => <CheckinCard key={r.id} r={r} first={i === 0} />)}
-          {state.sentCount > 0 && (
-            <Typography sx={{ fontSize: 12.5, color: tokens.ink3, pt: 1, borderTop: `1px solid ${tokens.divider2}` }}>
-              They've answered {state.answeredCount} of {state.sentCount} check-ins sent.
-            </Typography>
-          )}
         </>
       ) : (
-        <Typography sx={{ fontSize: 14.5, color: tokens.ink2, py: 2 }}>No answers yet. When they answer a check-in, it shows here like a review.</Typography>
+        <Typography sx={{ fontSize: 14.5, color: tokens.ink2, py: 2 }}>{first || "They"} hasn't answered yet. Ask how it's going, and the answer shows here like a review.</Typography>
       )}
     </Card>
   );
