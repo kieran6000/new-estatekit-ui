@@ -22,6 +22,7 @@ import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import { listAgentProfiles, setActiveAgent, getActiveAgentIdSync, ACTIVE_AGENT_EVENT } from "../api/_client";
 import { useAuth } from "../hooks/useAuth";
 import { trackActivity } from "../lib/activity";
+import { prefetchClient } from "../lib/prefetchClient";
 import { tokens } from "../theme";
 
 /** Agents type a full patch of suburbs into "area" (e.g. "Fourways, Sandton,
@@ -178,6 +179,7 @@ export default function AccountSwitcher({ variant = "dark", staff = true }: { va
                 key={p.agent_id}
                 selected={isActive}
                 onClick={() => handleSelect(p.agent_id)}
+                onMouseEnter={() => { if (p.agent_id !== user?.id) void prefetchClient(qc, p.agent_id); }}
                 sx={{ py: 1, pl: 2, pr: 1 }}
               >
                 <ListItemAvatar sx={{ minWidth: 44 }}>

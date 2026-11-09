@@ -52,6 +52,7 @@ import {
   type ClientProfilePatch,
 } from "../api/clients";
 import { getFbAdAccount, setAgentPassword } from "../api/agentProfile";
+import ClientArrows from "../components/ClientArrows";
 import { listAccountWorkflows } from "../api/workflows";
 import { supabase } from "../api/_client";
 import { getEmailStats } from "../api/leadEvents";
@@ -259,6 +260,7 @@ function Header({ data }: { data: Data }) {
     <Box sx={{ bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
       <Box sx={{ maxWidth: 1440, mx: "auto", px: { xs: 2, md: 3 }, py: { xs: 2, md: 2.5 }, display: "flex", gap: { xs: 2, md: 3 }, alignItems: { xs: "flex-start", md: "center" }, flexDirection: { xs: "column", md: "row" } }}>
         <Box sx={{ display: "flex", gap: 2, alignItems: "center", flex: 1, minWidth: 0 }}>
+          <ClientArrows agentId={p.agent_id} />
           <Box
             component="button"
             type="button"
