@@ -3,15 +3,20 @@ import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Box, Button, CircularProgress, TextField, Typography } from "@mui/material";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
+import StarRoundedIcon from "@mui/icons-material/StarRounded";
+import StarOutlineRoundedIcon from "@mui/icons-material/StarOutlineRounded";
 import { getCheckin, submitCheckin } from "../api/checkins";
-import { cleanQuestions, scoreCheckin, type CheckinAnswers, type CheckinQuestion } from "../lib/checkin";
+import { askForReview, cleanQuestions, scoreCheckin, type CheckinAnswers, type CheckinQuestion } from "../lib/checkin";
 import { supabase } from "../api/_client";
 
 // The client's check-in: /k/<token>, the link the team sends on WhatsApp. No
 // sign-in and no name to type: the link is theirs. A tap for each rating, and
-// a box for anything written (optional).
+// a box for anything written (optional). Ratings are stars, like a Google
+// review. After a really good one (and only then) it asks, gently, for a
+// Google review.
 
 const BLUE = "#1a56db";
+const GOLD = "#f59e0b";
 
 function Page({ children }: { children: React.ReactNode }) {
   return (
@@ -25,31 +30,52 @@ function Page({ children }: { children: React.ReactNode }) {
 }
 
 function Scale({ q, value, onPick }: { q: CheckinQuestion; value: number | undefined; onPick: (n: number) => void }) {
+  const stars = (n: number) => `${n} star${n === 1 ? "" : "s"}`;
   return (
     <Box component="fieldset" sx={{ border: 0, p: 0, m: 0, mb: 3 }}>
-      <Typography component="legend" sx={{ fontSize: 17, fontWeight: 600, mb: 1.25, lineHeight: 1.35 }}>{q.label}</Typography>
-      <Box sx={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 1 }}>
+      <Typography component="legend" sx={{ fontSize: 17, fontWeight: 600, mb: 0.75, lineHeight: 1.35 }}>{q.label}</Typography>
+      <Box sx={{ display: "flex", gap: { xs: 0.25, sm: 0.75 } }}>
         {[1, 2, 3, 4, 5].map((n) => {
-          const on = value === n;
+          const lit = value !== undefined && n <= value;
           return (
             <Box
               key={n}
               component="button"
               type="button"
-              aria-pressed={on}
-              aria-label={`${n} out of 5${n === 1 ? `, ${q.low}` : n === 5 ? `, ${q.high}` : ""}`}
+              aria-pressed={value === n}
+              aria-label={`${stars(n)}${n === 1 ? `, ${q.low}` : n === 5 ? `, ${q.high}` : ""}`}
               onClick={() => onPick(n)}
-              sx={{ height: 56, borderRadius: "10px", border: `2px solid ${on ? BLUE : "#d1d5db"}`, bgcolor: on ? BLUE : "#fff", color: on ? "#fff" : "#111827", cursor: "pointer", fontFamily: "inherit", "&:focus-visible": { outline: `3px solid ${BLUE}`, outlineOffset: 2 } }}
+              sx={{ width: 58, height: 58, p: 0, display: "grid", placeItems: "center", border: 0, bgcolor: "transparent", borderRadius: "10px", cursor: "pointer", color: lit ? GOLD : "#9ca3af", "&:focus-visible": { outline: `3px solid ${BLUE}`, outlineOffset: 1 } }}
             >
-              <Box component="span" sx={{ fontSize: 22, fontWeight: 700 }}>{n}</Box>
+              {lit ? <StarRoundedIcon sx={{ fontSize: 52 }} /> : <StarOutlineRoundedIcon sx={{ fontSize: 52 }} />}
             </Box>
           );
         })}
       </Box>
-      <Box sx={{ display: "flex", justifyContent: "space-between", mt: 0.75, fontSize: 13.5, color: "#4b5563" }}>
-        <span>1 = {q.low}</span>
-        <span>5 = {q.high}</span>
+      <Typography sx={{ mt: 0.25, fontSize: 14, color: "#4b5563", minHeight: 20 }}>
+        {value === undefined ? `1 star = ${q.low} · 5 stars = ${q.high}` : `${stars(value)}${value === 1 ? `: ${q.low}` : value === 5 ? `: ${q.high}` : ""}`}
+      </Typography>
+    </Box>
+  );
+}
+
+/** Shown after a really good check-in, if there's a review link. Warm, short, easy to skip. */
+function ReviewAsk({ link, first }: { link: string; first: string }) {
+  const [gone, setGone] = useState(false);
+  if (gone) return null;
+  return (
+    <Box sx={{ mt: 3, p: 2.25, borderRadius: "12px", bgcolor: "#fffbeb", border: "1px solid #fde68a" }}>
+      <Box sx={{ display: "flex", gap: 0.25, color: GOLD, mb: 1 }} aria-hidden>
+        {[1, 2, 3, 4, 5].map((n) => <StarRoundedIcon key={n} sx={{ fontSize: 26 }} />)}
       </Box>
+      <Typography sx={{ fontSize: 18, fontWeight: 700 }}>That honestly made our day{first ? `, ${first}` : ""}.</Typography>
+      <Typography sx={{ mt: 1, fontSize: 16, color: "#374151", lineHeight: 1.5 }}>
+        We're a small team, and kind words from agents like you are how other agents find us. If you have a minute, would you share them in a Google review? Only if you'd like to.
+      </Typography>
+      <Button component="a" href={link} target="_blank" rel="noopener noreferrer" variant="contained" disableElevation fullWidth sx={{ mt: 2, minHeight: 52, fontSize: 17, fontWeight: 700, bgcolor: BLUE, borderRadius: "10px" }}>
+        Leave a Google review
+      </Button>
+      <Button fullWidth onClick={() => setGone(true)} sx={{ mt: 0.75, color: "#4b5563" }}>Maybe another time</Button>
     </Box>
   );
 }
@@ -99,6 +125,7 @@ export default function CheckInPage() {
         <CheckCircleIcon sx={{ fontSize: 44, color: "#15803d" }} />
         <Typography sx={{ fontSize: 22, fontWeight: 700, mt: 1 }}>{result === "ok" ? `Thank you${first ? `, ${first}` : ""}!` : "You've already sent this one"}</Typography>
         <Typography sx={{ mt: 1, fontSize: 16, color: "#374151" }}>{result === "ok" ? "We read every answer, and we'll act on what you told us." : "Thank you. We've got your answers."}</Typography>
+        {result === "ok" && data.review_link && askForReview(answers, questions) && <ReviewAsk link={data.review_link} first={first} />}
       </Page>
     );
   }
@@ -109,7 +136,7 @@ export default function CheckInPage() {
   return (
     <Page>
       <Typography component="h1" sx={{ fontSize: 24, fontWeight: 700, lineHeight: 1.25 }}>{first ? `Hi ${first}, how's it going?` : "How's it going?"}</Typography>
-      <Typography sx={{ mt: 0.75, mb: 3, fontSize: 16, color: "#374151" }}>Tap a number for each. It takes a minute.</Typography>
+      <Typography sx={{ mt: 0.75, mb: 3, fontSize: 16, color: "#374151" }}>Tap the stars for each. It takes a minute.</Typography>
       {questions.map((q) =>
         q.type === "rating" ? (
           <Scale key={q.id} q={q} value={typeof answers[q.id] === "number" ? (answers[q.id] as number) : undefined} onPick={(n) => setAnswers((a) => ({ ...a, [q.id]: n }))} />

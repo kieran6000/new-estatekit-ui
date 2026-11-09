@@ -6,11 +6,12 @@ import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
+import StarRoundedIcon from "@mui/icons-material/StarRounded";
 import WhatsAppIcon from "@mui/icons-material/WhatsApp";
 import { listAgentProfiles } from "../api/_client";
 import {
-  addClientNote, CheckinsNotSetUp, createCheckin, deleteClientNote, getCheckinQuestions, listCheckins, listClientNotes,
-  markCheckinSent, saveCheckinQuestions, setNoteDone, updateClientNote, type CheckinRow, type ClientNote,
+  addClientNote, CheckinsNotSetUp, createCheckin, deleteClientNote, getCheckinQuestions, getReviewLink, listCheckins, listClientNotes,
+  markCheckinSent, saveCheckinQuestions, saveReviewLink, setNoteDone, updateClientNote, type CheckinRow, type ClientNote,
 } from "../api/checkins";
 import { useAuth } from "../hooks/useAuth";
 import { useSnack } from "../hooks/useSnack";
@@ -44,11 +45,11 @@ function Card({ title, action, children }: { title: string; action?: React.React
 
 const Dot = ({ risk, size = 10 }: { risk: Risk; size?: number }) => <Box component="span" sx={{ display: "inline-block", width: size, height: size, borderRadius: "50%", bgcolor: RISK_COLOR[risk], flex: "none" }} />;
 
-/** One 1–5 answer as five boxes, so a 2 looks like a 2 from across the room. */
+/** One answer as the stars they gave, coloured so a 2 looks like a 2 from across the room. */
 function Score({ n }: { n: number }) {
   return (
-    <Box sx={{ display: "inline-flex", alignItems: "center", gap: "3px" }} aria-label={`${n} out of 5`}>
-      {[1, 2, 3, 4, 5].map((i) => <Box key={i} sx={{ width: 14, height: 14, borderRadius: "3px", bgcolor: i <= n ? scoreColor(n) : tokens.surface2 }} />)}
+    <Box sx={{ display: "inline-flex", alignItems: "center" }} aria-label={`${n} star${n === 1 ? "" : "s"}`}>
+      {[1, 2, 3, 4, 5].map((i) => <StarRoundedIcon key={i} sx={{ fontSize: 19, color: i <= n ? scoreColor(n) : tokens.surface2 }} />)}
       <Typography component="span" sx={{ fontSize: 13.5, fontWeight: 700, ml: 0.75, fontVariantNumeric: "tabular-nums" }}>{n}</Typography>
     </Box>
   );
@@ -130,15 +131,21 @@ function EditQuestions({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
   const showSnack = useSnack();
   const { data: saved } = useQuery({ queryKey: ["checkinQuestions"], queryFn: getCheckinQuestions });
+  const { data: savedReview } = useQuery({ queryKey: ["checkinReviewLink"], queryFn: getReviewLink });
   const [qs, setQs] = useState<CheckinQuestion[] | null>(null);
+  const [review, setReview] = useState<string | null>(null);
+  const reviewLink = (review ?? savedReview ?? "").trim();
+  const reviewOk = !reviewLink || /^https:\/\/\S+$/i.test(reviewLink);
   const list = qs ?? saved ?? DEFAULT_QUESTIONS;
   const set = (i: number, patch: Partial<CheckinQuestion>) => setQs(list.map((q, j) => (j === i ? { ...q, ...patch } : q)));
   const move = (i: number, by: number) => { const next = [...list]; const [q] = next.splice(i, 1); next.splice(i + by, 0, q); setQs(next); };
-  const ok = list.some((q) => q.type === "rating") && list.every((q) => q.label.trim());
+  const ok = list.some((q) => q.type === "rating") && list.every((q) => q.label.trim()) && reviewOk;
   async function save() {
     try {
       await saveCheckinQuestions(list.map((q) => ({ ...q, short: q.short.trim() || q.label.trim() })));
+      if (review !== null) await saveReviewLink(reviewLink);
       await qc.invalidateQueries({ queryKey: ["checkinQuestions"] });
+      await qc.invalidateQueries({ queryKey: ["checkinReviewLink"] });
       showSnack("Saved. New check-ins use these questions.");
       onClose();
     } catch (e) {
@@ -155,7 +162,7 @@ function EditQuestions({ onClose }: { onClose: () => void }) {
             <TextField size="small" label="Question" value={q.label} onChange={(e) => set(i, { label: e.target.value })} />
             <TextField size="small" label="Short name" value={q.short} onChange={(e) => set(i, { short: e.target.value })} helperText="Shown on the tab" />
             <TextField size="small" select label="Answer" value={q.type} onChange={(e) => set(i, e.target.value === "text" ? { type: "text", low: undefined, high: undefined } : { type: "rating", low: q.low || "Poor", high: q.high || "Great" })}>
-              <MenuItem value="rating">1 to 5</MenuItem>
+              <MenuItem value="rating">Stars (1 to 5)</MenuItem>
               <MenuItem value="text">Written (optional)</MenuItem>
             </TextField>
             <Box sx={{ display: "flex" }}>
@@ -165,13 +172,21 @@ function EditQuestions({ onClose }: { onClose: () => void }) {
             </Box>
             {q.type === "rating" && (
               <Box sx={{ display: "flex", gap: 1, gridColumn: { md: "1 / 3" } }}>
-                <TextField size="small" label="1 means" value={q.low ?? ""} onChange={(e) => set(i, { low: e.target.value })} sx={{ flex: 1 }} />
-                <TextField size="small" label="5 means" value={q.high ?? ""} onChange={(e) => set(i, { high: e.target.value })} sx={{ flex: 1 }} />
+                <TextField size="small" label="1 star means" value={q.low ?? ""} onChange={(e) => set(i, { low: e.target.value })} sx={{ flex: 1 }} />
+                <TextField size="small" label="5 stars mean" value={q.high ?? ""} onChange={(e) => set(i, { high: e.target.value })} sx={{ flex: 1 }} />
               </Box>
             )}
           </Box>
         ))}
         <Button onClick={() => setQs([...list, { id: newQuestionId(), type: "rating", label: "", short: "", low: "Poor", high: "Great" }])} sx={{ mt: 1 }}>Add a question</Button>
+        <Box sx={{ mt: 2.5, pt: 2, borderTop: `1px solid ${tokens.divider2}` }}>
+          <Typography sx={{ fontSize: 15, fontWeight: 600 }}>Ask for a Google review</Typography>
+          <Typography sx={{ fontSize: 14, color: tokens.ink2, mt: 0.25, mb: 1.25 }}>
+            Only clients who give a really good check-in are asked: at least 4 stars for everything and 5 stars for how happy they are with us. Leave it empty and nobody is asked.
+          </Typography>
+          <TextField size="small" fullWidth label="Your Google review link" placeholder="https://g.page/r/…/review" value={review ?? savedReview ?? ""} onChange={(e) => setReview(e.target.value)}
+            error={!reviewOk} helperText={reviewOk ? "In Google Business Profile, choose \"Ask for reviews\" and copy the link." : "This needs to start with https://"} />
+        </Box>
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>

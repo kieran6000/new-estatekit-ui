@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkinMessage, checkinState, cleanQuestions, daysAgo, DEFAULT_QUESTIONS, scoreCheckin, whatTheySaid, type CheckinAnswers } from "./checkin";
+import { askForReview, checkinMessage, checkinState, cleanQuestions, daysAgo, DEFAULT_QUESTIONS, scoreCheckin, whatTheySaid, type CheckinAnswers } from "./checkin";
 
 const a = (quality: number, volume: number, followup: number, confidence: number, happiness: number): CheckinAnswers => ({ quality, volume, followup, confidence, happiness });
 
@@ -61,6 +61,18 @@ describe("where a client is up to", () => {
 
 describe("the WhatsApp message", () => {
   it("is short and has the link on its own line", () => {
-    expect(checkinMessage("Juani", "Khushil", "https://x/k/1")).toBe("Hi Juani, it's Khushil from EstateKit. Quick check-in: it takes a minute, just tap the numbers, no typing needed.\nhttps://x/k/1");
+    expect(checkinMessage("Juani", "Khushil", "https://x/k/1")).toBe("Hi Juani, it's Khushil from EstateKit. Quick check-in: it takes a minute, just tap the stars, no typing needed.\nhttps://x/k/1");
+  });
+});
+
+describe("asking for a Google review", () => {
+  const all = (n: number): CheckinAnswers => ({ quality: n, volume: n, followup: n, confidence: n, happiness: n });
+  it("only asks after a really good check-in", () => {
+    expect(askForReview(all(5))).toBe(true);
+    expect(askForReview({ ...all(5), volume: 4, quality: 4 })).toBe(true);
+    expect(askForReview(all(4))).toBe(false);
+    expect(askForReview({ ...all(5), happiness: 4 })).toBe(false);
+    expect(askForReview({ ...all(5), followup: 3 })).toBe(false);
+    expect(askForReview({ quality: 5 })).toBe(false);
   });
 });

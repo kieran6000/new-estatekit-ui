@@ -25,6 +25,14 @@ describe("formatted notes", () => {
 
   it("shows older plain notes as typed", () => {
     expect(noteHtml("Line one\n<two>")).toBe("Line one<br>&lt;two&gt;");
+    expect(noteHtml("Price < 2m & > 1m")).toBe("Price &lt; 2m &amp; &gt; 1m");
+  });
+
+  it("shows formatting typed straight in, not as code", () => {
+    const typed = 'Fix the <b>ad budget</b>&nbsp;before <a href="https://x.co">x</a>';
+    expect(noteHtml(typed)).toContain("<b>ad budget</b>");
+    expect(noteHtml(typed)).not.toContain("&lt;b&gt;");
+    expect(noteForSaving("Fix the <b>budget</b>")).toBe("<div>Fix the <b>budget</b></div>");
   });
 
   it("knows an empty note from one with only a screenshot", () => {

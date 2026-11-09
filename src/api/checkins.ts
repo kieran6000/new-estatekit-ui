@@ -53,6 +53,22 @@ export async function saveCheckinQuestions(questions: CheckinQuestion[]): Promis
   }
 }
 
+const REVIEW_KEY = "google_review_link";
+
+/** Where very happy clients are asked to leave a Google review ("" = don't ask). */
+export async function getReviewLink(): Promise<string> {
+  const { data } = await supabase.from("app_settings").select("value").eq("key", REVIEW_KEY).maybeSingle();
+  return data?.value?.trim() ?? "";
+}
+
+export async function saveReviewLink(link: string): Promise<void> {
+  const { error } = await supabase.from("app_settings").upsert({ key: REVIEW_KEY, value: link.trim(), updated_at: new Date().toISOString() });
+  if (error) {
+    console.error("saveReviewLink failed:", error.message);
+    throw new Error("Couldn't save the review link. Try again.");
+  }
+}
+
 export async function listCheckins(agentId: string): Promise<CheckinRow[]> {
   const { data, error } = await supabase.from("client_checkins").select(ROW).eq("agent_id", agentId).order("created_at", { ascending: false }).limit(200);
   if (error) {
@@ -126,7 +142,7 @@ export async function deleteClientNote(id: string): Promise<void> {
 
 /* ── The client's form ── */
 
-export interface SharedCheckin { first_name: string; agent_id: string; status: "open" | "answered" | "expired"; questions?: CheckinQuestion[] }
+export interface SharedCheckin { first_name: string; agent_id: string; status: "open" | "answered" | "expired"; questions?: CheckinQuestion[]; review_link?: string | null }
 
 export async function getCheckin(token: string): Promise<SharedCheckin | null> {
   const { data, error } = await supabase.rpc("get_checkin", { p_token: token });

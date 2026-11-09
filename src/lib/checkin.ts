@@ -65,6 +65,16 @@ export function scoreCheckin(answers: CheckinAnswers, questions: CheckinQuestion
   return { average, risk, weak };
 }
 
+/** Only for a really good check-in: every rating 4 stars or more, 4.5 on
+ *  average, and 5 stars for how happy they are with us (when that's asked).
+ *  Then, and only then, the form asks for a Google review. */
+export function askForReview(answers: CheckinAnswers, questions: CheckinQuestion[] = DEFAULT_QUESTIONS): boolean {
+  const rated = questions.filter((q) => q.type === "rating");
+  if (!rated.length || rated.some((q) => typeof answers[q.id] !== "number" || (answers[q.id] as number) < 4)) return false;
+  if (rated.some((q) => q.id === HAPPINESS) && answers[HAPPINESS] !== 5) return false;
+  return scoreCheckin(answers, questions).average >= 4.5;
+}
+
 /** The first written answer: what they said. */
 export function whatTheySaid(answers: CheckinAnswers | null, questions: CheckinQuestion[], comment?: string | null): string {
   if (comment?.trim()) return comment.trim();
@@ -107,5 +117,5 @@ export function daysAgo(iso: string, now = new Date()): string {
 export function checkinMessage(firstName: string, fromName: string, link: string): string {
   const hi = firstName ? `Hi ${firstName}` : "Hi";
   const from = fromName ? `, it's ${fromName} from EstateKit` : " from EstateKit";
-  return `${hi}${from}. Quick check-in: it takes a minute, just tap the numbers, no typing needed.\n${link}`;
+  return `${hi}${from}. Quick check-in: it takes a minute, just tap the stars, no typing needed.\n${link}`;
 }

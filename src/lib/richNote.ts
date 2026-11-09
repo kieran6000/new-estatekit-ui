@@ -31,12 +31,17 @@ export function noteForSaving(html: string): string {
   const box = document.createElement("div");
   box.innerHTML = cleanNoteHtml(html);
   box.querySelectorAll("img").forEach((img) => img.removeAttribute("src"));
-  return box.innerHTML.trim();
+  const out = box.innerHTML.trim();
+  // Always starts with a tag, so it's never mistaken for an older plain note.
+  return out && !out.startsWith("<") ? `<div>${out}</div>` : out;
 }
+
+/** Looks like a formatted note: starts with a tag, or has one of ours in it. */
+const FORMATTED = /^\s*<|<(b|strong|i|em|u|a|br|p|div|ul|ol|li|img)[\s>/]|&nbsp;/i;
 
 /** Older notes are plain text: show them as typed. */
 export function noteHtml(body: string): string {
-  if (/^\s*</.test(body)) return cleanNoteHtml(body);
+  if (FORMATTED.test(body)) return cleanNoteHtml(body);
   const esc = body.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
   return esc.replace(/\n/g, "<br>");
 }
