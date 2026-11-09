@@ -1,3 +1,4 @@
+import { waDigits } from "./phone";
 /** Turn raw FB answer keys like "1_-_3_months" / "just_curious" into
  *  readable text ("1 - 3 months", "Just curious"). Leaves normal text
  *  (addresses, sentences) untouched apart from stray underscores. */
@@ -27,11 +28,7 @@ export function fillMessage(text: string, lead: string, agentName: string | null
 /** South African numbers with the country code: "082 668 5452", "+27 082 668 5452"
  *  and "82 668 5452" → "27826685452". */
 export function intlDigits(phone: string): string {
-  const d = phone.replace(/\D/g, "");
-  if (d.length === 10 && d.startsWith("0")) return "27" + d.slice(1);
-  if (d.length === 12 && d.startsWith("270")) return "27" + d.slice(3);
-  if (d.length === 9 && /^[6-8]/.test(d) && !phone.trim().startsWith("+")) return "27" + d;
-  return d;
+  return waDigits(phone) || phone.replace(/\D/g, "");
 }
 
 /** A link that dials a lead. It needs the +: without it a phone treats 2782… as

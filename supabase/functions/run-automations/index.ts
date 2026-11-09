@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { runWorkflows } from "./workflows.ts";
+import { prettyPhone as tidyPhone, toE164, waDigits } from "../_shared/phone.ts";
 
 const BATCH_SIZE = 200;
 const TEXTMEBOT_URL = "https://api.textmebot.com/send.php";
@@ -84,7 +85,7 @@ async function sendWhatsApp(phone: string, text: string, media?: Media): Promise
   if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
   lastSendAt = Date.now();
 
-  const digits = phone.replace(/[^0-9]/g, "");
+  const digits = waDigits(phone) || phone.replace(/[^0-9]/g, "");
   // Without media this is exactly the URL every message has always used.
   let url = `${TEXTMEBOT_URL}?recipient=${digits}&apikey=${apiKey}`;
   if (!media || text) url += `&text=${encodeURIComponent(text)}`;

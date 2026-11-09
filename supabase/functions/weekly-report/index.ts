@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { prettyPhone as tidyPhone, toE164, waDigits } from "../_shared/phone.ts";
 
 // Weekly reports for agents (Accounts → Weekly reports).
 //
@@ -43,7 +44,7 @@ async function caller(req: Request): Promise<{ id: string; isOperator: boolean; 
 async function sendWhatsApp(phone: string, text: string): Promise<{ ok: boolean; error?: string }> {
   const apiKey = Deno.env.get("TEXTMEBOT_API_KEY");
   if (!apiKey) return { ok: false, error: "WhatsApp sending isn't set up (TEXTMEBOT_API_KEY)." };
-  const digits = phone.replace(/[^0-9]/g, "");
+  const digits = waDigits(phone) || phone.replace(/[^0-9]/g, "");
   if (digits.length < 9) return { ok: false, error: "This agent has no valid WhatsApp number." };
   const url = `${TEXTMEBOT_URL}?recipient=${digits}&apikey=${apiKey}&text=${encodeURIComponent(text)}`;
   // TextMeBot allows one message per ~5s per account. One retry covers a

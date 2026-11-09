@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { updateLead } from "../api/leads";
 import { useSnack } from "../hooks/useSnack";
 import type { LeadRow } from "../types";
+import { toE164 } from "../lib/phone";
 
 // Fix a lead's name, number or email (a typo in the form, a nickname, a
 // second number they gave on the phone). The phone is left out for plans
@@ -35,7 +36,7 @@ export default function EditLeadContactDialog({ lead, open, onClose, showPhone }
       await updateLead(lead.id, {
         name: name.trim(),
         email: email.trim() || null,
-        ...(showPhone ? { phone: phone.trim() } : {}),
+        ...(showPhone ? { phone: toE164(phone) || phone.trim() } : {}),
       });
       await qc.invalidateQueries({ queryKey: ["leads"] });
       await qc.invalidateQueries({ queryKey: ["lead", lead.id] });

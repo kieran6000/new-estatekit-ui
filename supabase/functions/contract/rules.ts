@@ -1,4 +1,4 @@
-import { cleanLeadPhone } from "../public-submit-lead/phone.ts";
+import { waDigits } from "../_shared/phone.ts";
 
 // The rules behind signing a contract, kept apart so they can be tested.
 
@@ -25,8 +25,7 @@ export const documentHash = (document: unknown) => sha256(canonical(document));
 
 /** International digits, so 083… and +2783… are the same number. "" if it can't be one. */
 export function phoneDigits(raw: string): string {
-  const d = cleanLeadPhone(raw).replace(/\D/g, "");
-  const full = d.length === 10 && d.startsWith("0") ? "27" + d.slice(1) : d;
+  const full = waDigits(raw);
   return full.length >= 11 && full.length <= 15 ? full : "";
 }
 

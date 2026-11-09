@@ -11,6 +11,7 @@
 //     DISCORD_ACTIVITY_WEBHOOK
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { prettyPhone as tidyPhone, toE164, waDigits } from "../_shared/phone.ts";
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
@@ -30,7 +31,7 @@ async function secret(name: string): Promise<string> {
 async function sendWhatsApp(to: string, text: string): Promise<string> {
   const apiKey = Deno.env.get("TEXTMEBOT_API_KEY");
   if (!apiKey) return "not_configured";
-  const url = `https://api.textmebot.com/send.php?recipient=${to}&apikey=${apiKey}&text=${encodeURIComponent(text)}`;
+  const url = `https://api.textmebot.com/send.php?recipient=${waDigits(to) || to}&apikey=${apiKey}&text=${encodeURIComponent(text)}`;
   // TextMeBot allows one message per 5s per account, shared with the
   // automations. One retry after the window covers a collision.
   for (let attempt = 0; attempt < 2; attempt++) {

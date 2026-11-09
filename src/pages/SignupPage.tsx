@@ -25,6 +25,7 @@ import { ADMIN_WHATSAPP } from "../lib/contact";
 import type { Place } from "../lib/places";
 import { ACCENT, Choice, CityPicker, MAX_SUBURBS, Question, SuburbPicker } from "../components/FunnelSteps";
 import estateKitLogoWhite from "../assets/whitelogofull.png";
+import { isMobile } from "../lib/phone";
 
 // The public "get a free account" form, reached from the "Powered by
 // EstateKit" link on clients' lead pages. Built for completion rate: short
@@ -54,8 +55,7 @@ const STEP_ICON: Record<Step, ReactNode> = {
 };
 
 function phoneIsValid(v: string): boolean {
-  const d = v.replace(/\D/g, "");
-  return d.length >= 9 && d.length <= 13;
+  return isMobile(v);
 }
 const emailIsValid = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
 

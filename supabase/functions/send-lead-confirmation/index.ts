@@ -15,6 +15,7 @@
 // lead starts the conversation, which needs no WhatsApp Business API.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { prettyPhone as tidyPhone, toE164, waDigits } from "../_shared/phone.ts";
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 const FROM_ADDRESS = "hello@mail.estatekit.co";
@@ -30,17 +31,8 @@ const esc = (s: string) =>
 const first = (s: string | null | undefined) => (s || "").trim().split(/\s+/)[0] || "";
 // South African numbers however they were typed: 083…, +27 083… (the 0 kept
 // after the country code), or 83… (the 0 left off).
-const digits = (s: string | null | undefined) => {
-  const d = (s || "").replace(/\D/g, "");
-  if (d.length === 10 && d.startsWith("0")) return "27" + d.slice(1);
-  if (d.length === 12 && d.startsWith("270")) return "27" + d.slice(3);
-  if (d.length === 9 && /^[6-8]/.test(d) && !(s || "").trim().startsWith("+")) return "27" + d;
-  return d;
-};
-const prettyPhone = (s: string) => {
-  const d = digits(s);
-  return d.length === 11 && d.startsWith("27") ? `0${d.slice(2, 4)} ${d.slice(4, 7)} ${d.slice(7)}` : s;
-};
+const digits = (s: string | null | undefined) => waDigits(s) || (s || "").replace(/\D/g, "");
+const prettyPhone = (s: string) => tidyPhone(s);
 
 // The standard main text for seller leads, the same for every agent. An
 // operator can give one agent their own (agent_profiles.lead_email_body).

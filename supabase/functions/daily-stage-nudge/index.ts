@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { prettyPhone as tidyPhone, toE164, waDigits } from "../_shared/phone.ts";
 
 // End-of-day nudge: one WhatsApp per agent listing how many leads still need
 // their stage updated, with a link straight to the list.
@@ -45,7 +46,7 @@ async function sendWhatsApp(phone: string, text: string): Promise<boolean> {
     console.error("TEXTMEBOT_API_KEY not configured — skipping send to", phone);
     return false;
   }
-  const digits = phone.replace(/[^0-9]/g, "");
+  const digits = waDigits(phone) || phone.replace(/[^0-9]/g, "");
   const url = `${TEXTMEBOT_URL}?recipient=${digits}&apikey=${apiKey}&text=${encodeURIComponent(text)}`;
   const res = await fetch(url);
   if (!res.ok) {
