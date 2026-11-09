@@ -1,3 +1,6 @@
+import { getGoogleCalendarStatus } from "../api/googleCalendar";
+import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
+import { accountIssue, billingUrl, spendingLimit } from "../lib/adAccountHealth";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link as RouterLink, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -72,14 +75,13 @@ import FundingChip from "../components/FundingChip";
 import LeadAreaMap from "../components/LeadAreaMap";
 import LeadFunnel from "../components/LeadFunnel";
 import AdChanges from "../components/AdChanges";
-import StatusStrip from "../components/StatusStrip";
 import { isCity } from "../lib/geo";
 import CreditCardOutlinedIcon from "@mui/icons-material/CreditCardOutlined";
 import TollOutlinedIcon from "@mui/icons-material/TollOutlined";
 import AccountBalanceOutlinedIcon from "@mui/icons-material/AccountBalanceOutlined";
 import ContractsSection from "../components/ContractsSection";
 import InvoicesSection from "../components/InvoicesSection";
-import { toE164, waDigits } from "../lib/phone";
+import { prettyPhone, toE164, waDigits } from "../lib/phone";
 
 /** Digits in international form, so 083… and +2783… compare equal. */
 const digits = (s: string) => waDigits(s) || (s || "").replace(/\D/g, "");
@@ -172,6 +174,7 @@ export default function ClientDetailPage() {
             {tab === "brief" && (
               <Box sx={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
                 <BriefSection data={data} />
+                <ServiceDetailsSection data={data} />
                 <OtherAnswersSection data={data} />
                 {data.dossier?.onboardingExtra && <OnboardingSection data={data} which="onboardingExtra" />}
               </Box>
@@ -696,7 +699,7 @@ function AdAccountCard({ data }: { data: Data }) {
     queryKey: ["fbAdAccount", acct],
     queryFn: () => getFbAdAccount(acct!),
     enabled: !!acct,
-    staleTime: 60 * 60_000,
+    staleTime: 10 * 60_000,
     retry: false,
   });
   const since30 = ymd(new Date(Date.now() - 29 * 864e5));
@@ -709,6 +712,8 @@ function AdAccountCard({ data }: { data: Data }) {
   });
   const avgDaily = daily30 ? (spendBetween(daily30, since30, ymd(new Date(Date.now() + 864e5))) ?? 0) / 30 : null;
   const problem = adAccountProblem(a, avgDaily);
+  const issue = accountIssue(a, problem);
+  const limit = spendingLimit(a);
   const kind = fundingKind(a?.fundingType);
   const card = cardFrom(a?.fundingLabel);
   const PayIcon = kind === "Prepaid" ? TollOutlinedIcon : kind === "Card" ? CreditCardOutlinedIcon : AccountBalanceOutlinedIcon;
@@ -728,11 +733,24 @@ function AdAccountCard({ data }: { data: Data }) {
           <Empty>Facebook won't show us this ad account. Check it's shared with EstateKit's Business Manager.</Empty>
         ) : (
           <>
+            {/* The one thing that stops (or is about to stop) their ads, big, the way Facebook's billing page shows it. */}
+            {issue && (
+              <Box role="alert" sx={{ display: "flex", gap: 1.25, alignItems: "flex-start", p: 1.5, mb: 1.75, borderRadius: "8px", bgcolor: issue.tone === "red" ? tokens.redTint : tokens.amberTint, borderLeft: `4px solid ${issue.tone === "red" ? tokens.red : tokens.amber}` }}>
+                <WarningAmberRoundedIcon sx={{ fontSize: 22, color: issue.tone === "red" ? tokens.red : tokens.amber, mt: "1px", flex: "none" }} />
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Typography sx={{ fontSize: 15, fontWeight: 700 }}>{issue.title}</Typography>
+                  <Typography sx={{ fontSize: 13.5, mt: 0.25 }}>{issue.detail}</Typography>
+                  <Button size="small" variant="contained" disableElevation href={billingUrl(acct)} target="_blank" rel="noopener" endIcon={<OpenInNewIcon sx={{ fontSize: "16px !important" }} />} sx={{ mt: 1, bgcolor: issue.tone === "red" ? tokens.red : undefined }}>
+                    Open Facebook billing
+                  </Button>
+                </Box>
+              </Box>
+            )}
             <Box sx={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 2, flex: 1 }}>
               <Box>
                 <Typography sx={{ fontSize: 13, color: tokens.ink2 }}>Current balance</Typography>
                 <Typography sx={{ fontSize: 26, lineHeight: 1.25, fontVariantNumeric: "tabular-nums" }}>{rands(Math.max(a?.balance ?? 0, 0))}</Typography>
-                {!problem && <Typography sx={{ fontSize: 13, color: tokens.ink2 }}>No payment due right now</Typography>}
+                {!issue && <Typography sx={{ fontSize: 13, color: tokens.ink2 }}>No payment due right now</Typography>}
               </Box>
               <Box sx={{ minWidth: 0 }}>
                 <Typography sx={{ fontSize: 13, color: tokens.ink2, mb: 0.5 }}>How they pay</Typography>
@@ -747,14 +765,36 @@ function AdAccountCard({ data }: { data: Data }) {
                 </Box>
               </Box>
             </Box>
-            {problem && <Box sx={{ mt: 1.25 }}><StatusStrip ok={false}>{problem}</StatusStrip></Box>}
-            <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", columnGap: 2, rowGap: 0.25, mt: 1.25, pt: 1.25, borderTop: `1px solid ${tokens.divider2}`, fontSize: 13, color: tokens.ink2 }}>
+            {/* Facebook's "Account spending limit", with its bar. */}
+            <Box sx={{ mt: 1.5, pt: 1.5, borderTop: `1px solid ${tokens.divider2}` }}>
+              <Box sx={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 1, flexWrap: "wrap" }}>
+                <Typography sx={{ fontSize: 13, color: tokens.ink2 }}>Account spending limit</Typography>
+                {limit.state !== "none" && (
+                  <Typography sx={{ fontSize: 13, fontWeight: 600, color: limit.state === "reached" ? tokens.red : limit.state === "near" ? tokens.amber : tokens.ink }}>
+                    {limit.state === "reached" ? "Reached: ads stopped" : `${rands(limit.left)} left`}
+                  </Typography>
+                )}
+              </Box>
+              {limit.state === "none" ? (
+                <Typography sx={{ fontSize: 14, mt: 0.25 }}>No limit set</Typography>
+              ) : (
+                <>
+                  <Typography sx={{ fontSize: 14, mt: 0.25, fontVariantNumeric: "tabular-nums" }}>
+                    <b>{rands(limit.spent)}</b> of {rands(limit.cap)} spent
+                  </Typography>
+                  <Box role="progressbar" aria-valuenow={Math.round(limit.share * 100)} aria-valuemin={0} aria-valuemax={100} aria-label="How much of the spending limit is used" sx={{ height: 8, mt: 0.75, borderRadius: "4px", bgcolor: tokens.surface2, overflow: "hidden" }}>
+                    <Box sx={{ height: "100%", width: `${Math.max(2, limit.share * 100)}%`, borderRadius: "4px", bgcolor: limit.state === "reached" ? tokens.red : limit.state === "near" ? tokens.amber : "#0866ff" }} />
+                  </Box>
+                </>
+              )}
+            </Box>
+            <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", columnGap: 2, rowGap: 0.25, mt: 1.25, fontSize: 13, color: tokens.ink2 }}>
               <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 0.75 }}>
                 <Box component="span" sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: healthy ? tokens.green : tokens.amber }} />
-                {status}
+                Facebook status: {status}
               </Box>
-              {a?.amountSpent != null && <span>Spent {money(a.amountSpent)}</span>}
-              <span>{a?.spendCap ? `Limit ${money(a.spendCap)}` : "No spending limit"}</span>
+              {limit.state === "none" && a?.amountSpent != null && <span>Spent all time {money(a.amountSpent)}</span>}
+              <Box component="a" href={billingUrl(acct)} target="_blank" rel="noopener" sx={{ ml: "auto", color: "primary.main", fontWeight: 500 }}>Facebook billing</Box>
             </Box>
           </>
         )}
@@ -1044,6 +1084,7 @@ const SOURCE_LABEL: Record<BriefSource, string> = {
   signup: "sign-up page",
   form: "onboarding form",
   profile: "their account",
+  guess: "their address or area (nobody wrote it down)",
 };
 
 function signupFor(p: Data["profile"], requests: Awaited<ReturnType<typeof listSignupRequests>>) {
@@ -1052,7 +1093,7 @@ function signupFor(p: Data["profile"], requests: Awaited<ReturnType<typeof listS
 }
 
 function briefFor({ profile: p, dossier: d }: Data, requests: Awaited<ReturnType<typeof listSignupRequests>>) {
-  return buildBrief({ signup: signupFor(p, requests), onboarding: d?.onboarding ?? [], targetAreas: d?.oldDashboard?.targetAreas ?? [], company: p.company });
+  return buildBrief({ signup: signupFor(p, requests), onboarding: d?.onboarding ?? [], targetAreas: d?.oldDashboard?.targetAreas ?? [], company: p.company, area: p.area });
 }
 
 /** The brief: the same data points for every client (src/lib/brief.ts),
@@ -1083,17 +1124,27 @@ function BriefSection({ data }: { data: Data }) {
       ] as [string, ReactNode];
     });
 
+  const known = (rows: [string, ReactNode][]) => rows.filter(([, v]) => v);
+  const signupRows = known(rowsFor("signup"));
+  const callRows = known(rowsFor("call"));
+  const missing = BRIEF_FIELDS.filter((f) => !brief[f.key]).length;
   return (
     <EditableSection
       title="Brief"
       sub={sub}
       view={
         <Box sx={{ display: "flex", flexDirection: "column", gap: 2.5 }}>
-          <InfoGrid rows={rowsFor("signup")} />
-          <Box sx={{ pt: 2, borderTop: `1px solid ${tokens.divider2}` }}>
-            <Typography sx={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: tokens.ink2, mb: 1.5 }}>From the onboarding call</Typography>
-            <InfoGrid rows={rowsFor("call")} />
-          </Box>
+          {signupRows.length > 0 && <InfoGrid rows={signupRows} />}
+          {callRows.length > 0 && (
+            <Box sx={{ pt: signupRows.length ? 2 : 0, borderTop: signupRows.length ? `1px solid ${tokens.divider2}` : 0 }}>
+              <Typography sx={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: tokens.ink2, mb: 1.5 }}>From the onboarding call</Typography>
+              <InfoGrid rows={callRows} />
+            </Box>
+          )}
+          {!signupRows.length && !callRows.length && <Empty>Nothing in their brief yet. Press Edit to fill it in.</Empty>}
+          {missing > 0 && (signupRows.length > 0 || callRows.length > 0) && (
+            <Typography sx={{ fontSize: 12.5, color: tokens.ink3 }}>{missing} {missing === 1 ? "detail isn't" : "details aren't"} known yet, so {missing === 1 ? "it's" : "they're"} hidden. Press Edit to add {missing === 1 ? "it" : "them"}.</Typography>
+          )}
         </Box>
       }
       fields={BRIEF_FIELDS.map((f) => ({ key: f.key, label: f.label, value: brief[f.key]?.value ?? "", placeholder: f.placeholder, multiline: f.key === "suburbs" || f.key === "offer" }))}
@@ -1112,6 +1163,41 @@ function BriefSection({ data }: { data: Data }) {
         if (!ok) return "Not saved. Try again.";
       }}
     />
+  );
+}
+
+/** The IDs and connections the team looks up while working on their account. Only what's set. */
+function ServiceDetailsSection({ data }: { data: Data }) {
+  const p = data.profile;
+  const { data: pages = [] } = useQuery({
+    queryKey: ["clientPages", p.agent_id],
+    queryFn: async () => {
+      const { data: rows, error } = await supabase.from("lead_pages").select("id, name, slug, source_type").eq("agent_id", p.agent_id).order("created_at");
+      if (error) throw new Error(error.message);
+      return rows as { id: string; name: string; slug: string; source_type: string }[];
+    },
+  });
+  const { data: cal } = useQuery({ queryKey: ["googleCalendarStatus", p.agent_id], queryFn: () => getGoogleCalendarStatus(p.agent_id), staleTime: 5 * 60_000, retry: false });
+  const forms = pages.filter((x) => x.source_type === "fb_form");
+  const webPages = pages.filter((x) => x.source_type !== "fb_form");
+  const joined = data.dossier?.oldDashboard?.joined;
+  const rows: [string, ReactNode][] = [
+    ["Ad account ID", p.fb_ad_account_id ? <ExtLink key="ad" href={adsManagerUrl(p.fb_ad_account_id)}>{p.fb_ad_account_id}</ExtLink> : null],
+    ["Facebook page ID", p.fb_page_id ? <ExtLink key="pg" href={`https://www.facebook.com/${p.fb_page_id}`}>{p.fb_page_id}</ExtLink> : null],
+    ["Lead alerts go to", p.whatsapp_number ? [prettyPhone(p.whatsapp_number), ...(p.alert_contacts ?? []).map((c) => [c.name, prettyPhone(c.phone)].filter(Boolean).join(" "))].join(", ") : null],
+    ["Email", p.email || null],
+    ["Instant forms", forms.length ? forms.map((x) => x.name).join(", ") : null],
+    ["Lead pages", webPages.length ? webPages.map((x) => x.name).join(", ") : null],
+    ["Google Calendar", cal?.connected ? (cal.needsReconnect ? "Needs reconnecting" : `Connected${cal.email ? ` (${cal.email})` : ""}`) : null],
+    ["Client since", joined ? new Date(joined).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : null],
+    ["Renewal date", p.renewal_date ? new Date(p.renewal_date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : null],
+  ];
+  const shown = rows.filter(([, v]) => v);
+  if (!shown.length) return null;
+  return (
+    <Section title="For service delivery" sub="Change these in Settings">
+      <InfoGrid rows={shown} />
+    </Section>
   );
 }
 
