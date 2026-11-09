@@ -11,6 +11,7 @@
 // numbers or emails leave through here.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { isMobile, waDigits } from "../_shared/phone.ts";
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 const APP = "https://leads.estatekit.co";
@@ -27,16 +28,10 @@ function sameKey(a: string, b: string): boolean {
   return diff === 0;
 }
 
-const digits = (s: string | null | undefined) => {
-  const d = (s || "").replace(/\D/g, "");
-  return d.length === 10 && d.startsWith("0") ? "27" + d.slice(1) : d;
-};
+const digits = (s: string | null | undefined) => waDigits(s) || (s || "").replace(/\D/g, "");
 
 // Set-up checklist. KEEP IN STEP with src/lib/setup.ts.
-const isCellphone = (s: string | null | undefined) => {
-  const d = digits(s);
-  return d.startsWith("27") ? /^27[6-8]\d{8}$/.test(d) : /^[1-9]\d{8,14}$/.test(d);
-};
+const isCellphone = (s: string | null | undefined) => isMobile(s);
 function setup(p: Profile, sales: number) {
   const items: Record<string, boolean> = {
     photo: /^https:\/\//.test(p.avatar_url || ""),

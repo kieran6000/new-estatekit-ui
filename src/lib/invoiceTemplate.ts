@@ -1,3 +1,4 @@
+import { waDigits } from "./phone";
 // What an invoice says. Each invoice keeps its own copy of this when it's
 // created, so changing the banking details here only affects new ones.
 
@@ -78,8 +79,7 @@ export const longDate = (day: string) =>
 
 /** The number wa.me needs: South African 0… numbers become 27…. Empty if it can't be one. */
 export function whatsappDigits(raw: string): string {
-  const d = raw.replace(/\D/g, "");
-  const full = d.length === 10 && d.startsWith("0") ? `27${d.slice(1)}` : d;
+  const full = waDigits(raw);
   return full.length >= 11 && full.length <= 15 ? full : "";
 }
 

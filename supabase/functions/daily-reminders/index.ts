@@ -3,6 +3,7 @@
 // "New Lead"s) get rolled into one WhatsApp message via TextMeBot.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { prettyPhone as tidyPhone, toE164, waDigits } from "../_shared/phone.ts";
 
 async function sendWhatsApp(phone: string, text: string): Promise<void> {
   const endpoint = Deno.env.get("TEXTMEBOT_ENDPOINT");
@@ -12,7 +13,7 @@ async function sendWhatsApp(phone: string, text: string): Promise<void> {
     return;
   }
   const url = new URL(endpoint);
-  url.searchParams.set("recipient", phone);
+  url.searchParams.set("recipient", waDigits(phone) || phone);
   url.searchParams.set("apikey", apiKey);
   url.searchParams.set("text", text);
   const res = await fetch(url.toString(), { method: "GET" });

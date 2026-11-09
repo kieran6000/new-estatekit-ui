@@ -29,6 +29,7 @@ import { MAX_IMAGE_BYTES, shrinkImage } from "../lib/image";
 import type { Place } from "../lib/places";
 import { ACCENT, Choice, CityPicker, MAX_SUBURBS, Question, SuburbPicker } from "../components/FunnelSteps";
 import estateKitLogoWhite from "../assets/whitelogofull.png";
+import { isMobile } from "../lib/phone";
 
 // The onboarding form for new clients, after they've said yes on the call.
 // It replaces the "EstateKit Onboarding" Google Form: the same answers, but
@@ -93,7 +94,7 @@ function clearDraft() {
   try { localStorage.removeItem(DRAFT_KEY); } catch { /* fine */ }
 }
 
-const phoneIsValid = (v: string) => { const d = v.replace(/\D/g, ""); return d.length >= 9 && d.length <= 13; };
+const phoneIsValid = (v: string) => isMobile(v);
 const emailIsValid = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
 const toDataUrl = (b: Blob) => new Promise<string>((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = rej; r.readAsDataURL(b); });
 

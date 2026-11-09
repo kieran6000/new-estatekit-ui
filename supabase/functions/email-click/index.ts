@@ -8,6 +8,7 @@
 // Lead ids are random UUIDs, so they can't be guessed.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { prettyPhone as tidyPhone, toE164, waDigits } from "../_shared/phone.ts";
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 const FALLBACK = "https://leads.estatekit.co/";
@@ -15,13 +16,7 @@ const FALLBACK = "https://leads.estatekit.co/";
 const first = (s: string | null | undefined) => (s || "").trim().split(/\s+/)[0] || "";
 // South African numbers however they were typed: 083…, +27 083… (the 0 kept
 // after the country code), or 83… (the 0 left off).
-const digits = (s: string | null | undefined) => {
-  const d = (s || "").replace(/\D/g, "");
-  if (d.length === 10 && d.startsWith("0")) return "27" + d.slice(1);
-  if (d.length === 12 && d.startsWith("270")) return "27" + d.slice(3);
-  if (d.length === 9 && /^[6-8]/.test(d) && !(s || "").trim().startsWith("+")) return "27" + d;
-  return d;
-};
+const digits = (s: string | null | undefined) => waDigits(s) || (s || "").replace(/\D/g, "");
 // WhatsApp needs a cellphone. South African numbers must be mobiles (06/07/08,
 // not an 010/011 office line); other countries (e.g. Namibia +264) are accepted.
 const isMobile = (d: string) => (d.startsWith("27") ? /^27[6-8]\d{8}$/.test(d) : /^[1-9]\d{8,14}$/.test(d));

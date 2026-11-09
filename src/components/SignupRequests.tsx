@@ -6,6 +6,7 @@ import { listSignupRequests, setSignupStatus, type SignupRequest, type SignupSta
 import { useAuth } from "../hooks/useAuth";
 import { useSnack } from "../hooks/useSnack";
 import { timeAgo } from "../lib/timeAgo";
+import { waDigits } from "../lib/phone";
 
 /** New free-account requests from /start, shown above the Clients table.
  *  Hidden entirely when there are none. */
@@ -66,7 +67,7 @@ export default function SignupRequests() {
             <Box sx={{ display: "flex", gap: 0.75, alignItems: "center", flexShrink: 0 }}>
               <Tooltip title="WhatsApp them">
                 <IconButton
-                  href={`https://wa.me/${r.whatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(text)}`}
+                  href={`https://wa.me/${waDigits(r.whatsapp) || r.whatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(text)}`}
                   target="_blank"
                   rel="noopener"
                   onClick={() => r.status === "new" && mark(r, "contacted", "Marked as contacted")}

@@ -5,10 +5,14 @@ import { tokens } from "../theme";
 import { useAuth } from "../hooks/useAuth";
 import EstateKitLogo from "../components/EstateKitLogo";
 import { ADMIN_WHATSAPP } from "../lib/contact";
+import { toE164 } from "../lib/phone";
 
 const REQUEST_MESSAGE = "Hi, I'd like my EstateKit login details please.";
 
 function normalizePhone(raw: string): string {
+  // Any way a number can be typed; the old rules below only for anything else.
+  const clean = toE164(raw);
+  if (clean) return clean;
   const digits = raw.replace(/[\s\-()]/g, "");
   if (digits.startsWith("0") && digits.length === 10) return "+27" + digits.slice(1);
   if (digits.startsWith("27") && digits.length === 11) return "+" + digits;

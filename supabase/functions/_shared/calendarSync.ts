@@ -16,6 +16,7 @@
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { desiredEvent, eventIdFor, type CalEvent, type CalKind, type CalLead } from "./calendarEvents.ts";
 import { accessTokenFor, CAL_API, CONN_COLUMNS, markReconnect, type Conn, type TokenResult } from "./google.ts";
+import { needsAttention } from "./attention.ts";
 
 export interface QueueRow { lead_id: string; kind: CalKind; attempts: number; queued_at: string }
 
@@ -203,6 +204,14 @@ export class CalendarSync {
       if (t.gone) {
         await markReconnect(this.admin, conn.agent_id, "Google stopped letting EstateKit in. Connect again.");
         conn.needs_reconnect = true;
+        await needsAttention({
+          key: `gcal:${conn.agent_id}`,
+          agentId: conn.agent_id,
+          title: "Google Calendar disconnected",
+          detail: "Google stopped letting EstateKit into their calendar (they may have removed access or changed their password).",
+          fix: "Ask them to open EstateKit → Account and press Reconnect. Until then their appointments won't reach their calendar.",
+          quietHours: 24,
+        });
       }
       this.tokens.set(conn.agent_id, t);
     }
@@ -238,12 +247,27 @@ export class CalendarSync {
       // They unticked the calendar box on Google's page: only they can fix it.
       await markReconnect(this.admin, conn.agent_id, "EstateKit isn't allowed into this Google Calendar. Connect again and tick the calendar box.");
       conn.needs_reconnect = true;
+        await needsAttention({
+          key: `gcal:${conn.agent_id}`,
+          agentId: conn.agent_id,
+          title: "Google Calendar disconnected",
+          detail: "They connected without ticking the calendar box on Google's page, so EstateKit can't add to their calendar.",
+          fix: "Ask them to open EstateKit → Account and press Reconnect. Until then their appointments won't reach their calendar.",
+          quietHours: 24,
+        });
       return out("reconnect");
     }
     if (r.status === 403 && /accessNotConfigured|SERVICE_DISABLED/.test(body)) {
       // The Calendar API isn't switched on in EstateKit's Google project: ours to fix.
       await this.admin.from("google_calendar_connections")
         .update({ last_error: "The Google Calendar API is switched off in EstateKit's Google Cloud project." }).eq("agent_id", conn.agent_id);
+      await needsAttention({
+        key: "gcal_api",
+        title: "Google Calendar sync is switched off",
+        detail: "The Google Calendar API is turned off in EstateKit's Google Cloud project, so nothing reaches anyone's calendar.",
+        fix: "In Google Cloud Console, open APIs & Services and enable the Google Calendar API.",
+        quietHours: 24,
+      });
     }
     return out("retry");
   }

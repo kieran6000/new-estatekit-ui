@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "../api/_client";
 import "./plan.css";
 import { getPagePlan } from "../api/pagePlan";
+import { prettyPhone as tidyPhone, waDigits } from "../lib/phone";
 
 // The "Marketing Plan" linked from the confirmation email
 // (leads.estatekit.co/plan/<token>). One standard plan for every seller and
@@ -83,14 +84,8 @@ function timeKey(t: string): TimeKey {
 
 const tidy = (a: string) => (a === a.toLowerCase() ? a.replace(/\b([a-z])/g, (m) => m.toUpperCase()) : a);
 const money = (n: number | null) => (n ? "R " + n.toLocaleString("en-ZA") : "");
-const digits = (s: string) => {
-  const d = (s || "").replace(/\D/g, "");
-  return d.length === 10 && d.startsWith("0") ? "27" + d.slice(1) : d;
-};
-const prettyPhone = (s: string) => {
-  const d = digits(s);
-  return d.length === 11 && d.startsWith("27") ? `0${d.slice(2, 4)} ${d.slice(4, 7)} ${d.slice(7)}` : s;
-};
+const digits = (s: string) => waDigits(s) || (s || "").replace(/\D/g, "");
+const prettyPhone = (s: string) => tidyPhone(s);
 
 /** `from` = where the link was opened ("thanks" = the thank-you page; none =
  *  the email), so the lead's history says which. */

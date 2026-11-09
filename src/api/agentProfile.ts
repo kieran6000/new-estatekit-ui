@@ -1,5 +1,6 @@
 import { trackActivity } from "../lib/activity";
 import { supabase, getCurrentUserId, getActiveAgentId } from "./_client";
+import { toE164 } from "../lib/phone";
 
 export interface FbAdAccount {
   currency: string;
@@ -284,7 +285,8 @@ export async function upsertProfile(
   const row: Record<string, unknown> = { agent_id: userId };
   if (patch.displayName !== undefined) row.display_name = patch.displayName;
   if (patch.email !== undefined) row.email = patch.email;
-  if (patch.whatsappNumber !== undefined) row.whatsapp_number = patch.whatsappNumber;
+  // Saved as +27…, however it was typed, so every WhatsApp to it goes through.
+  if (patch.whatsappNumber !== undefined) row.whatsapp_number = toE164(patch.whatsappNumber) || patch.whatsappNumber.trim();
   if (patch.area !== undefined) row.area = patch.area;
   if (patch.company !== undefined) row.company = patch.company;
   if (patch.contractPdfUrl !== undefined) row.contract_pdf_url = patch.contractPdfUrl;

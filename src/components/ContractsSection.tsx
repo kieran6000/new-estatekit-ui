@@ -30,6 +30,7 @@ import { useSnack } from "../hooks/useSnack";
 import { timeAgo } from "../lib/timeAgo";
 import ContractSheet from "./ContractSheet";
 import SignDialog from "./SignDialog";
+import { waDigits } from "../lib/phone";
 
 export const when = (iso: string) =>
   new Date(iso).toLocaleString("en-ZA", { timeZone: "Africa/Johannesburg", weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
@@ -106,7 +107,7 @@ function ContractCard({ c, showClient }: { c: ContractRow; showClient: boolean }
   const first = c.signer_name.split(/\s+/)[0];
   const message = `Hi ${first}, your ${c.title} (${c.reference}) is ready to read and sign:\n${linkFor(c)}`;
   const sendOnWhatsApp = () => {
-    window.open(`https://wa.me/${c.signer_phone}?text=${encodeURIComponent(message)}`, "_blank", "noopener");
+    window.open(`https://wa.me/${waDigits(c.signer_phone) || c.signer_phone}?text=${encodeURIComponent(message)}`, "_blank", "noopener");
     shared("whatsapp");
   };
   const copy = async () => {

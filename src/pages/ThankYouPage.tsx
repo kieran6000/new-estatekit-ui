@@ -24,6 +24,7 @@ import { getPagePlan } from "../api/pagePlan";
 import { ThankYouCallTime } from "../components/ThankYouExtras";
 import VideoPlayer, { canPlayVideo, type EndCta, type VideoProgress } from "../components/VideoPlayer";
 import { supabase } from "../api/_client";
+import { waDigits } from "../lib/phone";
 
 export default function ThankYouPage() {
   const [params] = useSearchParams();
@@ -323,7 +324,7 @@ function BrandedThankYou({ page, name, video, endCta, onVideoEnd, onVideoProgres
       )}
 
       {showWhatsApp && (() => {
-        const digits = (page.phone || "").replace(/\D/g, "");
+        const digits = waDigits(page.phone) || (page.phone || "").replace(/\D/g, "");
         if (!digits) return null;
         const msg = `Hi${page.agentName ? " " + page.agentName : ""}, I just filled in your form and I'd love to hear more.`;
         return (

@@ -162,10 +162,72 @@ async function leadShareLink(leadId: string, agentId: string): Promise<string | 
   return `${APP}/l/${token}`;
 }
 
+/** A problem that stops leads or messages getting through. Only our own
+ *  functions may raise one (they send the service key), so nobody outside can
+ *  post fake alerts. Every sighting is noted; Discord hears about it once it's
+ *  happened minTimes within withinMinutes, then not again for quietHours. */
+async function attention(req: Request, b: Record<string, unknown>): Promise<Response> {
+  const auth = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+  if (!auth || auth !== Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")) return json({ error: "forbidden" }, 403);
+  const text = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
+  const key = text(b.key, 160);
+  const title = text(b.title, 120);
+  if (!key || !title) return json({ error: "key and title required" }, 400);
+  const detail = text(b.detail, 600);
+  const fix = text(b.fix, 400);
+  const agentId = typeof b.agentId === "string" && UUID.test(b.agentId) ? b.agentId : null;
+  const num = (v: unknown, d: number, lo: number, hi: number) => (typeof v === "number" && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d);
+  const minTimes = num(b.minTimes, 1, 1, 50);
+  const withinMinutes = num(b.withinMinutes, 60, 1, 1440);
+  const quietHours = num(b.quietHours, 12, 1, 168);
+
+  await supabase.from("audit_log").insert({ event: "attention_seen", category: "health", account_id: agentId, detail: title, data: { key } });
+  if (minTimes > 1) {
+    const { count } = await supabase.from("audit_log").select("id", { count: "exact", head: true })
+      .eq("event", "attention_seen").eq("data->>key", key).gte("created_at", new Date(Date.now() - withinMinutes * 60_000).toISOString());
+    if ((count ?? 0) < minTimes) return json({ ok: true, held: "not yet" });
+  }
+  const { count: recent } = await supabase.from("audit_log").select("id", { count: "exact", head: true })
+    .eq("event", "attention_sent").eq("data->>key", key).gte("created_at", new Date(Date.now() - quietHours * 3600_000).toISOString());
+  if ((recent ?? 0) > 0) return json({ ok: true, held: "already said" });
+  await supabase.from("audit_log").insert({ event: "attention_sent", category: "health", account_id: agentId, detail: [title, detail].filter(Boolean).join(" · ").slice(0, 1000), data: { key, fix } });
+
+  const webhook = await secret("DISCORD_ACTIVITY_WEBHOOK");
+  if (!webhook) return json({ ok: true, skipped: "no webhook configured" });
+  let who = "EstateKit";
+  if (agentId) {
+    const { data: prof } = await supabase.from("agent_profiles").select("display_name, company").eq("agent_id", agentId).maybeSingle();
+    if (prof?.display_name) who = prof.company ? `${prof.display_name} · ${prof.company}` : prof.display_name;
+  }
+  const fields = [
+    ...(detail ? [{ name: "What's wrong", value: detail, inline: false }] : []),
+    ...(fix ? [{ name: "What to do", value: fix, inline: false }] : []),
+  ];
+  const res = await fetch(webhook, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      username: "EstateKit Activity",
+      avatar_url: EK_LOGO,
+      embeds: [{
+        author: { name: who, icon_url: EK_LOGO },
+        title: `🚨  Needs attention: ${title}`,
+        description: `-# Health · <t:${Math.floor(Date.now() / 1000)}:R> · we'll stay quiet about this for ${quietHours}h`,
+        color: 0xd93025,
+        fields,
+        footer: { text: "EstateKit Health", icon_url: EK_LOGO },
+        timestamp: new Date().toISOString(),
+      }],
+    }),
+  });
+  return res.ok ? json({ ok: true }) : json({ error: `discord ${res.status}` }, 502);
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   try {
     const b = await req.json();
+    if (b?.event === "attention") return await attention(req, b);
     const cfg = EVENTS[b.event as EventKey];
     if (!cfg) return json({ error: "unknown event" }, 400);
 

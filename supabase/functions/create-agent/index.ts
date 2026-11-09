@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { prettyPhone as tidyPhone, toE164, waDigits } from "../_shared/phone.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -30,7 +31,7 @@ Deno.serve(async (req) => {
     if (!caller?.is_operator) return json({ error: "Operators only" }, 403);
 
     const b = await req.json();
-    const digits = String(b.phone || "").replace(/\D/g, "");
+    const digits = waDigits(String(b.phone || "")) || String(b.phone || "").replace(/\D/g, "");
     if (!digits || !b.password || !b.displayName) return json({ error: "phone, password and displayName are required" }, 400);
     const email = `${digits}@estatekit.app`;
 

@@ -1,3 +1,4 @@
+import { isMobile } from "./phone";
 // "Get set up": the six things sellers see, plus connecting their Google
 // Calendar (appointments and picked call times go into it), and how complete
 // an agent is.
@@ -29,17 +30,11 @@ export interface SetupInput {
   calendarReady?: boolean;
 }
 
-const digits = (s: string) => {
-  const d = (s || "").replace(/\D/g, "");
-  return d.length === 10 && d.startsWith("0") ? "27" + d.slice(1) : d;
-};
-
 /** WhatsApp needs a cellphone. South African numbers must be mobiles (06/07/08,
  *  not an 010/011 office line); other countries (e.g. Namibia +264) are
  *  accepted. Same rule as the confirmation email's WhatsApp link. */
 export function isCellphone(s: string | null | undefined): boolean {
-  const d = digits(s || "");
-  return d.startsWith("27") ? /^27[6-8]\d{8}$/.test(d) : /^[1-9]\d{8,14}$/.test(d);
+  return isMobile(s);
 }
 
 export const isEmail = (s: string | null | undefined) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((s || "").trim());

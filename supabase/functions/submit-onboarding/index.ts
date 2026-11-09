@@ -16,6 +16,7 @@
 // submission's code back; nothing is created twice.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { prettyPhone as tidyPhone, toE164, waDigits } from "../_shared/phone.ts";
 
 const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 const APP = "https://leads.estatekit.co";
@@ -37,6 +38,8 @@ const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&
 
 /** The same rules as the login page (src/pages/LoginPage.tsx normalizePhone). */
 function normalizePhone(raw: string): string {
+  const clean = toE164(raw);
+  if (clean) return clean;
   const d = raw.replace(/[\s\-()]/g, "");
   if (d.startsWith("0") && d.length === 10) return "+27" + d.slice(1);
   if (d.startsWith("27") && d.length === 11) return "+" + d;
@@ -62,7 +65,7 @@ async function secret(name: string): Promise<string> {
 async function sendWhatsApp(to: string, text: string): Promise<string> {
   const apiKey = Deno.env.get("TEXTMEBOT_API_KEY");
   if (!apiKey) return "not_configured";
-  const url = `https://api.textmebot.com/send.php?recipient=${to}&apikey=${apiKey}&text=${encodeURIComponent(text)}`;
+  const url = `https://api.textmebot.com/send.php?recipient=${waDigits(to) || to}&apikey=${apiKey}&text=${encodeURIComponent(text)}`;
   // One message per 5s per account, shared with the automations: one retry after the window.
   for (let attempt = 0; attempt < 2; attempt++) {
     const res = await fetch(url);
@@ -118,7 +121,7 @@ Deno.serve(async (req) => {
       deals: str(b.deals, 40),
       offer: str(b.offer, 500),
     };
-    const digits = f.phone.replace(/\D/g, "");
+    const digits = waDigits(f.phone) || f.phone.replace(/\D/g, "");
     if (f.name.length < 2) return json({ error: "name" }, 400);
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email)) return json({ error: "email" }, 400);
     if (!/^\+\d{9,15}$/.test(f.phone)) return json({ error: "phone" }, 400);

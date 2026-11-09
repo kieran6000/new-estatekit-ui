@@ -79,19 +79,17 @@ import TollOutlinedIcon from "@mui/icons-material/TollOutlined";
 import AccountBalanceOutlinedIcon from "@mui/icons-material/AccountBalanceOutlined";
 import ContractsSection from "../components/ContractsSection";
 import InvoicesSection from "../components/InvoicesSection";
+import { toE164, waDigits } from "../lib/phone";
 
 /** Digits in international form, so 083… and +2783… compare equal. */
-const digits = (s: string) => {
-  const d = (s || "").replace(/\D/g, "");
-  return d.length === 10 && d.startsWith("0") ? "27" + d.slice(1) : d;
-};
+const digits = (s: string) => waDigits(s) || (s || "").replace(/\D/g, "");
 // Lists are typed with ";" between items, the same as form answer options.
 const splitList = (s: string) => s.split(/[;\n]/).map((x) => x.trim()).filter(Boolean);
 const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
 // "Stanley 063 152 5310" ⇄ { name: "Stanley", phone: "+27631525310" }.
 const contactText = (c: { name?: string | null; phone: string }) => [c.name, c.phone].filter(Boolean).join(" ");
 const parseContact = (entry: string) => {
-  const phone = digits(entry.replace(/[^\d+]/g, ""));
+  const phone = waDigits(entry.replace(/[^\d+]/g, ""));
   const name = entry.replace(/[+\d()\-.\s]{6,}/g, " ").replace(/\s+/g, " ").trim();
   return { name: name || null, phone: phone ? "+" + phone : "" };
 };
@@ -1208,13 +1206,13 @@ function ContactSection({ data }: { data: Data }) {
         { key: "linkedin", label: "LinkedIn link", value: s?.linkedin || "", placeholder: "https://linkedin.com/in/…" },
       ]}
       onSave={async (v) => {
-        const wa = digits(v.whatsapp);
-        if (v.whatsapp && wa.length < 9) return "That WhatsApp number looks too short.";
+        const wa = waDigits(v.whatsapp);
+        if (v.whatsapp && !wa) return "That WhatsApp number doesn't look right. Use their cellphone number, e.g. 082 123 4567.";
         if (v.email && !isEmail(v.email)) return "That email address doesn't look right.";
         const otherEmails = splitList(v.emails);
         if (otherEmails.some((e) => !isEmail(e))) return "One of the other emails doesn't look right.";
         const alerts = splitList(v.alerts).map(parseContact);
-        if (alerts.some((c) => c.phone.length < 12)) return "One of the lead alert numbers looks too short.";
+        if (alerts.some((c) => !c.phone)) return "One of the lead alert numbers doesn't look right. Use a cellphone number, e.g. 082 123 4567.";
         const profilePatch: ClientProfilePatch = {};
         const newWa = v.whatsapp ? "+" + wa : "";
         if (newWa !== (p.whatsapp_number || "")) profilePatch.whatsapp_number = newWa;
@@ -1224,7 +1222,7 @@ function ContactSection({ data }: { data: Data }) {
           if (Object.keys(profilePatch).length) await updateClientProfile(p.agent_id, profilePatch);
           await saveClientDossier(p.agent_id, d, {
             contact: {
-              phones: splitList(v.phones).map((x) => "+" + digits(x)).filter((x) => x.length > 8),
+              phones: splitList(v.phones).map((x) => toE164(x)).filter(Boolean),
               emails: otherEmails.map((e) => e.toLowerCase()),
               contactPerson: v.contactPerson || null,
               team: v.team || null,
