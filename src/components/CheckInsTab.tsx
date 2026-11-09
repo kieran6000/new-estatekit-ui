@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link as RouterLink } from "react-router-dom";
-import { Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, MenuItem, TextField, Tooltip, Typography } from "@mui/material";
-import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
-import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
+import { Box, Button, ButtonBase, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from "@mui/material";
+import AddIcon from "@mui/icons-material/Add";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
+import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import StarRoundedIcon from "@mui/icons-material/StarRounded";
 import WhatsAppIcon from "@mui/icons-material/WhatsApp";
 import { listAgentProfiles } from "../api/_client";
@@ -127,70 +127,128 @@ function SendBox({ agentId, clientName, clientPhone, rows, fromName }: { agentId
   );
 }
 
+/** A question as a single line: what it asks and how they answer. */
+function QuestionRow({ n, q, onOpen }: { n: number; q: CheckinQuestion; onOpen: () => void }) {
+  const how = q.type === "rating" ? `Stars, from "${q.low || "Poor"}" to "${q.high || "Great"}"` : "They write an answer (optional)";
+  return (
+    <ButtonBase onClick={onOpen} sx={{ width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 1.5, px: 1.5, py: 1.25, borderRadius: "8px", "&:hover": { bgcolor: tokens.surface2 } }}>
+      <Typography sx={{ fontSize: 14, color: tokens.ink3, width: 18, flex: "none", fontVariantNumeric: "tabular-nums" }}>{n}</Typography>
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Typography sx={{ fontSize: 15.5, color: q.label.trim() ? undefined : tokens.red }}>{q.label.trim() || "No question written yet"}</Typography>
+        <Typography sx={{ fontSize: 13, color: tokens.ink2, mt: 0.25 }}>{how}</Typography>
+      </Box>
+      <EditOutlinedIcon sx={{ fontSize: 18, color: tokens.ink3, flex: "none" }} />
+    </ButtonBase>
+  );
+}
+
+/** The one question being changed. Everything else stays folded away. */
+function QuestionEditor({ n, total, q, onChange, onMove, onRemove, onDone }: {
+  n: number; total: number; q: CheckinQuestion; onChange: (p: Partial<CheckinQuestion>) => void; onMove: (by: number) => void; onRemove: () => void; onDone: () => void;
+}) {
+  return (
+    <Box sx={{ p: 2, borderRadius: "8px", border: `1px solid ${tokens.divider}`, bgcolor: tokens.surface2, display: "flex", flexDirection: "column", gap: 2 }}>
+      <TextField label={`Question ${n}`} value={q.label} onChange={(e) => onChange({ label: e.target.value })} multiline autoFocus fullWidth placeholder="How good were your leads this week?" />
+      <Box>
+        <Typography sx={{ fontSize: 13.5, color: tokens.ink2, mb: 0.75 }}>How do they answer?</Typography>
+        <ToggleButtonGroup exclusive value={q.type} onChange={(_e, v) => v && onChange(v === "text" ? { type: "text", low: undefined, high: undefined } : { type: "rating", low: q.low || "Poor", high: q.high || "Great" })}
+          sx={{ "& .MuiToggleButton-root": { textTransform: "none", fontSize: 14, px: 2, py: 0.75 } }}>
+          <ToggleButton value="rating"><StarRoundedIcon sx={{ fontSize: 18, mr: 0.75, color: "#f59e0b" }} />Stars</ToggleButton>
+          <ToggleButton value="text">Writing</ToggleButton>
+        </ToggleButtonGroup>
+      </Box>
+      {q.type === "rating" && (
+        <Box sx={{ display: "flex", gap: 1.5, flexWrap: "wrap" }}>
+          <TextField size="small" label="1 star means" value={q.low ?? ""} onChange={(e) => onChange({ low: e.target.value })} sx={{ flex: "1 1 160px" }} />
+          <TextField size="small" label="5 stars mean" value={q.high ?? ""} onChange={(e) => onChange({ high: e.target.value })} sx={{ flex: "1 1 160px" }} />
+        </Box>
+      )}
+      <TextField size="small" label="Name on the client's page" value={q.short} onChange={(e) => onChange({ short: e.target.value })} placeholder={q.label.trim().slice(0, 30) || "Lead quality"}
+        helperText="A few words, so the answers fit on the Check-ins tab. Left empty, the question is used." />
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+        <Button size="small" disabled={n === 1} onClick={() => onMove(-1)}>Move up</Button>
+        <Button size="small" disabled={n === total} onClick={() => onMove(1)}>Move down</Button>
+        <Button size="small" color="error" onClick={onRemove}>Remove</Button>
+        <Box sx={{ flex: 1 }} />
+        <Button variant="outlined" onClick={onDone}>Done</Button>
+      </Box>
+    </Box>
+  );
+}
+
 function EditQuestions({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
   const showSnack = useSnack();
   const { data: saved } = useQuery({ queryKey: ["checkinQuestions"], queryFn: getCheckinQuestions });
   const { data: savedReview } = useQuery({ queryKey: ["checkinReviewLink"], queryFn: getReviewLink });
   const [qs, setQs] = useState<CheckinQuestion[] | null>(null);
+  const [open, setOpen] = useState<string | null>(null); // the one question being changed
   const [review, setReview] = useState<string | null>(null);
+  const [reviewOpen, setReviewOpen] = useState(false);
   const reviewLink = (review ?? savedReview ?? "").trim();
   const reviewOk = !reviewLink || /^https:\/\/\S+$/i.test(reviewLink);
   const list = qs ?? saved ?? DEFAULT_QUESTIONS;
   const set = (i: number, patch: Partial<CheckinQuestion>) => setQs(list.map((q, j) => (j === i ? { ...q, ...patch } : q)));
   const move = (i: number, by: number) => { const next = [...list]; const [q] = next.splice(i, 1); next.splice(i + by, 0, q); setQs(next); };
-  const ok = list.some((q) => q.type === "rating") && list.every((q) => q.label.trim()) && reviewOk;
+  const hasStars = list.some((q) => q.type === "rating");
+  const ok = hasStars && list.every((q) => q.label.trim()) && reviewOk;
+  function add() {
+    const q: CheckinQuestion = { id: newQuestionId(), type: "rating", label: "", short: "", low: "Poor", high: "Great" };
+    setQs([...list, q]);
+    setOpen(q.id);
+  }
   async function save() {
     try {
       await saveCheckinQuestions(list.map((q) => ({ ...q, short: q.short.trim() || q.label.trim() })));
       if (review !== null) await saveReviewLink(reviewLink);
       await qc.invalidateQueries({ queryKey: ["checkinQuestions"] });
       await qc.invalidateQueries({ queryKey: ["checkinReviewLink"] });
-      showSnack("Saved. New check-ins use these questions.");
+      showSnack("Saved. The next check-in you send uses these questions.");
       onClose();
     } catch (e) {
       showSnack((e as Error).message);
     }
   }
   return (
-    <Dialog open onClose={onClose} fullWidth maxWidth="md">
-      <DialogTitle>Check-in questions</DialogTitle>
+    <Dialog open onClose={onClose} fullWidth maxWidth="sm">
+      <DialogTitle sx={{ pb: 0.5 }}>Check-in questions</DialogTitle>
       <DialogContent>
-        <Typography sx={{ fontSize: 14, color: tokens.ink2, mb: 2 }}>For every client. Check-ins already sent keep the questions they went out with, so old answers still make sense.</Typography>
-        {list.map((q, i) => (
-          <Box key={q.id} sx={{ py: 1.5, borderTop: `1px solid ${tokens.divider2}`, display: "grid", gridTemplateColumns: { xs: "1fr", md: "minmax(0, 2fr) minmax(0, 1fr) 150px auto" }, gap: 1, alignItems: "start" }}>
-            <TextField size="small" label="Question" value={q.label} onChange={(e) => set(i, { label: e.target.value })} />
-            <TextField size="small" label="Short name" value={q.short} onChange={(e) => set(i, { short: e.target.value })} helperText="Shown on the tab" />
-            <TextField size="small" select label="Answer" value={q.type} onChange={(e) => set(i, e.target.value === "text" ? { type: "text", low: undefined, high: undefined } : { type: "rating", low: q.low || "Poor", high: q.high || "Great" })}>
-              <MenuItem value="rating">Stars (1 to 5)</MenuItem>
-              <MenuItem value="text">Written (optional)</MenuItem>
-            </TextField>
-            <Box sx={{ display: "flex" }}>
-              <IconButton size="small" aria-label="Move up" disabled={i === 0} onClick={() => move(i, -1)}><ArrowUpwardIcon fontSize="small" /></IconButton>
-              <IconButton size="small" aria-label="Move down" disabled={i === list.length - 1} onClick={() => move(i, 1)}><ArrowDownwardIcon fontSize="small" /></IconButton>
-              <IconButton size="small" aria-label="Remove question" onClick={() => setQs(list.filter((_, j) => j !== i))}><DeleteOutlineIcon fontSize="small" /></IconButton>
+        <Typography sx={{ fontSize: 14, color: tokens.ink2, mb: 1.5 }}>What every client is asked. Tap a question to change it.</Typography>
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+          {list.map((q, i) =>
+            open === q.id ? (
+              <QuestionEditor key={q.id} n={i + 1} total={list.length} q={q} onChange={(p) => set(i, p)} onMove={(by) => move(i, by)}
+                onRemove={() => { setQs(list.filter((_, j) => j !== i)); setOpen(null); }} onDone={() => setOpen(null)} />
+            ) : (
+              <QuestionRow key={q.id} n={i + 1} q={q} onOpen={() => setOpen(q.id)} />
+            ),
+          )}
+        </Box>
+        <Button startIcon={<AddIcon />} onClick={add} sx={{ mt: 1 }}>Add a question</Button>
+        {!hasStars && <Typography sx={{ fontSize: 13.5, color: tokens.red, mt: 1 }}>Keep at least one star question, so you can see how they're feeling.</Typography>}
+
+        <Box sx={{ mt: 2, pt: 1.5, borderTop: `1px solid ${tokens.divider2}` }}>
+          {reviewOpen ? (
+            <Box sx={{ p: 2, borderRadius: "8px", border: `1px solid ${tokens.divider}`, bgcolor: tokens.surface2, display: "flex", flexDirection: "column", gap: 1.5 }}>
+              <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>Clients who give a really good check-in are asked, kindly, to leave a Google review. Leave the link empty and nobody is asked.</Typography>
+              <TextField size="small" fullWidth autoFocus label="Your Google review link" placeholder="https://g.page/r/…/review" value={review ?? savedReview ?? ""} onChange={(e) => setReview(e.target.value)}
+                error={!reviewOk} helperText={reviewOk ? "In Google Business Profile, choose \"Ask for reviews\" and copy the link." : "This needs to start with https://"} />
+              <Box sx={{ display: "flex", justifyContent: "flex-end" }}><Button variant="outlined" onClick={() => setReviewOpen(false)} disabled={!reviewOk}>Done</Button></Box>
             </Box>
-            {q.type === "rating" && (
-              <Box sx={{ display: "flex", gap: 1, gridColumn: { md: "1 / 3" } }}>
-                <TextField size="small" label="1 star means" value={q.low ?? ""} onChange={(e) => set(i, { low: e.target.value })} sx={{ flex: 1 }} />
-                <TextField size="small" label="5 stars mean" value={q.high ?? ""} onChange={(e) => set(i, { high: e.target.value })} sx={{ flex: 1 }} />
+          ) : (
+            <ButtonBase onClick={() => setReviewOpen(true)} sx={{ width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 1.5, px: 1.5, py: 1.25, borderRadius: "8px", "&:hover": { bgcolor: tokens.surface2 } }}>
+              <Box sx={{ flex: 1 }}>
+                <Typography sx={{ fontSize: 15.5 }}>Ask happy clients for a Google review</Typography>
+                <Typography sx={{ fontSize: 13, color: reviewLink ? tokens.green : tokens.ink2, mt: 0.25 }}>{reviewLink ? "On" : "Off: add your review link to switch it on"}</Typography>
               </Box>
-            )}
-          </Box>
-        ))}
-        <Button onClick={() => setQs([...list, { id: newQuestionId(), type: "rating", label: "", short: "", low: "Poor", high: "Great" }])} sx={{ mt: 1 }}>Add a question</Button>
-        <Box sx={{ mt: 2.5, pt: 2, borderTop: `1px solid ${tokens.divider2}` }}>
-          <Typography sx={{ fontSize: 15, fontWeight: 600 }}>Ask for a Google review</Typography>
-          <Typography sx={{ fontSize: 14, color: tokens.ink2, mt: 0.25, mb: 1.25 }}>
-            Only clients who give a really good check-in are asked: at least 4 stars for everything and 5 stars for how happy they are with us. Leave it empty and nobody is asked.
-          </Typography>
-          <TextField size="small" fullWidth label="Your Google review link" placeholder="https://g.page/r/…/review" value={review ?? savedReview ?? ""} onChange={(e) => setReview(e.target.value)}
-            error={!reviewOk} helperText={reviewOk ? "In Google Business Profile, choose \"Ask for reviews\" and copy the link." : "This needs to start with https://"} />
+              <EditOutlinedIcon sx={{ fontSize: 18, color: tokens.ink3 }} />
+            </ButtonBase>
+          )}
         </Box>
       </DialogContent>
-      <DialogActions>
+      <DialogActions sx={{ px: 3, pb: 2 }}>
         <Button onClick={onClose}>Cancel</Button>
-        <Button variant="contained" disableElevation disabled={!ok} onClick={save}>Save questions</Button>
+        <Button variant="contained" disableElevation disabled={!ok} onClick={save}>Save</Button>
       </DialogActions>
     </Dialog>
   );
