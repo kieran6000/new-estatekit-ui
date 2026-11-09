@@ -30,40 +30,46 @@ function Page({ children }: { children: React.ReactNode }) {
 }
 
 function Scale({ q, value, onPick }: { q: CheckinQuestion; value: number | undefined; onPick: (n: number) => void }) {
-  const picked = value !== undefined ? FACES[value - 1] : null;
+  // Each face has its words right under it: the two ends say what they mean
+  // (e.g. "Poor" and "Great"), and the one picked lights up in its colour.
+  const words = (n: number) => (n === 1 ? q.low : n === 5 ? q.high : FACES[n - 1].word) || FACES[n - 1].word;
   return (
     <Box component="fieldset" sx={{ border: 0, p: 0, m: 0, mb: 3.5 }}>
       <Typography component="legend" sx={{ fontSize: 17, fontWeight: 600, mb: 1, lineHeight: 1.35 }}>{q.label}</Typography>
-      <Box sx={{ display: "flex", justifyContent: "space-between", maxWidth: 380 }}>
+      <Box sx={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", maxWidth: 400, columnGap: 0.5 }}>
         {FACES.map((f) => {
           const on = value === f.n;
+          const showWord = on || f.n === 1 || f.n === 5;
           return (
-            <Box
-              key={f.n}
-              component="button"
-              type="button"
-              aria-pressed={on}
-              aria-label={`${f.word}${f.n === 1 ? `, ${q.low}` : f.n === 5 ? `, ${q.high}` : ""}`}
-              onClick={() => onPick(f.n)}
-              sx={{
-                width: 62, height: 62, p: 0, display: "grid", placeItems: "center", border: 0, borderRadius: "50%", cursor: "pointer",
-                bgcolor: on ? `${f.color}1f` : "transparent",
-                color: on ? f.color : value === undefined ? "#9ca3af" : "#d1d5db",
-                transform: on ? "scale(1.12)" : "none", transition: "transform .12s, color .12s, background-color .12s",
-                "&:hover": { color: f.color },
-                "&:focus-visible": { outline: `3px solid ${BLUE}`, outlineOffset: 1 },
-              }}
-            >
-              <f.Icon sx={{ fontSize: 50 }} />
+            <Box key={f.n} sx={{ display: "flex", flexDirection: "column", alignItems: "center", minWidth: 0 }}>
+              <Box
+                component="button"
+                type="button"
+                aria-pressed={on}
+                aria-label={words(f.n)}
+                onClick={() => onPick(f.n)}
+                sx={{
+                  width: 62, height: 62, p: 0, display: "grid", placeItems: "center", border: 0, borderRadius: "50%", cursor: "pointer",
+                  bgcolor: on ? `${f.color}1f` : "transparent",
+                  color: on ? f.color : value === undefined ? "#9ca3af" : "#d1d5db",
+                  transform: on ? "scale(1.12)" : "none", transition: "transform .12s, color .12s, background-color .12s",
+                  "&:hover": { color: f.color },
+                  "&:focus-visible": { outline: `3px solid ${BLUE}`, outlineOffset: 1 },
+                }}
+              >
+                <f.Icon sx={{ fontSize: 50 }} />
+              </Box>
+              <Typography aria-hidden sx={{
+                mt: 0.5, minHeight: 34, fontSize: 13, lineHeight: 1.3, textAlign: "center", overflowWrap: "anywhere",
+                visibility: showWord ? "visible" : "hidden",
+                fontWeight: on ? 700 : 400, color: on ? f.color : value !== undefined ? "#9ca3af" : "#6b7280",
+              }}>
+                {words(f.n)}
+              </Typography>
             </Box>
           );
         })}
       </Box>
-      <Box sx={{ display: "flex", justifyContent: "space-between", maxWidth: 380, mt: 0.25, fontSize: 13.5, color: "#6b7280" }}>
-        <span>{q.low}</span>
-        <span>{q.high}</span>
-      </Box>
-      {picked && <Typography sx={{ mt: 0.5, fontSize: 14.5, fontWeight: 600, color: picked.color }}>{picked.n === 1 ? q.low : picked.n === 5 ? q.high : picked.word}</Typography>}
     </Box>
   );
 }
