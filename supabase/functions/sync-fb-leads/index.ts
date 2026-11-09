@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { needsAttention } from "../_shared/attention.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const supabase = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
@@ -251,7 +252,19 @@ Deno.serve(async (req) => {
 
       let leads: FbLead[] | null = null;
       for (const t of tryTokens) { leads = await fetchFormLeads(formId, t, sinceFilter); if (leads) break; }
-      if (!leads) { summary.push({ form: page.fb_form_name || formId, error: "fetch failed" }); continue; }
+      if (!leads) {
+        summary.push({ form: page.fb_form_name || formId, error: "fetch failed" });
+        // This runs every 5 minutes: three misses in an hour is a real problem, not a blip.
+        await needsAttention({
+          key: `fb_form:${formId}`,
+          agentId: page.agent_id,
+          title: "New Facebook leads can't be read",
+          detail: `Facebook isn't letting EstateKit read the form "${page.fb_form_name || formId}", so new leads from it won't come in.`,
+          fix: "Check EstateKit still has access to their Facebook page, and that the form wasn't deleted. Forms → lead source shows the problem.",
+          minTimes: 3, withinMinutes: 60, quietHours: 12,
+        });
+        continue;
+      }
 
       let pipelineName: string | undefined;
       if (page.pipeline_id) {
@@ -301,7 +314,18 @@ Deno.serve(async (req) => {
           }
           if (res.ok && !data.error) { forms = (data.data || []).map((f: { id: string; name: string }) => ({ id: f.id, name: f.name })); break; }
         }
-        if (!forms) { summary.push({ agent: a.display_name, error: "forms fetch failed" }); continue; }
+        if (!forms) {
+          summary.push({ agent: a.display_name, error: "forms fetch failed" });
+          await needsAttention({
+            key: `fb_page:${a.agent_id}`,
+            agentId: a.agent_id,
+            title: "Their Facebook page can't be read",
+            detail: "EstateKit can't see the lead forms on their Facebook page, so new leads from forms without their own lead source won't come in.",
+            fix: "Check their Facebook page is still shared with EstateKit, and that the page number in Settings → Ads & Facebook is right.",
+            minTimes: 3, withinMinutes: 60, quietHours: 12,
+          });
+          continue;
+        }
 
         // Only forms that have ever produced a lead for this agent, plus
         // anything created recently enough to still be worth watching.

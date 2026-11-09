@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { runWorkflows } from "./workflows.ts";
 import { prettyPhone as tidyPhone, toE164, waDigits } from "../_shared/phone.ts";
+import { needsAttention } from "../_shared/attention.ts";
 
 const BATCH_SIZE = 200;
 const TEXTMEBOT_URL = "https://api.textmebot.com/send.php";
@@ -79,6 +80,7 @@ async function sendWhatsApp(phone: string, text: string, media?: Media): Promise
   const apiKey = Deno.env.get("TEXTMEBOT_API_KEY");
   if (!apiKey) {
     console.error("TEXTMEBOT_API_KEY not configured — skipping send to", phone);
+    await needsAttention({ key: "whatsapp_key", title: "WhatsApp sending isn't set up", detail: "The TextMeBot key is missing, so no WhatsApps can go out.", fix: "Add TEXTMEBOT_API_KEY to the Supabase function secrets.", quietHours: 24 });
     return "not_configured";
   }
   const wait = lastSendAt + MIN_SEND_GAP_MS - Date.now();
@@ -100,7 +102,16 @@ async function sendWhatsApp(phone: string, text: string, media?: Media): Promise
   if (res.ok) return "sent";
   const body = await res.text();
   console.error("TextMeBot send failed", phone, res.status, body);
-  return /messages? per \d+ seconds?/i.test(body) ? "rate_limited" : "failed";
+  if (/messages? per \d+ seconds?/i.test(body)) return "rate_limited";
+  // Twice in half an hour means it isn't a one-off: say so, once every 6 hours.
+  await needsAttention({
+    key: "whatsapp_sending",
+    title: "WhatsApp messages aren't going out",
+    detail: `TextMeBot refused a message (${res.status}): ${body.replace(/apikey=\S+/gi, "").slice(0, 200)}`,
+    fix: "Open TextMeBot and check the WhatsApp phone is online and connected. Lead alerts and messages to leads wait until it is.",
+    minTimes: 2, withinMinutes: 30, quietHours: 6,
+  });
+  return "failed";
 }
 
 /** 12 letters/digits with no look-alikes (no 0/o, 1/l): 60 random bits.

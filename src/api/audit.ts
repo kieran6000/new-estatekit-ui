@@ -245,7 +245,7 @@ export async function getAuditData(sinceIso: string): Promise<AuditData> {
         .range(a, b) as unknown as PromiseLike<{ data: EventRow[] | null; error: { message: string } | null }>,
       EVENT_CAP,
     ),
-    auditRows(() => supabase.from("audit_log").select(AUDIT_COLS).gte("created_at", sinceIso).order("created_at", { ascending: false }).limit(EVENT_CAP)),
+    auditRows(() => supabase.from("audit_log").select(AUDIT_COLS).neq("category", "health").gte("created_at", sinceIso).order("created_at", { ascending: false }).limit(EVENT_CAP)),
     auditRows(() => supabase.from("audit_log").select(AUDIT_COLS).not("actor_id", "is", null).not("country", "is", null).order("created_at", { ascending: false }).limit(1000)),
   ]);
   if (profilesRes.error) throw new Error(profilesRes.error.message);
