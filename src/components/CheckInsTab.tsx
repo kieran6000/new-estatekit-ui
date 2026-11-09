@@ -280,7 +280,7 @@ function SendAction({ agentId, clientName, rows, fromName, onEditQuestions }: {
         <Button size="small" variant="contained" disableElevation onClick={send} disabled={busy}
           startIcon={copied ? <CheckIcon /> : <ContentCopyRoundedIcon />}
           sx={copied ? { bgcolor: tokens.greenCall, "&:hover": { bgcolor: tokens.greenCallHover } } : undefined}>
-          {copied ? "Copied! Paste it in WhatsApp" : <>Send <Box component="span" sx={{ display: { xs: "none", sm: "inline" } }}>{first || ""}&nbsp;</Box>a check-in</>}
+          {copied ? "Copied! Paste it in WhatsApp" : "Send check-in"}
         </Button>
       </Tooltip>
     </Box>
