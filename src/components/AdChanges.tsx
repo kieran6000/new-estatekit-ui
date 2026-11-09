@@ -25,7 +25,7 @@ const rand = (n: number) => "R" + Math.round(n).toLocaleString("en-GB").replace(
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
 
 const KIND_ICON: Record<ChangeKind, typeof TuneIcon> = { targeting: GpsFixedIcon, budget: PaymentsOutlinedIcon, bidding: SpeedIcon, creative: ImageOutlinedIcon, onoff: PowerSettingsNewIcon, billing: ReceiptLongOutlinedIcon, other: TuneIcon };
-const SHOWN_BITS = 6;
+const SHOWN_BITS = 3;
 const listOf = (bits: string[]) => bits.slice(0, SHOWN_BITS).join(", ") + (bits.length > SHOWN_BITS ? ` +${bits.length - SHOWN_BITS} more` : "");
 const OBJECT: Record<string, string> = { CAMPAIGN_GROUP: "Campaign", CAMPAIGN: "Ad set", ADGROUP: "Ad", AD_SET: "Ad set", AD: "Ad", ACCOUNT: "Ad account", AD_ACCOUNT: "Ad account" };
 
@@ -98,7 +98,7 @@ function DayRow({ day, items, leads, spent }: { day: string; items: AdHistoryIte
 /** What was changed on their ads and when, on a timeline with their leads, so
  *  whoever's looking can see what happened next for themselves. */
 export default function AdChanges({ agentId, acct, since, until }: { agentId: string; acct: string | null | undefined; since: string; until: string }) {
-  const [picked, setPicked] = useState<string | null>(null);
+  const [picked, setPicked] = useState<{ start: string; end: string } | null>(null);
   const [showAll, setShowAll] = useState(false);
   useEffect(() => { setPicked(null); setShowAll(false); }, [since, until]);
 
@@ -130,7 +130,7 @@ export default function AdChanges({ agentId, acct, since, until }: { agentId: st
     return out;
   }, [since, until, leadMap, spendMap, byDay]);
 
-  const visible = byDay.filter(([d]) => !picked || d === picked);
+  const visible = byDay.filter(([d]) => !picked || (d >= picked.start && d <= picked.end));
   const shownDays = showAll ? visible : visible.slice(0, DAYS_SHOWN);
 
   return (
@@ -150,10 +150,10 @@ export default function AdChanges({ agentId, acct, since, until }: { agentId: st
           </Typography>
         ) : (
           <>
-            <ChangeCalendar since={since} until={until} days={calendar} picked={picked} onPick={(d) => { setPicked(d); setShowAll(false); }} />
+            <ChangeCalendar since={since} until={until} days={calendar} picked={picked?.start ?? null} onPick={(r) => { setPicked(r); setShowAll(false); }} />
 
             <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 0.75, mt: 2, mb: 1 }}>
-              {picked && <Chip size="small" label={`Only ${niceDay(picked)}`} onDelete={() => setPicked(null)} sx={{ borderRadius: "6px" }} />}
+              {picked && <Chip size="small" label={picked.start === picked.end ? `Only ${niceDay(picked.start)}` : `Only ${shortDay(picked.start)} to ${shortDay(picked.end)}`} onDelete={() => setPicked(null)} sx={{ borderRadius: "6px" }} />}
             </Box>
 
             {!visible.length ? (
