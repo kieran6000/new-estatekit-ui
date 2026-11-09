@@ -34,6 +34,7 @@ import WeeklyReportPage from "./pages/WeeklyReportPage";
 import SharedReportPage from "./pages/SharedReportPage";
 import ContractPage from "./pages/ContractPage";
 import InvoicePage from "./pages/InvoicePage";
+import CheckInPage from "./pages/CheckInPage";
 import ContractsAdminPage from "./pages/ContractsAdminPage";
 import WeeklyReportsAdminPage from "./pages/WeeklyReportsAdminPage";
 import AuditLogPage from "./pages/AuditLogPage";
@@ -122,6 +123,7 @@ export default function App() {
       <Route path="/c/:token" element={<ContractPage />} />
       <Route path="/contract/:token" element={<ContractPage />} />
       <Route path="/i/:token" element={<InvoicePage />} />
+      <Route path="/k/:token" element={<CheckInPage />} />
 
       {!user ? (
         <Route path="*" element={<LoginPage />} />

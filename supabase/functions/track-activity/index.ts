@@ -16,7 +16,7 @@ const APP = "https://leads.estatekit.co";
 const EK_LOGO = "https://leads.estatekit.co/favicon.svg";
 
 type EventKey =
-  | "login" | "new_lead" | "form_submitted" | "lead_disqualified" | "stage_change"
+  | "login" | "checkin_answered" | "new_lead" | "form_submitted" | "lead_disqualified" | "stage_change"
   | "call_started" | "note_added" | "lead_page_created" | "lead_page_deleted" | "sold_listing_added"
   | "page_view" | "form_started" | "form_contact_step" | "ad_paused" | "ad_resumed"
   // Confirmation email + selling plan (sent by the database as they happen)
@@ -30,6 +30,7 @@ type EventKey =
 const EVENTS: Record<EventKey, { emoji: string; label: string; color: number; cat: string }> = {
   login:              { emoji: "🔓", label: "Signed in",            color: 0x6366f1, cat: "Agent" },
   new_lead:           { emoji: "📥", label: "New lead",             color: 0x22c55e, cat: "Lead" },
+  checkin_answered:   { emoji: "💬", label: "Weekly check-in answered", color: 0x6366f1, cat: "Client" },
   form_submitted:     { emoji: "📥", label: "New lead",             color: 0x22c55e, cat: "Lead" },
   lead_disqualified:  { emoji: "🚫", label: "Lead disqualified",    color: 0x9ca3af, cat: "Lead" },
   stage_change:       { emoji: "🔀", label: "Lead stage changed",   color: 0x3b82f6, cat: "Lead" },

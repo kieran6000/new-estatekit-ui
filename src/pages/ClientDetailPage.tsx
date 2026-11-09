@@ -1,3 +1,4 @@
+import CheckInsTab, { CheckinChip } from "../components/CheckInsTab";
 import { getGoogleCalendarStatus } from "../api/googleCalendar";
 import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
 import { accountIssue, billingUrl, spendingLimit } from "../lib/adAccountHealth";
@@ -163,6 +164,7 @@ export default function ClientDetailPage() {
             <Box sx={{ maxWidth: 1440, mx: "auto", px: { xs: 0.5, md: 2 } }}>
               <Tabs value={tab} onChange={(_e, v) => pick(v)} variant="scrollable" allowScrollButtonsMobile>
                 <Tab value="overview" label="Overview" />
+                <Tab value="checkins" label="Check-ins" />
                 <Tab value="brief" label="Brief" />
                 <Tab value="contract" label="Paperwork" />
                 <Tab value="settings" label="Settings" />
@@ -195,6 +197,7 @@ export default function ClientDetailPage() {
                 </>
               );
             })()}
+            {tab === "checkins" && <CheckInsTab agentId={agentId} clientName={data.profile.display_name ?? ""} clientPhone={data.profile.whatsapp_number} />}
             {tab === "settings" && <SettingsTab data={data} />}
           </Box>
         </>
@@ -231,6 +234,7 @@ function useClientSaver(agentId: string) {
 
 function Header({ data }: { data: Data }) {
   const { profile: p, dossier: d } = data;
+  const { data: profilesForChip } = useQuery({ queryKey: ["agentProfiles"], queryFn: listAgentProfiles, staleTime: 5 * 60_000 });
   const { user } = useAuth();
   const save = useClientSaver(p.agent_id);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -280,6 +284,7 @@ function Header({ data }: { data: Data }) {
               {[p.company || "No agency on file", p.area].filter(Boolean).join(" · ")}
             </Typography>
             <Box sx={{ display: "flex", gap: 0.75, flexWrap: "wrap", mt: 1, "&:empty": { display: "none" } }}>
+              <CheckinChip agentId={p.agent_id} to={clientPath(p.agent_id, profilesForChip, "checkins")} />
               {p.deactivated_at ? <Chip size="small" color="warning" label="Deactivated" /> : p.automations_paused && <Chip size="small" color="warning" variant="outlined" label="Automations paused" />}
             </Box>
           </Box>
