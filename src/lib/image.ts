@@ -7,11 +7,12 @@ import { findLogoBounds } from "./logo";
 // Before this, photos went up at full size and landing-page images were kept
 // as text inside the database rows, which was most of the Supabase egress.
 
-export type ImageKind = "logo" | "photo" | "sale";
+export type ImageKind = "logo" | "photo" | "sale" | "screenshot";
 
 const BOX: Record<ImageKind, { w: number; h: number; q: number }> = {
   logo: { w: 480, h: 160, q: 0.85 }, // shown about 50px tall
   photo: { w: 400, h: 400, q: 0.82 }, // round photos, up to ~120px
+  screenshot: { w: 1600, h: 1600, q: 0.85 }, // pasted into a note: big enough to read
   sale: { w: 1000, h: 1000, q: 0.8 }, // recent-sales cards and pages
 };
 
