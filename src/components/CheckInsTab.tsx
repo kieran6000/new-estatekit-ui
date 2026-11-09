@@ -19,7 +19,6 @@ import { checkinMessage, checkinState, cleanQuestions, daysAgo, DEFAULT_QUESTION
 import { isEmptyNote, noteForSaving } from "../lib/richNote";
 import { tokens } from "../theme";
 import { Face } from "./Faces";
-import { spotSx } from "../hooks/useSpotlight";
 import ReplyRoundedIcon from "@mui/icons-material/ReplyRounded";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import ChecklistRoundedIcon from "@mui/icons-material/ChecklistRounded";
@@ -39,6 +38,10 @@ interface Linking {
   showNotes: (id: string) => void;
 }
 const LinkCtx = createContext<Linking | null>(null);
+/** "Here it is": a soft tint that fades in and out, no rings. */
+const flashSx = (on: boolean) => ({ transition: "background-color 700ms ease", bgcolor: on ? tokens.primaryBg : "transparent" });
+/** Keyboard focus only: a thin ring, never the browser's black box on a click. */
+const focusSx = { outline: "none", "&:focus-visible": { outline: `2px solid ${tokens.primary}`, outlineOffset: 2 } };
 const useLinking = () => useContext(LinkCtx);
 /** Light it up for a moment, then let it go. */
 function useBriefly(): [string | null, (id: string) => void] {
@@ -57,9 +60,9 @@ function CheckinQuote({ r, onClick, onRemove }: { r: CheckinRow; onClick?: () =>
     <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, minWidth: 0, pl: 1, pr: onRemove ? 0.25 : 1, py: 0.5, borderRadius: "8px", borderLeft: `3px solid ${tokens.primary}`, bgcolor: tokens.primaryBg }}>
       <Box component={onClick ? "button" : "div"} type={onClick ? "button" : undefined} onClick={onClick}
         title={onClick ? "Show this check-in" : undefined}
-        sx={{ display: "flex", alignItems: "center", gap: 0.75, minWidth: 0, flex: 1, p: 0, border: 0, bgcolor: "transparent", font: "inherit", color: "inherit", textAlign: "left", cursor: onClick ? "pointer" : "default" }}>
+        sx={{ display: "flex", alignItems: "center", gap: 0.75, minWidth: 0, flex: 1, p: 0, border: 0, borderRadius: "4px", bgcolor: "transparent", font: "inherit", color: "inherit", textAlign: "left", cursor: onClick ? "pointer" : "default", ...focusSx, "&:hover .ek-q": onClick ? { textDecoration: "underline" } : undefined }}>
         <ReplyRoundedIcon sx={{ fontSize: 16, color: tokens.primary, flex: "none" }} />
-        <Typography sx={{ fontSize: 12.5, fontWeight: 600, flex: "none" }}>{day(r.answered_at!)} check-in</Typography>
+        <Typography className="ek-q" sx={{ fontSize: 12.5, fontWeight: 600, flex: "none" }}>{day(r.answered_at!)} check-in</Typography>
         <Face n={t.average} size={15} />
         <Typography sx={{ fontSize: 12.5, fontWeight: 600, flex: "none" }}>{t.average}</Typography>
         {said && <Typography noWrap sx={{ fontSize: 12.5, color: tokens.ink2, minWidth: 0 }}>· {said}</Typography>}
@@ -310,7 +313,7 @@ function LatestCheckin({ r, agentId }: { r: CheckinRow; agentId: string }) {
   const said = whatTheySaid(r.answers, qs, r.comment);
   const lit = useLinking()?.spotCheckin === r.id;
   return (
-    <Box id={`checkin-${r.id}`} sx={{ pt: 1, pb: 2, px: 1, mx: -1, borderRadius: "8px", ...spotSx(lit) }}>
+    <Box id={`checkin-${r.id}`} sx={{ pt: 1, pb: 2, px: 1, mx: -1, borderRadius: "8px", ...flashSx(lit) }}>
       <Box sx={{ display: "flex", alignItems: "center", flexWrap: "wrap", columnGap: 1.25, rowGap: 0.25 }}>
         <Face n={t.average} size={34} />
         <Typography sx={{ fontSize: 22, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{t.average}</Typography>
@@ -332,7 +335,7 @@ function EarlierCheckin({ r, agentId }: { r: CheckinRow; agentId: string }) {
   const lit = useLinking()?.spotCheckin === r.id;
   useEffect(() => { if (lit) setOpen(true); }, [lit]);
   return (
-    <Box id={`checkin-${r.id}`} sx={{ borderTop: `1px solid ${tokens.divider2}`, borderRadius: "6px", ...spotSx(lit) }}>
+    <Box id={`checkin-${r.id}`} sx={{ borderTop: `1px solid ${tokens.divider2}`, borderRadius: "6px", ...flashSx(lit) }}>
       <ButtonBase onClick={() => setOpen(!open)} aria-expanded={open}
         sx={{ width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 1.5, py: 1.1, px: 0.75, borderRadius: "6px", cursor: "pointer", bgcolor: open ? tokens.surface2 : "transparent", "&:hover": { bgcolor: tokens.surface2 }, "&:hover .ek-open": { bgcolor: tokens.primaryBg } }}>
         <Typography sx={{ fontSize: 13.5, fontWeight: 500, width: 92, flex: "none" }}>{day(r.answered_at!)}</Typography>
@@ -388,7 +391,7 @@ function NoteRow({ n, agentId, byName, about }: { n: ClientNote; agentId: string
     try { await work; await qc.invalidateQueries({ queryKey: ["clientNotes", agentId] }); return true; } catch (e) { showSnack((e as Error).message); return false; }
   };
   return (
-    <Box id={`note-${n.id}`} sx={{ display: "flex", alignItems: "flex-start", gap: 1, py: 1, borderTop: `1px solid ${tokens.divider2}`, borderRadius: "6px", ...spotSx(lit), "&:hover .ek-tools": { opacity: 1 } }}>
+    <Box id={`note-${n.id}`} sx={{ display: "flex", alignItems: "flex-start", gap: 1, py: 1, borderTop: `1px solid ${tokens.divider2}`, borderRadius: "6px", ...flashSx(lit), "&:hover .ek-tools": { opacity: 1 } }}>
       {n.kind === "todo" ? (
         <Checkbox checked={!!n.done_at} onChange={(e) => run(setNoteDone(n.id, e.target.checked, byName))} slotProps={{ input: { "aria-label": "Done" } }} sx={{ p: 0.5, mt: "-3px" }} />
       ) : <Box sx={{ width: 30, flex: "none" }} />}
