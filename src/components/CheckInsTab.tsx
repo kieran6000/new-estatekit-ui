@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link as RouterLink } from "react-router-dom";
 import { Box, Button, ButtonBase, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Menu, MenuItem, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from "@mui/material";
@@ -6,6 +6,7 @@ import AddIcon from "@mui/icons-material/Add";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
 import StarRoundedIcon from "@mui/icons-material/StarRounded";
 import WhatsAppIcon from "@mui/icons-material/WhatsApp";
@@ -175,7 +176,7 @@ function Stars({ n, size = 20 }: { n: number; size?: number }) {
   const filled = Math.round(n);
   return (
     <Box sx={{ display: "inline-flex" }} aria-label={`${n} out of 5 stars`}>
-      {[1, 2, 3, 4, 5].map((i) => <StarRoundedIcon key={i} sx={{ fontSize: size, color: i <= filled ? scoreColor(filled) : tokens.surface2 }} />)}
+      {[1, 2, 3, 4, 5].map((i) => <StarRoundedIcon key={i} sx={{ fontSize: size, color: i <= filled ? scoreColor(filled) : tokens.divider }} />)}
     </Box>
   );
 }
@@ -238,32 +239,65 @@ function SendAction({ agentId, clientName, clientPhone, rows, fromName, onEditQu
   );
 }
 
-/** One answered check-in, read like a review: stars, when, what they said, then each score. */
-function CheckinCard({ r, first }: { r: CheckinRow; first: boolean }) {
+/** Each score as quiet text: "Lead quality 3 · Enough leads 4". Low ones in red, so they're the only thing that stands out. */
+function Breakdown({ r }: { r: CheckinRow }) {
+  const qs = questionsOf(r);
+  const rated = qs.filter((q) => q.type === "rating" && typeof r.answers![q.id] === "number");
+  return (
+    <Typography sx={{ fontSize: 13.5, color: tokens.ink2, lineHeight: 1.7 }}>
+      {rated.map((q, i) => {
+        const n = r.answers![q.id] as number;
+        return (
+          <Fragment key={q.id}>
+            {i > 0 && <Box component="span" sx={{ mx: 1, color: tokens.ink3 }}>·</Box>}{" "}
+            <Box component="span" sx={{ whiteSpace: "nowrap" }}>{q.short} <Box component="span" sx={{ fontWeight: 700, color: n <= 2 ? tokens.red : "text.primary" }}>{n}</Box></Box>
+          </Fragment>
+        );
+      })}
+    </Typography>
+  );
+}
+
+/** Their latest answer, in full: the one that matters. */
+function LatestCheckin({ r }: { r: CheckinRow }) {
   const qs = questionsOf(r);
   const t = scoreCheckin(r.answers!, qs);
   const said = whatTheySaid(r.answers, qs, r.comment);
-  const rated = qs.filter((q) => q.type === "rating" && typeof r.answers![q.id] === "number");
   return (
-    <Box sx={{ py: 2, borderTop: first ? "none" : `1px solid ${tokens.divider2}` }}>
-      <Box sx={{ display: "flex", alignItems: "center", flexWrap: "wrap", columnGap: 1, rowGap: 0.25 }}>
-        <Stars n={t.average} size={first ? 24 : 20} />
-        <Typography sx={{ fontSize: first ? 17 : 15, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{t.average}</Typography>
-        <Typography sx={{ fontSize: 13.5, color: tokens.ink2 }}>· {day(r.answered_at!)}{first ? `, ${daysAgo(r.answered_at!)}` : ""}</Typography>
+    <Box sx={{ pt: 1, pb: 2.5 }}>
+      <Box sx={{ display: "flex", alignItems: "center", flexWrap: "wrap", columnGap: 1.25, rowGap: 0.25 }}>
+        <Stars n={t.average} size={28} />
+        <Typography sx={{ fontSize: 22, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{t.average}</Typography>
+        <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>{daysAgo(r.answered_at!).replace(/^./, (c) => c.toUpperCase())}</Typography>
       </Box>
-      {said && <Typography sx={{ fontSize: first ? 16 : 14.5, lineHeight: 1.55, mt: 1, whiteSpace: "pre-wrap", color: first ? undefined : tokens.ink2 }}>“{said}”</Typography>}
-      <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.75, mt: 1.25 }}>
-        {rated.map((q) => {
-          const n = r.answers![q.id] as number;
-          return (
-            <Box key={q.id} sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, px: 1.25, py: 0.4, borderRadius: 999, bgcolor: tokens.surface2, fontSize: 13 }}>
-              <Box component="span" sx={{ color: tokens.ink2 }}>{q.short}</Box>
-              <StarRoundedIcon sx={{ fontSize: 15, color: scoreColor(n) }} />
-              <Box component="span" sx={{ fontWeight: 700 }}>{n}</Box>
-            </Box>
-          );
-        })}
-      </Box>
+      {said && <Typography sx={{ fontSize: 16.5, lineHeight: 1.55, mt: 1.25, whiteSpace: "pre-wrap" }}>“{said}”</Typography>}
+      <Box sx={{ mt: 1.25 }}><Breakdown r={r} /></Box>
+    </Box>
+  );
+}
+
+/** An older answer as one line: when, stars, the start of what they said. Tap for the rest. */
+function EarlierCheckin({ r }: { r: CheckinRow }) {
+  const [open, setOpen] = useState(false);
+  const qs = questionsOf(r);
+  const t = scoreCheckin(r.answers!, qs);
+  const said = whatTheySaid(r.answers, qs, r.comment);
+  return (
+    <Box sx={{ borderTop: `1px solid ${tokens.divider2}` }}>
+      <ButtonBase onClick={() => setOpen(!open)} aria-expanded={open}
+        sx={{ width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 1.5, py: 1.1, px: 0.5, borderRadius: "6px", "&:hover": { bgcolor: tokens.surface2 } }}>
+        <Typography sx={{ fontSize: 13.5, color: tokens.ink2, width: 92, flex: "none" }}>{day(r.answered_at!)}</Typography>
+        <Stars n={t.average} size={15} />
+        <Typography sx={{ fontSize: 13.5, fontWeight: 600, width: 26, flex: "none", fontVariantNumeric: "tabular-nums" }}>{t.average}</Typography>
+        <Typography noWrap sx={{ fontSize: 13.5, color: tokens.ink2, flex: 1, minWidth: 0 }}>{open ? "" : said ? `“${said}”` : ""}</Typography>
+        <ExpandMoreIcon sx={{ fontSize: 18, color: tokens.ink3, flex: "none", transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }} />
+      </ButtonBase>
+      {open && (
+        <Box sx={{ pl: { sm: "112px" }, px: 0.5, pb: 1.5 }}>
+          {said && <Typography sx={{ fontSize: 14.5, lineHeight: 1.55, mb: 0.75, whiteSpace: "pre-wrap" }}>“{said}”</Typography>}
+          <Breakdown r={r} />
+        </Box>
+      )}
     </Box>
   );
 }
@@ -280,7 +314,8 @@ function HowTheyFeel({ agentId, clientName, clientPhone, fromName }: { agentId: 
       {editing && <EditQuestions onClose={() => setEditing(false)} />}
       {isLoading ? null : answered.length ? (
         <>
-          {answered.map((r, i) => <CheckinCard key={r.id} r={r} first={i === 0} />)}
+          <LatestCheckin r={answered[0]} />
+          {answered.slice(1).map((r) => <EarlierCheckin key={r.id} r={r} />)}
         </>
       ) : (
         <Typography sx={{ fontSize: 14.5, color: tokens.ink2, py: 2 }}>{first || "They"} hasn't answered yet. Ask how it's going, and the answer shows here like a review.</Typography>
