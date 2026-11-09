@@ -108,8 +108,12 @@ export async function listClientNotes(agentId: string): Promise<ClientNote[]> {
   return (data ?? []) as ClientNote[];
 }
 
-export async function addClientNote(agentId: string, kind: "todo" | "note", body: string, byName: string): Promise<void> {
-  const { error } = await supabase.from("client_notes").insert({ agent_id: agentId, kind, body, created_by_name: byName || null });
+/** A to-do or note about a check-in keeps "checkin:<id>" in its link. */
+export const checkinLink = (checkinId: string) => `checkin:${checkinId}`;
+export const checkinIdOf = (link: string | null | undefined) => (link?.startsWith("checkin:") ? link.slice(8) : null);
+
+export async function addClientNote(agentId: string, kind: "todo" | "note", body: string, byName: string, link: string | null = null): Promise<void> {
+  const { error } = await supabase.from("client_notes").insert({ agent_id: agentId, kind, body, link, created_by_name: byName || null });
   if (error) {
     console.error("addClientNote failed:", error.message);
     throw new Error("Couldn't save that. Try again.");
