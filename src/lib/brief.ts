@@ -49,7 +49,7 @@ export const BRIEF_FIELDS: BriefField[] = [
 /** Every question name that belongs to the brief (standard labels and old names). */
 export const BRIEF_QUESTIONS = new Set(BRIEF_FIELDS.flatMap((f) => [f.label, ...f.aliases]));
 
-export type BriefSource = "call" | "signup" | "form" | "profile";
+export type BriefSource = "call" | "signup" | "form" | "profile" | "guess";
 
 export interface BriefSignup {
   wants: string[];
@@ -67,6 +67,8 @@ export function buildBrief(input: {
   onboarding: { q: string; a: string }[];
   targetAreas: string[];
   company: string | null | undefined;
+  /** Their area on file (e.g. "Boksburg"), for the city when nobody wrote one down. */
+  area?: string | null;
 }): Record<BriefKey, { value: string; source: BriefSource } | null> {
   const answer = (q: string) => input.onboarding.find((x) => x.q === q && !blank(x.a))?.a.trim() || "";
   const s = input.signup;
@@ -90,5 +92,23 @@ export function buildBrief(input: {
             ? { value: fallback, source: "profile" }
             : null;
   }
+  // No city written down: the town in their business address, else their area.
+  if (!out.city) {
+    const guess = cityFromAddress(out.address?.value) || (input.area || "").split(/[,/•|]/)[0].trim();
+    if (guess) out.city = { value: guess, source: "guess" };
+  }
   return out;
+}
+
+const NOT_A_TOWN = /^(south africa|rsa|za|gauteng|western cape|eastern cape|northern cape|kwazulu[- ]natal|kzn|free state|limpopo|mpumalanga|north west|namibia)$/i;
+
+/** The town in an address like "1057 Frederik Avenue, Eldoraigne, Centurion, 0157":
+ *  the last part that's a name, not a number, a province or a country. */
+export function cityFromAddress(address: string | null | undefined): string {
+  const parts = (address || "").split(/[,\n]/).map((p) => p.trim()).filter(Boolean);
+  for (let i = parts.length - 1; i > 0; i--) {
+    const p = parts[i].replace(/\s*\d{4}$/, "").trim();
+    if (p && !/\d/.test(p) && !NOT_A_TOWN.test(p)) return p;
+  }
+  return "";
 }
