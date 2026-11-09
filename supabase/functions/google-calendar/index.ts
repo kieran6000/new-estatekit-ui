@@ -61,10 +61,8 @@ Deno.serve(async (req) => {
         console.error("save state", error.message);
         return json({ error: "state" }, 500);
       }
-      // Pre-pick their Google account when we know it.
-      const { data: prof } = await admin.from("agent_profiles").select("email").eq("agent_id", me).maybeSingle();
-      const { data: prev } = await admin.from("google_calendar_connections").select("google_email").eq("agent_id", me).maybeSingle();
-      const hint = (prev?.google_email || prof?.email || "").trim();
+      // No pre-filled email: they pick or type the Google account they want
+      // (their account email is often not the Gmail their calendar is on).
       const q = new URLSearchParams({
         client_id: clientId,
         redirect_uri: redirect,
@@ -73,12 +71,11 @@ Deno.serve(async (req) => {
         // offline + consent: Google hands over a refresh token every time,
         // so they never have to connect again unless they remove access.
         access_type: "offline",
-        prompt: "consent",
+        prompt: "select_account consent",
         include_granted_scopes: "true",
         code_challenge: challenge,
         code_challenge_method: "S256",
         state,
-        ...(hint.includes("@") ? { login_hint: hint } : {}),
       });
       return json({ url: `https://accounts.google.com/o/oauth2/v2/auth?${q}` });
     }
