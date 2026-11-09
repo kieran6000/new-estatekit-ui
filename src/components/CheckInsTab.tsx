@@ -446,7 +446,7 @@ function ToDos({ agentId, byName }: { agentId: string; byName: string }) {
     if (empty) return;
     setSaving(true);
     try {
-      await addClientNote(agentId, kind, noteForSaving(html), byName, link?.replyTo ? checkinLink(link.replyTo.id) : null);
+      await addClientNote(agentId, kind, noteForSaving(html), byName, link?.replyTo ? checkinLink(agentId, link.replyTo.id) : null);
       link?.reply(null);
       setHtml("");
       setComposer((k) => k + 1); // a fresh, empty box

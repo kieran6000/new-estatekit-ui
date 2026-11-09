@@ -108,9 +108,10 @@ export async function listClientNotes(agentId: string): Promise<ClientNote[]> {
   return (data ?? []) as ClientNote[];
 }
 
-/** A to-do or note about a check-in keeps "checkin:<id>" in its link. */
-export const checkinLink = (checkinId: string) => `checkin:${checkinId}`;
-export const checkinIdOf = (link: string | null | undefined) => (link?.startsWith("checkin:") ? link.slice(8) : null);
+/** A to-do or note about a check-in keeps that check-in's address in its
+ *  link (the notes table only takes https links). */
+export const checkinLink = (agentId: string, checkinId: string) => `https://leads.estatekit.co/clients/${agentId}/checkins#checkin-${checkinId}`;
+export const checkinIdOf = (link: string | null | undefined) => link?.match(/#checkin-([0-9a-f-]{36})$/i)?.[1] ?? null;
 
 export async function addClientNote(agentId: string, kind: "todo" | "note", body: string, byName: string, link: string | null = null): Promise<void> {
   const { error } = await supabase.from("client_notes").insert({ agent_id: agentId, kind, body, link, created_by_name: byName || null });
