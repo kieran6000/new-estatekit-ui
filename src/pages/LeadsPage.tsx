@@ -31,6 +31,7 @@ import {
   TextField,
   Toolbar,
   Typography,
+  Switch,
   useMediaQuery,
 } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
@@ -81,7 +82,9 @@ import { stageLabel } from "../types";
 import { dueLeads, pipelineKindFor, sortLeadsForList, stepForStage, computeStagePatch, stageForKind, whenToCall, whenToCallSortValue } from "../lib/stageLogic";
 import { timeAgo } from "../lib/timeAgo";
 import { useLeads, useUpdateLeadStage } from "../hooks/useLeads";
-import { useAddPipeline, usePipelines, useSyncPipelineSheet } from "../hooks/usePipelines";
+import { useAddPipeline, usePipelines, useSyncPipelineSheet, useTeamPipelines } from "../hooks/usePipelines";
+import { setPipelineShared } from "../api/pipelines";
+import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
 import { deletePipeline, pipelineUsage, renamePipeline } from "../api/pipelines";
 import { useIsOperator } from "../hooks/useAutomations";
 import { useSnack } from "../hooks/useSnack";
@@ -128,6 +131,8 @@ export default function LeadsPage() {
   const showSnack = useSnack();
   const qc = useQueryClient();
   const { data: isOperator } = useIsOperator();
+  const { data: teamPipelines = [] } = useTeamPipelines(isOperator === true);
+  const sharedIds = new Set(teamPipelines.map((t) => t.id));
   const posthog = usePostHog();
   const { data: myProfile } = useQuery({ queryKey: ["myProfile"], queryFn: getMyProfile, staleTime: 5 * 60_000 });
   function runTour(auto: boolean) {
@@ -492,6 +497,7 @@ export default function LeadsPage() {
           data-tour="pipeline"
           sx={{ display: "flex", alignItems: "center", gap: 0.25, border: `1px solid ${tokens.divider}`, borderRadius: "4px", bgcolor: tokens.surface, fontSize: 13, fontWeight: 500, p: "7px 6px 7px 12px", cursor: "pointer" }}
         >
+          {sharedIds.has(activePipeline.id) && <Tooltip title="Shared with the team"><GroupsRoundedIcon sx={{ fontSize: 18, color: tokens.primary, mr: 0.5 }} /></Tooltip>}
           {activePipeline.name} pipeline <ArrowDropDownIcon fontSize="small" />
         </Box>
         {isOperator && (
@@ -508,6 +514,9 @@ export default function LeadsPage() {
         <PipelineMenu
           anchor={pipelineMenuAnchor}
           pipelines={pipelines}
+          sharedIds={sharedIds}
+          elsewhere={teamPipelines.filter((t) => !pipelines.some((p) => p.id === t.id))}
+          onOpenElsewhere={(id) => { setPipelineMenuAnchor(null); navigate(`/team-pipeline/${id}`); }}
           onClose={() => setPipelineMenuAnchor(null)}
           onSelect={selectPipeline}
           onAddNew={isOperator ? () => {
@@ -750,6 +759,16 @@ export default function LeadsPage() {
       <RenamePipelineDialog
         open={renameOpen}
         pipeline={activePipeline}
+        shared={sharedIds.has(activePipeline.id)}
+        onShare={async (on) => {
+          try {
+            await setPipelineShared(activePipeline.id, on);
+            await qc.invalidateQueries({ queryKey: ["teamPipelines"] });
+            showSnack(on ? "Shared. Staff now see this pipeline on their Leads tab." : "Not shared any more.");
+          } catch (e) {
+            showSnack((e as Error).message);
+          }
+        }}
         others={pipelines.filter((p) => p.id !== activePipeline.id)}
         onDeleted={(movedTo) => {
           setRenameOpen(false);
@@ -932,12 +951,20 @@ function EmptyLeadsState({ filter }: { filter: "All" | Stage }) {
 function PipelineMenu({
   anchor,
   pipelines,
+  sharedIds,
+  elsewhere,
+  onOpenElsewhere,
   onClose,
   onSelect,
   onAddNew,
 }: {
   anchor: HTMLElement | null;
   pipelines: Pipeline[];
+  /** Pipelines shared with the team get the team icon. */
+  sharedIds: Set<string>;
+  /** Shared pipelines in other accounts. */
+  elsewhere: { id: string; name: string; owner: string }[];
+  onOpenElsewhere: (id: string) => void;
   onClose: () => void;
   onSelect: (id: string) => void;
   /** Operators only: agents don't add lists. */
@@ -946,8 +973,21 @@ function PipelineMenu({
   return (
     <Menu anchorEl={anchor} open={!!anchor} onClose={onClose}>
       {pipelines.map((p) => (
-        <MenuItem key={p.id} onClick={() => onSelect(p.id)}>
+        <MenuItem key={p.id} onClick={() => onSelect(p.id)} sx={{ gap: 1 }}>
           {p.name}
+          {sharedIds.has(p.id) && <GroupsRoundedIcon titleAccess="Shared with the team" sx={{ fontSize: 18, color: tokens.primary }} />}
+        </MenuItem>
+      ))}
+      {elsewhere.length > 0 && (
+        <Typography sx={{ px: 2, pt: 1.25, pb: 0.25, fontSize: 12, fontWeight: 600, color: tokens.ink2, borderTop: `1px solid ${tokens.divider2}`, mt: 0.5 }}>Shared with the team</Typography>
+      )}
+      {elsewhere.map((p) => (
+        <MenuItem key={p.id} onClick={() => onOpenElsewhere(p.id)} sx={{ gap: 1 }}>
+          <GroupsRoundedIcon sx={{ fontSize: 18, color: tokens.primary }} />
+          <Box>
+            <Box>{p.name}</Box>
+            {p.owner && <Box sx={{ fontSize: 12, color: tokens.ink2 }}>In {p.owner}'s account</Box>}
+          </Box>
         </MenuItem>
       ))}
       {onAddNew && (
@@ -962,10 +1002,12 @@ function PipelineMenu({
 /** Rename a pipeline, or delete it. Deleting moves its leads and forms (and
  *  any workflow checks on it) to another pipeline first, so nothing is lost. */
 function RenamePipelineDialog({
-  open, pipeline, others, onClose, onSave, onDeleted,
+  open, pipeline, shared, onShare, others, onClose, onSave, onDeleted,
 }: {
   open: boolean;
   pipeline: { id: string; name: string };
+  shared: boolean;
+  onShare: (on: boolean) => Promise<void>;
   others: { id: string; name: string }[];
   onClose: () => void;
   onSave: (name: string) => void;
@@ -973,6 +1015,7 @@ function RenamePipelineDialog({
 }) {
   const [name, setName] = useState(pipeline.name);
   const [deleting, setDeleting] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const [moveTo, setMoveTo] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -1015,6 +1058,14 @@ function RenamePipelineDialog({
               autoFocus
               sx={{ mt: 1 }}
             />
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, mt: 2.5, p: 1.5, borderRadius: "8px", border: `1px solid ${tokens.divider}` }}>
+              <GroupsRoundedIcon sx={{ color: shared ? tokens.primary : tokens.ink3 }} />
+              <Box sx={{ flex: 1 }}>
+                <Typography sx={{ fontSize: 15, fontWeight: 500 }}>Share with the team</Typography>
+                <Typography sx={{ fontSize: 13, color: tokens.ink2 }}>Staff see this pipeline on their Leads tab and can work its leads.</Typography>
+              </Box>
+              <Switch checked={shared} disabled={sharing} onChange={async (e) => { setSharing(true); await onShare(e.target.checked); setSharing(false); }} slotProps={{ input: { "aria-label": "Share with the team" } }} />
+            </Box>
             <Box sx={{ mt: 3, pt: 2, borderTop: `1px solid ${tokens.divider}` }}>
               {others.length === 0 ? (
                 <Typography sx={{ fontSize: 13, color: "text.secondary" }}>An account needs at least one pipeline, so this one can't be deleted.</Typography>
