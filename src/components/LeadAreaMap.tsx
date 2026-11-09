@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Box, Skeleton, Typography } from "@mui/material";
+import { Box, Button, Skeleton, Typography } from "@mui/material";
+import { Link as RouterLink } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "../api/_client";
 import { prettyAnswer } from "../lib/format";
@@ -44,7 +45,7 @@ function Count({ n, label, strong }: { n: number; label: string; strong?: boolea
 
 /** Their area as one shaded circle, a dot for each lead. A dot in the circle is
  *  in their area. The same counts sit underneath, so it needs no explaining. */
-export default function LeadAreaMap({ agentId, areas }: { agentId: string; areas: { name: string; address: string }[] }) {
+export default function LeadAreaMap({ agentId, areas, addAreasHref }: { agentId: string; areas: { name: string; address: string }[]; /** Where to add their suburbs, when none are known. */ addAreasHref?: string }) {
   const { data, isLoading, isError } = useQuery({
     queryKey: ["leadAreaMap", agentId, areas.map((a) => a.address).join("|")],
     queryFn: () => loadPlaces(agentId, areas),
@@ -88,7 +89,14 @@ export default function LeadAreaMap({ agentId, areas }: { agentId: string; areas
         ) : failed || isError ? (
           <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>The map couldn't load. Try again in a minute.</Typography>
         ) : !leads.length ? (
-          <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>No leads with an address yet.</Typography>
+          areas.length ? (
+            <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>No leads with an address yet. When they come in, you'll see how many are in {areas.slice(0, 3).map((a) => a.name).join(", ")}{areas.length > 3 ? " and their other areas" : ""}.</Typography>
+          ) : (
+            <Box>
+              <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>Add the suburbs they work in, and this shows how many of their leads are close by.</Typography>
+              {addAreasHref && <Button component={RouterLink} to={addAreasHref} variant="outlined" size="small" sx={{ mt: 1.25 }}>Add their suburbs</Button>}
+            </Box>
+          )
         ) : (
           <Box sx={{ display: "flex", gap: 2, flex: 1, minWidth: 0 }}>
             <Box sx={{ position: "relative", width: { xs: 110, sm: 170 }, minHeight: 116, flex: "none", borderRadius: "6px", overflow: "hidden", border: `1px solid ${tokens.divider}` }}>

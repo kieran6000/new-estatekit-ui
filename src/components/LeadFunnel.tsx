@@ -5,13 +5,13 @@ import { timeAgo } from "../lib/timeAgo";
 import { tokens } from "../theme";
 
 /** How far their leads have got, on one slim row. */
-export default function LeadFunnel({ byStage, lastLeadAt }: { byStage: Record<string, number>; lastLeadAt?: string | null }) {
+export default function LeadFunnel({ byStage, lastLeadAt, hasAdAccount = true }: { byStage: Record<string, number>; lastLeadAt?: string | null; hasAdAccount?: boolean }) {
   const { steps, rest } = leadFunnel(byStage);
   const total = steps[0].count;
   return (
     <Box sx={{ bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "8px", px: 2, py: 1.25, minWidth: 0 }}>
       {!total ? (
-        <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>No leads yet.</Typography>
+        <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>{hasAdAccount ? "No leads yet. Leads from their Facebook ads show here within about 5 minutes of coming in." : "No leads yet. Once their ad account is linked above and their ads run, leads show here."}</Typography>
       ) : (
         <Box sx={{ display: "flex", alignItems: "center", flexWrap: "wrap", columnGap: 2, rowGap: 0.75 }}>
           <Box sx={{ display: "flex", alignItems: "center", gap: { xs: 0.25, sm: 1 }, flex: "1 1 420px", minWidth: 0 }}>
