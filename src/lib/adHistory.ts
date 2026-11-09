@@ -130,3 +130,4 @@ export function summariseDay<T extends Item & { objectName: string }>(items: T[]
   }
   return { launch: launch.campaigns + launch.adSets + launch.ads ? launch : null, pictures: pictured.size, rows: [...seen.values()] };
 }
+

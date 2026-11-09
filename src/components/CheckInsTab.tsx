@@ -1,13 +1,14 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link as RouterLink } from "react-router-dom";
-import { Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, MenuItem, TextField, Tooltip, Typography } from "@mui/material";
-import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
-import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
-import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import { Box, Button, ButtonBase, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from "@mui/material";
+import AddIcon from "@mui/icons-material/Add";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
+import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import CheckIcon from "@mui/icons-material/Check";
 import StarRoundedIcon from "@mui/icons-material/StarRounded";
-import WhatsAppIcon from "@mui/icons-material/WhatsApp";
+import SendRoundedIcon from "@mui/icons-material/SendRounded";
 import { listAgentProfiles } from "../api/_client";
 import {
   addClientNote, CheckinsNotSetUp, createCheckin, deleteClientNote, getCheckinQuestions, getReviewLink, listCheckins, listClientNotes,
@@ -15,8 +16,7 @@ import {
 } from "../api/checkins";
 import { useAuth } from "../hooks/useAuth";
 import { useSnack } from "../hooks/useSnack";
-import { checkinMessage, checkinState, cleanQuestions, daysAgo, DEFAULT_QUESTIONS, newQuestionId, scoreCheckin, whatTheySaid, type CheckinQuestion, type Risk } from "../lib/checkin";
-import { waDigits } from "../lib/phone";
+import { checkinMessage, checkinState, cleanQuestions, daysAgo, DEFAULT_QUESTIONS, newQuestionId, scoreCheckin, whatTheySaid, type CheckinQuestion } from "../lib/checkin";
 import { isEmptyNote, noteForSaving } from "../lib/richNote";
 import { tokens } from "../theme";
 import { NoteEditor, NoteView } from "./RichNote";
@@ -25,7 +25,6 @@ import { NoteEditor, NoteView } from "./RichNote";
 // the team has to do for them. Clients answer when they answer, so it shows
 // what happened and when, not a schedule they've fallen behind on.
 
-const RISK_COLOR: Record<Risk, string> = { green: tokens.green, amber: tokens.amber, red: tokens.red };
 const day = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { timeZone: "Africa/Johannesburg", weekday: "short", day: "numeric", month: "short" });
 const scoreColor = (n: number) => (n <= 2 ? tokens.red : n === 3 ? tokens.amber : tokens.green);
 const linkFor = (c: CheckinRow) => `${window.location.origin}/k/${c.token}`;
@@ -43,86 +42,51 @@ function Card({ title, action, children }: { title: string; action?: React.React
   );
 }
 
-const Dot = ({ risk, size = 10 }: { risk: Risk; size?: number }) => <Box component="span" sx={{ display: "inline-block", width: size, height: size, borderRadius: "50%", bgcolor: RISK_COLOR[risk], flex: "none" }} />;
-
-/** One answer as the stars they gave, coloured so a 2 looks like a 2 from across the room. */
-function Score({ n }: { n: number }) {
+/** A question as a single line: what it asks and how they answer. */
+function QuestionRow({ n, q, onOpen }: { n: number; q: CheckinQuestion; onOpen: () => void }) {
+  const how = q.type === "rating" ? `Stars, from "${q.low || "Poor"}" to "${q.high || "Great"}"` : "They write an answer (optional)";
   return (
-    <Box sx={{ display: "inline-flex", alignItems: "center" }} aria-label={`${n} star${n === 1 ? "" : "s"}`}>
-      {[1, 2, 3, 4, 5].map((i) => <StarRoundedIcon key={i} sx={{ fontSize: 19, color: i <= n ? scoreColor(n) : tokens.surface2 }} />)}
-      <Typography component="span" sx={{ fontSize: 13.5, fontWeight: 700, ml: 0.75, fontVariantNumeric: "tabular-nums" }}>{n}</Typography>
-    </Box>
+    <ButtonBase onClick={onOpen} sx={{ width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 1.5, px: 1.5, py: 1.25, borderRadius: "8px", "&:hover": { bgcolor: tokens.surface2 } }}>
+      <Typography sx={{ fontSize: 14, color: tokens.ink3, width: 18, flex: "none", fontVariantNumeric: "tabular-nums" }}>{n}</Typography>
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Typography sx={{ fontSize: 15.5, color: q.label.trim() ? undefined : tokens.red }}>{q.label.trim() || "No question written yet"}</Typography>
+        <Typography sx={{ fontSize: 13, color: tokens.ink2, mt: 0.25 }}>{how}</Typography>
+      </Box>
+      <EditOutlinedIcon sx={{ fontSize: 18, color: tokens.ink3, flex: "none" }} />
+    </ButtonBase>
   );
 }
 
-/** Sending: open WhatsApp or copy, then say it went. Nothing counts as sent until then. */
-function SendBox({ agentId, clientName, clientPhone, rows, fromName }: { agentId: string; clientName: string; clientPhone: string | null; rows: CheckinRow[]; fromName: string }) {
-  const qc = useQueryClient();
-  const showSnack = useSnack();
-  const [busy, setBusy] = useState(false);
-  const state = checkinState(rows);
-  const first = clientName.trim().split(/\s+/)[0] ?? "";
-  const phone = waDigits(clientPhone);
-  const refresh = () => qc.invalidateQueries({ queryKey: ["checkins", agentId] });
-
-  async function link(): Promise<CheckinRow> {
-    if (state.waiting) return state.waiting;
-    if (state.draft) return state.draft;
-    const c = await createCheckin(agentId, fromName);
-    await refresh();
-    return c;
-  }
-  async function openWhatsApp() {
-    setBusy(true);
-    const win = window.open("about:blank", "_blank"); // opened now: a phone blocks one opened after waiting
-    try {
-      const c = await link();
-      if (win) win.location.href = `https://wa.me/${phone}?text=${encodeURIComponent(checkinMessage(first, fromName, linkFor(c)))}`;
-    } catch (e) {
-      win?.close();
-      showSnack((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-  async function copy() {
-    setBusy(true);
-    try {
-      const c = await link();
-      await navigator.clipboard.writeText(checkinMessage(first, fromName, linkFor(c)));
-      showSnack("Copied. Paste it in their WhatsApp chat.");
-    } catch (e) {
-      showSnack(e instanceof Error && !/clipboard|document/i.test(e.message) ? e.message : "Couldn't copy it. Try again.");
-    } finally {
-      setBusy(false);
-    }
-  }
-  async function markSent(id: string, sent: boolean) {
-    try { await markCheckinSent(id, sent); await refresh(); } catch (e) { showSnack((e as Error).message); }
-  }
-
-  if (state.waiting) {
-    return (
-      <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1, p: 1.25, borderRadius: "8px", bgcolor: tokens.surface2 }}>
-        <Typography sx={{ fontSize: 14.5, flex: "1 1 200px" }}>Sent {daysAgo(state.waiting.shared_at!)}, no answer yet.</Typography>
-        <Button size="small" startIcon={<ContentCopyIcon />} onClick={copy} disabled={busy}>Copy again</Button>
-        <Button size="small" onClick={() => markSent(state.waiting!.id, false)}>Wasn't sent</Button>
-      </Box>
-    );
-  }
+/** The one question being changed. Everything else stays folded away. */
+function QuestionEditor({ n, total, q, onChange, onMove, onRemove, onDone }: {
+  n: number; total: number; q: CheckinQuestion; onChange: (p: Partial<CheckinQuestion>) => void; onMove: (by: number) => void; onRemove: () => void; onDone: () => void;
+}) {
   return (
-    <Box sx={{ p: 1.25, borderRadius: "8px", bgcolor: tokens.surface2 }}>
-      <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
-        {phone && <Button variant="contained" disableElevation startIcon={<WhatsAppIcon />} onClick={openWhatsApp} disabled={busy} sx={{ minHeight: 42 }}>Send a check-in</Button>}
-        <Button variant={phone ? "outlined" : "contained"} disableElevation startIcon={<ContentCopyIcon />} onClick={copy} disabled={busy} sx={{ minHeight: 42 }}>Copy message</Button>
+    <Box sx={{ p: 2, borderRadius: "8px", border: `1px solid ${tokens.divider}`, bgcolor: tokens.surface2, display: "flex", flexDirection: "column", gap: 2 }}>
+      <TextField label={`Question ${n}`} value={q.label} onChange={(e) => onChange({ label: e.target.value })} multiline autoFocus fullWidth placeholder="How good were your leads this week?" />
+      <Box>
+        <Typography sx={{ fontSize: 13.5, color: tokens.ink2, mb: 0.75 }}>How do they answer?</Typography>
+        <ToggleButtonGroup exclusive value={q.type} onChange={(_e, v) => v && onChange(v === "text" ? { type: "text", low: undefined, high: undefined } : { type: "rating", low: q.low || "Poor", high: q.high || "Great" })}
+          sx={{ "& .MuiToggleButton-root": { textTransform: "none", fontSize: 14, px: 2, py: 0.75 } }}>
+          <ToggleButton value="rating"><StarRoundedIcon sx={{ fontSize: 18, mr: 0.75, color: "#f59e0b" }} />Stars</ToggleButton>
+          <ToggleButton value="text">Writing</ToggleButton>
+        </ToggleButtonGroup>
       </Box>
-      {state.draft && (
-        <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1, mt: 1.25 }}>
-          <Typography sx={{ fontSize: 14 }}>Sent it to them?</Typography>
-          <Button size="small" variant="outlined" onClick={() => markSent(state.draft!.id, true)}>Yes, mark as sent</Button>
+      {q.type === "rating" && (
+        <Box sx={{ display: "flex", gap: 1.5, flexWrap: "wrap" }}>
+          <TextField size="small" label="1 star means" value={q.low ?? ""} onChange={(e) => onChange({ low: e.target.value })} sx={{ flex: "1 1 160px" }} />
+          <TextField size="small" label="5 stars mean" value={q.high ?? ""} onChange={(e) => onChange({ high: e.target.value })} sx={{ flex: "1 1 160px" }} />
         </Box>
       )}
-      {!phone && <Typography sx={{ fontSize: 13, color: tokens.ink2, mt: 1 }}>They have no WhatsApp number on file, so copy the message and send it yourself.</Typography>}
+      <TextField size="small" label="Name on the client's page" value={q.short} onChange={(e) => onChange({ short: e.target.value })} placeholder={q.label.trim().slice(0, 30) || "Lead quality"}
+        helperText="A few words, so the answers fit on the Check-ins tab. Left empty, the question is used." />
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+        <Button size="small" disabled={n === 1} onClick={() => onMove(-1)}>Move up</Button>
+        <Button size="small" disabled={n === total} onClick={() => onMove(1)}>Move down</Button>
+        <Button size="small" color="error" onClick={onRemove}>Remove</Button>
+        <Box sx={{ flex: 1 }} />
+        <Button variant="outlined" onClick={onDone}>Done</Button>
+      </Box>
     </Box>
   );
 }
@@ -133,151 +97,218 @@ function EditQuestions({ onClose }: { onClose: () => void }) {
   const { data: saved } = useQuery({ queryKey: ["checkinQuestions"], queryFn: getCheckinQuestions });
   const { data: savedReview } = useQuery({ queryKey: ["checkinReviewLink"], queryFn: getReviewLink });
   const [qs, setQs] = useState<CheckinQuestion[] | null>(null);
+  const [open, setOpen] = useState<string | null>(null); // the one question being changed
   const [review, setReview] = useState<string | null>(null);
+  const [reviewOpen, setReviewOpen] = useState(false);
   const reviewLink = (review ?? savedReview ?? "").trim();
   const reviewOk = !reviewLink || /^https:\/\/\S+$/i.test(reviewLink);
   const list = qs ?? saved ?? DEFAULT_QUESTIONS;
   const set = (i: number, patch: Partial<CheckinQuestion>) => setQs(list.map((q, j) => (j === i ? { ...q, ...patch } : q)));
   const move = (i: number, by: number) => { const next = [...list]; const [q] = next.splice(i, 1); next.splice(i + by, 0, q); setQs(next); };
-  const ok = list.some((q) => q.type === "rating") && list.every((q) => q.label.trim()) && reviewOk;
+  const hasStars = list.some((q) => q.type === "rating");
+  const ok = hasStars && list.every((q) => q.label.trim()) && reviewOk;
+  function add() {
+    const q: CheckinQuestion = { id: newQuestionId(), type: "rating", label: "", short: "", low: "Poor", high: "Great" };
+    setQs([...list, q]);
+    setOpen(q.id);
+  }
   async function save() {
     try {
       await saveCheckinQuestions(list.map((q) => ({ ...q, short: q.short.trim() || q.label.trim() })));
       if (review !== null) await saveReviewLink(reviewLink);
       await qc.invalidateQueries({ queryKey: ["checkinQuestions"] });
       await qc.invalidateQueries({ queryKey: ["checkinReviewLink"] });
-      showSnack("Saved. New check-ins use these questions.");
+      showSnack("Saved. The next check-in you send uses these questions.");
       onClose();
     } catch (e) {
       showSnack((e as Error).message);
     }
   }
   return (
-    <Dialog open onClose={onClose} fullWidth maxWidth="md">
-      <DialogTitle>Check-in questions</DialogTitle>
+    <Dialog open onClose={onClose} fullWidth maxWidth="sm">
+      <DialogTitle sx={{ pb: 0.5 }}>Check-in questions</DialogTitle>
       <DialogContent>
-        <Typography sx={{ fontSize: 14, color: tokens.ink2, mb: 2 }}>For every client. Check-ins already sent keep the questions they went out with, so old answers still make sense.</Typography>
-        {list.map((q, i) => (
-          <Box key={q.id} sx={{ py: 1.5, borderTop: `1px solid ${tokens.divider2}`, display: "grid", gridTemplateColumns: { xs: "1fr", md: "minmax(0, 2fr) minmax(0, 1fr) 150px auto" }, gap: 1, alignItems: "start" }}>
-            <TextField size="small" label="Question" value={q.label} onChange={(e) => set(i, { label: e.target.value })} />
-            <TextField size="small" label="Short name" value={q.short} onChange={(e) => set(i, { short: e.target.value })} helperText="Shown on the tab" />
-            <TextField size="small" select label="Answer" value={q.type} onChange={(e) => set(i, e.target.value === "text" ? { type: "text", low: undefined, high: undefined } : { type: "rating", low: q.low || "Poor", high: q.high || "Great" })}>
-              <MenuItem value="rating">Stars (1 to 5)</MenuItem>
-              <MenuItem value="text">Written (optional)</MenuItem>
-            </TextField>
-            <Box sx={{ display: "flex" }}>
-              <IconButton size="small" aria-label="Move up" disabled={i === 0} onClick={() => move(i, -1)}><ArrowUpwardIcon fontSize="small" /></IconButton>
-              <IconButton size="small" aria-label="Move down" disabled={i === list.length - 1} onClick={() => move(i, 1)}><ArrowDownwardIcon fontSize="small" /></IconButton>
-              <IconButton size="small" aria-label="Remove question" onClick={() => setQs(list.filter((_, j) => j !== i))}><DeleteOutlineIcon fontSize="small" /></IconButton>
+        <Typography sx={{ fontSize: 14, color: tokens.ink2, mb: 1.5 }}>What every client is asked. Tap a question to change it.</Typography>
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+          {list.map((q, i) =>
+            open === q.id ? (
+              <QuestionEditor key={q.id} n={i + 1} total={list.length} q={q} onChange={(p) => set(i, p)} onMove={(by) => move(i, by)}
+                onRemove={() => { setQs(list.filter((_, j) => j !== i)); setOpen(null); }} onDone={() => setOpen(null)} />
+            ) : (
+              <QuestionRow key={q.id} n={i + 1} q={q} onOpen={() => setOpen(q.id)} />
+            ),
+          )}
+        </Box>
+        <Button startIcon={<AddIcon />} onClick={add} sx={{ mt: 1 }}>Add a question</Button>
+        {!hasStars && <Typography sx={{ fontSize: 13.5, color: tokens.red, mt: 1 }}>Keep at least one star question, so you can see how they're feeling.</Typography>}
+
+        <Box sx={{ mt: 2, pt: 1.5, borderTop: `1px solid ${tokens.divider2}` }}>
+          {reviewOpen ? (
+            <Box sx={{ p: 2, borderRadius: "8px", border: `1px solid ${tokens.divider}`, bgcolor: tokens.surface2, display: "flex", flexDirection: "column", gap: 1.5 }}>
+              <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>Clients who give a really good check-in are asked, kindly, to leave a Google review. Leave the link empty and nobody is asked.</Typography>
+              <TextField size="small" fullWidth autoFocus label="Your Google review link" placeholder="https://g.page/r/…/review" value={review ?? savedReview ?? ""} onChange={(e) => setReview(e.target.value)}
+                error={!reviewOk} helperText={reviewOk ? "In Google Business Profile, choose \"Ask for reviews\" and copy the link." : "This needs to start with https://"} />
+              <Box sx={{ display: "flex", justifyContent: "flex-end" }}><Button variant="outlined" onClick={() => setReviewOpen(false)} disabled={!reviewOk}>Done</Button></Box>
             </Box>
-            {q.type === "rating" && (
-              <Box sx={{ display: "flex", gap: 1, gridColumn: { md: "1 / 3" } }}>
-                <TextField size="small" label="1 star means" value={q.low ?? ""} onChange={(e) => set(i, { low: e.target.value })} sx={{ flex: 1 }} />
-                <TextField size="small" label="5 stars mean" value={q.high ?? ""} onChange={(e) => set(i, { high: e.target.value })} sx={{ flex: 1 }} />
+          ) : (
+            <ButtonBase onClick={() => setReviewOpen(true)} sx={{ width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 1.5, px: 1.5, py: 1.25, borderRadius: "8px", "&:hover": { bgcolor: tokens.surface2 } }}>
+              <Box sx={{ flex: 1 }}>
+                <Typography sx={{ fontSize: 15.5 }}>Ask happy clients for a Google review</Typography>
+                <Typography sx={{ fontSize: 13, color: reviewLink ? tokens.green : tokens.ink2, mt: 0.25 }}>{reviewLink ? "On" : "Off: add your review link to switch it on"}</Typography>
               </Box>
-            )}
-          </Box>
-        ))}
-        <Button onClick={() => setQs([...list, { id: newQuestionId(), type: "rating", label: "", short: "", low: "Poor", high: "Great" }])} sx={{ mt: 1 }}>Add a question</Button>
-        <Box sx={{ mt: 2.5, pt: 2, borderTop: `1px solid ${tokens.divider2}` }}>
-          <Typography sx={{ fontSize: 15, fontWeight: 600 }}>Ask for a Google review</Typography>
-          <Typography sx={{ fontSize: 14, color: tokens.ink2, mt: 0.25, mb: 1.25 }}>
-            Only clients who give a really good check-in are asked: at least 4 stars for everything and 5 stars for how happy they are with us. Leave it empty and nobody is asked.
-          </Typography>
-          <TextField size="small" fullWidth label="Your Google review link" placeholder="https://g.page/r/…/review" value={review ?? savedReview ?? ""} onChange={(e) => setReview(e.target.value)}
-            error={!reviewOk} helperText={reviewOk ? "In Google Business Profile, choose \"Ask for reviews\" and copy the link." : "This needs to start with https://"} />
+              <EditOutlinedIcon sx={{ fontSize: 18, color: tokens.ink3 }} />
+            </ButtonBase>
+          )}
         </Box>
       </DialogContent>
-      <DialogActions>
+      <DialogActions sx={{ px: 3, pb: 2 }}>
         <Button onClick={onClose}>Cancel</Button>
-        <Button variant="contained" disableElevation disabled={!ok} onClick={save}>Save questions</Button>
+        <Button variant="contained" disableElevation disabled={!ok} onClick={save}>Save</Button>
       </DialogActions>
     </Dialog>
   );
 }
 
-function HowTheyFeel({ agentId, clientName, clientPhone, fromName }: { agentId: string; clientName: string; clientPhone: string | null; fromName: string }) {
+/** Five stars, filled to the score: the same look the client tapped. */
+function Stars({ n, size = 20 }: { n: number; size?: number }) {
+  const filled = Math.round(n);
+  return (
+    <Box sx={{ display: "inline-flex" }} aria-label={`${n} out of 5 stars`}>
+      {[1, 2, 3, 4, 5].map((i) => <StarRoundedIcon key={i} sx={{ fontSize: size, color: i <= filled ? scoreColor(filled) : tokens.divider }} />)}
+    </Box>
+  );
+}
+
+/** Top right: one button that copies the check-in message, ready to paste in their WhatsApp. */
+function SendAction({ agentId, clientName, rows, fromName, onEditQuestions }: {
+  agentId: string; clientName: string; rows: CheckinRow[]; fromName: string; onEditQuestions: () => void;
+}) {
+  const qc = useQueryClient();
+  const showSnack = useSnack();
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const state = checkinState(rows);
+  const first = clientName.trim().split(/\s+/)[0] ?? "";
+
+  /** Their open check-in link, or a new one. Nobody has to say it was sent. */
+  async function link(): Promise<CheckinRow> {
+    const c = state.waiting ?? state.draft ?? (await createCheckin(agentId, fromName));
+    if (!c.shared_at) await markCheckinSent(c.id, true).catch(() => {});
+    void qc.invalidateQueries({ queryKey: ["checkins", agentId] });
+    return c;
+  }
+  async function send() {
+    setBusy(true);
+    try {
+      const c = await link();
+      await navigator.clipboard.writeText(checkinMessage(first, fromName, linkFor(c)));
+      showSnack(first ? `Check-in copied. Paste it in your WhatsApp chat with ${first}.` : "Check-in copied. Paste it in their WhatsApp chat.");
+      setCopied(true);
+      setTimeout(() => setCopied(false), 4000);
+    } catch (e) {
+      showSnack(e instanceof Error && !/clipboard|document/i.test(e.message) ? e.message : "Couldn't copy it. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Box sx={{ display: "flex", alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end", gap: 1, my: -0.5 }}>
+      <Button size="small" onClick={onEditQuestions} sx={{ color: tokens.ink2 }}>Edit questions</Button>
+      <Tooltip title={copied ? "" : "Copies the message with their link, ready to paste in WhatsApp"}>
+        <Button size="small" variant="contained" disableElevation onClick={send} disabled={busy}
+          startIcon={copied ? <CheckIcon /> : <SendRoundedIcon />}
+          sx={copied ? { bgcolor: tokens.greenCall, "&:hover": { bgcolor: tokens.greenCallHover } } : undefined}>
+          {copied ? "Copied! Paste it in WhatsApp" : first ? `Send ${first} a check-in` : "Send a check-in"}
+        </Button>
+      </Tooltip>
+    </Box>
+  );
+}
+
+/** Each score as quiet text: "Lead quality 3 · Enough leads 4". Low ones in red, so they're the only thing that stands out. */
+function Breakdown({ r }: { r: CheckinRow }) {
+  const qs = questionsOf(r);
+  const rated = qs.filter((q) => q.type === "rating" && typeof r.answers![q.id] === "number");
+  return (
+    <Typography sx={{ fontSize: 13.5, color: tokens.ink2, lineHeight: 1.7 }}>
+      {rated.map((q, i) => {
+        const n = r.answers![q.id] as number;
+        return (
+          <Fragment key={q.id}>
+            {i > 0 && <Box component="span" sx={{ mx: 1, color: tokens.ink3 }}>·</Box>}{" "}
+            <Box component="span" sx={{ whiteSpace: "nowrap" }}>{q.short} <Box component="span" sx={{ fontWeight: 700, color: n <= 2 ? tokens.red : "text.primary" }}>{n}</Box></Box>
+          </Fragment>
+        );
+      })}
+    </Typography>
+  );
+}
+
+/** Their latest answer, in full: the one that matters. */
+function LatestCheckin({ r }: { r: CheckinRow }) {
+  const qs = questionsOf(r);
+  const t = scoreCheckin(r.answers!, qs);
+  const said = whatTheySaid(r.answers, qs, r.comment);
+  return (
+    <Box sx={{ pt: 1, pb: 2.5 }}>
+      <Box sx={{ display: "flex", alignItems: "center", flexWrap: "wrap", columnGap: 1.25, rowGap: 0.25 }}>
+        <Stars n={t.average} size={28} />
+        <Typography sx={{ fontSize: 22, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{t.average}</Typography>
+        <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>{day(r.answered_at!)} · {daysAgo(r.answered_at!)}</Typography>
+      </Box>
+      {said && <Typography sx={{ fontSize: 16.5, lineHeight: 1.55, mt: 1.25, whiteSpace: "pre-wrap" }}>“{said}”</Typography>}
+      <Box sx={{ mt: 1.25 }}><Breakdown r={r} /></Box>
+    </Box>
+  );
+}
+
+/** An older answer as one line: when, stars, the start of what they said. Tap for the rest. */
+function EarlierCheckin({ r }: { r: CheckinRow }) {
+  const [open, setOpen] = useState(false);
+  const qs = questionsOf(r);
+  const t = scoreCheckin(r.answers!, qs);
+  const said = whatTheySaid(r.answers, qs, r.comment);
+  return (
+    <Box sx={{ borderTop: `1px solid ${tokens.divider2}` }}>
+      <ButtonBase onClick={() => setOpen(!open)} aria-expanded={open}
+        sx={{ width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 1.5, py: 1.1, px: 0.75, borderRadius: "6px", cursor: "pointer", bgcolor: open ? tokens.surface2 : "transparent", "&:hover": { bgcolor: tokens.surface2 }, "&:hover .ek-open": { bgcolor: tokens.primaryBg } }}>
+        <Typography sx={{ fontSize: 13.5, fontWeight: 500, width: 92, flex: "none" }}>{day(r.answered_at!)}</Typography>
+        <Stars n={t.average} size={15} />
+        <Typography sx={{ fontSize: 13.5, fontWeight: 600, width: 26, flex: "none", fontVariantNumeric: "tabular-nums" }}>{t.average}</Typography>
+        <Typography noWrap sx={{ fontSize: 13.5, color: tokens.ink2, flex: 1, minWidth: 0 }}>{open ? "" : said ? `“${said}”` : ""}</Typography>
+        <Box className="ek-open" sx={{ display: "flex", alignItems: "center", gap: 0.25, flex: "none", color: "primary.main", fontSize: 13, fontWeight: 600, px: 1, py: 0.25, borderRadius: 999, bgcolor: open ? tokens.primaryBg : "transparent" }}>
+          {open ? "Close" : "Open"}
+          <ExpandMoreIcon sx={{ fontSize: 18, transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }} />
+        </Box>
+      </ButtonBase>
+      {open && (
+        <Box sx={{ pl: { sm: "112px" }, px: 0.5, pb: 1.5 }}>
+          {said && <Typography sx={{ fontSize: 14.5, lineHeight: 1.55, mb: 0.75, whiteSpace: "pre-wrap" }}>“{said}”</Typography>}
+          <Breakdown r={r} />
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+function HowTheyFeel({ agentId, clientName, fromName }: { agentId: string; clientName: string; fromName: string }) {
   const [editing, setEditing] = useState(false);
   const { data: rows = [], isLoading, error } = useQuery({ queryKey: ["checkins", agentId], queryFn: () => listCheckins(agentId), retry: (n, e) => !(e instanceof CheckinsNotSetUp) && n < 1 });
   const answered = rows.filter((r) => r.answered_at && r.answers);
-  const latest = answered[0];
-  const latestQs = latest ? questionsOf(latest) : [];
-  const s = latest ? scoreCheckin(latest.answers!, latestQs) : null;
-  const state = checkinState(rows);
-  const trend = answered.slice(0, 8).reverse();
+  const first = clientName.trim().split(/\s+/)[0] ?? "";
 
-  if (error) return <Card title="How they're feeling"><Typography sx={{ fontSize: 14, color: tokens.ink2 }}>{error instanceof CheckinsNotSetUp ? "Check-ins aren't switched on yet." : "Couldn't load their check-ins. Refresh to try again."}</Typography></Card>;
+  if (error) return <Card title="What they told us"><Typography sx={{ fontSize: 14, color: tokens.ink2 }}>{error instanceof CheckinsNotSetUp ? "Check-ins aren't switched on yet." : "Couldn't load their check-ins. Refresh to try again."}</Typography></Card>;
   return (
-    <Card title="How they're feeling" action={<Button size="small" onClick={() => setEditing(true)} sx={{ my: -0.5 }}>Edit questions</Button>}>
+    <Card title={first ? `What ${first} told us` : "What they told us"} action={<SendAction agentId={agentId} clientName={clientName} rows={rows} fromName={fromName} onEditQuestions={() => setEditing(true)} />}>
       {editing && <EditQuestions onClose={() => setEditing(false)} />}
-      {isLoading ? null : (
+      {isLoading ? null : answered.length ? (
         <>
-          {latest && s ? (
-            <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", columnGap: 1.5, rowGap: 0.5 }}>
-              <Dot risk={s.risk} size={12} />
-              <Typography sx={{ fontSize: 22, fontWeight: 700, lineHeight: 1.2 }}>{s.average}<Box component="span" sx={{ fontSize: 15, fontWeight: 400, color: tokens.ink2 }}> of 5</Box></Typography>
-              {s.risk === "red" && <Typography sx={{ fontSize: 14, fontWeight: 700, color: tokens.red }}>At risk</Typography>}
-              <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>answered {daysAgo(latest.answered_at!)}</Typography>
-              {trend.length > 1 && (
-                <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, ml: { sm: "auto" } }}>
-                  {trend.map((r) => {
-                    const t = scoreCheckin(r.answers!, questionsOf(r));
-                    return <Tooltip key={r.id} title={`${day(r.answered_at!)}: ${t.average} of 5`}><Box><Dot risk={t.risk} /></Box></Tooltip>;
-                  })}
-                </Box>
-              )}
-            </Box>
-          ) : (
-            <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>No answers yet.</Typography>
-          )}
-          <Typography sx={{ fontSize: 13, color: tokens.ink2, mt: 0.5, mb: 1.5 }}>
-            {state.sentCount ? `Answered ${state.answeredCount} of ${state.sentCount} sent` : "None sent yet"}
-            {state.lastSent ? ` · last sent ${daysAgo(state.lastSent.shared_at!)}` : ""}
-          </Typography>
-
-          <SendBox agentId={agentId} clientName={clientName} clientPhone={clientPhone} rows={rows} fromName={fromName} />
-
-          {latest && s && (
-            <Box sx={{ mt: 2 }}>
-              <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, minmax(0, 1fr))" }, columnGap: 3, rowGap: 1 }}>
-                {latestQs.filter((q) => q.type === "rating" && typeof latest.answers![q.id] === "number").map((q) => (
-                  <Box key={q.id} sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1.5, py: 0.5, borderBottom: `1px solid ${tokens.divider2}` }}>
-                    <Typography sx={{ fontSize: 14, fontWeight: s.weak.includes(q.id) ? 600 : 400 }}>{q.short}</Typography>
-                    <Score n={latest.answers![q.id] as number} />
-                  </Box>
-                ))}
-              </Box>
-              {whatTheySaid(latest.answers, latestQs, latest.comment) && (
-                <Box sx={{ mt: 1.5, p: 1.25, borderRadius: "6px", bgcolor: tokens.surface2, borderLeft: `3px solid ${tokens.ink3}` }}>
-                  <Typography sx={{ fontSize: 12.5, color: tokens.ink2, mb: 0.25 }}>What they said</Typography>
-                  <Typography sx={{ fontSize: 15, whiteSpace: "pre-wrap" }}>{whatTheySaid(latest.answers, latestQs, latest.comment)}</Typography>
-                </Box>
-              )}
-            </Box>
-          )}
-
-          {answered.length > 1 && (
-            <Box sx={{ mt: 2.5 }}>
-              <Typography sx={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: tokens.ink2, mb: 0.75 }}>Earlier answers</Typography>
-              {answered.slice(1).map((r) => {
-                const qs = questionsOf(r);
-                const t = scoreCheckin(r.answers!, qs);
-                const said = whatTheySaid(r.answers, qs, r.comment);
-                return (
-                  <Box key={r.id} sx={{ py: 1, borderTop: `1px solid ${tokens.divider2}` }}>
-                    <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", columnGap: 1.25, rowGap: 0.5 }}>
-                      <Dot risk={t.risk} />
-                      <Typography sx={{ fontSize: 14, fontWeight: 600, minWidth: 100 }}>{day(r.answered_at!)}</Typography>
-                      <Typography sx={{ fontSize: 13.5 }}>{t.average} of 5</Typography>
-                      <Typography sx={{ fontSize: 13, color: tokens.ink2 }}>{qs.filter((q) => q.type === "rating" && typeof r.answers![q.id] === "number").map((q) => `${q.short} ${r.answers![q.id]}`).join(" · ")}</Typography>
-                    </Box>
-                    {said && <Typography sx={{ fontSize: 13.5, color: tokens.ink2, mt: 0.25, whiteSpace: "pre-wrap" }}>"{said}"</Typography>}
-                  </Box>
-                );
-              })}
-            </Box>
-          )}
+          <LatestCheckin r={answered[0]} />
+          {answered.slice(1).map((r) => <EarlierCheckin key={r.id} r={r} />)}
         </>
+      ) : (
+        <Typography sx={{ fontSize: 14.5, color: tokens.ink2, py: 2 }}>{first || "They"} hasn't answered yet. Ask how it's going, and the answer shows here like a review.</Typography>
       )}
     </Card>
   );
@@ -378,13 +409,13 @@ function ToDos({ agentId, byName }: { agentId: string; byName: string }) {
   );
 }
 
-export default function CheckInsTab({ agentId, clientName, clientPhone }: { agentId: string; clientName: string; clientPhone: string | null }) {
+export default function CheckInsTab({ agentId, clientName }: { agentId: string; clientName: string; clientPhone?: string | null }) {
   const { user } = useAuth();
   const { data: profiles } = useQuery({ queryKey: ["agentProfiles"], queryFn: listAgentProfiles, staleTime: 5 * 60_000 });
   const me = profiles?.find((p) => p.agent_id === user?.id)?.display_name?.trim().split(/\s+/)[0] ?? "";
   return (
     <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "minmax(0, 3fr) minmax(0, 2fr)" }, gap: 2, alignItems: "start" }}>
-      <HowTheyFeel agentId={agentId} clientName={clientName} clientPhone={clientPhone} fromName={me} />
+      <HowTheyFeel agentId={agentId} clientName={clientName} fromName={me} />
       <ToDos agentId={agentId} byName={me} />
     </Box>
   );
@@ -400,8 +431,8 @@ export function CheckinChip({ agentId, to }: { agentId: string; to: string }) {
   return (
     <Tooltip title="Their last check-in">
       <Box component={RouterLink} to={to} sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, textDecoration: "none", color: "inherit", fontSize: 13 }}>
-        <Dot risk={s.risk} />
-        <b>{s.average}</b> of 5{s.risk === "red" ? <Box component="span" sx={{ color: tokens.red, fontWeight: 700 }}>&nbsp;At risk</Box> : null}
+        <StarRoundedIcon sx={{ fontSize: 17, color: scoreColor(Math.round(s.average)) }} />
+        <b>{s.average}</b> of 5
         <Box component="span" sx={{ color: tokens.ink2 }}>· {daysAgo(latest.answered_at!)}</Box>
       </Box>
     </Tooltip>

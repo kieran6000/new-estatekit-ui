@@ -227,10 +227,21 @@ function withDefaults(d: Partial<ClientDossier>): ClientDossier {
   };
 }
 
+let directory: { at: number; p: PromiseLike<{ data: unknown; error: unknown }> } | null = null;
+/** The client list, shared for a minute so stepping through accounts doesn't
+ *  ask for all of it again each time. */
+function clientDirectory() {
+  if (!directory || Date.now() - directory.at > 60_000) {
+    const p = supabase.rpc("client_directory").then((res) => { if (res.error) directory = null; return res; });
+    directory = { at: Date.now(), p };
+  }
+  return directory.p;
+}
+
 export async function getClient(agentId: string): Promise<{ profile: ClientProfile; live: ClientLive | null; dossier: ClientDossier | null; dossierUpdatedAt: string | null }> {
   const [profile, live, dossier] = await Promise.all([
     supabase.from("agent_profiles").select(PROFILE_COLS).eq("agent_id", agentId).maybeSingle(),
-    supabase.rpc("client_directory"),
+    clientDirectory(),
     supabase.from("client_dossiers").select("data, updated_at").eq("agent_id", agentId).maybeSingle(),
   ]);
   if (profile.error) throw new Error(profile.error.message);

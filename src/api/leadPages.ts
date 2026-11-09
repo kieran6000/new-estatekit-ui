@@ -219,16 +219,33 @@ export interface FbPage {
  * should cache it hard (see the staleTime on the picker query).
  */
 export async function listFbPages(): Promise<FbPage[]> {
-  const { data, error } = await supabase.functions.invoke("discover-fb-pages", { body: {} });
-  if (error) {
-    console.error("discover-fb-pages error:", await functionErrorMessage(error));
-    throw new Error("Couldn't load Facebook pages");
-  }
-  const pages = (data?.pages ?? data?.data ?? []) as { id?: string; name?: string }[];
-  return pages
-    .filter((p): p is { id: string; name: string } => !!p.id)
-    .map((p) => ({ id: p.id, name: p.name || p.id }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+  return (await discoverFb()).pages;
+}
+
+/** Every ad account our tokens can see (ids without act_). Same single call as the pages. */
+export async function listFbAdAccounts(): Promise<FbPage[]> {
+  return (await discoverFb()).adAccounts;
+}
+
+// One call serves both lists, shared for half an hour.
+let discovered: { at: number; p: Promise<{ pages: FbPage[]; adAccounts: FbPage[] }> } | null = null;
+function discoverFb() {
+  if (discovered && Date.now() - discovered.at < 30 * 60_000) return discovered.p;
+  const p = (async () => {
+    const { data, error } = await supabase.functions.invoke("discover-fb-pages", { body: {} });
+    if (error) {
+      console.error("discover-fb-pages error:", await functionErrorMessage(error));
+      throw new Error("Couldn't load Facebook pages");
+    }
+    const tidy = (list: { id?: string; name?: string }[] | undefined, strip = false) => (list ?? [])
+      .filter((p): p is { id: string; name: string } => !!p.id)
+      .map((p) => ({ id: strip ? p.id.replace(/^act_/i, "") : p.id, name: p.name || p.id }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    return { pages: tidy(data?.pages ?? data?.data), adAccounts: tidy(data?.adAccounts, true) };
+  })();
+  discovered = { at: Date.now(), p };
+  p.catch(() => { discovered = null; });
+  return p;
 }
 
 export interface FbForm {

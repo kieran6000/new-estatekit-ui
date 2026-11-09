@@ -28,3 +28,13 @@ export function useSyncPipelineSheet() {
     onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
   });
 }
+
+/** Pipelines shared with the team (staff only: agents never see others'). */
+export function useTeamPipelines(enabled = true) {
+  return useQuery({
+    queryKey: ["teamPipelines"],
+    queryFn: pipelinesApi.listTeamPipelines,
+    enabled,
+    staleTime: 5 * 60_000,
+  });
+}

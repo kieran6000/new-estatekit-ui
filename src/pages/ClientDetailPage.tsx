@@ -52,6 +52,7 @@ import {
   type ClientProfilePatch,
 } from "../api/clients";
 import { getFbAdAccount, setAgentPassword } from "../api/agentProfile";
+import ClientArrows from "../components/ClientArrows";
 import { listAccountWorkflows } from "../api/workflows";
 import { supabase } from "../api/_client";
 import { getEmailStats } from "../api/leadEvents";
@@ -75,6 +76,8 @@ import BrandLogo from "../components/BrandLogo";
 import FundingChip from "../components/FundingChip";
 import LeadAreaMap from "../components/LeadAreaMap";
 import LeadFunnel from "../components/LeadFunnel";
+import LinkFacebook from "../components/LinkFacebook";
+import { spotLink, spotSx, useSpotlight } from "../hooks/useSpotlight";
 import AdChanges from "../components/AdChanges";
 import { isCity } from "../lib/geo";
 import CreditCardOutlinedIcon from "@mui/icons-material/CreditCardOutlined";
@@ -257,6 +260,7 @@ function Header({ data }: { data: Data }) {
     <Box sx={{ bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
       <Box sx={{ maxWidth: 1440, mx: "auto", px: { xs: 2, md: 3 }, py: { xs: 2, md: 2.5 }, display: "flex", gap: { xs: 2, md: 3 }, alignItems: { xs: "flex-start", md: "center" }, flexDirection: { xs: "column", md: "row" } }}>
         <Box sx={{ display: "flex", gap: 2, alignItems: "center", flex: 1, minWidth: 0 }}>
+          <ClientArrows agentId={p.agent_id} />
           <Box
             component="button"
             type="button"
@@ -449,9 +453,9 @@ function BrandingSection({ data }: { data: Data }) {
   );
 }
 
-function Section({ title, children, sub, action }: { title: string; children: ReactNode; sub?: string; action?: ReactNode }) {
+function Section({ title, children, sub, action, boxRef, glow = false }: { title: string; children: ReactNode; sub?: string; action?: ReactNode; boxRef?: React.Ref<HTMLDivElement>; glow?: boolean }) {
   return (
-    <Box sx={{ bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "8px", overflow: "hidden", minWidth: 0 }}>
+    <Box ref={boxRef} sx={{ bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "8px", overflow: "hidden", minWidth: 0, ...spotSx(glow) }}>
       <Box sx={{ px: 2, pt: 1.5, pb: 1, display: "flex", alignItems: "center", gap: 1, minHeight: 44 }}>
         <Typography sx={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: tokens.ink2, flex: 1 }}>{title}</Typography>
         {sub && <Typography sx={{ fontSize: 11.5, color: tokens.ink3 }}>{sub}</Typography>}
@@ -480,9 +484,12 @@ function EditableSection({
   view,
   fields,
   onSave,
+  spot,
 }: {
   title: string;
   sub?: string;
+  /** Its name for ?spot= links: it opens, glows, and puts you in the field. */
+  spot?: string;
   view: ReactNode;
   fields: FieldDef[];
   onSave: (v: Record<string, string>) => Promise<string | void>;
@@ -491,12 +498,18 @@ function EditableSection({
   const [values, setValues] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const spotlight = useSpotlight(spot);
 
   function start() {
     setValues(Object.fromEntries(fields.map((f) => [f.key, f.value])));
     setErr("");
     setEditing(true);
   }
+  useEffect(() => {
+    if (spotlight.spotted) start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const focusKey = spotlight.field && fields.some((f) => f.key === spotlight.field) ? spotlight.field : fields[0]?.key;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -511,6 +524,8 @@ function EditableSection({
   return (
     <Section
       title={title}
+      boxRef={spotlight.ref}
+      glow={spotlight.glow}
       sub={editing ? undefined : sub}
       action={
         !editing && (
@@ -522,13 +537,14 @@ function EditableSection({
     >
       {editing ? (
         <Box component="form" onSubmit={submit} sx={{ display: "flex", flexDirection: "column", gap: 1.75, pt: 0.5 }}>
-          {fields.map((f, i) => (
+          {fields.map((f) => (
             <TextField
               key={f.key}
               label={f.label}
               size="small"
               fullWidth
-              autoFocus={i === 0}
+              autoFocus={f.key === focusKey}
+              sx={f.key === spotlight.field ? spotSx(spotlight.glow) : undefined}
               multiline={f.multiline}
               minRows={f.multiline ? 2 : undefined}
               placeholder={f.placeholder}
@@ -643,15 +659,17 @@ function OverviewTab({ data }: { data: Data }) {
   const city = brief.city?.value?.trim();
   const areas = (brief.suburbs?.value ?? "").split(/[;,\n]/).map((s) => s.trim()).filter(Boolean)
     .map((name) => ({ name, address: city && !isCity(name) && !name.toLowerCase().includes(city.toLowerCase()) ? `${name}, ${city}` : name }));
+  const { data: profiles } = useQuery({ queryKey: ["agentProfiles"], queryFn: listAgentProfiles, staleTime: 5 * 60_000 });
   return (
     <>
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" }, gap: 2, alignItems: "stretch" }}>
         <AdAccountCard data={data} />
-        <LeadAreaMap agentId={agentId} areas={areas} />
+        <LeadAreaMap agentId={agentId} areas={areas} addAreasHref={spotLink(clientPath(agentId, profiles, "brief"), "brief.suburbs")} />
       </Box>
 
-      <LeadFunnel byStage={data.live?.by_stage ?? {}} lastLeadAt={data.live?.last_lead_at} />
+      <LeadFunnel byStage={data.live?.by_stage ?? {}} lastLeadAt={data.live?.last_lead_at} hasAdAccount={!!acct} />
 
+      {acct && (<>
       <Box sx={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 1.5, flexWrap: "wrap" }}>
         <RangePicker value={range} onChange={setRange} />
       </Box>
@@ -667,7 +685,8 @@ function OverviewTab({ data }: { data: Data }) {
         pageAvatar={clientPicture(p)}
       />
 
-      <AdChanges agentId={agentId} acct={acct} since={sinceDay} until={lastDay} />
+      <AdChanges agentId={agentId} acct={acct} />
+      </>)}
     </>
   );
 }
@@ -700,6 +719,7 @@ const rands = (n: number) => "R " + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g
 /** Is their ad account fine, how does it pay, and what's owing. */
 function AdAccountCard({ data }: { data: Data }) {
   const acct = data.profile.fb_ad_account_id;
+  const saveFb = useFacebookSaver(data);
   const { data: a, isLoading, isError } = useQuery({
     queryKey: ["fbAdAccount", acct],
     queryFn: () => getFbAdAccount(acct!),
@@ -727,35 +747,44 @@ function AdAccountCard({ data }: { data: Data }) {
   return (
     <Box sx={{ bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "8px", overflow: "hidden", minWidth: 0, height: "100%", display: "flex", flexDirection: "column" }}>
       <Box sx={{ px: 2, pt: 1.5, pb: 0.5, minHeight: 40, display: "flex", alignItems: "center" }}>
-        <Typography sx={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: tokens.ink2 }}>Ad account</Typography>
+        <Typography sx={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: tokens.ink2, flex: 1 }}>Ad account</Typography>
+        {/* A problem shows as a small link up here, not a box that pushes the card around. */}
+        {acct && issue && (
+          <Tooltip title={`${issue.detail} Opens Facebook billing.`}>
+            <Box component="a" href={billingUrl(acct)} target="_blank" rel="noopener" role="alert"
+              sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, px: 1, py: 0.25, borderRadius: 999, fontSize: 13, fontWeight: 600, textDecoration: "none",
+                color: issue.tone === "red" ? tokens.red : tokens.amber, bgcolor: issue.tone === "red" ? tokens.redTint : tokens.amberTint, "&:hover": { textDecoration: "underline" } }}>
+              <WarningAmberRoundedIcon sx={{ fontSize: 16 }} />
+              {issue.title}
+              <OpenInNewIcon sx={{ fontSize: 14 }} />
+            </Box>
+          </Tooltip>
+        )}
       </Box>
       <Box sx={{ px: 2, pb: 1.75, flex: 1, display: "flex", flexDirection: "column" }}>
         {!acct ? (
-          <Empty>No ad account linked. Add it under Settings → Facebook.</Empty>
+          <LinkFacebook
+            clientName={data.profile.display_name ?? ""}
+            adAccountId={null}
+            pageId={data.profile.fb_page_id}
+            intro="Link their Facebook ad account to see their spending, billing and ads here."
+            onSave={saveFb}
+          />
         ) : isLoading ? (
           <Skeleton variant="rectangular" height={120} sx={{ borderRadius: "6px" }} />
         ) : isError || a?.note ? (
           <Empty>Facebook won't show us this ad account. Check it's shared with EstateKit's Business Manager.</Empty>
         ) : (
           <>
-            {/* The one thing that stops (or is about to stop) their ads, big, the way Facebook's billing page shows it. */}
-            {issue && (
-              <Box role="alert" sx={{ display: "flex", gap: 1.25, alignItems: "flex-start", p: 1.5, mb: 1.75, borderRadius: "8px", bgcolor: issue.tone === "red" ? tokens.redTint : tokens.amberTint, borderLeft: `4px solid ${issue.tone === "red" ? tokens.red : tokens.amber}` }}>
-                <WarningAmberRoundedIcon sx={{ fontSize: 22, color: issue.tone === "red" ? tokens.red : tokens.amber, mt: "1px", flex: "none" }} />
-                <Box sx={{ flex: 1, minWidth: 0 }}>
-                  <Typography sx={{ fontSize: 15, fontWeight: 700 }}>{issue.title}</Typography>
-                  <Typography sx={{ fontSize: 13.5, mt: 0.25 }}>{issue.detail}</Typography>
-                  <Button size="small" variant="contained" disableElevation href={billingUrl(acct)} target="_blank" rel="noopener" endIcon={<OpenInNewIcon sx={{ fontSize: "16px !important" }} />} sx={{ mt: 1, bgcolor: issue.tone === "red" ? tokens.red : undefined }}>
-                    Open Facebook billing
-                  </Button>
-                </Box>
-              </Box>
-            )}
             <Box sx={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 2, flex: 1 }}>
               <Box>
                 <Typography sx={{ fontSize: 13, color: tokens.ink2 }}>Current balance</Typography>
                 <Typography sx={{ fontSize: 26, lineHeight: 1.25, fontVariantNumeric: "tabular-nums" }}>{rands(Math.max(a?.balance ?? 0, 0))}</Typography>
-                {!issue && <Typography sx={{ fontSize: 13, color: tokens.ink2 }}>No payment due right now</Typography>}
+                {issue ? (
+                  <Typography sx={{ fontSize: 13, fontWeight: 500, color: issue.tone === "red" ? tokens.red : tokens.amber }}>{issue.detail}</Typography>
+                ) : (
+                  <Typography sx={{ fontSize: 13, color: tokens.ink2 }}>No payment due right now</Typography>
+                )}
               </Box>
               <Box sx={{ minWidth: 0 }}>
                 <Typography sx={{ fontSize: 13, color: tokens.ink2, mb: 0.5 }}>How they pay</Typography>
@@ -825,13 +854,7 @@ function AdAccountSection({ data }: { data: Data }) {
     staleTime: 30 * 60_000,
     retry: false,
   });
-  if (!acct) {
-    return (
-      <Section title="Ad account">
-        <Empty>No ad account linked. Add it under Settings → Facebook.</Empty>
-      </Section>
-    );
-  }
+  if (!acct) return null; // linked in the Facebook section below
   const kind = fundingKind(a?.fundingType);
   const avgDaily = daily30 ? (spendBetween(daily30, since30, ymd(new Date(Date.now() + 864e5))) ?? 0) / 30 : null;
   const problem = hasPaymentProblem(a, avgDaily);
@@ -928,7 +951,10 @@ function LandingPagesSection({ data }: { data: Data }) {
           )}
         </Box>
       ) : (
-        <Empty>No lead sources yet.</Empty>
+        <Box>
+          <Empty>No lead forms yet. Leads come in through a form on their Facebook ads or a lead page.</Empty>
+          <Button component={RouterLink} to="/lead-page" variant="outlined" size="small" sx={{ mt: 1.25 }}>Set up their forms</Button>
+        </Box>
       )}
     </Section>
   );
@@ -1054,33 +1080,50 @@ function MessagesSection({ data }: { data: Data }) {
   );
 }
 
+/** Saves the ad account and page; a problem to show, or nothing. */
+function useFacebookSaver(data: Data) {
+  const save = useClientSaver(data.profile.agent_id);
+  return async (ad: string, page: string): Promise<string | void> => {
+    const ok = await save(() => updateClientProfile(data.profile.agent_id, { fb_ad_account_id: ad, fb_page_id: page }), ad ? "Linked. Their ads will show on the Overview." : "Saved");
+    if (!ok) return "Not saved. Try again.";
+  };
+}
+
 function FacebookSection({ data }: { data: Data }) {
   const { profile: p } = data;
-  const save = useClientSaver(p.agent_id);
+  const saveFb = useFacebookSaver(data);
+  const spotlight = useSpotlight("facebook");
+  const [editing, setEditing] = useState(spotlight.spotted);
+  const linked = !!(p.fb_ad_account_id || p.fb_page_id);
+  const form = (
+    <LinkFacebook
+      clientName={p.display_name ?? ""}
+      adAccountId={p.fb_ad_account_id}
+      pageId={p.fb_page_id}
+      intro={linked ? undefined : "Nothing linked yet. Their ads, spending and leads show once their ad account and page are linked."}
+      onSave={async (ad, page) => { const problem = await saveFb(ad, page); if (!problem) setEditing(false); return problem; }}
+      onCancel={linked ? () => setEditing(false) : undefined}
+      autoFocus={spotlight.spotted}
+    />
+  );
   return (
-    <EditableSection
+    <Section
       title="Facebook"
-      view={
+      boxRef={spotlight.ref}
+      glow={spotlight.glow}
+      action={linked && !editing ? (
+        <Button size="small" startIcon={<EditOutlinedIcon sx={{ fontSize: "16px !important" }} />} onClick={() => setEditing(true)} sx={{ my: -0.5 }}>Edit</Button>
+      ) : undefined}
+    >
+      {editing || !linked ? form : (
         <KV
           rows={[
-            ["Ad account", p.fb_ad_account_id ? `act_${p.fb_ad_account_id}` : "Not linked"],
+            ["Ad account", p.fb_ad_account_id ? <ExtLink key="ad" href={adsManagerUrl(p.fb_ad_account_id)}>{`act_${p.fb_ad_account_id}`}</ExtLink> : "Not linked"],
             ["Facebook page ID", p.fb_page_id || "Not linked"],
           ]}
         />
-      }
-      fields={[
-        { key: "ad", label: "Facebook ad account ID", value: p.fb_ad_account_id || "", helper: "Numbers only; act_ is added for you" },
-        { key: "page", label: "Facebook page ID", value: p.fb_page_id || "" },
-      ]}
-      onSave={async (v) => {
-        const ad = v.ad.replace(/^act_/i, "").replace(/\D/g, "");
-        if (v.ad && !ad) return "The ad account ID should be numbers.";
-        const page = v.page.replace(/\D/g, "");
-        if (v.page && !page) return "The Facebook page ID should be numbers.";
-        const ok = await save(() => updateClientProfile(p.agent_id, { fb_ad_account_id: ad, fb_page_id: page }));
-        if (!ok) return "Not saved. Try again.";
-      }}
-    />
+      )}
+    </Section>
   );
 }
 
@@ -1136,6 +1179,7 @@ function BriefSection({ data }: { data: Data }) {
   return (
     <EditableSection
       title="Brief"
+      spot="brief"
       sub={sub}
       view={
         <Box sx={{ display: "flex", flexDirection: "column", gap: 2.5 }}>

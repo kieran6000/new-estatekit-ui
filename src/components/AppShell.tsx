@@ -38,6 +38,7 @@ import ChecklistOutlinedIcon from "@mui/icons-material/ChecklistRtl";
 import { tokens } from "../theme";
 import { useAuth } from "../hooks/useAuth";
 import { useIsOperator } from "../hooks/useAutomations";
+import { useTeamPipelines } from "../hooks/usePipelines";
 import { useIsTeamLead } from "../hooks/useIsTeamLead";
 import { usePageviewTracking } from "../hooks/usePageviewTracking";
 import { useRealtimeSubscriptions } from "../hooks/useRealtime";
@@ -69,6 +70,8 @@ function activeSection(pathname: string): string {
   if (pathname.startsWith("/calendar")) return "calendar";
   return "leads";
 }
+
+const SZ_TEAM = 20;
 
 export default function AppShell() {
   const isDesktop = useMediaQuery("(min-width:900px)");
@@ -110,6 +113,10 @@ export default function AppShell() {
     staleTime: 5 * 60_000,
   });
   const staffMode = !!isOperator && !isManagingOther && ownLeads === 0;
+  // A pipeline someone shared with the team gives staff a Leads tab that opens it.
+  const { data: team = [] } = useTeamPipelines(!!isOperator);
+  const shared = team.find((t) => t.agent_id !== user?.id);
+  const sharedLeads = shared ? [{ key: "leads", label: "Leads", icon: <ContactsOutlinedIcon sx={{ fontSize: SZ_TEAM }} />, activeIcon: <ContactsIcon sx={{ fontSize: SZ_TEAM }} />, to: `/team-pipeline/${shared.id}` }] : [];
   // Don't send them away from Leads before we know.
   const staffModeKnown = !!isOperator && !isManagingOther && ownLeadsKnown;
 
@@ -124,8 +131,8 @@ export default function AppShell() {
   const avatarBg = light ? "rgba(0,0,0,0.12)" : "rgba(255,255,255,0.15)";
   const logoSrc = profile?.sidebarLogoUrl || (light ? estateKitLogoBlue : estateKitLogoWhite);
 
-  const SZ = 20;
-  const agentNav = staffMode ? [] : [
+  const SZ = SZ_TEAM;
+  const agentNav = staffMode ? sharedLeads : [
     ...(showSetup && !isOperator
       ? [{ key: "setup", label: setup ? `Get set up · ${setup.done}/${setup.total}` : "Get set up", icon: <ChecklistOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <ChecklistIcon sx={{ fontSize: SZ }} />, to: "/setup" }]
       : []),
@@ -153,6 +160,7 @@ export default function AppShell() {
   });
 
   const mobileNav = staffMode ? [
+    ...(shared ? [{ key: "leads", label: "Leads", icon: <ContactsOutlinedIcon />, activeIcon: <ContactsIcon />, to: `/team-pipeline/${shared.id}` }] : []),
     { key: "clients", label: "Accounts", icon: <GroupsOutlinedIcon />, activeIcon: <GroupsIcon />, to: "/clients" },
     { key: "automations", label: "Automations", icon: <SettingsOutlinedIcon />, activeIcon: <SettingsIcon />, to: "/admin/automations" },
     { key: "account", label: "Account", icon: <AccountCircleOutlinedIcon />, activeIcon: <AccountCircleIcon />, to: "/account" },
