@@ -61,7 +61,7 @@ describe("where a client is up to", () => {
 
 describe("the WhatsApp message", () => {
   it("is short and has the link on its own line", () => {
-    expect(checkinMessage("Juani", "Khushil", "https://x/k/1")).toBe("Hi Juani, it's Khushil from EstateKit. Quick check-in: it takes a minute, just tap the stars, no typing needed.\nhttps://x/k/1");
+    expect(checkinMessage("Juani", "Khushil", "https://x/k/1")).toBe("Hi Juani, it's Khushil from EstateKit. Quick check-in: it takes a minute, just tap a face for each, no typing needed.\nhttps://x/k/1");
   });
 });
 
