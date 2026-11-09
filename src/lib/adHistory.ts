@@ -131,23 +131,3 @@ export function summariseDay<T extends Item & { objectName: string }>(items: T[]
   return { launch: launch.campaigns + launch.adSets + launch.ads ? launch : null, pictures: pictured.size, rows: [...seen.values()] };
 }
 
-/** The months a date range touches, as "2026-10", oldest first. */
-export function monthsBetween(since: string, until: string): string[] {
-  const out: string[] = [];
-  let [y, m] = since.slice(0, 7).split("-").map(Number);
-  const [ey, em] = until.slice(0, 7).split("-").map(Number);
-  while (y < ey || (y === ey && m <= em)) {
-    out.push(`${y}-${String(m).padStart(2, "0")}`);
-    if (++m > 12) { m = 1; y++; }
-  }
-  return out;
-}
-
-/** A month laid out like a wall calendar, Monday first: blanks, then "2026-10-01"… */
-export function monthCells(month: string): (string | null)[] {
-  const [y, m] = month.split("-").map(Number);
-  const first = new Date(Date.UTC(y, m - 1, 1));
-  const days = new Date(Date.UTC(y, m, 0)).getUTCDate();
-  const blanks = (first.getUTCDay() + 6) % 7;
-  return [...Array(blanks).fill(null), ...Array.from({ length: days }, (_, i) => `${month}-${String(i + 1).padStart(2, "0")}`)];
-}

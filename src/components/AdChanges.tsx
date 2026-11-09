@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import RocketLaunchOutlinedIcon from "@mui/icons-material/RocketLaunchOutlined";
-import { Box, Button, Chip, Skeleton, Typography } from "@mui/material";
+import { Box, Button, Skeleton, Typography } from "@mui/material";
 import { useQuery } from "@tanstack/react-query";
 import GpsFixedIcon from "@mui/icons-material/GpsFixed";
 import ImageOutlinedIcon from "@mui/icons-material/ImageOutlined";
@@ -12,15 +12,13 @@ import TuneIcon from "@mui/icons-material/Tune";
 import { supabase } from "../api/_client";
 import { getAdHistory, type AdHistoryItem } from "../api/agentProfile";
 import { adsManagerUrl, getSpendDaily } from "../api/clients";
-import { addDays, changeKind, isKeyChange, plainChange, summariseDay, targetingDiff, worthShowing, type ChangeKind } from "../lib/adHistory";
-import ChangeCalendar, { type CalendarDay } from "./ChangeCalendar";
+import { changeKind, isKeyChange, plainChange, summariseDay, targetingDiff, worthShowing, type ChangeKind } from "../lib/adHistory";
 import { tokens } from "../theme";
 
 const DAYS_SHOWN = 5;
 const CHANGES_PER_DAY = 3;
 const saDay = (iso: string | number | Date) => new Date(iso).toLocaleDateString("en-CA", { timeZone: "Africa/Johannesburg" });
 const niceDay = (day: string) => new Date(`${day}T12:00:00Z`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
-const shortDay = (day: string) => new Date(`${day}T12:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 const rand = (n: number) => "R" + Math.round(n).toLocaleString("en-GB").replace(/,/g, " ");
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
 
@@ -97,10 +95,10 @@ function DayRow({ day, items, leads, spent }: { day: string; items: AdHistoryIte
 
 /** What was changed on their ads and when, on a timeline with their leads, so
  *  whoever's looking can see what happened next for themselves. */
-export default function AdChanges({ agentId, acct, since, until }: { agentId: string; acct: string | null | undefined; since: string; until: string }) {
-  const [picked, setPicked] = useState<{ start: string; end: string } | null>(null);
+export default function AdChanges({ agentId, acct }: { agentId: string; acct: string | null | undefined }) {
+  // Their whole history, newest first: it doesn't follow the dates picked above.
+  const [{ since, until }] = useState(() => ({ since: saDay(Date.now() - 2 * 365 * 864e5), until: saDay(Date.now()) }));
   const [showAll, setShowAll] = useState(false);
-  useEffect(() => { setPicked(null); setShowAll(false); }, [since, until]);
 
   const history = useQuery({ queryKey: ["adHistory", acct, since, until], queryFn: () => getAdHistory(acct!, since, until), enabled: !!acct, staleTime: 5 * 60_000, retry: false });
   const leads = useQuery({ queryKey: ["leadsPerDay", agentId, since], queryFn: () => leadsPerDay(agentId, since), staleTime: 5 * 60_000 });
@@ -119,25 +117,13 @@ export default function AdChanges({ agentId, acct, since, until }: { agentId: st
   const leadMap = leads.data ?? {};
   const spendMap = spend.data ?? null;
 
-  // Each day: leads, spend and how many changes, for the calendar.
-  const calendar = useMemo(() => {
-    const out: Record<string, CalendarDay> = {};
-    for (let d = since; d <= until; d = addDays(d, 1)) out[d] = { leads: leadMap[d] ?? 0, spent: spendMap ? Number(spendMap[d]) || 0 : null, changes: 0 };
-    for (const [d, list] of byDay) {
-      const day = summariseDay(list);
-      if (out[d]) out[d].changes = day.rows.length + (day.launch ? 1 : 0) + (day.pictures ? 1 : 0);
-    }
-    return out;
-  }, [since, until, leadMap, spendMap, byDay]);
-
-  const visible = byDay.filter(([d]) => !picked || (d >= picked.start && d <= picked.end));
+  const visible = byDay;
   const shownDays = showAll ? visible : visible.slice(0, DAYS_SHOWN);
 
   return (
     <Box sx={{ bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "8px", overflow: "hidden", minWidth: 0 }}>
       <Box sx={{ px: 2, pt: 1.5, pb: 0.5, minHeight: 40, display: "flex", alignItems: "center", gap: 1 }}>
         <Typography sx={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: tokens.ink2, flex: 1 }}>What changed on their ads</Typography>
-        <Typography sx={{ fontSize: 11.5, color: tokens.ink3 }}>{shortDay(since)} to {shortDay(until)}</Typography>
       </Box>
       <Box sx={{ px: 2, pb: 2 }}>
         {!acct ? (
@@ -150,14 +136,8 @@ export default function AdChanges({ agentId, acct, since, until }: { agentId: st
           </Typography>
         ) : (
           <>
-            <ChangeCalendar since={since} until={until} days={calendar} picked={picked?.start ?? null} onPick={(r) => { setPicked(r); setShowAll(false); }} />
-
-            <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 0.75, mt: 2, mb: 1 }}>
-              {picked && <Chip size="small" label={picked.start === picked.end ? `Only ${niceDay(picked.start)}` : `Only ${shortDay(picked.start)} to ${shortDay(picked.end)}`} onDelete={() => setPicked(null)} sx={{ borderRadius: "6px" }} />}
-            </Box>
-
             {!visible.length ? (
-              <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>No budget, targeting, bid or new ad changes in these dates.</Typography>
+              <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>No budget, targeting, bid or new ad changes yet.</Typography>
             ) : (
               shownDays.map(([day, list]) => <DayRow key={day} day={day} items={list} leads={leadMap[day] ?? 0} spent={spendMap ? Number(spendMap[day]) || 0 : null} />)
             )}

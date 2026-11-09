@@ -683,7 +683,7 @@ function OverviewTab({ data }: { data: Data }) {
         pageAvatar={clientPicture(p)}
       />
 
-      <AdChanges agentId={agentId} acct={acct} since={sinceDay} until={lastDay} />
+      <AdChanges agentId={agentId} acct={acct} />
       </>)}
     </>
   );
