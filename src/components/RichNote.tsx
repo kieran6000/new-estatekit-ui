@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Box, IconButton, Paper, Popper, Tooltip } from "@mui/material";
+import { Box, Button, Dialog, IconButton, Paper, Popper, Tooltip } from "@mui/material";
+import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
+import OpenInNewRoundedIcon from "@mui/icons-material/OpenInNewRounded";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import { matchSops, slashQuery, SOP_DOC, type Sop } from "../lib/sops";
 import FormatBoldIcon from "@mui/icons-material/FormatBold";
@@ -41,7 +43,12 @@ const NOTE_STYLE = {
   "& p, & div": { m: 0 },
   "& ul, & ol": { my: 0.5, pl: 2.5 },
   "& a": { color: "primary.main" },
-  "& img": { display: "block", maxWidth: "100%", maxHeight: 360, borderRadius: "6px", border: `1px solid ${tokens.divider}`, my: 0.75, cursor: "zoom-in" },
+  // A screenshot: a ring and a slight lift on hover says "tap to see it big".
+  "& img": {
+    display: "block", maxWidth: "100%", maxHeight: 360, borderRadius: "6px", border: `1px solid ${tokens.divider}`, my: 0.75, cursor: "zoom-in",
+    transition: "box-shadow 150ms ease, transform 150ms ease",
+    "&:hover": { boxShadow: `0 0 0 2px ${tokens.primary}, 0 6px 18px rgba(0,0,0,.18)`, transform: "translateY(-1px)" },
+  },
   // An SOP link reads as a chip: "📄 Ad setup".
   [`& a[href^="${SOP_DOC}"]`]: {
     display: "inline-flex", alignItems: "center", gap: "4px", px: "7px", py: "1px", borderRadius: "999px",
@@ -52,9 +59,36 @@ const NOTE_STYLE = {
   },
 } as const;
 
-/** A saved note, shown. Screenshots open full size in a new tab. */
+/** A screenshot, as big as the screen allows, at full resolution. Click
+ *  anywhere or press Esc to close. */
+export function ScreenshotViewer({ src, onClose }: { src: string | null; onClose: () => void }) {
+  return (
+    <Dialog
+      open={!!src}
+      onClose={onClose}
+      maxWidth={false}
+      slotProps={{
+        paper: { sx: { bgcolor: "transparent", boxShadow: "none", m: 1, maxWidth: "none", overflow: "visible" } },
+        backdrop: { sx: { bgcolor: "rgba(0,0,0,.82)" } },
+      }}
+    >
+      {src && (
+        <Box onClick={onClose} sx={{ position: "relative", cursor: "zoom-out" }}>
+          <Box component="img" src={src} alt="Screenshot" sx={{ display: "block", maxWidth: "calc(100vw - 32px)", maxHeight: "calc(100vh - 96px)", objectFit: "contain", borderRadius: "6px", bgcolor: "#fff" }} />
+          <Box sx={{ display: "flex", justifyContent: "center", gap: 1, mt: 1.25 }}>
+            <Button size="small" variant="contained" disableElevation startIcon={<OpenInNewRoundedIcon />} component="a" href={src} target="_blank" rel="noopener" onClick={(e: React.MouseEvent) => e.stopPropagation()} sx={{ bgcolor: "rgba(255,255,255,.14)", color: "#fff", "&:hover": { bgcolor: "rgba(255,255,255,.24)" } }}>Open in a new tab</Button>
+            <Button size="small" variant="contained" disableElevation startIcon={<CloseRoundedIcon />} onClick={onClose} sx={{ bgcolor: "rgba(255,255,255,.14)", color: "#fff", "&:hover": { bgcolor: "rgba(255,255,255,.24)" } }}>Close</Button>
+          </Box>
+        </Box>
+      )}
+    </Dialog>
+  );
+}
+
+/** A saved note, shown. A screenshot opens big in the page. */
 export function NoteView({ body, muted }: { body: string; muted?: boolean }) {
   const [html, setHtml] = useState(() => noteHtml(body));
+  const [big, setBig] = useState<string | null>(null);
   useEffect(() => {
     let gone = false;
     const clean = noteHtml(body);
@@ -63,11 +97,14 @@ export function NoteView({ body, muted }: { body: string; muted?: boolean }) {
     return () => { gone = true; };
   }, [body]);
   return (
-    <Box
-      sx={{ ...NOTE_STYLE, color: muted ? tokens.ink3 : "text.primary", textDecoration: muted ? "line-through" : "none" }}
-      onClick={(e) => { const t = e.target as HTMLElement; if (t.tagName === "IMG") window.open((t as HTMLImageElement).src, "_blank", "noopener"); }}
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
+    <>
+      <Box
+        sx={{ ...NOTE_STYLE, color: muted ? tokens.ink3 : "text.primary", textDecoration: muted ? "line-through" : "none" }}
+        onClick={(e) => { const t = e.target as HTMLElement; if (t.tagName === "IMG" && (t as HTMLImageElement).src) setBig((t as HTMLImageElement).src); }}
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+      <ScreenshotViewer src={big} onClose={() => setBig(null)} />
+    </>
   );
 }
 
@@ -79,6 +116,7 @@ export function NoteEditor({ initial = "", folder, placeholder, onChange, autoFo
   const [focused, setFocused] = useState(false);
   const [empty, setEmpty] = useState(!initial);
   const [uploading, setUploading] = useState(0);
+  const [big, setBig] = useState<string | null>(null);
 
   useEffect(() => {
     if (!ref.current) return;
@@ -185,6 +223,7 @@ export function NoteEditor({ initial = "", folder, placeholder, onChange, autoFo
         suppressContentEditableWarning
         onFocus={() => setFocused(true)}
         onBlur={() => { setFocused(false); setSlash(null); }}
+        onClick={(e) => { const t = e.target as HTMLElement; if (t.tagName === "IMG" && (t as HTMLImageElement).src) setBig((t as HTMLImageElement).src); }}
         onInput={() => { changed(); lookForSlash(); }}
         onKeyDown={(e) => {
           if (!slash || !sops.length) return;
@@ -203,11 +242,12 @@ export function NoteEditor({ initial = "", folder, placeholder, onChange, autoFo
           const files = [...e.dataTransfer.files];
           if (files.length) { e.preventDefault(); void addImages(files); }
         }}
-        sx={{ ...NOTE_STYLE, minHeight: 64, px: 1.5, py: 1, outline: "none", "& img": { ...NOTE_STYLE["& img"], cursor: "default" } }}
+        sx={{ ...NOTE_STYLE, minHeight: 64, px: 1.5, py: 1, outline: "none" }}
       />
       {empty && (
         <Box sx={{ position: "absolute", top: 8, left: 12, right: 12, color: tokens.ink3, fontSize: 14.5, pointerEvents: "none" }}>{placeholder}</Box>
       )}
+      <ScreenshotViewer src={big} onClose={() => setBig(null)} />
       <Popper
         open={!!slash && sops.length > 0}
         anchorEl={slash ? { getBoundingClientRect: () => slash.rect } : null}

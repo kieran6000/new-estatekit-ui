@@ -242,7 +242,7 @@ export default function AppShell() {
                     <ListItem key={item.key} disablePadding>
                       <ListItemButton selected={active} onClick={() => navigate(item.to)} sx={navButtonSx(active)}>
                         <ListItemIcon sx={{ minWidth: 32, color: "inherit" }}>{active ? item.activeIcon : item.icon}</ListItemIcon>
-                        <ListItemText primary={item.key === "clients" ? <TodoBadge>{item.label}</TodoBadge> : item.label} slotProps={{ primary: { sx: { fontSize: 13.5, fontWeight: active ? 600 : 500 } } }} />
+                        <ListItemText primary={item.key === "clients" || (item.key === "overview" && isOperator) ? <TodoBadge>{item.label}</TodoBadge> : item.label} slotProps={{ primary: { sx: { fontSize: 13.5, fontWeight: active ? 600 : 500 } } }} />
                       </ListItemButton>
                     </ListItem>
                   );
@@ -316,7 +316,7 @@ export default function AppShell() {
                 key={item.key}
                 label={item.label}
                 value={item.key}
-                icon={<Box className="ek-nav-pill">{item.key === "clients" ? <TodoBadge>{section === item.key ? item.activeIcon : item.icon}</TodoBadge> : section === item.key ? item.activeIcon : item.icon}</Box>}
+                icon={<Box className="ek-nav-pill">{item.key === "clients" || (item.key === "overview" && isOperator) ? <TodoBadge>{section === item.key ? item.activeIcon : item.icon}</TodoBadge> : section === item.key ? item.activeIcon : item.icon}</Box>}
                 sx={{
                   minWidth: 0, px: 0.5, py: 0.75, gap: 0.25,
                   "& .ek-nav-pill": { width: 56, height: 30, borderRadius: "15px", display: "grid", placeItems: "center", transition: "background-color .15s" },
