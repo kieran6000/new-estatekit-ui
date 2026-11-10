@@ -120,6 +120,36 @@ export function TellDialog({ noteId, toName, onClose }: { noteId: string; toName
   const showSnack = useSnack();
   const [text, setText] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const boxRef = useRef<HTMLTextAreaElement>(null);
+  // WhatsApp's own formatting: *bold*, _italic_, ~strikethrough~ around the selected words.
+  const wrap = (mark: string) => {
+    const el = boxRef.current;
+    if (!el || text === null) return;
+    const { selectionStart: a, selectionEnd: b } = el;
+    const picked = text.slice(a, b);
+    // Already wrapped: take the marks off again.
+    if (picked.length > 1 && picked.startsWith(mark) && picked.endsWith(mark)) {
+      setText(text.slice(0, a) + picked.slice(1, -1) + text.slice(b));
+      requestAnimationFrame(() => { el.focus(); el.setSelectionRange(a, b - 2); });
+      return;
+    }
+    // Spaces stay outside the marks, or WhatsApp won't format it.
+    const lead = picked.match(/^\s*/)![0];
+    const trail = picked.match(/\s*$/)![0];
+    const core = picked.trim();
+    const middle = core ? `${mark}${core}${mark}` : `${mark}${mark}`;
+    setText(text.slice(0, a) + lead + middle + trail + text.slice(b));
+    requestAnimationFrame(() => {
+      el.focus();
+      if (core) el.setSelectionRange(a + lead.length, a + lead.length + middle.length);
+      else el.setSelectionRange(a + lead.length + 1, a + lead.length + 1);
+    });
+  };
+  const fmt = (title: string, mark: string, look: React.ReactNode) => (
+    <Tooltip title={title}>
+      <IconButton size="small" aria-label={title} onMouseDown={(e) => e.preventDefault()} onClick={() => wrap(mark)} sx={{ width: 30, height: 30, fontSize: 15, color: tokens.ink2 }}>{look}</IconButton>
+    </Tooltip>
+  );
   useEffect(() => {
     let gone = false;
     draftPing(noteId).then((t) => { if (!gone) setText(t); }).catch((e) => { if (!gone) { showSnack((e as Error).message); onClose(); } });
@@ -142,7 +172,26 @@ export function TellDialog({ noteId, toName, onClose }: { noteId: string; toName
         {text === null ? (
           <Box sx={{ height: 180, borderRadius: "4px", bgcolor: tokens.surface2 }} />
         ) : (
-          <TextField value={text} onChange={(e) => setText(e.target.value)} multiline minRows={7} maxRows={16} fullWidth autoFocus slotProps={{ htmlInput: { maxLength: 2000, "aria-label": "Message" } }} />
+          <>
+            <TextField
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => {
+                if (!(e.ctrlKey || e.metaKey)) return;
+                const k = e.key.toLowerCase();
+                if (k === "b" || k === "i") { e.preventDefault(); wrap(k === "b" ? "*" : "_"); }
+              }}
+              inputRef={boxRef}
+              multiline minRows={7} maxRows={16} fullWidth autoFocus
+              slotProps={{ htmlInput: { maxLength: 2000, "aria-label": "Message" } }}
+            />
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.25, mt: 0.5 }}>
+              {fmt("Bold (Ctrl+B)", "*", <b>B</b>)}
+              {fmt("Italic (Ctrl+I)", "_", <i style={{ fontFamily: "Georgia, serif" }}>I</i>)}
+              {fmt("Strikethrough", "~", <s>S</s>)}
+              <Typography component="span" sx={{ fontSize: 12, color: tokens.ink3, ml: 0.75 }}>Select words, then tap. Shows as bold in WhatsApp.</Typography>
+            </Box>
+          </>
         )}
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>

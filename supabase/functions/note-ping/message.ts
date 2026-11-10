@@ -9,6 +9,9 @@ export function plainText(html: string): { text: string; pictures: number } {
     .replace(/<img[^>]*>/gi, " ")
     .replace(/<\/(p|div|li)>|<br\s*\/?>/gi, "\n")
     .replace(/<li[^>]*>/gi, "- ")
+    // Bold, italic and underline in the note become WhatsApp's own *bold* and _italic_.
+    .replace(/<(b|strong)\b[^>]*>([\s\S]*?)<\/\1>/gi, (_m, _t, inner) => (inner.replace(/<[^>]+>|&nbsp;/g, "").trim() ? `*${inner.trim()}*` : inner))
+    .replace(/<(i|em|u)\b[^>]*>([\s\S]*?)<\/\1>/gi, (_m, _t, inner) => (inner.replace(/<[^>]+>|&nbsp;/g, "").trim() ? `_${inner.trim()}_` : inner))
     .replace(/<[^>]+>/g, "")
     .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'")
     .replace(/[ \t]+/g, " ")
@@ -51,5 +54,5 @@ export function pingMessage(p: PingInput): string {
     ? `Please could you do the following for ${p.client}${p.due ? ` by ${byWhen(p.due, p.today)}` : ""}${ref}:`
     : `A note on ${p.client}${ref}:`;
   const pics = pictures ? `\n(${pictures === 1 ? "Screenshot" : `${pictures} screenshots`} in the link.)` : "";
-  return `Hi ${p.to},\n\n${ask}\n\n${words}${pics}\n\n${p.link}\n\nThank you,\n${p.from}`;
+  return `${ask}\n\n${words}${pics}\n\n${p.link}\n\nThanks`;
 }
