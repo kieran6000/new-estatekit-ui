@@ -10,7 +10,7 @@ const base = {
 describe("the WhatsApp to a teammate", () => {
   it("reads like a person typed it", () => {
     expect(pingMessage(base)).toBe(
-      "Hi Aldredt, please do this for Jaco Maartens by Thursday (#42):\n\ntest Ad setup Creative setup\n(screenshot in the link)\n\nhttps://leads.estatekit.co/t/42\n\nThanks\nKieran",
+      "yo please do this for Jaco Maartens by Thursday (#42):\n\ntest Ad setup Creative setup\n(screenshot in the link)\n\nhttps://leads.estatekit.co/t/42\n\nThanks",
     );
   });
   it("has no emoji, bold or long links", () => {
@@ -18,8 +18,8 @@ describe("the WhatsApp to a teammate", () => {
     expect(m).not.toMatch(/[*📌📝]|\/clients\/|#note-/u);
   });
   it("a note, and a to-do without a date", () => {
-    expect(pingMessage({ ...base, kind: "note", body: "<div>Called him</div>" })).toMatch(/^Hi Aldredt, a note on Jaco Maartens \(#42\):\n\nCalled him\n/);
-    expect(pingMessage({ ...base, due: null, body: "<div>x</div>" })).toMatch(/^Hi Aldredt, please do this for Jaco Maartens \(#42\):/);
+    expect(pingMessage({ ...base, kind: "note", body: "<div>Called him</div>" })).toMatch(/^yo a note on Jaco Maartens \(#42\):\n\nCalled him\n/);
+    expect(pingMessage({ ...base, due: null, body: "<div>x</div>" })).toMatch(/^yo please do this for Jaco Maartens \(#42\):/);
   });
   it("says when like a person would", () => {
     expect(byWhen("2026-11-10", "2026-11-10")).toBe("today");

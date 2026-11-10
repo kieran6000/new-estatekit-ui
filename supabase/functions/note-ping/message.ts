@@ -47,8 +47,8 @@ export function pingMessage(p: PingInput): string {
   const words = text.length > 500 ? text.slice(0, 500).trimEnd() + "..." : text;
   const ref = p.num ? ` (#${p.num})` : "";
   const ask = p.kind === "todo"
-    ? p.due ? `Hi ${p.to}, please do this for ${p.client} by ${byWhen(p.due, p.today)}${ref}:` : `Hi ${p.to}, please do this for ${p.client}${ref}:`
-    : `Hi ${p.to}, a note on ${p.client}${ref}:`;
+    ? p.due ? `yo please do this for ${p.client} by ${byWhen(p.due, p.today)}${ref}:` : `yo please do this for ${p.client}${ref}:`
+    : `yo a note on ${p.client}${ref}:`;
   const pics = pictures ? `\n(${pictures === 1 ? "screenshot" : `${pictures} screenshots`} in the link)` : "";
-  return `${ask}\n\n${words}${pics}\n\n${p.link}\n\nThanks\n${p.from}`;
+  return `${ask}\n\n${words}${pics}\n\n${p.link}\n\nThanks`;
 }
