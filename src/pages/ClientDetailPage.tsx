@@ -928,6 +928,13 @@ function EmailStatsSection({ data, since, until }: { data: Data; since: Date; un
 
 function LandingPagesSection({ data }: { data: Data }) {
   const p = data.profile;
+  const save = useClientSaver(p.agent_id);
+  const [busy, setBusy] = useState(false);
+  async function toggleOwn(next: boolean) {
+    setBusy(true);
+    await save(() => updateClientProfile(p.agent_id, { builds_own_forms: next }), next ? "They can now build their own forms" : "Only EstateKit builds their forms now");
+    setBusy(false);
+  }
   const { data: pages = [] } = useQuery({
     queryKey: ["clientPages", p.agent_id],
     queryFn: async () => {
@@ -956,6 +963,13 @@ function LandingPagesSection({ data }: { data: Data }) {
           <Button component={RouterLink} to="/lead-page" variant="outlined" size="small" sx={{ mt: 1.25 }}>Set up their forms</Button>
         </Box>
       )}
+      <Box sx={{ display: "flex", alignItems: "center", ml: -1, mt: 1.5 }}>
+        <Switch checked={!!p.builds_own_forms} disabled={busy} onChange={(e) => toggleOwn(e.target.checked)} />
+        <Box>
+          <Typography sx={{ fontSize: 13.5 }}>They build their own forms</Typography>
+          <Typography sx={{ fontSize: 12, color: tokens.ink3 }}>For accounts another agency runs. Only their own forms and landing pages; tracking stays with EstateKit.</Typography>
+        </Box>
+      </Box>
     </Section>
   );
 }

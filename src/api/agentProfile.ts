@@ -192,9 +192,12 @@ export interface AgentProfile {
   leadConfirmationEmail: boolean;
   /** This agent's own wording for the email's main text; null = the standard. */
   leadEmailBody: string | null;
+  /** Staff let this account build its own forms and landing pages (e.g. another agency runs it). */
+  buildsOwnForms: boolean;
 }
 
 interface ProfileRow {
+  builds_own_forms?: boolean | null;
   agent_id: string;
   display_name: string;
   email: string;
@@ -239,6 +242,7 @@ function rowToProfile(r: ProfileRow): AgentProfile {
     onboarded: r.onboarded,
     leadConfirmationEmail: r.lead_confirmation_email === true,
     leadEmailBody: r.lead_email_body ?? null,
+    buildsOwnForms: r.builds_own_forms === true,
   };
 }
 
