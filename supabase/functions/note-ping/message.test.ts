@@ -10,15 +10,18 @@ const base = {
 describe("the WhatsApp to a teammate (a formal draft they edit)", () => {
   it("a to-do with a date", () => {
     expect(pingMessage(base)).toBe(
-      "Hi Aldredt,\n\nPlease could you do the following for Jaco Maartens by Thursday (#42):\n\ntest Ad setup Creative setup\n(Screenshot in the link.)\n\nhttps://leads.estatekit.co/t/42\n\nThank you,\nKieran",
+      "Please could you do the following for Jaco Maartens by Thursday (#42):\n\ntest Ad setup Creative setup\n(Screenshot in the link.)\n\nhttps://leads.estatekit.co/t/42\n\nThanks",
     );
   });
   it("has no emoji, bold or long links", () => {
     expect(pingMessage(base)).not.toMatch(/[*📌📝]|\/clients\/|#note-/u);
   });
   it("a note, and a to-do without a date", () => {
-    expect(pingMessage({ ...base, kind: "note", body: "<div>Called him</div>" })).toBe("Hi Aldredt,\n\nA note on Jaco Maartens (#42):\n\nCalled him\n\nhttps://leads.estatekit.co/t/42\n\nThank you,\nKieran");
-    expect(pingMessage({ ...base, due: null, body: "<div>x</div>" })).toMatch(/^Hi Aldredt,\n\nPlease could you do the following for Jaco Maartens \(#42\):/);
+    expect(pingMessage({ ...base, kind: "note", body: "<div>Called him</div>" })).toBe("A note on Jaco Maartens (#42):\n\nCalled him\n\nhttps://leads.estatekit.co/t/42\n\nThanks");
+    expect(pingMessage({ ...base, due: null, body: "<div>x</div>" })).toMatch(/^Please could you do the following for Jaco Maartens \(#42\):/);
+  });
+  it("bold and italic in the note become WhatsApp bold and italic", () => {
+    expect(pingMessage({ ...base, body: "<div>Fix the <b>budget</b> and <i>headline</i></div>" })).toMatch(/\n\nFix the \*budget\* and _headline_\n\n/);
   });
   it("says when like a person would", () => {
     expect(byWhen("2026-11-10", "2026-11-10")).toBe("today");
