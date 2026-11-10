@@ -41,7 +41,9 @@ export interface NoteFor { assignedTo: string | null; assignedToName: string | n
 
 /** The tables haven't been created yet. */
 export class CheckinsNotSetUp extends Error {}
-const notSetUp = (e: { message: string; code?: string }) => /does not exist|schema cache|42P01|PGRST205/i.test(`${e.message} ${e.code ?? ""}`);
+const notSetUp = (e: { message: string; code?: string }) => /relation .* does not exist|42P01|PGRST205/i.test(`${e.message} ${e.code ?? ""}`);
+/** A column the database doesn't have yet (the app went out before its migration). */
+const noColumn = (e: { message: string; code?: string }) => /column .* does not exist|42703|PGRST204/i.test(`${e.message} ${e.code ?? ""}`);
 
 const ROW = "id, token, created_at, created_by_name, expires_at, shared_at, first_opened_at, answered_at, answers, comment, questions";
 const QUESTIONS_KEY = "checkin_questions";
@@ -105,15 +107,21 @@ export async function markCheckinSent(id: string, sent: boolean): Promise<void> 
   }
 }
 
+const NOTE_COLS = "id, kind, body, link, created_at, created_by_name, done_at, done_by_name";
+
 export async function listClientNotes(agentId: string): Promise<ClientNote[]> {
-  const { data, error } = await supabase.from("client_notes")
-    .select("id, kind, body, link, created_at, created_by_name, done_at, done_by_name, assigned_to, assigned_to_name, due_on")
-    .eq("agent_id", agentId).order("created_at", { ascending: false }).limit(500);
+  const query = (cols: string) => supabase.from("client_notes").select(cols).eq("agent_id", agentId).order("created_at", { ascending: false }).limit(500);
+  let { data, error } = await query(`${NOTE_COLS}, assigned_to, assigned_to_name, due_on`);
+  // Before the "for" and "due" columns exist: the to-dos without them.
+  if (error && noColumn(error)) {
+    ({ data, error } = await query(NOTE_COLS));
+    if (!error) return ((data ?? []) as unknown as ClientNote[]).map((n) => ({ ...n, assigned_to: null, assigned_to_name: null, due_on: null }));
+  }
   if (error) {
     if (notSetUp(error)) throw new CheckinsNotSetUp(error.message);
     throw new Error(error.message);
   }
-  return (data ?? []) as ClientNote[];
+  return (data ?? []) as unknown as ClientNote[];
 }
 
 /** A to-do or note about a check-in keeps that check-in's address in its
@@ -121,11 +129,11 @@ export async function listClientNotes(agentId: string): Promise<ClientNote[]> {
 export const checkinLink = (agentId: string, checkinId: string) => `https://leads.estatekit.co/clients/${agentId}/checkins#checkin-${checkinId}`;
 export const checkinIdOf = (link: string | null | undefined) => link?.match(/#checkin-([0-9a-f-]{36})$/i)?.[1] ?? null;
 
-const forCols = (f: NoteFor, kind: "todo" | "note") => ({
-  assigned_to: f.assignedTo,
-  assigned_to_name: f.assignedTo ? f.assignedToName : null,
-  due_on: kind === "todo" ? f.dueOn : null,
-});
+const forCols = (f: NoteFor, kind: "todo" | "note", clearing = false) => {
+  const due = kind === "todo" ? f.dueOn : null;
+  if (!clearing && !f.assignedTo && !due) return {};
+  return { assigned_to: f.assignedTo, assigned_to_name: f.assignedTo ? f.assignedToName : null, due_on: due };
+};
 
 /** Saves it; returns its id. */
 export async function addClientNote(agentId: string, kind: "todo" | "note", body: string, byName: string, link: string | null = null, f: NoteFor = { assignedTo: null, assignedToName: null, dueOn: null }): Promise<string> {
@@ -137,8 +145,9 @@ export async function addClientNote(agentId: string, kind: "todo" | "note", body
   return data.id as string;
 }
 
-export async function updateClientNote(id: string, body: string, kind: "todo" | "note", f: NoteFor): Promise<void> {
-  const { error } = await supabase.from("client_notes").update({ body, ...forCols(f, kind) }).eq("id", id);
+/** `had`: it was for someone or had a due date (so clearing them is saved). */
+export async function updateClientNote(id: string, body: string, kind: "todo" | "note", f: NoteFor, had = false): Promise<void> {
+  const { error } = await supabase.from("client_notes").update({ body, ...forCols(f, kind, had) }).eq("id", id);
   if (error) {
     console.error("updateClientNote failed:", error.message);
     throw new Error("Couldn't save that. Try again.");

@@ -394,7 +394,7 @@ function NoteRow({ n, agentId, byName, about, flash }: { n: ClientNote; agentId:
     try { await work; await qc.invalidateQueries({ queryKey: ["clientNotes", agentId] }); void qc.invalidateQueries({ queryKey: ["myTodos"] }); return true; } catch (e) { showSnack((e as Error).message); return false; }
   };
   async function save() {
-    if (!(await run(updateClientNote(n.id, noteForSaving(draft || n.body), n.kind, f)))) return;
+    if (!(await run(updateClientNote(n.id, noteForSaving(draft || n.body), n.kind, f, !!(n.assigned_to || n.due_on))))) return;
     setEditing(false);
     if (f.assignedTo && f.assignedTo !== n.assigned_to) await tell(n.id, f, showSnack);
   }
@@ -497,7 +497,12 @@ function ToDos({ agentId, byName }: { agentId: string; byName: string }) {
     }
   }
 
-  if (error) return null;
+  if (error instanceof CheckinsNotSetUp) return null;
+  if (error) return (
+    <Card title="To-dos and notes">
+      <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>Couldn't load the to-dos. Refresh the page to try again.</Typography>
+    </Card>
+  );
   return (
     <Card title="To-dos and notes" action={open.length ? <Typography sx={{ fontSize: 11.5, color: tokens.ink3 }}>{open.length} to do</Typography> : undefined}>
       {link?.replyTo && <Box sx={{ mb: 1 }}><CheckinQuote r={link.replyTo} onClick={() => link.showCheckin(link.replyTo!.id)} onRemove={() => link.reply(null)} /></Box>}
