@@ -25,7 +25,7 @@ import RadioButtonUncheckedIcon from "@mui/icons-material/RadioButtonUnchecked";
 import WhatsAppIcon from "@mui/icons-material/WhatsApp";
 import { tokens } from "../theme";
 import { cancelContract, ContractsNotSetUp, contractStatus, createContract, deviceName, getMySignature, listContractEvents, listContracts, markContractShared, readingTime, saveMySignature, type ContractRow } from "../api/contracts";
-import { buildContract, CONTRACT_TITLE, DEFAULT_PLAN, MIN_AD_SPEND, PROVIDER_NAME, type ContractTerms } from "../lib/contractTemplate";
+import { AD_SPEND_PAID_TO, buildContract, CONTRACT_TITLE, DEFAULT_PLAN, isMonthly, MIN_AD_SPEND, PAYMENT_SCHEDULES, PLANS, PROVIDER_NAME, type ContractTerms } from "../lib/contractTemplate";
 import { useSnack } from "../hooks/useSnack";
 import { timeAgo } from "../lib/timeAgo";
 import ContractSheet from "./ContractSheet";
@@ -200,7 +200,8 @@ function NewContractDialog({ open, onClose, client, clients }: { open: boolean; 
   const [picked, setPicked] = useState<ContractClient | null>(client ?? null);
   const [form, setForm] = useState({
     name: client?.name ?? "", company: client?.company ?? "", phone: client?.phone ?? "", email: client?.email ?? "", area: client?.area ?? "",
-    clientId: "", plan: DEFAULT_PLAN, ads: String(MIN_AD_SPEND),
+    clientId: "", plan: DEFAULT_PLAN as string, ads: String(MIN_AD_SPEND),
+    nominated: "", schedule: PAYMENT_SCHEDULES[0] as string, paidTo: AD_SPEND_PAID_TO[0] as string, marketing: "Yes",
   });
   const [previewing, setPreviewing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -214,6 +215,7 @@ function NewContractDialog({ open, onClose, client, clients }: { open: boolean; 
 
   const terms: ContractTerms = {
     clientName: form.name, agency: form.company, clientId: form.clientId, email: form.email, targetAreas: form.area, plan: form.plan, minAdSpend: toNumber(form.ads),
+    nominatedAgent: form.nominated, paymentSchedule: form.schedule, adSpendPaidTo: form.paidTo, marketingUse: form.marketing === "Yes",
   };
   const adsTooLow = !!form.ads && terms.minAdSpend < MIN_AD_SPEND;
   const complete = form.name.trim().split(/\s+/).length >= 2 && form.phone.replace(/\D/g, "").length >= 9 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) && !!form.area.trim() && !!form.plan.trim() && terms.minAdSpend >= MIN_AD_SPEND;
@@ -269,9 +271,24 @@ function NewContractDialog({ open, onClose, client, clients }: { open: boolean; 
             <TextField label="Agency" value={form.company} onChange={set("company")} />
             <TextField label="WhatsApp number" required value={form.phone} onChange={set("phone")} helperText="Their signing link and signed copy go here, so check it's right." />
             <TextField label="Email" required value={form.email} onChange={set("email")} helperText="The agreement's notices go here." />
-            <TextField label="Target areas" required value={form.area} onChange={set("area")} />
-            <TextField label="Plan" required value={form.plan} onChange={set("plan")} />
+            <TextField label="Target suburbs" required value={form.area} onChange={set("area")} helperText="Up to 5 suburbs. Check they're free before they sign: nobody else gets seller ads there." />
+            <TextField label="Nominated agent" value={form.nominated} onChange={set("nominated")} helperText="Only if someone else works their leads. Leave blank if they do it themselves." />
+            <TextField select label="Plan" required value={form.plan} onChange={set("plan")}>
+              {PLANS.map((p) => <MenuItem key={p} value={p}>{p}</MenuItem>)}
+            </TextField>
+            {!isMonthly(form.plan) && (
+              <TextField select label="How they pay the fee" required value={form.schedule} onChange={set("schedule")}>
+                {PAYMENT_SCHEDULES.map((p) => <MenuItem key={p} value={p}>{p}</MenuItem>)}
+              </TextField>
+            )}
             <TextField label="Minimum daily ad spend" required value={form.ads} onChange={set("ads")} error={adsTooLow} helperText={`At least R${MIN_AD_SPEND}.`} slotProps={{ htmlInput: { inputMode: "numeric" }, input: { startAdornment: <InputAdornment position="start">R</InputAdornment> } }} />
+            <TextField select label="Who they pay ad spend to" required value={form.paidTo} onChange={set("paidTo")}>
+              {AD_SPEND_PAID_TO.map((p) => <MenuItem key={p} value={p}>{p}</MenuItem>)}
+            </TextField>
+            <TextField select label="Can we use their name and results in our marketing?" required value={form.marketing} onChange={set("marketing")} helperText="Never a lead's details. They can say no later by email.">
+              <MenuItem value="Yes">Yes</MenuItem>
+              <MenuItem value="No">No</MenuItem>
+            </TextField>
             <TextField label="ID or registration no." value={form.clientId} onChange={set("clientId")} helperText="Leave blank if you don't know it." />
           </Box>
         )}

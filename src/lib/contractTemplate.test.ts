@@ -1,15 +1,18 @@
 import { describe, expect, it } from "vitest";
 import source from "./contractTemplate.md?raw";
-import { buildContract, SIGNATURE_DATE, type ContractTerms } from "./contractTemplate";
+import { buildContract, MONTHLY_SCHEDULE, SIGNATURE_DATE, type ContractTerms } from "./contractTemplate";
 
 const terms: ContractTerms = {
   clientName: " Stephan Dau ",
   agency: "Langdon Real Estate",
   clientId: "",
   email: "contact@grandproperty24.com",
-  targetAreas: "Cape Town: City Centre, Gardens",
+  targetAreas: "Gardens, Tamboerskloof",
   plan: "3-month package: R7,500",
+  paymentSchedule: "2 equal payments: before launch and 30 days after launch",
   minAdSpend: 70,
+  adSpendPaidTo: "Meta directly",
+  marketingUse: false,
 };
 
 describe("the service agreement", () => {
@@ -19,12 +22,26 @@ describe("the service agreement", () => {
 
   it("fills in the client's details and EstateKit's fixed ones", () => {
     expect(doc.client).toBe("Stephan Dau");
-    expect(row("Name")).toEqual(["Name", "Kieran Ouseb", "Stephan Dau"]);
-    expect(row("Trading as / Agency")).toEqual(["Trading as / Agency", "EstateKit", "Langdon Real Estate"]);
-    expect(row("Email")[1]).toBe("partner@estatekit.co");
-    expect(row("Target areas")[2]).toBe("Cape Town: City Centre, Gardens");
+    expect(row("Name")).toEqual(["Name", "Kieran Ouseb, trading as EstateKit", "Stephan Dau"]);
+    expect(row("Agency")).toEqual(["Agency", "EstateKit", "Langdon Real Estate"]);
+    expect(row("Email for notices")[1]).toBe("partner@estatekit.co");
+    expect(row("Target suburbs")[2]).toBe("Gardens, Tamboerskloof");
     expect(row("Plan")[2]).toBe("3-month package: R7,500");
-    expect(row("Minimum daily ad spend")[2]).toBe("R70 per day (at least R70), paid to Meta directly");
+    expect(row("Payment schedule")[2]).toBe("2 equal payments: before launch and 30 days after launch");
+    expect(row("Minimum daily ad spend")[2]).toBe("R70 per day (at least R70)");
+    expect(row("Ad spend paid to")[2]).toBe("Meta directly");
+    expect(row("Use of your name and results in our marketing")[2]).toBe("No");
+  });
+
+  it("says the client works the leads when there's no nominated agent", () => {
+    expect(row("Nominated agent")[2]).toBe("None: the client works the leads");
+    const other = buildContract({ ...terms, nominatedAgent: " Storm Hargreaves " }).sections.find((s) => s.heading === "Client details")!.table!;
+    expect(other.rows.find((r) => r[0] === "Nominated agent")![2]).toBe("Storm Hargreaves");
+  });
+
+  it("pays a monthly plan before each cycle, whatever schedule was picked", () => {
+    const monthly = buildContract({ ...terms, plan: "Monthly: R3,000 per 30 days" }).sections.find((s) => s.heading === "Client details")!.table!;
+    expect(monthly.rows.find((r) => r[0] === "Payment schedule")![2]).toBe(MONTHLY_SCHEDULE);
   });
 
   it("leaves an unknown ID blank and the signature date for signing", () => {
@@ -50,9 +67,13 @@ describe("the service agreement", () => {
   });
 
   it("has the sections in the order they were written, with the guarantee's figures", () => {
-    expect(doc.sections.map((s) => s.heading)).toEqual(["At a glance", "Client details", "What we do", "Fees and ad spend", "How long it runs", "Your part", "Mandate Guarantee", "No other guarantees", "Liability", "Data and ownership", "Ending the agreement", "General"]);
-    expect(JSON.stringify(doc)).toContain("R3,750 on the 3-month package");
+    expect(doc.sections.map((s) => s.heading)).toEqual([
+      "At a glance", "Client details", "What we do", "Your areas", "Fees and ad spend", "How long it runs and pauses", "Your part",
+      "Lead Guarantee", "No other guarantees", "Confidentiality and access", "Data and ownership", "Liability", "Ending the agreement", "General",
+    ]);
+    expect(JSON.stringify(doc)).toContain("at least **60 qualified leads** during the 90 days");
     expect(doc.sections.find((s) => s.heading === "Your part")!.clauses.filter((c) => c.startsWith("• "))).toHaveLength(9);
+    expect(doc.sections.find((s) => s.heading === "At a glance")!.clauses.filter((c) => c.startsWith("• "))).toHaveLength(7);
     expect(doc.initials).toBe(true);
   });
 });
