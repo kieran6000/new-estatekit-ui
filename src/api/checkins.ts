@@ -34,6 +34,8 @@ export interface ClientNote {
   assigned_to_name: string | null;
   /** A to-do's due date, "2026-11-14". */
   due_on: string | null;
+  /** Its short number: "#42", and leads.estatekit.co/t/42. */
+  num: number | null;
 }
 
 /** Who a to-do or note is for, and when a to-do is due. */
@@ -111,11 +113,13 @@ const NOTE_COLS = "id, kind, body, link, created_at, created_by_name, done_at, d
 
 export async function listClientNotes(agentId: string): Promise<ClientNote[]> {
   const query = (cols: string) => supabase.from("client_notes").select(cols).eq("agent_id", agentId).order("created_at", { ascending: false }).limit(500);
-  let { data, error } = await query(`${NOTE_COLS}, assigned_to, assigned_to_name, due_on`);
+  let { data, error } = await query(`${NOTE_COLS}, assigned_to, assigned_to_name, due_on, num`);
+  // Before the number column exists: everything but that.
+  if (error && noColumn(error)) ({ data, error } = await query(`${NOTE_COLS}, assigned_to, assigned_to_name, due_on`));
   // Before the "for" and "due" columns exist: the to-dos without them.
   if (error && noColumn(error)) {
     ({ data, error } = await query(NOTE_COLS));
-    if (!error) return ((data ?? []) as unknown as ClientNote[]).map((n) => ({ ...n, assigned_to: null, assigned_to_name: null, due_on: null }));
+    if (!error) return ((data ?? []) as unknown as ClientNote[]).map((n) => ({ ...n, assigned_to: null, assigned_to_name: null, due_on: null, num: null }));
   }
   if (error) {
     if (notSetUp(error)) throw new CheckinsNotSetUp(error.message);
@@ -170,6 +174,22 @@ export async function listTeam(): Promise<{ agent_id: string; name: string }[]> 
   const { data, error } = await supabase.from("agent_profiles").select("agent_id, display_name").eq("is_operator", true).order("display_name");
   if (error) throw new Error(error.message);
   return (data ?? []).map((p) => ({ agent_id: p.agent_id as string, name: ((p.display_name as string | null) ?? "").trim().split(/\s+/)[0] || "Someone" }));
+}
+
+/** /t/56f53d36: the to-do or note whose id starts with those 8 characters. */
+export async function findNoteByCode(code: string): Promise<{ id: string; agent_id: string } | null> {
+  // /t/42: its number.
+  if (/^\d{1,9}$/.test(code)) {
+    const { data } = await supabase.from("client_notes").select("id, agent_id").eq("num", Number(code)).maybeSingle();
+    return (data as { id: string; agent_id: string } | null) ?? null;
+  }
+  // /t/56f53d36: the first 8 of its id (links sent before numbers).
+  if (!/^[0-9a-f]{8}$/i.test(code)) return null;
+  const c = code.toLowerCase();
+  const { data } = await supabase.from("client_notes").select("id, agent_id")
+    .gte("id", `${c}-0000-0000-0000-000000000000`).lte("id", `${c}-ffff-ffff-ffff-ffffffffffff`)
+    .order("created_at", { ascending: false }).limit(1);
+  return (data?.[0] as { id: string; agent_id: string } | undefined) ?? null;
 }
 
 export interface MyTodo { id: string; agent_id: string; due_on: string | null }
