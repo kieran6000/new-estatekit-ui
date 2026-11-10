@@ -85,6 +85,7 @@ import TollOutlinedIcon from "@mui/icons-material/TollOutlined";
 import AccountBalanceOutlinedIcon from "@mui/icons-material/AccountBalanceOutlined";
 import ContractsSection from "../components/ContractsSection";
 import InvoicesSection from "../components/InvoicesSection";
+import { useAdminAccess } from "../hooks/useAdminAccess";
 import { prettyPhone, toE164, waDigits } from "../lib/phone";
 
 /** Digits in international form, so 083… and +2783… compare equal. */
@@ -121,7 +122,9 @@ export default function ClientDetailPage() {
   // Their page is the account you're working in (it replaced /overview and,
   // for staff, /account): opening it switches you into them.
   useFollowAccount(agentId ? { agent_id: agentId } : null, "account");
-  const tab: TabKey = CLIENT_TABS.includes(tabParam as TabKey) ? (tabParam as TabKey) : "overview";
+  // A self-run account sees only its own Overview; the other tabs are EstateKit's.
+  const { isOperator: staffView } = useAdminAccess();
+  const tab: TabKey = !staffView ? "overview" : CLIENT_TABS.includes(tabParam as TabKey) ? (tabParam as TabKey) : "overview";
   const search = params.toString() ? `?${params.toString()}` : "";
   // Tabs are pages: Back goes to the tab you were on. Only the dates carry
   // over (where you were in the ads is Overview's own).
@@ -165,12 +168,12 @@ export default function ClientDetailPage() {
           <DeactivatedBanner profile={data.profile} />
           <Box sx={{ bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
             <Box sx={{ maxWidth: 1440, mx: "auto", px: { xs: 0.5, md: 2 } }}>
-              <Tabs value={tab} onChange={(_e, v) => pick(v)} variant="scrollable" allowScrollButtonsMobile>
+              <Tabs value={staffView ? tab : "overview"} onChange={(_e, v) => pick(v)} variant="scrollable" allowScrollButtonsMobile>
                 <Tab value="overview" label="Overview" />
-                <Tab value="checkins" label="Check-ins" />
-                <Tab value="brief" label="Brief" />
-                <Tab value="contract" label="Paperwork" />
-                <Tab value="settings" label="Settings" />
+                {staffView && <Tab value="checkins" label="Check-ins" />}
+                {staffView && <Tab value="brief" label="Brief" />}
+                {staffView && <Tab value="contract" label="Paperwork" />}
+                {staffView && <Tab value="settings" label="Settings" />}
               </Tabs>
             </Box>
           </Box>
@@ -237,6 +240,7 @@ function useClientSaver(agentId: string) {
 
 function Header({ data }: { data: Data }) {
   const { profile: p, dossier: d } = data;
+  const { isOperator: staff } = useAdminAccess();
   const { data: profilesForChip } = useQuery({ queryKey: ["agentProfiles"], queryFn: listAgentProfiles, staleTime: 5 * 60_000 });
   const { user } = useAuth();
   const save = useClientSaver(p.agent_id);
@@ -294,7 +298,7 @@ function Header({ data }: { data: Data }) {
           </Box>
         </Box>
         <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
-          <Button variant="outlined" component="a" href={`/report/${p.agent_id}`} target="_blank" rel="noopener">Weekly report</Button>
+          {staff && <Button variant="outlined" component="a" href={`/report/${p.agent_id}`} target="_blank" rel="noopener">Weekly report</Button>}
           {p.fb_ad_account_id && (
             <Button variant="outlined" endIcon={<OpenInNewIcon />} href={adsManagerUrl(p.fb_ad_account_id)} target="_blank" rel="noopener">
               Ads Manager

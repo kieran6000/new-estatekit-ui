@@ -53,6 +53,7 @@ import BrandLogo from "./BrandLogo";
 import AccountSwitcher from "./AccountSwitcher";
 import DevTierToggle from "./DevTierToggle";
 import estateKitLogoWhite from "../assets/whitelogofull.png";
+import { useAdminAccess } from "../hooks/useAdminAccess";
 import estateKitLogoBlue from "../assets/blue logo full.png";
 
 const RAIL_WIDTH = 240;
@@ -89,7 +90,8 @@ export default function AppShell() {
   const myClientPage = clientPath(activeAgentId ?? user?.id ?? "", everyone, "overview");
   const myClientBase = myClientPage.replace(/\/overview$/, "");
   // (Only when working in a client: in staff mode a client page is just Accounts.)
-  const section = isManagingOther && (pathname === myClientBase || pathname.startsWith(myClientBase + "/")) ? "overview" : activeSection(pathname);
+  const { selfRun } = useAdminAccess();
+  const section = (isManagingOther || selfRun) && (pathname === myClientBase || pathname.startsWith(myClientBase + "/")) ? "overview" : activeSection(pathname);
   usePageviewTracking();
   useRealtimeSubscriptions();
   const { data: profile } = useQuery({ queryKey: ["myProfile"], queryFn: getMyProfile, enabled: !!user, staleTime: 5 * 60_000 });
@@ -142,7 +144,11 @@ export default function AppShell() {
     { key: "mypage", label: "Forms", icon: <WebOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <WebIcon sx={{ fontSize: SZ }} />, to: "/lead-page" },
   ];
 
-  const adminNav = [
+  // A self-run account (another agency runs it): its own Overview and Automations.
+  const adminNav = selfRun ? [
+    { key: "overview", label: "Overview", icon: <DashboardOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <DashboardIcon sx={{ fontSize: SZ }} />, to: myClientPage },
+    { key: "automations", label: "Automations", icon: <SettingsOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <SettingsIcon sx={{ fontSize: SZ }} />, to: "/admin/automations" },
+  ] : [
     ...(staffMode ? [] : [{ key: "overview", label: "Overview", icon: <DashboardOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <DashboardIcon sx={{ fontSize: SZ }} />, to: myClientPage }]),
     // Staff with no account open start here. Otherwise the switcher at the top lists everyone.
     ...(staffMode ? [{ key: "clients", label: "Accounts", icon: <GroupsOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <GroupsIcon sx={{ fontSize: SZ }} />, to: "/clients" }] : []),
@@ -169,7 +175,7 @@ export default function AppShell() {
     { key: "leads", label: "Leads", icon: <ContactsOutlinedIcon />, activeIcon: <ContactsIcon />, to: "/leads" },
     { key: "calendar", label: "Calendar", icon: <CalendarMonthOutlinedIcon />, activeIcon: <CalendarMonthIcon />, to: "/calendar" },
     { key: "mypage", label: "Forms", icon: <WebOutlinedIcon />, activeIcon: <WebIcon />, to: "/lead-page" },
-    ...(isOperator
+    ...(isOperator || selfRun
       ? [
           { key: "overview", label: "Overview", icon: <DashboardOutlinedIcon />, activeIcon: <DashboardIcon />, to: myClientPage },
         ]
@@ -222,7 +228,7 @@ export default function AppShell() {
             })}
           </List>
 
-          {isOperator && (
+          {(isOperator || selfRun) && (
             <>
               <Divider sx={{ borderColor: dividerColor, mx: 1.25, my: 0.75 }} />
               <Typography sx={{ fontSize: 10, fontWeight: 600, color: mutedColor, textTransform: "uppercase", letterSpacing: "0.08em", px: 2.25, pt: 0.5, pb: 0.25 }}>

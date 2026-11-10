@@ -30,8 +30,8 @@ import { METRICS, adsMoney, formatMetric, metricValues, sumRows, toneOf, type Me
 import { ALL_COLUMNS, COLUMN_LABEL, PRESETS, choiceLabel, loadPrefs, savePrefs, visibleColumns, type ColId, type ColumnPrefs, type PresetKey } from "../lib/adColumns";
 import { useSnack } from "../hooks/useSnack";
 import { listLeadIdsForAds, type AdLeadMetric } from "../api/leads";
+import { useAdminAccess } from "../hooks/useAdminAccess";
 import LeadDetailPage from "../pages/LeadDetailPage";
-import { useIsOperator } from "../hooks/useAutomations";
 
 // The client page's ads table, made to look and work like Ads Manager:
 // Campaigns / Ad sets / Ads folder tabs with "N selected" on the tab you
@@ -177,7 +177,7 @@ export default function AdsTable({ agentId, adAccountId, since, until, view, onV
   const [adLeads, setAdLeads] = useState<{ ids: string[]; i: number } | null>(null);
   const [opening, setOpening] = useState<string | null>(null);
   // Editing a daily budget, as in Ads Manager: the pencil in the cell opens it.
-  const isOperator = useIsOperator();
+  const { canAdmin } = useAdminAccess();
   const budgetInput = useRef<HTMLInputElement>(null);
   const [budgetEdit, setBudgetEdit] = useState<{ el: HTMLElement; row: AdsRow; value: string } | null>(null);
   const budgetValue = budgetEdit ? Number(budgetEdit.value.replace(/[^\d.]/g, "")) : NaN;
@@ -355,7 +355,7 @@ export default function AdsTable({ agentId, adAccountId, since, until, view, onV
     }
     if (id === "budget") {
       if (r.dailyBudget) {
-        if (!isOperator || phone) return <Num v={adsMoney(r.dailyBudget)} sub="Daily" />;
+        if (!canAdmin || phone) return <Num v={adsMoney(r.dailyBudget)} sub="Daily" />;
         // Ads Manager's pencil: shows on row hover, opens the budget box.
         return (
           <Box sx={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 1 }}>

@@ -52,8 +52,11 @@ Deno.serve(async (req) => {
     const uid = jwt ? userIdFrom(jwt) : null;
     if (!uid) return json({ error: "Not signed in" }, 401);
     const { data: me } = await supabase
-      .from("agent_profiles").select("is_operator, fb_ad_account_id").eq("agent_id", uid).maybeSingle();
+      .from("agent_profiles").select("is_operator, fb_ad_account_id, builds_own_forms").eq("agent_id", uid).maybeSingle();
     const isOperator = me?.is_operator === true;
+    // A self-run account (another agency runs it) may change budgets on its
+    // own ad account; the owner check below still applies to it.
+    const selfRun = me?.builds_own_forms === true;
     const ownAccount = digits(me?.fb_ad_account_id);
     if (!isOperator && !ownAccount) return json({ error: "Not allowed" }, 403);
 
@@ -63,7 +66,7 @@ Deno.serve(async (req) => {
     if (!adId || !/^\d+$/.test(String(adId))) return json({ error: "adId required" }, 400);
     const budget = dailyBudget == null ? null : Number(dailyBudget);
     if (budget != null) {
-      if (!isOperator) return json({ error: "Not allowed" }, 403);
+      if (!isOperator && !selfRun) return json({ error: "Not allowed" }, 403);
       // Rand, two decimals; Facebook takes cents. A sanity cap against typos.
       if (!Number.isFinite(budget) || budget < 1 || budget > 100000) return json({ error: "dailyBudget out of range" }, 400);
     } else if (status !== "ACTIVE" && status !== "PAUSED") return json({ error: "status must be ACTIVE or PAUSED" }, 400);

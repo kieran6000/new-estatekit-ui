@@ -38,6 +38,7 @@ import InvoicePage from "./pages/InvoicePage";
 import CheckInPage from "./pages/CheckInPage";
 import ContractsAdminPage from "./pages/ContractsAdminPage";
 import WeeklyReportsAdminPage from "./pages/WeeklyReportsAdminPage";
+import { useAdminAccess } from "./hooks/useAdminAccess";
 import AuditLogPage from "./pages/AuditLogPage";
 
 function Splash() {
@@ -53,6 +54,14 @@ function Splash() {
       <CircularProgress />
     </Box>
   );
+}
+
+/** Staff, or a self-run account (its own page only: it can't load anyone else's). */
+function AdminOnly({ children }: { children: React.ReactNode }) {
+  const { canAdmin, loading } = useAdminAccess();
+  if (loading) return <Splash />;
+  if (!canAdmin) return <Navigate to="/leads" replace />;
+  return <>{children}</>;
 }
 
 function OperatorOnly({ children }: { children: React.ReactNode }) {
@@ -152,7 +161,7 @@ export default function App() {
               element={<AdminAutomationsPage />}
             />
             <Route path="/clients" element={<OperatorOnly><ClientsPage /></OperatorOnly>} />
-            <Route path="/clients/:who/:tab?" element={<OperatorOnly><ClientDetailPage /></OperatorOnly>} />
+            <Route path="/clients/:who/:tab?" element={<AdminOnly><ClientDetailPage /></AdminOnly>} />
             <Route path="/admin/clients" element={<Navigate to="/clients" replace />} />
             <Route path="/admin/clients/:agentId/*" element={<OldClientLink />} />
             <Route path="/admin/reports" element={<OperatorOnly><WeeklyReportsAdminPage /></OperatorOnly>} />
