@@ -1,0 +1,146 @@
+import { useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Badge, Box, Button, IconButton, Menu, MenuItem, Tooltip } from "@mui/material";
+import PersonAddAltRoundedIcon from "@mui/icons-material/PersonAddAltRounded";
+import EventRoundedIcon from "@mui/icons-material/EventRounded";
+import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
+import { listMyTodos, listTeam, type NoteFor } from "../api/checkins";
+import { useAuth } from "../hooks/useAuth";
+import { tokens } from "../theme";
+
+// Who a to-do or note is for (they get a WhatsApp), and when a to-do is due.
+// Two quiet buttons until used; then they show what was picked.
+
+export const NOBODY: NoteFor = { assignedTo: null, assignedToName: null, dueOn: null };
+
+export const useTeam = () => useQuery({ queryKey: ["team"], queryFn: listTeam, staleTime: 30 * 60_000 });
+
+/** Today in South Africa, "2026-11-10". */
+export const todaySA = () => new Date().toLocaleDateString("en-CA", { timeZone: "Africa/Johannesburg" });
+
+export type DueState = "overdue" | "today" | "later";
+export const dueState = (due: string, today = todaySA()): DueState => (due < today ? "overdue" : due === today ? "today" : "later");
+
+/** "Today", "Tomorrow", "Fri 14 Nov". */
+export function dueWords(due: string, today = todaySA()): string {
+  if (due === today) return "Today";
+  const t = new Date(`${today}T12:00:00Z`);
+  t.setUTCDate(t.getUTCDate() + 1);
+  if (due === t.toISOString().slice(0, 10)) return "Tomorrow";
+  return new Date(`${due}T12:00:00Z`).toLocaleDateString("en-GB", { timeZone: "UTC", weekday: "short", day: "numeric", month: "short" });
+}
+
+const pill = (on: boolean, tone?: "red" | "amber") => ({
+  minWidth: 0, px: 1, py: 0.25, fontSize: 13, fontWeight: on ? 600 : 500, borderRadius: "999px", textTransform: "none",
+  color: tone === "red" ? tokens.red : tone === "amber" ? tokens.amber : on ? "text.primary" : tokens.ink2,
+  bgcolor: tone === "red" ? tokens.redTint : tone === "amber" ? tokens.amberTint : on ? tokens.surface2 : "transparent",
+  border: `1px solid ${tone === "red" ? tokens.redBorder : tone === "amber" ? tokens.amberBorder : on ? tokens.divider : "transparent"}`,
+});
+
+/** The "For" and "Due" buttons. `showDue` only for to-dos. */
+export function ForAndDue({ value, onChange, showDue = true }: { value: NoteFor; onChange: (v: NoteFor) => void; showDue?: boolean }) {
+  const { data: team = [] } = useTeam();
+  const [menu, setMenu] = useState<HTMLElement | null>(null);
+  const dateRef = useRef<HTMLInputElement>(null);
+  const tone = value.dueOn ? (dueState(value.dueOn) === "overdue" ? "red" : dueState(value.dueOn) === "today" ? "amber" : undefined) : undefined;
+
+  return (
+    <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, flexWrap: "wrap" }}>
+      <Box sx={{ display: "inline-flex", alignItems: "center" }}>
+        <Tooltip title={value.assignedTo ? "They got a WhatsApp. Tap to change." : "Give it to someone. They get a WhatsApp."}>
+          <Button size="small" startIcon={<PersonAddAltRoundedIcon sx={{ fontSize: "17px !important" }} />} onClick={(e) => setMenu(e.currentTarget)} sx={pill(!!value.assignedTo)}>
+            {value.assignedTo ? `For ${value.assignedToName}` : "For…"}
+          </Button>
+        </Tooltip>
+        {value.assignedTo && (
+          <IconButton size="small" aria-label="For nobody" onClick={() => onChange({ ...value, assignedTo: null, assignedToName: null })} sx={{ p: 0.25, ml: 0.25 }}>
+            <CloseRoundedIcon sx={{ fontSize: 15 }} />
+          </IconButton>
+        )}
+      </Box>
+      <Menu anchorEl={menu} open={!!menu} onClose={() => setMenu(null)}>
+        {team.map((p) => (
+          <MenuItem key={p.agent_id} selected={p.agent_id === value.assignedTo} onClick={() => { onChange({ ...value, assignedTo: p.agent_id, assignedToName: p.name }); setMenu(null); }}>
+            {p.name}
+          </MenuItem>
+        ))}
+      </Menu>
+
+      {showDue && (
+        <Box sx={{ display: "inline-flex", alignItems: "center", position: "relative" }}>
+          <Button
+            size="small"
+            startIcon={<EventRoundedIcon sx={{ fontSize: "17px !important" }} />}
+            onClick={() => { const el = dateRef.current; if (!el) return; try { el.showPicker(); } catch { el.focus(); el.click(); } }}
+            sx={pill(!!value.dueOn, tone)}
+          >
+            {value.dueOn ? `Due ${dueWords(value.dueOn)}` : "Due…"}
+          </Button>
+          {value.dueOn && (
+            <IconButton size="small" aria-label="No due date" onClick={() => onChange({ ...value, dueOn: null })} sx={{ p: 0.25, ml: 0.25 }}>
+              <CloseRoundedIcon sx={{ fontSize: 15 }} />
+            </IconButton>
+          )}
+          <input
+            ref={dateRef}
+            type="date"
+            aria-label="Due date"
+            tabIndex={-1}
+            value={value.dueOn ?? ""}
+            onChange={(e) => onChange({ ...value, dueOn: e.target.value || null })}
+            style={{ position: "absolute", left: 0, bottom: 0, width: 1, height: 1, opacity: 0, pointerEvents: "none", border: 0, padding: 0 }}
+          />
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+/** Under a saved to-do or note: "For Aldredt · Due Fri 14 Nov" (red when late). */
+export function ForAndDueTags({ assignedToName, dueOn, done }: { assignedToName: string | null; dueOn: string | null; done: boolean }) {
+  if (!assignedToName && !dueOn) return null;
+  const s = dueOn && !done ? dueState(dueOn) : null;
+  return (
+    <Box sx={{ display: "flex", gap: 0.75, flexWrap: "wrap", mt: 0.5 }}>
+      {assignedToName && <Box component="span" sx={{ ...pill(true), display: "inline-flex", alignItems: "center", gap: 0.5, py: "1px", fontSize: 12.5, fontWeight: 500 }}><PersonAddAltRoundedIcon sx={{ fontSize: 14 }} />For {assignedToName}</Box>}
+      {dueOn && (
+        <Box component="span" sx={{ ...pill(true, s === "overdue" ? "red" : s === "today" ? "amber" : undefined), display: "inline-flex", alignItems: "center", gap: 0.5, py: "1px", fontSize: 12.5, fontWeight: s ? 600 : 500 }}>
+          <EventRoundedIcon sx={{ fontSize: 14 }} />{s === "overdue" ? `Late · was due ${dueWords(dueOn)}` : `Due ${dueWords(dueOn)}`}
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+/** The signed-in person's open to-dos, on every client. */
+export function useMyTodos() {
+  const { user } = useAuth();
+  return useQuery({ queryKey: ["myTodos", user?.id], queryFn: () => listMyTodos(user!.id), enabled: !!user?.id, staleTime: 60_000, refetchInterval: 5 * 60_000 });
+}
+
+/** A red count on an account's photo: your open to-dos there (or, with no
+ *  agentId, on every account). Nothing when there are none. */
+export function TodoAvatarBadge({ agentId, children }: { agentId?: string; children: React.ReactNode }) {
+  const { data = [] } = useMyTodos();
+  const mine = agentId ? data.filter((t) => t.agent_id === agentId) : data;
+  if (!mine.length) return <>{children}</>;
+  const late = mine.some((t) => t.due_on && t.due_on < todaySA());
+  return (
+    <Tooltip title={`${mine.length} to-do${mine.length === 1 ? "" : "s"} for you${late ? ", one is late" : ""}`}>
+      <Badge badgeContent={mine.length} color="error" overlap="circular" max={9} sx={{ "& .MuiBadge-badge": { fontSize: 11, height: 18, minWidth: 18, border: "2px solid", borderColor: "background.paper" } }}>
+        {children}
+      </Badge>
+    </Tooltip>
+  );
+}
+
+/** A red count: your open to-dos (on one client, or all of them). */
+export function TodoBadge({ agentId, children }: { agentId?: string; children: React.ReactNode }) {
+  const { data = [] } = useMyTodos();
+  const mine = agentId ? data.filter((t) => t.agent_id === agentId) : data;
+  return (
+    <Badge badgeContent={mine.length} color="error" max={99} sx={{ "& .MuiBadge-badge": { fontSize: 11, height: 17, minWidth: 17, px: 0.5, right: -10, top: 2 } }}>
+      {children}
+    </Badge>
+  );
+}

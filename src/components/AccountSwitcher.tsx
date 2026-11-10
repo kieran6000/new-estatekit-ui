@@ -23,6 +23,7 @@ import { listAgentProfiles, setActiveAgent, getActiveAgentIdSync, ACTIVE_AGENT_E
 import { useAuth } from "../hooks/useAuth";
 import { trackActivity } from "../lib/activity";
 import { prefetchClient } from "../lib/prefetchClient";
+import { TodoAvatarBadge } from "./NoteFor";
 import { tokens } from "../theme";
 
 /** Agents type a full patch of suburbs into "area" (e.g. "Fourways, Sandton,
@@ -46,6 +47,8 @@ function adsManagerUrl(adAccountId: string): string {
 /** Staff see every account (with an Ads Manager shortcut); a team lead sees
  *  themselves and their members: the list is whatever profiles they can read. */
 export default function AccountSwitcher({ variant = "dark", staff = true }: { variant?: "dark" | "light"; staff?: boolean }) {
+  // Your open to-dos: a red count on each account, and the total on the switcher (staff only).
+  const staffBadge = (agentId: string | undefined, avatar: React.ReactNode) => (staff ? <TodoAvatarBadge agentId={agentId}>{avatar}</TodoAvatarBadge> : avatar);
   const { user } = useAuth();
   // A mouse/trackpad exists → safe to auto-focus search. On touch it isn't.
   const canHover = useMediaQuery("(hover: hover) and (pointer: fine)");
@@ -131,9 +134,11 @@ export default function AccountSwitcher({ variant = "dark", staff = true }: { va
           "&:hover": { borderColor: variant === "dark" ? "#fcfdff8e" : tokens.ink3 },
         }}
       >
-        <Avatar src={activePfp ?? undefined} sx={{ width: 30, height: 30, bgcolor: "#6366f1", fontSize: 13, fontWeight: 700 }}>
-          {activeInitial}
-        </Avatar>
+        {staffBadge(undefined, (
+          <Avatar src={activePfp ?? undefined} sx={{ width: 30, height: 30, bgcolor: "#6366f1", fontSize: 13, fontWeight: 700 }}>
+            {activeInitial}
+          </Avatar>
+        ))}
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Typography sx={{ fontSize: 13, fontWeight: 600, color: variant === "dark" ? "#fff" : tokens.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {activeName}
@@ -183,9 +188,11 @@ export default function AccountSwitcher({ variant = "dark", staff = true }: { va
                 sx={{ py: 1, pl: 2, pr: 1 }}
               >
                 <ListItemAvatar sx={{ minWidth: 44 }}>
-                  <Avatar src={p.avatar_url || pageAvatar(p.fb_page_id) || p.sidebar_logo_url || undefined} sx={{ width: 34, height: 34, bgcolor: isActive ? "#6366f1" : tokens.surface2, color: isActive ? "#fff" : tokens.ink2, fontSize: 14, fontWeight: 700 }}>
-                    {pName[0].toUpperCase()}
-                  </Avatar>
+                  {staffBadge(p.agent_id, (
+                    <Avatar src={p.avatar_url || pageAvatar(p.fb_page_id) || p.sidebar_logo_url || undefined} sx={{ width: 34, height: 34, bgcolor: isActive ? "#6366f1" : tokens.surface2, color: isActive ? "#fff" : tokens.ink2, fontSize: 14, fontWeight: 700 }}>
+                      {pName[0].toUpperCase()}
+                    </Avatar>
+                  ))}
                 </ListItemAvatar>
                 <ListItemText
                   primary={pName}

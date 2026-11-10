@@ -11,8 +11,9 @@ import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
 import { listAgentProfiles } from "../api/_client";
 import {
   addClientNote, checkinIdOf, checkinLink, CheckinsNotSetUp, createCheckin, deleteClientNote, getCheckinQuestions, getReviewLink, listCheckins, listClientNotes,
-  markCheckinSent, saveCheckinQuestions, saveReviewLink, setNoteDone, updateClientNote, type CheckinRow, type ClientNote,
+  markCheckinSent, pingNote, saveCheckinQuestions, saveReviewLink, setNoteDone, updateClientNote, type CheckinRow, type ClientNote, type NoteFor,
 } from "../api/checkins";
+import { ForAndDue, ForAndDueTags, NOBODY } from "./NoteFor";
 import { useAuth } from "../hooks/useAuth";
 import { useSnack } from "../hooks/useSnack";
 import { checkinMessage, checkinState, cleanQuestions, daysAgo, DEFAULT_QUESTIONS, newQuestionId, scoreCheckin, whatTheySaid, type CheckinQuestion } from "../lib/checkin";
@@ -380,16 +381,23 @@ function HowTheyFeel({ agentId, clientName, fromName }: { agentId: string; clien
   );
 }
 
-function NoteRow({ n, agentId, byName, about }: { n: ClientNote; agentId: string; byName: string; about?: CheckinRow }) {
+function NoteRow({ n, agentId, byName, about, flash }: { n: ClientNote; agentId: string; byName: string; about?: CheckinRow; flash?: boolean }) {
   const link = useLinking();
-  const lit = !!about && link?.spotNotes === about.id;
+  const lit = (!!about && link?.spotNotes === about.id) || !!flash;
   const qc = useQueryClient();
   const showSnack = useSnack();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
+  const saved: NoteFor = { assignedTo: n.assigned_to, assignedToName: n.assigned_to_name, dueOn: n.due_on };
+  const [f, setF] = useState<NoteFor>(saved);
   const run = async (work: Promise<void>) => {
-    try { await work; await qc.invalidateQueries({ queryKey: ["clientNotes", agentId] }); return true; } catch (e) { showSnack((e as Error).message); return false; }
+    try { await work; await qc.invalidateQueries({ queryKey: ["clientNotes", agentId] }); void qc.invalidateQueries({ queryKey: ["myTodos"] }); return true; } catch (e) { showSnack((e as Error).message); return false; }
   };
+  async function save() {
+    if (!(await run(updateClientNote(n.id, noteForSaving(draft || n.body), n.kind, f, !!(n.assigned_to || n.due_on))))) return;
+    setEditing(false);
+    if (f.assignedTo && f.assignedTo !== n.assigned_to) await tell(n.id, f, showSnack);
+  }
   return (
     <Box id={`note-${n.id}`} sx={{ display: "flex", alignItems: "flex-start", gap: 1, py: 1, borderTop: `1px solid ${tokens.divider2}`, borderRadius: "6px", ...flashSx(lit), "&:hover .ek-tools": { opacity: 1 } }}>
       {n.kind === "todo" ? (
@@ -400,13 +408,17 @@ function NoteRow({ n, agentId, byName, about }: { n: ClientNote; agentId: string
         {editing ? (
           <>
             <NoteEditor initial={n.body} folder={agentId} placeholder="Write here" onChange={setDraft} autoFocus />
+            <Box sx={{ mt: 0.75 }}><ForAndDue value={f} onChange={setF} showDue={n.kind === "todo"} /></Box>
             <Box sx={{ display: "flex", gap: 1, mt: 0.75 }}>
-              <Button size="small" variant="contained" disableElevation disabled={isEmptyNote(draft || n.body)} onClick={async () => { if (await run(updateClientNote(n.id, noteForSaving(draft || n.body)))) setEditing(false); }}>Save</Button>
-              <Button size="small" onClick={() => setEditing(false)}>Cancel</Button>
+              <Button size="small" variant="contained" disableElevation disabled={isEmptyNote(draft || n.body)} onClick={() => void save()}>Save</Button>
+              <Button size="small" onClick={() => { setF(saved); setEditing(false); }}>Cancel</Button>
             </Box>
           </>
         ) : (
-          <NoteView body={n.body} muted={!!n.done_at} />
+          <>
+            <NoteView body={n.body} muted={!!n.done_at} />
+            <ForAndDueTags assignedToName={n.assigned_to_name} dueOn={n.kind === "todo" ? n.due_on : null} done={!!n.done_at} />
+          </>
         )}
         <Typography sx={{ fontSize: 12.5, color: tokens.ink3, mt: 0.25 }}>
           {day(n.created_at)}{n.created_by_name ? ` · ${n.created_by_name}` : ""}{n.done_at ? ` · done ${day(n.done_at)}${n.done_by_name ? ` by ${n.done_by_name}` : ""}` : ""}
@@ -415,7 +427,7 @@ function NoteRow({ n, agentId, byName, about }: { n: ClientNote; agentId: string
       </Box>
       {!editing && (
         <Box className="ek-tools" sx={{ display: "flex", opacity: { xs: 1, md: 0 } }}>
-          <Button size="small" onClick={() => { setDraft(""); setEditing(true); }} sx={{ minWidth: 0 }}>Edit</Button>
+          <Button size="small" onClick={() => { setDraft(""); setF(saved); setEditing(true); }} sx={{ minWidth: 0 }}>Edit</Button>
           <Tooltip title="Remove">
             <IconButton size="small" aria-label="Remove" onClick={() => { if (window.confirm("Remove this for good?")) void run(deleteClientNote(n.id)); }}><DeleteOutlineIcon fontSize="small" /></IconButton>
           </Tooltip>
@@ -423,6 +435,12 @@ function NoteRow({ n, agentId, byName, about }: { n: ClientNote; agentId: string
       )}
     </Box>
   );
+}
+
+/** WhatsApp the person it's for; say whether it went. */
+async function tell(id: string, f: NoteFor, showSnack: (m: string) => void) {
+  const ok = await pingNote(id);
+  showSnack(ok ? `${f.assignedToName} got a WhatsApp about it` : `Saved, but the WhatsApp to ${f.assignedToName} didn't go. Let them know yourself.`);
 }
 
 function ToDos({ agentId, byName }: { agentId: string; byName: string }) {
@@ -433,11 +451,28 @@ function ToDos({ agentId, byName }: { agentId: string; byName: string }) {
   const [composer, setComposer] = useState(0);
   const [showDone, setShowDone] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [f, setF] = useState<NoteFor>(NOBODY);
   const link = useLinking();
+  // Opened from a WhatsApp ("#note-…"): show that one.
+  const [flashId, setFlashId] = useState<string | null>(null);
+  const hashNote = typeof window !== "undefined" ? window.location.hash.match(/^#note-([0-9a-f-]{36})$/i)?.[1] ?? null : null;
+  const hashFound = !!hashNote && notes.some((n) => n.id === hashNote);
+  useEffect(() => {
+    if (!hashFound || !hashNote) return;
+    const n = notes.find((x) => x.id === hashNote);
+    if (n?.done_at) setShowDone(true);
+    const t1 = setTimeout(() => { document.getElementById(`note-${hashNote}`)?.scrollIntoView({ behavior: "smooth", block: "center" }); setFlashId(hashNote); }, 300);
+    const t2 = setTimeout(() => setFlashId(null), 2600);
+    history.replaceState(null, "", window.location.pathname + window.location.search);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hashFound]);
   const { data: checkins = [] } = useQuery({ queryKey: ["checkins", agentId], queryFn: () => listCheckins(agentId), retry: false });
   const byId = new Map(checkins.filter((c) => c.answered_at && c.answers).map((c) => [c.id, c]));
   const aboutOf = (n: ClientNote) => { const id = checkinIdOf(n.link); return id ? byId.get(id) : undefined; };
-  const open = notes.filter((n) => n.kind === "todo" && !n.done_at);
+  // Soonest due first; no due date after those; newest first otherwise.
+  const open = notes.filter((n) => n.kind === "todo" && !n.done_at)
+    .sort((a, b) => (a.due_on ?? "9999") < (b.due_on ?? "9999") ? -1 : (a.due_on ?? "9999") > (b.due_on ?? "9999") ? 1 : b.created_at.localeCompare(a.created_at));
   const done = notes.filter((n) => n.kind === "todo" && n.done_at);
   const plain = notes.filter((n) => n.kind === "note");
   const empty = isEmptyNote(html);
@@ -446,11 +481,15 @@ function ToDos({ agentId, byName }: { agentId: string; byName: string }) {
     if (empty) return;
     setSaving(true);
     try {
-      await addClientNote(agentId, kind, noteForSaving(html), byName, link?.replyTo ? checkinLink(agentId, link.replyTo.id) : null);
+      const id = await addClientNote(agentId, kind, noteForSaving(html), byName, link?.replyTo ? checkinLink(agentId, link.replyTo.id) : null, f);
+      const sentTo = f;
       link?.reply(null);
       setHtml("");
+      setF(NOBODY);
       setComposer((k) => k + 1); // a fresh, empty box
       await qc.invalidateQueries({ queryKey: ["clientNotes", agentId] });
+      void qc.invalidateQueries({ queryKey: ["myTodos"] });
+      if (sentTo.assignedTo) await tell(id, sentTo, showSnack);
     } catch (e) {
       showSnack((e as Error).message);
     } finally {
@@ -458,11 +497,17 @@ function ToDos({ agentId, byName }: { agentId: string; byName: string }) {
     }
   }
 
-  if (error) return null;
+  if (error instanceof CheckinsNotSetUp) return null;
+  if (error) return (
+    <Card title="To-dos and notes">
+      <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>Couldn't load the to-dos. Refresh the page to try again.</Typography>
+    </Card>
+  );
   return (
     <Card title="To-dos and notes" action={open.length ? <Typography sx={{ fontSize: 11.5, color: tokens.ink3 }}>{open.length} to do</Typography> : undefined}>
       {link?.replyTo && <Box sx={{ mb: 1 }}><CheckinQuote r={link.replyTo} onClick={() => link.showCheckin(link.replyTo!.id)} onRemove={() => link.reply(null)} /></Box>}
-      <Box id="ek-composer"><NoteEditor key={composer} folder={agentId} placeholder={link?.replyTo ? "What needs doing about this check-in?" : "What needs doing, or notes from a call. Paste screenshots and links here."} onChange={setHtml} /></Box>
+      <Box id="ek-composer"><NoteEditor key={composer} folder={agentId} placeholder={link?.replyTo ? "What needs doing about this check-in? Type / to link an SOP." : "What needs doing, or notes from a call. Type / to link an SOP."} onChange={setHtml} /></Box>
+      <Box sx={{ mt: 0.75 }}><ForAndDue value={f} onChange={setF} /></Box>
       <Box sx={{ display: "flex", gap: 1, mt: 1 }}>
         <Button variant="contained" disableElevation disabled={empty || saving} onClick={() => add("todo")}>Add to-do</Button>
         <Button variant="outlined" disabled={empty || saving} onClick={() => add("note")}>Add note</Button>
@@ -470,13 +515,13 @@ function ToDos({ agentId, byName }: { agentId: string; byName: string }) {
 
       <Box sx={{ mt: 1.75 }}>
         {open.length === 0 && plain.length === 0 && done.length === 0 && <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>Nothing yet.</Typography>}
-        {open.map((n) => <NoteRow key={n.id} n={n} agentId={agentId} byName={byName} about={aboutOf(n)} />)}
+        {open.map((n) => <NoteRow key={n.id} n={n} agentId={agentId} byName={byName} about={aboutOf(n)} flash={flashId === n.id} />)}
         {done.length > 0 && <Button size="small" onClick={() => setShowDone((v) => !v)} sx={{ mt: 0.5 }}>{showDone ? "Hide done" : `Show ${done.length} done`}</Button>}
-        {showDone && done.map((n) => <NoteRow key={n.id} n={n} agentId={agentId} byName={byName} about={aboutOf(n)} />)}
+        {showDone && done.map((n) => <NoteRow key={n.id} n={n} agentId={agentId} byName={byName} about={aboutOf(n)} flash={flashId === n.id} />)}
         {plain.length > 0 && (
           <>
             <Typography sx={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: tokens.ink2, mt: 2, mb: 0.5 }}>Notes</Typography>
-            {plain.map((n) => <NoteRow key={n.id} n={n} agentId={agentId} byName={byName} about={aboutOf(n)} />)}
+            {plain.map((n) => <NoteRow key={n.id} n={n} agentId={agentId} byName={byName} about={aboutOf(n)} flash={flashId === n.id} />)}
           </>
         )}
       </Box>

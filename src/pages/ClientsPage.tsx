@@ -57,6 +57,7 @@ import { clientPath } from "../lib/clientSlug";
 import SignupRequests from "../components/SignupRequests";
 import OnboardingAdminCard from "../components/OnboardingAdminCard";
 import RangePicker from "../components/RangePicker";
+import { TodoAvatarBadge } from "../components/NoteFor";
 import FundingChip from "../components/FundingChip";
 
 type ColKey = "health" | "name" | "agency" | "leads" | "spend" | "cpl" | "funding" | "active" | "last";
@@ -414,7 +415,7 @@ export default function ClientsPage() {
                     <TableCell sx={{ pr: 0 }}><HealthDot r={r} /></TableCell>
                     <TableCell>
                       <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, minWidth: 0 }}>
-                        {avatar(r, 36)}
+                        <TodoAvatarBadge agentId={r.c.agent_id}>{avatar(r, 36)}</TodoAvatarBadge>
                         <Box sx={{ minWidth: 0 }}>
                           <Typography sx={{ fontSize: 14, fontWeight: 600, lineHeight: 1.3, ...ellipsis }}>{r.name || "Unnamed account"}</Typography>
                           <Typography sx={{ fontSize: 12, color: tokens.ink2, lineHeight: 1.3, ...ellipsis }}>{r.area || "—"}</Typography>
@@ -480,7 +481,7 @@ export default function ClientsPage() {
                   sx={{ display: "block", textAlign: "left", width: "100%", bgcolor: "background.paper", border: `1px solid ${tokens.divider}`, borderRadius: "8px", p: 1.5 }}
                 >
                   <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
-                    {avatar(r, 40)}
+                    <TodoAvatarBadge agentId={r.c.agent_id}>{avatar(r, 40)}</TodoAvatarBadge>
                     <Box sx={{ minWidth: 0, flex: 1 }}>
                       <Typography sx={{ fontSize: 15, fontWeight: 600, lineHeight: 1.3, ...ellipsis }}><HealthDot r={r} inline />{r.name || "Unnamed account"}</Typography>
                       <Typography sx={{ fontSize: 12.5, color: tokens.ink2, lineHeight: 1.3, ...ellipsis }}>
