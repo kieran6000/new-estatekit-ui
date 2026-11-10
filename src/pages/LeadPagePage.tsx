@@ -84,13 +84,15 @@ export default function LeadPagePage() {
   const navigate = useNavigate();
   const { tier } = useTier();
   const { data: isOperator } = useIsOperator();
-  // Agents use their page; setting it up (sources, questions, form type,
-  // wording, link) is done by EstateKit. Locked sections stay visible,
-  // read-only, so agents can still see what their form does.
-  const canSetUp = isOperator === true;
   const { data: pages = [], isLoading: pagesLoading } = useLeadPages();
   const { data: pipelines = [], isLoading: pipelinesLoading } = usePipelines();
   const { data: profile } = useQuery({ queryKey: ["myProfile"], queryFn: getMyProfile, staleTime: 5 * 60_000 });
+  // Agents use their page; setting it up (sources, questions, form type,
+  // wording, link) is done by EstateKit, unless staff let this account build
+  // its own (e.g. another agency runs it). Locked sections stay visible,
+  // read-only, so agents can still see what their form does. The pixel and
+  // tracking stay with EstateKit either way.
+  const canSetUp = isOperator === true || profile?.buildsOwnForms === true;
   const updatePage = useUpdateLeadPage();
   const deletePage = useDeleteLeadPage();
   const showSnack = useSnack();

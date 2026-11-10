@@ -48,6 +48,8 @@ export interface ClientProfile {
   is_operator: boolean;
   onboarded: boolean;
   automations_paused: boolean;
+  /** They build their own forms and landing pages. */
+  builds_own_forms?: boolean;
   /** Email each new lead a confirmation in the agent's name. Off by default. */
   lead_confirmation_email: boolean;
   tier: string;
@@ -72,7 +74,7 @@ export interface ClientCardRow extends ClientProfile {
 }
 
 const PROFILE_COLS =
-  "agent_id, display_name, whatsapp_number, email, area, company, avatar_url, sidebar_logo_url, sidebar_color, fb_page_id, fb_ad_account_id, is_operator, onboarded, automations_paused, lead_confirmation_email, tier, renewal_date, contract_pdf_url, deactivated_at, deactivated_reason, deactivated_by_name, google_calendar_email, alert_contacts";
+  "agent_id, display_name, whatsapp_number, email, area, company, avatar_url, sidebar_logo_url, sidebar_color, fb_page_id, fb_ad_account_id, is_operator, onboarded, automations_paused, builds_own_forms, lead_confirmation_email, tier, renewal_date, contract_pdf_url, deactivated_at, deactivated_reason, deactivated_by_name, google_calendar_email, alert_contacts";
 
 /** Everything the grid needs, in two small reads. */
 export async function listClients(): Promise<ClientCardRow[]> {
@@ -255,7 +257,7 @@ export async function getClient(agentId: string): Promise<{ profile: ClientProfi
 }
 
 export type ClientProfilePatch = Partial<
-  Pick<ClientProfile, "display_name" | "whatsapp_number" | "email" | "area" | "company" | "avatar_url" | "fb_page_id" | "fb_ad_account_id" | "automations_paused" | "lead_confirmation_email" | "renewal_date" | "contract_pdf_url" | "tier" | "alert_contacts" | "sidebar_color" | "sidebar_logo_url">
+  Pick<ClientProfile, "display_name" | "whatsapp_number" | "email" | "area" | "company" | "avatar_url" | "fb_page_id" | "fb_ad_account_id" | "automations_paused" | "builds_own_forms" | "lead_confirmation_email" | "renewal_date" | "contract_pdf_url" | "tier" | "alert_contacts" | "sidebar_color" | "sidebar_logo_url">
 > & { /** The team they're in (their team lead), or null. */ team_lead_id?: string | null };
 
 /** Puts an agent in a team lead's team (or takes them out, with null). */
