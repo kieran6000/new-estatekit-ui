@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { waDigits } from "../_shared/phone.ts";
+import { pingMessage } from "./message.ts";
 
 // A to-do or note on a client was given to someone on the team: tell them on
 // WhatsApp, from the business number (TextMeBot).
@@ -16,24 +17,6 @@ const CORS = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, x-client-info, apikey",
 };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
-
-/** The note as plain words, for a WhatsApp. Links keep their words. */
-export function plainText(html: string): string {
-  return html
-    .replace(/<img[^>]*>/gi, " [screenshot] ")
-    .replace(/<\/(p|div|li)>|<br\s*\/?>/gi, "\n")
-    .replace(/<li[^>]*>/gi, "• ")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'")
-    .replace(/[ \t]+/g, " ")
-    .replace(/\n\s*\n+/g, "\n")
-    .trim();
-}
-
-function dueWords(due: string): string {
-  const d = new Date(`${due}T12:00:00Z`);
-  return d.toLocaleDateString("en-ZA", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
-}
 
 async function send(phone: string, text: string): Promise<boolean> {
   const apiKey = Deno.env.get("TEXTMEBOT_API_KEY");
@@ -65,9 +48,10 @@ Deno.serve(async (req) => {
 
   const { id } = await req.json().catch(() => ({}));
   if (typeof id !== "string") return json({ error: "Missing id" }, 400);
-  const { data: n } = await supabase.from("client_notes")
-    .select("id, agent_id, kind, body, assigned_to, due_on, pinged_to, done_at")
-    .eq("id", id).maybeSingle();
+  const cols = "id, agent_id, kind, body, assigned_to, due_on, pinged_to, done_at";
+  let { data: n, error: e1 } = await supabase.from("client_notes").select(`${cols}, num`).eq("id", id).maybeSingle();
+  // Before the number column exists.
+  if (e1) ({ data: n } = await supabase.from("client_notes").select(cols).eq("id", id).maybeSingle());
   if (!n) return json({ error: "Not found" }, 404);
   if (!n.assigned_to || n.pinged_to === n.assigned_to || n.done_at) return json({ sent: false, reason: "nothing to send" });
 
@@ -79,18 +63,21 @@ Deno.serve(async (req) => {
   if (to?.is_operator !== true) return json({ error: "Not on the team" }, 400);
   if (!waDigits(to.whatsapp_number)) return json({ sent: false, reason: "no number" });
 
-  const from = (me.display_name ?? "").trim().split(/\s+/)[0] || "Someone";
-  const clientName = (client?.display_name ?? "a client").trim();
-  const words = plainText(n.body);
-  const lines = [
-    n.kind === "todo" ? `📌 ${from} gave you a to-do for *${clientName}*` : `📝 ${from} left you a note on *${clientName}*`,
-    "",
-    words.length > 600 ? words.slice(0, 600) + "…" : words,
-  ];
-  if (n.kind === "todo" && n.due_on) lines.push("", `Due: *${dueWords(n.due_on)}*`);
-  lines.push("", `Open it: ${APP}/clients/${n.agent_id}/checkins#note-${n.id}`);
+  const first = (s: string | null | undefined, or: string) => (s ?? "").trim().split(/\s+/)[0] || or;
+  const num = (n as { num?: number | null }).num ?? null;
+  const text = pingMessage({
+    kind: n.kind === "note" ? "note" : "todo",
+    to: first(to.display_name, "there"),
+    from: first(me.display_name, "EstateKit"),
+    client: (client?.display_name ?? "a client").trim(),
+    body: n.body,
+    due: n.kind === "todo" ? n.due_on : null,
+    today: new Date().toLocaleDateString("en-CA", { timeZone: "Africa/Johannesburg" }),
+    num,
+    link: `${APP}/t/${num ?? n.id.slice(0, 8)}`,
+  });
 
-  const ok = await send(to.whatsapp_number, lines.join("\n"));
+  const ok = await send(to.whatsapp_number, text);
   if (!ok) return json({ sent: false, reason: "send failed" });
   await supabase.from("client_notes").update({ pinged_to: n.assigned_to, pinged_at: new Date().toISOString() }).eq("id", n.id);
   return json({ sent: true });

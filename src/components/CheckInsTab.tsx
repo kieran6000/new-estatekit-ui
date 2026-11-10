@@ -421,6 +421,14 @@ function NoteRow({ n, agentId, byName, about, flash }: { n: ClientNote; agentId:
           </>
         )}
         <Typography sx={{ fontSize: 12.5, color: tokens.ink3, mt: 0.25 }}>
+          {n.num && (
+            <Tooltip title="Its number, for talking about it. Tap to copy its link.">
+              <Box component="button" type="button" onClick={() => { void navigator.clipboard.writeText(`https://leads.estatekit.co/t/${n.num}`).then(() => showSnack(`Link to #${n.num} copied`)); }}
+                sx={{ font: "inherit", fontWeight: 600, color: tokens.ink2, bgcolor: "transparent", border: 0, p: 0, mr: 0.75, cursor: "pointer", "&:hover": { color: "primary.main" }, ...focusSx }}>
+                #{n.num}
+              </Box>
+            </Tooltip>
+          )}
           {day(n.created_at)}{n.created_by_name ? ` · ${n.created_by_name}` : ""}{n.done_at ? ` · done ${day(n.done_at)}${n.done_by_name ? ` by ${n.done_by_name}` : ""}` : ""}
           {n.link && !checkinIdOf(n.link) && <> · <Box component="a" href={n.link} target="_blank" rel="noopener" sx={{ color: "primary.main" }}>Open link</Box></>}
         </Typography>

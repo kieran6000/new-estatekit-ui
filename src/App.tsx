@@ -39,6 +39,7 @@ import CheckInPage from "./pages/CheckInPage";
 import ContractsAdminPage from "./pages/ContractsAdminPage";
 import WeeklyReportsAdminPage from "./pages/WeeklyReportsAdminPage";
 import { useAdminAccess } from "./hooks/useAdminAccess";
+import { findNoteByCode } from "./api/checkins";
 import AuditLogPage from "./pages/AuditLogPage";
 
 function Splash() {
@@ -73,6 +74,15 @@ function OperatorOnly({ children }: { children: React.ReactNode }) {
 
 /** Old /admin/clients/<id> links: on to the readable /clients/… address
  *  (the client page swaps the id for their name). */
+/** /t/<code>: the short link in a to-do's WhatsApp. Opens it on the client's Check-ins tab. */
+function ShortTodoLink() {
+  const { code = "" } = useParams();
+  const { data, isLoading } = useQuery({ queryKey: ["noteByCode", code], queryFn: () => findNoteByCode(code) });
+  if (isLoading) return <Splash />;
+  if (!data) return <Navigate to="/clients" replace />;
+  return <Navigate to={`/clients/${data.agent_id}/checkins#note-${data.id}`} replace />;
+}
+
 function OldClientLink() {
   const { agentId = "" } = useParams();
   const { search } = useLocation();
@@ -161,6 +171,7 @@ export default function App() {
               element={<AdminAutomationsPage />}
             />
             <Route path="/clients" element={<OperatorOnly><ClientsPage /></OperatorOnly>} />
+            <Route path="/t/:code" element={<OperatorOnly><ShortTodoLink /></OperatorOnly>} />
             <Route path="/clients/:who/:tab?" element={<AdminOnly><ClientDetailPage /></AdminOnly>} />
             <Route path="/admin/clients" element={<Navigate to="/clients" replace />} />
             <Route path="/admin/clients/:agentId/*" element={<OldClientLink />} />
