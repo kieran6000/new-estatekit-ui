@@ -158,15 +158,24 @@ export async function updateClientNote(id: string, body: string, kind: "todo" | 
   }
 }
 
-/** WhatsApp the person it's for, from the business number. Once per person:
- *  the server skips it if they've already been told. False if it didn't go. */
-export async function pingNote(id: string): Promise<boolean> {
-  const { data, error } = await supabase.functions.invoke("note-ping", { body: { id } });
+/** The WhatsApp we'd send the person it's for, to edit before it goes. */
+export async function draftPing(id: string): Promise<string> {
+  const { data, error } = await supabase.functions.invoke("note-ping", { body: { id, preview: true } });
+  if (error || typeof data?.text !== "string") {
+    console.error("note-ping preview failed:", error?.message);
+    throw new Error("Couldn't write the message. Try again.");
+  }
+  return data.text;
+}
+
+/** Sends that text to the person it's for, from the business number. */
+export async function sendPing(id: string, text: string): Promise<boolean> {
+  const { data, error } = await supabase.functions.invoke("note-ping", { body: { id, text } });
   if (error) {
     console.error("note-ping failed:", error.message);
     return false;
   }
-  return data?.sent === true || data?.reason === "nothing to send";
+  return data?.sent === true;
 }
 
 /** The team (EstateKit staff): who a to-do can be for. */

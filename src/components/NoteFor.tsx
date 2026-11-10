@@ -1,6 +1,8 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Badge, Box, Button, IconButton, Menu, MenuItem, Tooltip } from "@mui/material";
+import { Badge, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Menu, MenuItem, TextField, Tooltip, Typography } from "@mui/material";
+import { draftPing, sendPing } from "../api/checkins";
+import { useSnack } from "../hooks/useSnack";
 import PersonAddAltRoundedIcon from "@mui/icons-material/PersonAddAltRounded";
 import EventRoundedIcon from "@mui/icons-material/EventRounded";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
@@ -109,6 +111,45 @@ export function ForAndDueTags({ assignedToName, dueOn, done }: { assignedToName:
         </Box>
       )}
     </Box>
+  );
+}
+
+/** Right after giving a to-do to someone: the WhatsApp, written for you,
+ *  to change as you like. Send goes from the business number. */
+export function TellDialog({ noteId, toName, onClose }: { noteId: string; toName: string; onClose: () => void }) {
+  const showSnack = useSnack();
+  const [text, setText] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  useEffect(() => {
+    let gone = false;
+    draftPing(noteId).then((t) => { if (!gone) setText(t); }).catch((e) => { if (!gone) { showSnack((e as Error).message); onClose(); } });
+    return () => { gone = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [noteId]);
+  async function send() {
+    if (!text?.trim()) return;
+    setSending(true);
+    const ok = await sendPing(noteId, text);
+    setSending(false);
+    showSnack(ok ? `Sent to ${toName}` : `It didn't go through. Try again, or message ${toName} yourself.`);
+    if (ok) onClose();
+  }
+  return (
+    <Dialog open onClose={sending ? undefined : onClose} fullWidth maxWidth="xs">
+      <DialogTitle sx={{ pb: 0.5 }}>WhatsApp to {toName}</DialogTitle>
+      <DialogContent>
+        <Typography sx={{ fontSize: 13, color: tokens.ink2, mb: 1.5 }}>Change the words if you like. It goes from the business number.</Typography>
+        {text === null ? (
+          <Box sx={{ height: 180, borderRadius: "4px", bgcolor: tokens.surface2 }} />
+        ) : (
+          <TextField value={text} onChange={(e) => setText(e.target.value)} multiline minRows={7} maxRows={16} fullWidth autoFocus slotProps={{ htmlInput: { maxLength: 2000, "aria-label": "Message" } }} />
+        )}
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2 }}>
+        <Button onClick={onClose} disabled={sending}>Don't send</Button>
+        <Button variant="contained" disableElevation onClick={() => void send()} disabled={sending || !text?.trim()}>{sending ? "Sending…" : "Send"}</Button>
+      </DialogActions>
+    </Dialog>
   );
 }
 

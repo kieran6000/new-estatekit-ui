@@ -11,9 +11,9 @@ import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
 import { listAgentProfiles } from "../api/_client";
 import {
   addClientNote, checkinIdOf, checkinLink, CheckinsNotSetUp, createCheckin, deleteClientNote, getCheckinQuestions, getReviewLink, listCheckins, listClientNotes,
-  markCheckinSent, pingNote, saveCheckinQuestions, saveReviewLink, setNoteDone, updateClientNote, type CheckinRow, type ClientNote, type NoteFor,
+  markCheckinSent, saveCheckinQuestions, saveReviewLink, setNoteDone, updateClientNote, type CheckinRow, type ClientNote, type NoteFor,
 } from "../api/checkins";
-import { ForAndDue, ForAndDueTags, NOBODY } from "./NoteFor";
+import { ForAndDue, ForAndDueTags, NOBODY, TellDialog } from "./NoteFor";
 import { useAuth } from "../hooks/useAuth";
 import { useSnack } from "../hooks/useSnack";
 import { checkinMessage, checkinState, cleanQuestions, daysAgo, DEFAULT_QUESTIONS, newQuestionId, scoreCheckin, whatTheySaid, type CheckinQuestion } from "../lib/checkin";
@@ -390,13 +390,14 @@ function NoteRow({ n, agentId, byName, about, flash }: { n: ClientNote; agentId:
   const [draft, setDraft] = useState("");
   const saved: NoteFor = { assignedTo: n.assigned_to, assignedToName: n.assigned_to_name, dueOn: n.due_on };
   const [f, setF] = useState<NoteFor>(saved);
+  const [tellTo, setTellTo] = useState<NoteFor | null>(null);
   const run = async (work: Promise<void>) => {
     try { await work; await qc.invalidateQueries({ queryKey: ["clientNotes", agentId] }); void qc.invalidateQueries({ queryKey: ["myTodos"] }); return true; } catch (e) { showSnack((e as Error).message); return false; }
   };
   async function save() {
     if (!(await run(updateClientNote(n.id, noteForSaving(draft || n.body), n.kind, f, !!(n.assigned_to || n.due_on))))) return;
     setEditing(false);
-    if (f.assignedTo && f.assignedTo !== n.assigned_to) await tell(n.id, f, showSnack);
+    if (f.assignedTo && f.assignedTo !== n.assigned_to) setTellTo(f);
   }
   return (
     <Box id={`note-${n.id}`} sx={{ display: "flex", alignItems: "flex-start", gap: 1, py: 1, borderTop: `1px solid ${tokens.divider2}`, borderRadius: "6px", ...flashSx(lit), "&:hover .ek-tools": { opacity: 1 } }}>
@@ -441,14 +442,9 @@ function NoteRow({ n, agentId, byName, about, flash }: { n: ClientNote; agentId:
           </Tooltip>
         </Box>
       )}
+      {tellTo && <TellDialog noteId={n.id} toName={tellTo.assignedToName ?? ""} onClose={() => setTellTo(null)} />}
     </Box>
   );
-}
-
-/** WhatsApp the person it's for; say whether it went. */
-async function tell(id: string, f: NoteFor, showSnack: (m: string) => void) {
-  const ok = await pingNote(id);
-  showSnack(ok ? `${f.assignedToName} got a WhatsApp about it` : `Saved, but the WhatsApp to ${f.assignedToName} didn't go. Let them know yourself.`);
 }
 
 function ToDos({ agentId, byName }: { agentId: string; byName: string }) {
@@ -460,6 +456,7 @@ function ToDos({ agentId, byName }: { agentId: string; byName: string }) {
   const [showDone, setShowDone] = useState(false);
   const [saving, setSaving] = useState(false);
   const [f, setF] = useState<NoteFor>(NOBODY);
+  const [tell, setTell] = useState<{ id: string; name: string } | null>(null);
   const link = useLinking();
   // Opened from a WhatsApp ("#note-…"): show that one.
   const [flashId, setFlashId] = useState<string | null>(null);
@@ -497,7 +494,7 @@ function ToDos({ agentId, byName }: { agentId: string; byName: string }) {
       setComposer((k) => k + 1); // a fresh, empty box
       await qc.invalidateQueries({ queryKey: ["clientNotes", agentId] });
       void qc.invalidateQueries({ queryKey: ["myTodos"] });
-      if (sentTo.assignedTo) await tell(id, sentTo, showSnack);
+      if (sentTo.assignedTo) setTell({ id, name: sentTo.assignedToName ?? "" });
     } catch (e) {
       showSnack((e as Error).message);
     } finally {
@@ -516,6 +513,7 @@ function ToDos({ agentId, byName }: { agentId: string; byName: string }) {
       {link?.replyTo && <Box sx={{ mb: 1 }}><CheckinQuote r={link.replyTo} onClick={() => link.showCheckin(link.replyTo!.id)} onRemove={() => link.reply(null)} /></Box>}
       <Box id="ek-composer"><NoteEditor key={composer} folder={agentId} placeholder={link?.replyTo ? "What needs doing about this check-in? Type / to link an SOP." : "What needs doing, or notes from a call. Type / to link an SOP."} onChange={setHtml} /></Box>
       <Box sx={{ mt: 0.75 }}><ForAndDue value={f} onChange={setF} /></Box>
+      {tell && <TellDialog noteId={tell.id} toName={tell.name} onClose={() => setTell(null)} />}
       <Box sx={{ display: "flex", gap: 1, mt: 1 }}>
         <Button variant="contained" disableElevation disabled={empty || saving} onClick={() => add("todo")}>Add to-do</Button>
         <Button variant="outlined" disabled={empty || saving} onClick={() => add("note")}>Add note</Button>

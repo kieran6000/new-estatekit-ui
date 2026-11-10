@@ -6,8 +6,9 @@ import { pingMessage } from "./message.ts";
 // A to-do or note on a client was given to someone on the team: tell them on
 // WhatsApp, from the business number (TextMeBot).
 //
-//   POST { id }   staff only. Sends once per person: saving the same to-do
-//                 again doesn't ping again; giving it to someone else does.
+//   POST { id, preview: true }  staff only: the message as we'd write it,
+//                               for the person to edit. Sends nothing.
+//   POST { id, text }           staff only: sends exactly that text.
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 const APP = "https://leads.estatekit.co";
@@ -46,14 +47,15 @@ Deno.serve(async (req) => {
   const { data: me } = await supabase.from("agent_profiles").select("is_operator, display_name").eq("agent_id", uid).maybeSingle();
   if (me?.is_operator !== true) return json({ error: "Not allowed" }, 403);
 
-  const { id } = await req.json().catch(() => ({}));
+  const { id, preview, text: edited } = await req.json().catch(() => ({}));
   if (typeof id !== "string") return json({ error: "Missing id" }, 400);
+  if (!preview && (typeof edited !== "string" || !edited.trim() || edited.length > 2000)) return json({ error: "Missing message" }, 400);
   const cols = "id, agent_id, kind, body, assigned_to, due_on, pinged_to, done_at";
   let { data: n, error: e1 } = await supabase.from("client_notes").select(`${cols}, num`).eq("id", id).maybeSingle();
   // Before the number column exists.
   if (e1) ({ data: n } = await supabase.from("client_notes").select(cols).eq("id", id).maybeSingle());
   if (!n) return json({ error: "Not found" }, 404);
-  if (!n.assigned_to || n.pinged_to === n.assigned_to || n.done_at) return json({ sent: false, reason: "nothing to send" });
+  if (!n.assigned_to) return json({ sent: false, reason: "nobody to tell" });
 
   const [{ data: to }, { data: client }] = await Promise.all([
     supabase.from("agent_profiles").select("display_name, whatsapp_number, is_operator").eq("agent_id", n.assigned_to).maybeSingle(),
@@ -77,7 +79,8 @@ Deno.serve(async (req) => {
     link: `${APP}/t/${num ?? n.id.slice(0, 8)}`,
   });
 
-  const ok = await send(to.whatsapp_number, text);
+  if (preview) return json({ text });
+  const ok = await send(to.whatsapp_number, edited.trim());
   if (!ok) return json({ sent: false, reason: "send failed" });
   await supabase.from("client_notes").update({ pinged_to: n.assigned_to, pinged_at: new Date().toISOString() }).eq("id", n.id);
   return json({ sent: true });
