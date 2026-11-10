@@ -93,6 +93,8 @@ export default function LeadPagePage() {
   // read-only, so agents can still see what their form does. The pixel and
   // tracking stay with EstateKit either way.
   const canSetUp = isOperator === true || profile?.buildsOwnForms === true;
+  // The pixel and Conversions API: staff, or a self-run account for its own pages.
+  const canTrack = canSetUp;
   const updatePage = useUpdateLeadPage();
   const deletePage = useDeleteLeadPage();
   const showSnack = useSnack();
@@ -148,7 +150,7 @@ export default function LeadPagePage() {
   const { data: capiConfig, isSuccess: capiLoaded } = useQuery({
     queryKey: ["capiConfig", capiPixel],
     queryFn: () => getCapiConfig(capiPixel),
-    enabled: isOperator === true && !!capiPixel,
+    enabled: canTrack && !!capiPixel,
   });
   const capiOn = capiLoaded ? !!capiConfig?.enabled : undefined;
 
@@ -214,7 +216,7 @@ export default function LeadPagePage() {
     { value: "form", label: "Form" },
     { value: "thanks", label: "Thank-you page" },
     ...(!fb ? [{ value: "link" as const, label: "Link" }] : []),
-    ...(isOperator ? [{ value: "tracking" as const, label: "Tracking" }] : []),
+    ...(canTrack ? [{ value: "tracking" as const, label: "Tracking" }] : []),
   ];
   const tab: PageTab = tabs.some((t) => t.value === tabParam) ? (tabParam as PageTab) : "form";
 
@@ -246,7 +248,7 @@ export default function LeadPagePage() {
 
   // Staff only. Website pages: the pixel and its backup (Conversions API).
   // Instant forms: the dataset that gets what happened to each lead.
-  const trackingSection = isOperator ? (
+  const trackingSection = canTrack ? (
     <Section title="Facebook tracking">
       {/* Plain words on purpose, but Facebook's own names where you'll
           see them in Events Manager ("Dataset ID", "Conversions API"),
@@ -393,7 +395,7 @@ export default function LeadPagePage() {
       {page.sourceType === "fb_form" && (
         <Box hidden={tab !== "tracking"}>
           <Box sx={{ maxWidth: 720, mx: "auto", p: 2, display: "flex", flexDirection: "column", gap: 3 }}>
-            {isOperator && <LeadPageFunnelStats pageId={page.id} active={tab === "tracking"} fb />}
+            {canTrack && <LeadPageFunnelStats pageId={page.id} active={tab === "tracking"} fb />}
             {trackingSection}
           </Box>
         </Box>
@@ -612,7 +614,7 @@ export default function LeadPagePage() {
           <ShareSection page={page} onUpdateSlug={canSetUp ? (slug) => updatePage.mutate({ id: page.id, patch: { slug } }) : undefined} />
         </Box>
       </Box>
-      {isOperator && (
+      {canTrack && (
         <Box hidden={tab !== "tracking"}>
           <Box sx={{ display: "flex", flexDirection: "column", gap: 3, p: 2, maxWidth: 960, mx: "auto" }}>
             {/* The pixel first (it's set up once, and everything else depends on it), then the numbers. */}

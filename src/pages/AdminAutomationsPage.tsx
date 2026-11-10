@@ -2,7 +2,7 @@ import { Navigate, Route, Routes, useMatch } from "react-router-dom";
 import { Box, CircularProgress, Typography, useMediaQuery } from "@mui/material";
 import BoltIcon from "@mui/icons-material/Bolt";
 import { tokens } from "../theme";
-import { useIsOperator } from "../hooks/useAutomations";
+import { useAdminAccess } from "../hooks/useAdminAccess";
 import { WorkflowEditorPage, WorkflowListPage } from "../components/WorkflowBuilder";
 
 // Every account runs on its own workflows (Oct 2026). The old shared
@@ -10,9 +10,10 @@ import { WorkflowEditorPage, WorkflowListPage } from "../components/WorkflowBuil
 // standard workflows, and the Workflows tab is where they're changed.
 
 export default function AdminAutomationsPage() {
-  const { data: isOperator, isLoading: loadingOperator } = useIsOperator();
+  // Staff, or a self-run account (its own workflows only: the database shows it no other).
+  const { canAdmin, loading } = useAdminAccess();
 
-  if (loadingOperator) {
+  if (loading) {
     return (
       <Box sx={{ display: "flex", justifyContent: "center", p: 6 }}>
         <CircularProgress />
@@ -20,7 +21,7 @@ export default function AdminAutomationsPage() {
     );
   }
 
-  if (!isOperator) {
+  if (!canAdmin) {
     return (
       <Box sx={{ p: 4 }}>
         <Typography variant="h6" sx={{ fontWeight: 500 }}>
