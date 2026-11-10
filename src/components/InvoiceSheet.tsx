@@ -15,6 +15,8 @@ function Line({ k, v }: { k: string; v: string }) {
 /** The invoice as a page: the client's link, the team's check and the saved PDF
  *  all use this, so what's checked is what's sent. */
 export default function InvoiceSheet({ doc, reference, paid }: { doc: InvoiceDocument; reference: string; paid?: boolean }) {
+  const adSpend = doc.adSpend ?? 0;
+  const total = doc.total ?? doc.amount + adSpend;
   return (
     <article className="inv-sheet">
       <header className="inv-banner">
@@ -64,6 +66,15 @@ export default function InvoiceSheet({ doc, reference, paid }: { doc: InvoiceDoc
               <td className="inv-num">{money(doc.amount)}</td>
               <td className="inv-num"><b>{money(doc.amount)}</b></td>
             </tr>
+            {adSpend > 0 && (
+              <tr>
+                <th scope="row">Ad spend</th>
+                <td>Paid to Meta (Facebook) at cost, no markup{doc.period && <span>{doc.period}</span>}</td>
+                <td className="inv-num">1</td>
+                <td className="inv-num">{money(adSpend)}</td>
+                <td className="inv-num"><b>{money(adSpend)}</b></td>
+              </tr>
+            )}
           </tbody>
         </table>
 
@@ -73,9 +84,9 @@ export default function InvoiceSheet({ doc, reference, paid }: { doc: InvoiceDoc
             {doc.terms.map((t) => <p key={t}>{t}</p>)}
           </div>
           <div>
-            <div className="inv-sum"><b>Subtotal</b><span>{money(doc.amount)}</span></div>
+            <div className="inv-sum"><b>Subtotal</b><span>{money(total)}</span></div>
             <div className="inv-sum"><b>VAT</b><span>Not applicable</span></div>
-            <div className="inv-total"><span>{paid ? "Paid" : "Total due"}</span><span>{money(doc.amount)}</span></div>
+            <div className="inv-total"><span>{paid ? "Paid" : "Total due"}</span><span>{money(total)}</span></div>
           </div>
         </section>
 

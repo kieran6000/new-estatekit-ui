@@ -4,7 +4,7 @@ import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogCont
 import AddIcon from "@mui/icons-material/Add";
 import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
 import { cancelInvoice, createInvoice, deleteInvoice, InvoicesNotSetUp, listInvoices, markInvoicePaid, markInvoiceShared, type InvoiceRow } from "../api/invoices";
-import { buildInvoice, DEFAULT_AMOUNT, DEFAULT_DESCRIPTION, DEFAULT_ITEM, DEFAULT_PERIOD, defaultDueDate, invoiceStatus, longDate, money, todaySA, whatsappDigits } from "../lib/invoiceTemplate";
+import { buildInvoice, DEFAULT_AMOUNT, DEFAULT_DESCRIPTION, DEFAULT_ITEM, DEFAULT_PERIOD, defaultDueDate, INVOICE_PLANS, invoiceStatus, longDate, MIN_DAILY_AD_SPEND, money, todaySA, whatsappDigits, type InvoicePlan } from "../lib/invoiceTemplate";
 import { useSnack } from "../hooks/useSnack";
 import { tokens } from "../theme";
 import { toneColours, type ContractClient } from "./ContractsSection";
@@ -132,19 +132,26 @@ function NewInvoiceDialog({ onClose, client }: { onClose: () => void; client: Co
   const phone = useMediaQuery("(max-width:600px)");
   const [form, setForm] = useState({
     name: client.name, agency: client.company ?? "", phone: client.phone ?? "", email: client.email ?? "",
-    item: DEFAULT_ITEM, description: DEFAULT_DESCRIPTION, period: DEFAULT_PERIOD, amount: String(DEFAULT_AMOUNT), dueDate: defaultDueDate(),
+    item: DEFAULT_ITEM as string, description: DEFAULT_DESCRIPTION, period: DEFAULT_PERIOD as string, amount: String(DEFAULT_AMOUNT), dueDate: defaultDueDate(),
+    plan: "monthly" as InvoicePlan, adSpendOn: "no", adSpend: String(MIN_DAILY_AD_SPEND * INVOICE_PLANS.monthly.days),
   });
+  /** Picking a plan fills in its item, period, price and a starting ad spend. */
+  const pickPlan = (plan: InvoicePlan) => {
+    const p = INVOICE_PLANS[plan];
+    setForm((f) => ({ ...f, plan, item: p.item, period: p.period, amount: String(p.amount), adSpend: String(MIN_DAILY_AD_SPEND * p.days) }));
+  };
   const [previewing, setPreviewing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm((f) => ({ ...f, [key]: e.target.value }));
 
   const amount = toNumber(form.amount);
+  const adSpend = form.adSpendOn === "yes" ? toNumber(form.adSpend) : 0;
   const today = todaySA();
   const phoneOk = !!whatsappDigits(form.phone);
-  const complete = !!form.name.trim() && phoneOk && !!form.item.trim() && amount > 0 && form.dueDate >= today;
+  const complete = !!form.name.trim() && phoneOk && !!form.item.trim() && amount > 0 && (form.adSpendOn === "no" || adSpend > 0) && form.dueDate >= today;
   const doc = useMemo(
-    () => (previewing ? buildInvoice({ ...form, amount, issueDate: today }) : null),
+    () => (previewing ? buildInvoice({ ...form, amount, adSpend, issueDate: today }) : null),
     [previewing], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
@@ -176,10 +183,20 @@ function NewInvoiceDialog({ onClose, client }: { onClose: () => void; client: Co
             <TextField label="Agency" value={form.agency} onChange={set("agency")} />
             <TextField label="WhatsApp number" required value={form.phone} onChange={set("phone")} error={!!form.phone && !phoneOk} helperText="The invoice link goes here, so check it's right." />
             <TextField label="Email" value={form.email} onChange={set("email")} />
-            <TextField label="Item" required value={form.item} onChange={set("item")} />
-            <TextField label="Description" value={form.description} onChange={set("description")} />
-            <TextField label="Period" value={form.period} onChange={set("period")} helperText='For example "1 month" or "December 2026".' />
-            <TextField label="Amount" required value={form.amount} onChange={set("amount")} slotProps={{ htmlInput: { inputMode: "decimal" }, input: { startAdornment: <InputAdornment position="start">R</InputAdornment> } }} />
+            <TextField select label="Plan" required value={form.plan} onChange={(e) => pickPlan(e.target.value as InvoicePlan)}>
+              {(Object.keys(INVOICE_PLANS) as InvoicePlan[]).map((k) => <MenuItem key={k} value={k}>{INVOICE_PLANS[k].label}</MenuItem>)}
+            </TextField>
+            <TextField label="Fee" required value={form.amount} onChange={set("amount")} helperText={form.plan === "quarter" ? "Splitting it into 2 payments? Put half here." : undefined} slotProps={{ htmlInput: { inputMode: "decimal" }, input: { startAdornment: <InputAdornment position="start">R</InputAdornment> } }} />
+            <TextField select label="Ad spend" required value={form.adSpendOn} onChange={set("adSpendOn")}>
+              <MenuItem value="no">Not on this invoice: they pay Meta directly</MenuItem>
+              <MenuItem value="yes">On this invoice: we pay Meta for them</MenuItem>
+            </TextField>
+            {form.adSpendOn === "yes" && (
+              <TextField label="Ad spend amount" required value={form.adSpend} onChange={set("adSpend")}
+                helperText={`R${MIN_DAILY_AD_SPEND} a day × ${INVOICE_PLANS[form.plan].days} days = ${money(MIN_DAILY_AD_SPEND * INVOICE_PLANS[form.plan].days)} at the minimum. Paid to Meta at cost.`}
+                slotProps={{ htmlInput: { inputMode: "decimal" }, input: { startAdornment: <InputAdornment position="start">R</InputAdornment> } }} />
+            )}
+            {(amount > 0 || adSpend > 0) && <Typography sx={{ fontSize: 15, fontWeight: 600 }}>Total due: {money(amount + adSpend)}</Typography>}
             <TextField label="Due date" required type="date" value={form.dueDate} onChange={set("dueDate")} error={!!form.dueDate && form.dueDate < today} helperText={form.dueDate && form.dueDate < today ? "This date has already passed." : undefined} slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: today } }} />
           </Box>
         )}
