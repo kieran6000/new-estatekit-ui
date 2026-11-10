@@ -38,16 +38,14 @@ export async function saveCapiConfig(args: {
   enabled: boolean;
   testEventCode: string | null;
 }): Promise<void> {
-  const row: Record<string, unknown> = {
-    pixel_id: args.pixelId,
-    enabled: args.enabled,
-    test_event_code: args.testEventCode || null,
-  };
-  if (args.accessToken?.trim()) row.access_token = args.accessToken.trim();
-
-  const { error } = await supabase
-    .from("fb_capi_config")
-    .upsert(row, { onConflict: "pixel_id" });
+  // A server-side save: browsers can't read the token column, and an upsert
+  // that overwrites a column needs to read it.
+  const { error } = await supabase.rpc("save_capi_config", {
+    p_pixel_id: args.pixelId,
+    p_enabled: args.enabled,
+    p_test_event_code: args.testEventCode || null,
+    p_access_token: args.accessToken?.trim() || null,
+  });
   if (error) throw new Error(error.message);
 }
 
