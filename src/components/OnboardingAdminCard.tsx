@@ -51,13 +51,13 @@ export default function OnboardingAdminCard() {
         <TextField
           size="small"
           label="“What happens next” video"
-          placeholder="YouTube link or a video-file link (.mp4)"
+          placeholder="Any video link: YouTube, Vimeo, Loom…"
           value={video}
           onChange={(e) => setVideo(e.target.value)}
           onBlur={saveVideo}
           onKeyDown={(e) => e.key === "Enter" && saveVideo()}
           error={bad}
-          helperText={bad ? "That link can't be played. Use a YouTube link or a video-file link (.mp4)." : "Shown after they send the form. Saves when you click away."}
+          helperText={bad ? "That isn't a link. Copy the video's link (it starts with https://) and paste it here." : "Shown after they send the form. Saves when you click away."}
         />
       </Box>
 

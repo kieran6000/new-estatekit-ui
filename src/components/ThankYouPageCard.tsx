@@ -51,17 +51,17 @@ export default function ThankYouPageCard({ page, canSetUp }: { page: LeadPage; c
       <Box>
         <Typography sx={{ fontSize: 14, fontWeight: 600 }}>Video</Typography>
         <Typography sx={{ fontSize: 12.5, color: "text.secondary", mb: 1 }}>
-          A short video under the headline: who you are and what happens next. It shows in the preview a moment after you paste it. Paste a YouTube link or a video-file link (.mp4).
+          A short video under the headline: who you are and what happens next. It shows in the preview a moment after you paste it. Paste any video link: YouTube, Vimeo, Loom, Wistia, Google Drive, Facebook, Dropbox or a video file.
         </Typography>
         <TextField
           size="small"
           fullWidth
-          placeholder="e.g. https://youtu.be/…"
+          placeholder="Paste a video link, e.g. https://vimeo.com/…"
           value={video}
           disabled={!canSetUp}
           onChange={(e) => setVideo(e.target.value)}
           error={!playable}
-          helperText={!playable ? "That link can't be played. Use a YouTube link or a video-file link (.mp4)." : " "}
+          helperText={!playable ? "That isn't a link. Copy the video's link (it starts with https://) and paste it here." : " "}
         />
       </Box>
 

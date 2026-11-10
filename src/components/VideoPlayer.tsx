@@ -9,6 +9,9 @@ import VolumeUpRoundedIcon from "@mui/icons-material/VolumeUpRounded";
 import VolumeOffRoundedIcon from "@mui/icons-material/VolumeOffRounded";
 import FullscreenRoundedIcon from "@mui/icons-material/FullscreenRounded";
 import { accentButton, accentOnVideo, readableOn } from "../lib/contrast";
+import { videoKind } from "../lib/videoLink";
+
+export { canPlayVideo, videoKind } from "../lib/videoLink";
 
 // Our own video player, so we can measure every viewer the way Wistia does:
 // where they are, every second, and the furthest point they reach.
@@ -37,19 +40,6 @@ export interface VideoProgress {
   ended?: boolean;
 }
 
-type Kind = { type: "youtube"; id: string } | { type: "file"; src: string } | null;
-
-/** What kind of video a link is, or null if we can't play it. */
-export function videoKind(url: string): Kind {
-  const u = (url || "").trim();
-  if (!u) return null;
-  const yt = u.match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([\w-]{11})/i);
-  if (yt) return { type: "youtube", id: yt[1] };
-  if (/^https:\/\/\S+\.(mp4|webm|mov|m4v)(\?\S*)?$/i.test(u)) return { type: "file", src: u };
-  return null;
-}
-
-export const canPlayVideo = (url: string) => videoKind(url) !== null;
 
 const clock = (s: number) => {
   const t = Math.max(0, Math.floor(s || 0));
@@ -69,6 +59,8 @@ export default function VideoPlayer({ url, accent = "#1a73e8", autoplay = false,
   if (!kind) return null;
 
   if (kind.type === "youtube") return <YouTubePlayer key={kind.id} id={kind.id} accent={accent} autoplay={autoplay} endCta={endCta} report={report} />;
+  if (kind.type === "vimeo") return <VimeoPlayer key={kind.id} id={kind.id} hash={kind.hash} accent={accent} autoplay={autoplay} endCta={endCta} report={report} />;
+  if (kind.type === "embed") return <EmbedPlayer key={kind.src} src={kind.src} site={kind.site} tall={kind.tall} />;
   return <FilePlayer key={kind.src} src={kind.src} accent={accent} autoplay={autoplay} endCta={endCta} report={report} />;
 }
 
@@ -172,19 +164,122 @@ function FilePlayer({ src, accent, autoplay, endCta, report }: { src: string; ac
   );
 }
 
-function Frame({ children, frameRef, onPointerMove }: { children: React.ReactNode; frameRef?: React.Ref<HTMLDivElement>; onPointerMove?: React.PointerEventHandler<HTMLDivElement> }) {
+function Frame({ children, frameRef, onPointerMove, tall }: { children: React.ReactNode; frameRef?: React.Ref<HTMLDivElement>; onPointerMove?: React.PointerEventHandler<HTMLDivElement>; /** An upright video (TikTok, Reels). */ tall?: boolean }) {
   return (
     <Box
       ref={frameRef}
       onPointerMove={onPointerMove}
       sx={{
-        position: "relative", pt: "56.25%", borderRadius: "10px", overflow: "hidden", bgcolor: "#000",
+        position: "relative", pt: tall ? "177.78%" : "56.25%", borderRadius: "10px", overflow: "hidden", bgcolor: "#000",
+        ...(tall ? { width: "min(100%, 340px)", mx: "auto" } : {}),
         "& iframe, & video": { position: "absolute", inset: 0, width: "100%", height: "100%", border: 0 },
         "&:fullscreen": { pt: 0, borderRadius: 0 },
       }}
     >
       {children}
     </Box>
+  );
+}
+
+// ── Any other site: its own player in a frame ───────────────────────────────
+// (Loom, Wistia, Google Drive, Facebook, TikTok… or any link). We can't see
+// how far people watch inside someone else's player, so these aren't tracked.
+function EmbedPlayer({ src, site, tall }: { src: string; site: string; tall?: boolean }) {
+  return (
+    <Frame tall={tall}>
+      <iframe
+        src={src}
+        title={`Video (${site})`}
+        allow="autoplay; fullscreen; picture-in-picture; encrypted-media; clipboard-write"
+        allowFullScreen
+        referrerPolicy="strict-origin-when-cross-origin"
+        loading="lazy"
+      />
+    </Frame>
+  );
+}
+
+// ── Vimeo: Vimeo's clean player, tracked through its API ────────────────────
+type VimeoApi = {
+  on(event: string, cb: (d: { seconds: number; duration: number }) => void): void;
+  play(): Promise<void>;
+  setMuted(m: boolean): Promise<boolean>;
+  setVolume(v: number): Promise<number>;
+  setCurrentTime(s: number): Promise<number>;
+  destroy(): Promise<void>;
+};
+declare global {
+  interface Window { Vimeo?: { Player: new (el: HTMLIFrameElement) => VimeoApi } }
+}
+let vimeoReady: Promise<NonNullable<Window["Vimeo"]>> | null = null;
+function loadVimeo() {
+  if (window.Vimeo?.Player) return Promise.resolve(window.Vimeo);
+  if (!vimeoReady) {
+    vimeoReady = new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = "https://player.vimeo.com/api/player.js";
+      s.async = true;
+      s.onload = () => (window.Vimeo ? resolve(window.Vimeo) : reject(new Error("vimeo")));
+      s.onerror = () => { vimeoReady = null; reject(new Error("vimeo")); };
+      document.head.appendChild(s);
+    });
+  }
+  return vimeoReady;
+}
+
+function VimeoPlayer({ id, hash, accent, autoplay, endCta, report }: { id: string; hash?: string; accent: string; autoplay: boolean; endCta?: EndCta; report: Report }) {
+  const frame = useRef<HTMLIFrameElement>(null);
+  const player = useRef<VimeoApi | null>(null);
+  // Playing silently by itself, waiting for the tap that turns the sound on.
+  const teaser = useRef(autoplay);
+  const [teasing, setTeasing] = useState(false);
+  const [ended, setEnded] = useState(false);
+  const params = new URLSearchParams({ title: "0", byline: "0", portrait: "0", dnt: "1", playsinline: "1", pip: "0" });
+  if (hash) params.set("h", hash);
+  if (autoplay) { params.set("autoplay", "1"); params.set("muted", "1"); }
+  if (accent.startsWith("#")) params.set("color", accent.slice(1));
+  const src = `https://player.vimeo.com/video/${id}?${params.toString()}`;
+
+  useEffect(() => {
+    let gone = false;
+    loadVimeo().then((V) => {
+      if (gone || !frame.current) return;
+      const p = new V.Player(frame.current);
+      player.current = p;
+      const send = (d: { seconds: number; duration: number }, playing: boolean, end = false) => {
+        if (!teaser.current) report.current?.({ position: d.seconds, duration: d.duration || 0, playing, ...(end ? { ended: true } : {}) });
+      };
+      p.on("play", () => { setEnded(false); if (teaser.current) setTeasing(true); });
+      p.on("timeupdate", (d) => send(d, true));
+      p.on("pause", (d) => send(d, false));
+      p.on("ended", (d) => {
+        if (teaser.current) { teaser.current = false; setTeasing(false); return; }
+        send({ seconds: d.duration, duration: d.duration }, false, true);
+        setEnded(true);
+      });
+    }).catch(() => { /* the video still plays; it just isn't tracked */ });
+    return () => { gone = true; void player.current?.destroy().catch(() => {}); player.current = null; };
+  }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const soundOn = () => {
+    const p = player.current;
+    teaser.current = false;
+    setTeasing(false);
+    if (!p) return;
+    void p.setMuted(false).then(() => p.setVolume(1)).then(() => p.setCurrentTime(0)).then(() => p.play()).catch(() => {});
+  };
+  const replay = () => { setEnded(false); void player.current?.setCurrentTime(0).then(() => player.current?.play()).catch(() => {}); };
+
+  return (
+    <Frame>
+      <iframe ref={frame} src={src} title="Video" allow="autoplay; fullscreen; picture-in-picture; encrypted-media" allowFullScreen />
+      {ended && endCta && <EndOverlay accent={accent} cta={endCta} onReplay={replay} />}
+      {teasing && (
+        <ButtonBase onClick={soundOn} aria-label="Turn on sound" sx={{ position: "absolute", inset: 0, display: "block" }}>
+          <SoundBadge accent={accent} />
+        </ButtonBase>
+      )}
+    </Frame>
   );
 }
 
