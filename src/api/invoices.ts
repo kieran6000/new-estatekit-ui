@@ -44,7 +44,7 @@ export async function createInvoice(agentId: string, document: InvoiceDocument):
     agent_id: agentId,
     client_name: document.name,
     client_phone: whatsappDigits(document.phone),
-    amount: document.amount,
+    amount: document.total ?? document.amount,
     due_date: document.dueDate,
     document,
   });
