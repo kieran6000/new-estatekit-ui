@@ -57,6 +57,7 @@ import { clientPath } from "../lib/clientSlug";
 import SignupRequests from "../components/SignupRequests";
 import OnboardingAdminCard from "../components/OnboardingAdminCard";
 import RangePicker from "../components/RangePicker";
+import { todaySA, useMyTodos } from "../components/NoteFor";
 import FundingChip from "../components/FundingChip";
 
 type ColKey = "health" | "name" | "agency" | "leads" | "spend" | "cpl" | "funding" | "active" | "last";
@@ -157,6 +158,21 @@ function ActiveLabel({ a }: { a: LastActivity | null }) {
 /** Operators: every account, with leads, ad spend and cost per lead for the
  *  chosen dates, how they pay for ads, their latest sign of life, and a way
  *  into their Ads Manager. A table on a computer, cards on a phone. */
+/** A red "2 for you" next to an account with your open to-dos; opens them. */
+function YourTodos({ agentId }: { agentId: string }) {
+  const { data = [] } = useMyTodos();
+  const mine = data.filter((t) => t.agent_id === agentId);
+  if (!mine.length) return null;
+  const late = mine.some((t) => t.due_on && t.due_on < todaySA());
+  return (
+    <Tooltip title={late ? "Your to-dos here, one is late" : "Your to-dos here"}>
+      <Box component="span" sx={{ ml: 1, px: 0.75, py: "1px", borderRadius: "999px", bgcolor: tokens.red, color: "#fff", fontSize: 11.5, fontWeight: 700, verticalAlign: "1px" }}>
+        {mine.length} for you{late ? " · late" : ""}
+      </Box>
+    </Tooltip>
+  );
+}
+
 export default function ClientsPage() {
   const navigate = useNavigate();
   const showSnack = useSnack();
@@ -416,7 +432,7 @@ export default function ClientsPage() {
                       <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, minWidth: 0 }}>
                         {avatar(r, 36)}
                         <Box sx={{ minWidth: 0 }}>
-                          <Typography sx={{ fontSize: 14, fontWeight: 600, lineHeight: 1.3, ...ellipsis }}>{r.name || "Unnamed account"}</Typography>
+                          <Typography sx={{ fontSize: 14, fontWeight: 600, lineHeight: 1.3, ...ellipsis }}>{r.name || "Unnamed account"}<YourTodos agentId={r.c.agent_id} /></Typography>
                           <Typography sx={{ fontSize: 12, color: tokens.ink2, lineHeight: 1.3, ...ellipsis }}>{r.area || "—"}</Typography>
                         </Box>
                       </Box>
@@ -482,7 +498,7 @@ export default function ClientsPage() {
                   <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
                     {avatar(r, 40)}
                     <Box sx={{ minWidth: 0, flex: 1 }}>
-                      <Typography sx={{ fontSize: 15, fontWeight: 600, lineHeight: 1.3, ...ellipsis }}><HealthDot r={r} inline />{r.name || "Unnamed account"}</Typography>
+                      <Typography sx={{ fontSize: 15, fontWeight: 600, lineHeight: 1.3, ...ellipsis }}><HealthDot r={r} inline />{r.name || "Unnamed account"}<YourTodos agentId={r.c.agent_id} /></Typography>
                       <Typography sx={{ fontSize: 12.5, color: tokens.ink2, lineHeight: 1.3, ...ellipsis }}>
                         {[r.area, r.agency].filter(Boolean).join(" · ") || "—"}
                       </Typography>

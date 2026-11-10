@@ -86,6 +86,7 @@ import AccountBalanceOutlinedIcon from "@mui/icons-material/AccountBalanceOutlin
 import ContractsSection from "../components/ContractsSection";
 import InvoicesSection from "../components/InvoicesSection";
 import { useAdminAccess } from "../hooks/useAdminAccess";
+import { TodoBadge } from "../components/NoteFor";
 import { prettyPhone, toE164, waDigits } from "../lib/phone";
 
 /** Digits in international form, so 083… and +2783… compare equal. */
@@ -170,7 +171,7 @@ export default function ClientDetailPage() {
             <Box sx={{ maxWidth: 1440, mx: "auto", px: { xs: 0.5, md: 2 } }}>
               <Tabs value={staffView ? tab : "overview"} onChange={(_e, v) => pick(v)} variant="scrollable" allowScrollButtonsMobile>
                 <Tab value="overview" label="Overview" />
-                {staffView && <Tab value="checkins" label="Check-ins" />}
+                {staffView && <Tab value="checkins" label={<TodoBadge agentId={data.profile.agent_id}>Check-ins</TodoBadge>} sx={{ overflow: "visible", pr: 3 }} />}
                 {staffView && <Tab value="brief" label="Brief" />}
                 {staffView && <Tab value="contract" label="Paperwork" />}
                 {staffView && <Tab value="settings" label="Settings" />}

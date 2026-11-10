@@ -29,7 +29,15 @@ export interface ClientNote {
   created_by_name: string | null;
   done_at: string | null;
   done_by_name: string | null;
+  /** Someone on the team it's for (they got a WhatsApp). */
+  assigned_to: string | null;
+  assigned_to_name: string | null;
+  /** A to-do's due date, "2026-11-14". */
+  due_on: string | null;
 }
+
+/** Who a to-do or note is for, and when a to-do is due. */
+export interface NoteFor { assignedTo: string | null; assignedToName: string | null; dueOn: string | null }
 
 /** The tables haven't been created yet. */
 export class CheckinsNotSetUp extends Error {}
@@ -99,7 +107,7 @@ export async function markCheckinSent(id: string, sent: boolean): Promise<void> 
 
 export async function listClientNotes(agentId: string): Promise<ClientNote[]> {
   const { data, error } = await supabase.from("client_notes")
-    .select("id, kind, body, link, created_at, created_by_name, done_at, done_by_name")
+    .select("id, kind, body, link, created_at, created_by_name, done_at, done_by_name, assigned_to, assigned_to_name, due_on")
     .eq("agent_id", agentId).order("created_at", { ascending: false }).limit(500);
   if (error) {
     if (notSetUp(error)) throw new CheckinsNotSetUp(error.message);
@@ -113,20 +121,56 @@ export async function listClientNotes(agentId: string): Promise<ClientNote[]> {
 export const checkinLink = (agentId: string, checkinId: string) => `https://leads.estatekit.co/clients/${agentId}/checkins#checkin-${checkinId}`;
 export const checkinIdOf = (link: string | null | undefined) => link?.match(/#checkin-([0-9a-f-]{36})$/i)?.[1] ?? null;
 
-export async function addClientNote(agentId: string, kind: "todo" | "note", body: string, byName: string, link: string | null = null): Promise<void> {
-  const { error } = await supabase.from("client_notes").insert({ agent_id: agentId, kind, body, link, created_by_name: byName || null });
-  if (error) {
-    console.error("addClientNote failed:", error.message);
+const forCols = (f: NoteFor, kind: "todo" | "note") => ({
+  assigned_to: f.assignedTo,
+  assigned_to_name: f.assignedTo ? f.assignedToName : null,
+  due_on: kind === "todo" ? f.dueOn : null,
+});
+
+/** Saves it; returns its id. */
+export async function addClientNote(agentId: string, kind: "todo" | "note", body: string, byName: string, link: string | null = null, f: NoteFor = { assignedTo: null, assignedToName: null, dueOn: null }): Promise<string> {
+  const { data, error } = await supabase.from("client_notes").insert({ agent_id: agentId, kind, body, link, created_by_name: byName || null, ...forCols(f, kind) }).select("id").single();
+  if (error || !data) {
+    console.error("addClientNote failed:", error?.message);
     throw new Error("Couldn't save that. Try again.");
   }
+  return data.id as string;
 }
 
-export async function updateClientNote(id: string, body: string): Promise<void> {
-  const { error } = await supabase.from("client_notes").update({ body }).eq("id", id);
+export async function updateClientNote(id: string, body: string, kind: "todo" | "note", f: NoteFor): Promise<void> {
+  const { error } = await supabase.from("client_notes").update({ body, ...forCols(f, kind) }).eq("id", id);
   if (error) {
     console.error("updateClientNote failed:", error.message);
     throw new Error("Couldn't save that. Try again.");
   }
+}
+
+/** WhatsApp the person it's for, from the business number. Once per person:
+ *  the server skips it if they've already been told. False if it didn't go. */
+export async function pingNote(id: string): Promise<boolean> {
+  const { data, error } = await supabase.functions.invoke("note-ping", { body: { id } });
+  if (error) {
+    console.error("note-ping failed:", error.message);
+    return false;
+  }
+  return data?.sent === true || data?.reason === "nothing to send";
+}
+
+/** The team (EstateKit staff): who a to-do can be for. */
+export async function listTeam(): Promise<{ agent_id: string; name: string }[]> {
+  const { data, error } = await supabase.from("agent_profiles").select("agent_id, display_name").eq("is_operator", true).order("display_name");
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((p) => ({ agent_id: p.agent_id as string, name: ((p.display_name as string | null) ?? "").trim().split(/\s+/)[0] || "Someone" }));
+}
+
+export interface MyTodo { id: string; agent_id: string; due_on: string | null }
+
+/** Open to-dos for the signed-in person, on every client: the red counts. */
+export async function listMyTodos(uid: string): Promise<MyTodo[]> {
+  const { data, error } = await supabase.from("client_notes").select("id, agent_id, due_on")
+    .eq("assigned_to", uid).eq("kind", "todo").is("done_at", null).limit(500);
+  if (error) return [];
+  return (data ?? []) as MyTodo[];
 }
 
 export async function setNoteDone(id: string, done: boolean, byName: string): Promise<void> {

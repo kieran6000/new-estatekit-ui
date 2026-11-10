@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Box, IconButton, Tooltip } from "@mui/material";
+import { Box, IconButton, Paper, Popper, Tooltip } from "@mui/material";
+import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
+import { matchSops, slashQuery, SOP_DOC, type Sop } from "../lib/sops";
 import FormatBoldIcon from "@mui/icons-material/FormatBold";
 import FormatItalicIcon from "@mui/icons-material/FormatItalic";
 import FormatListBulletedIcon from "@mui/icons-material/FormatListBulleted";
@@ -40,6 +42,14 @@ const NOTE_STYLE = {
   "& ul, & ol": { my: 0.5, pl: 2.5 },
   "& a": { color: "primary.main" },
   "& img": { display: "block", maxWidth: "100%", maxHeight: 360, borderRadius: "6px", border: `1px solid ${tokens.divider}`, my: 0.75, cursor: "zoom-in" },
+  // An SOP link reads as a chip: "📄 Ad setup".
+  [`& a[href^="${SOP_DOC}"]`]: {
+    display: "inline-flex", alignItems: "center", gap: "4px", px: "7px", py: "1px", borderRadius: "999px",
+    bgcolor: tokens.surface2, border: `1px solid ${tokens.divider}`, color: "text.primary",
+    fontSize: "0.92em", fontWeight: 500, textDecoration: "none", whiteSpace: "nowrap", verticalAlign: "baseline",
+    "&::before": { content: '"📄"', fontSize: "0.9em" },
+    "&:hover": { borderColor: tokens.primary, color: tokens.primary },
+  },
 } as const;
 
 /** A saved note, shown. Screenshots open full size in a new tab. */
@@ -78,6 +88,42 @@ export function NoteEditor({ initial = "", folder, placeholder, onChange, autoFo
     if (autoFocus) ref.current.focus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // "/" opens a list of SOPs; picking one puts in a link to it.
+  const [slash, setSlash] = useState<{ query: string; rect: DOMRect } | null>(null);
+  const [pick, setPick] = useState(0);
+  const slashAt = useRef<{ node: Node; start: number; end: number } | null>(null);
+  const sops = slash ? matchSops(slash.query) : [];
+
+  const lookForSlash = () => {
+    const sel = window.getSelection();
+    const node = sel?.anchorNode;
+    if (!sel || !sel.isCollapsed || !node || node.nodeType !== Node.TEXT_NODE || !ref.current?.contains(node)) { setSlash(null); return; }
+    const end = sel.anchorOffset;
+    const query = slashQuery((node.textContent ?? "").slice(0, end));
+    if (query === null) { setSlash(null); return; }
+    slashAt.current = { node, start: end - query.length - 1, end };
+    const range = document.createRange();
+    range.setStart(node, end - query.length - 1);
+    range.setEnd(node, end);
+    const rect = range.getClientRects()[0] ?? ref.current.getBoundingClientRect();
+    setSlash((was) => { if (!was || was.query !== query) setPick(0); return { query, rect }; });
+  };
+
+  const putSop = (sop: Sop) => {
+    const at = slashAt.current;
+    const sel = window.getSelection();
+    if (at && sel && ref.current?.contains(at.node)) {
+      const range = document.createRange();
+      range.setStart(at.node, Math.max(0, at.start));
+      range.setEnd(at.node, Math.min(at.end, at.node.textContent?.length ?? at.end));
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+    document.execCommand("insertHTML", false, `<a href="${sop.url}">${sop.name}</a>&nbsp;`);
+    setSlash(null);
+    changed();
+  };
 
   const changed = () => {
     const html = ref.current?.innerHTML ?? "";
@@ -138,8 +184,15 @@ export function NoteEditor({ initial = "", folder, placeholder, onChange, autoFo
         contentEditable
         suppressContentEditableWarning
         onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
-        onInput={changed}
+        onBlur={() => { setFocused(false); setSlash(null); }}
+        onInput={() => { changed(); lookForSlash(); }}
+        onKeyDown={(e) => {
+          if (!slash || !sops.length) return;
+          if (e.key === "ArrowDown") { e.preventDefault(); setPick((p) => (p + 1) % sops.length); }
+          else if (e.key === "ArrowUp") { e.preventDefault(); setPick((p) => (p - 1 + sops.length) % sops.length); }
+          else if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); putSop(sops[Math.min(pick, sops.length - 1)]); }
+          else if (e.key === "Escape") { e.preventDefault(); setSlash(null); }
+        }}
         onPaste={(e) => {
           const files = [...e.clipboardData.files];
           if (files.some((f) => f.type.startsWith("image/"))) { e.preventDefault(); void addImages(files); return; }
@@ -155,6 +208,28 @@ export function NoteEditor({ initial = "", folder, placeholder, onChange, autoFo
       {empty && (
         <Box sx={{ position: "absolute", top: 8, left: 12, right: 12, color: tokens.ink3, fontSize: 14.5, pointerEvents: "none" }}>{placeholder}</Box>
       )}
+      <Popper
+        open={!!slash && sops.length > 0}
+        anchorEl={slash ? { getBoundingClientRect: () => slash.rect } : null}
+        placement="bottom-start"
+        sx={{ zIndex: 1500 }}
+      >
+        <Paper elevation={6} role="listbox" aria-label="SOPs" sx={{ mt: 0.5, py: 0.5, minWidth: 220, borderRadius: "8px" }}>
+          <Box sx={{ px: 1.5, pt: 0.25, pb: 0.5, fontSize: 11.5, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: tokens.ink3 }}>Link an SOP</Box>
+          {sops.map((s, i) => (
+            <Box
+              key={s.url}
+              role="option"
+              aria-selected={i === pick}
+              onMouseDown={(e) => { e.preventDefault(); putSop(s); }}
+              onMouseEnter={() => setPick(i)}
+              sx={{ display: "flex", alignItems: "center", gap: 1, px: 1.5, py: 0.75, fontSize: 14, cursor: "pointer", bgcolor: i === pick ? tokens.hover : "transparent" }}
+            >
+              <DescriptionOutlinedIcon sx={{ fontSize: 17, color: tokens.ink3 }} />{s.name}
+            </Box>
+          ))}
+        </Paper>
+      </Popper>
       {(focused || !empty || uploading > 0) && (
         <Box sx={{ display: "flex", alignItems: "center", gap: 0.25, px: 0.5, py: 0.25, borderTop: `1px solid ${tokens.divider2}` }}>
           {tool("Bold", <FormatBoldIcon fontSize="small" />, () => run("bold"))}
@@ -162,6 +237,15 @@ export function NoteEditor({ initial = "", folder, placeholder, onChange, autoFo
           {tool("Underline", <FormatUnderlinedIcon fontSize="small" />, () => run("underline"))}
           {tool("List", <FormatListBulletedIcon fontSize="small" />, () => run("insertUnorderedList"))}
           {tool("Add a link", <LinkIcon fontSize="small" />, addLink)}
+          {tool("Link an SOP (or type /)", <DescriptionOutlinedIcon fontSize="small" />, () => {
+            ref.current?.focus();
+            const sel = window.getSelection();
+            const node = sel?.anchorNode;
+            const before = node && node.nodeType === Node.TEXT_NODE ? (node.textContent ?? "").slice(0, sel!.anchorOffset) : "";
+            document.execCommand("insertText", false, before && !/\s$/.test(before) ? " /" : "/");
+            changed();
+            lookForSlash();
+          })}
           {tool("Add a screenshot (or paste one)", <ImageOutlinedIcon fontSize="small" />, () => fileRef.current?.click())}
           {uploading > 0 && <Box component="span" sx={{ fontSize: 12.5, color: tokens.ink2, ml: 1 }}>Adding picture…</Box>}
           <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => { void addImages([...(e.target.files ?? [])]); e.target.value = ""; }} />
