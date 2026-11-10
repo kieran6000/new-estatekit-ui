@@ -203,10 +203,10 @@ export async function findNoteByCode(code: string): Promise<{ id: string; agent_
 
 export interface MyTodo { id: string; agent_id: string; due_on: string | null }
 
-/** Open to-dos for the signed-in person, on every client: the red counts. */
-export async function listMyTodos(uid: string): Promise<MyTodo[]> {
+/** Every open to-do on every client, whoever it's for: the red counts (staff see them all). */
+export async function listOpenTodos(): Promise<MyTodo[]> {
   const { data, error } = await supabase.from("client_notes").select("id, agent_id, due_on")
-    .eq("assigned_to", uid).eq("kind", "todo").is("done_at", null).limit(500);
+    .eq("kind", "todo").is("done_at", null).limit(2000);
   if (error) return [];
   return (data ?? []) as MyTodo[];
 }

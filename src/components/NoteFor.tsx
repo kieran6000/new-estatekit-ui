@@ -6,7 +6,7 @@ import { useSnack } from "../hooks/useSnack";
 import PersonAddAltRoundedIcon from "@mui/icons-material/PersonAddAltRounded";
 import EventRoundedIcon from "@mui/icons-material/EventRounded";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
-import { listMyTodos, listTeam, type NoteFor } from "../api/checkins";
+import { listOpenTodos, listTeam, type NoteFor } from "../api/checkins";
 import { useAuth } from "../hooks/useAuth";
 import { tokens } from "../theme";
 
@@ -202,21 +202,21 @@ export function TellDialog({ noteId, toName, onClose }: { noteId: string; toName
   );
 }
 
-/** The signed-in person's open to-dos, on every client. */
+/** Every open to-do, on every client, whoever it's for. */
 export function useMyTodos() {
   const { user } = useAuth();
-  return useQuery({ queryKey: ["myTodos", user?.id], queryFn: () => listMyTodos(user!.id), enabled: !!user?.id, staleTime: 60_000, refetchInterval: 5 * 60_000 });
+  return useQuery({ queryKey: ["myTodos", user?.id], queryFn: listOpenTodos, enabled: !!user?.id, staleTime: 60_000, refetchInterval: 5 * 60_000 });
 }
 
-/** A red count on an account's photo: your open to-dos there (or, with no
- *  agentId, on every account). Nothing when there are none. */
+/** A red count on an account's photo: its open to-dos, whoever they're for
+ *  (or, with no agentId, on every account). Nothing when there are none. */
 export function TodoAvatarBadge({ agentId, children }: { agentId?: string; children: React.ReactNode }) {
   const { data = [] } = useMyTodos();
   const mine = agentId ? data.filter((t) => t.agent_id === agentId) : data;
   if (!mine.length) return <>{children}</>;
   const late = mine.some((t) => t.due_on && t.due_on < todaySA());
   return (
-    <Tooltip title={`${mine.length} to-do${mine.length === 1 ? "" : "s"} for you${late ? ", one is late" : ""}`}>
+    <Tooltip title={`${mine.length} open to-do${mine.length === 1 ? "" : "s"}${late ? ", one is late" : ""}`}>
       <Badge badgeContent={mine.length} color="error" overlap="circular" max={9} sx={{ "& .MuiBadge-badge": { fontSize: 11, height: 18, minWidth: 18, border: "2px solid", borderColor: "background.paper" } }}>
         {children}
       </Badge>
@@ -224,7 +224,7 @@ export function TodoAvatarBadge({ agentId, children }: { agentId?: string; child
   );
 }
 
-/** A red count: your open to-dos (on one client, or all of them). */
+/** A red count: open to-dos (on one client, or all of them). */
 export function TodoBadge({ agentId, children }: { agentId?: string; children: React.ReactNode }) {
   const { data = [] } = useMyTodos();
   const mine = agentId ? data.filter((t) => t.agent_id === agentId) : data;
