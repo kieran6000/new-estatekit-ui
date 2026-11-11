@@ -29,7 +29,7 @@ import { getAdsTable, setAdBudget, setAdStatus, type AdsLevel, type AdsRow } fro
 import { METRICS, adsMoney, formatMetric, metricValues, sumRows, toneOf, type MetricKey, type Tone } from "../lib/adTargets";
 import { ALL_COLUMNS, COLUMN_LABEL, PRESETS, choiceLabel, loadPrefs, savePrefs, visibleColumns, type ColId, type ColumnPrefs, type PresetKey } from "../lib/adColumns";
 import { useSnack } from "../hooks/useSnack";
-import { listLeadIdsForAds, type AdLeadMetric } from "../api/leads";
+import { listLeadIdsForAds, unlinkedResults, type AdLeadMetric } from "../api/leads";
 import { useAdminAccess } from "../hooks/useAdminAccess";
 import LeadDetailPage from "../pages/LeadDetailPage";
 
@@ -317,6 +317,14 @@ export default function AdsTable({ agentId, adAccountId, since, until, view, onV
 
   // ── Columns ──
   const colIds = visibleColumns(prefs, view.level);
+  // Booked and signed leads no ad is recorded for: in the leads bar, not here. Said under the table so the two add up.
+  const showsEk = colIds.includes("booked") || colIds.includes("mandates");
+  const { data: unlinked } = useQuery({
+    queryKey: ["unlinkedResults", agentId, since, until],
+    queryFn: () => unlinkedResults(agentId, since, until),
+    enabled: showsEk && !!agentId,
+    staleTime: 10 * 60_000,
+  });
   const width = (id: ColId | "name") => prefs.widths[id] ?? defaultWidth(id, view.level);
   const metricOf = (id: ColId) => METRICS.find((m) => m.key === id);
   // Drag a column's right edge to resize it (remembered).
@@ -746,6 +754,19 @@ export default function AdsTable({ agentId, adAccountId, since, until, view, onV
                 </TableBody>
               </Table>
             </Box>
+            {unlinked && (unlinked.booked > 0 || unlinked.mandates > 0) && (
+              <Box sx={{ p: "8px 12px", fontSize: 12.5, color: FB.sub, borderTop: `1px solid ${FB.line}` }}>
+                {(() => {
+                  const what = [unlinked.booked ? `${unlinked.booked} booked` : "", unlinked.mandates ? `${unlinked.mandates} mandate${unlinked.mandates === 1 ? "" : "s"}` : ""].filter(Boolean).join(" and ");
+                  const why = [
+                    unlinked.imported ? `${unlinked.imported} brought over from before EstateKit` : "",
+                    unlinked.page ? `${unlinked.page} from a landing page opened without the ad's tag` : "",
+                    unlinked.form ? `${unlinked.form} where Facebook didn't say which ad` : "",
+                  ].filter(Boolean).join(", ");
+                  return <>Not in this table: {what} from leads with no ad recorded ({why}). The leads bar above counts them.</>;
+                })()}
+              </Box>
+            )}
             {prefs.tint && (
               <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap", alignItems: "center", p: "8px 12px", fontSize: 12, color: FB.sub, borderTop: `1px solid ${FB.line}` }}>
                 {(["good", "near", "bad"] as const).map((t) => (

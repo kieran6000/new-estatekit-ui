@@ -70,6 +70,7 @@ function activeSection(pathname: string): string {
   if (pathname.startsWith("/account")) return "account";
   if (pathname.startsWith("/setup")) return "setup";
   if (pathname.startsWith("/calendar")) return "calendar";
+  if (pathname === "/team") return "team";
   return "leads";
 }
 
@@ -143,6 +144,8 @@ export default function AppShell() {
     { key: "leads", label: "Leads", icon: <ContactsOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <ContactsIcon sx={{ fontSize: SZ }} />, to: "/leads" },
     { key: "calendar", label: "Calendar", icon: <CalendarMonthOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <CalendarMonthIcon sx={{ fontSize: SZ }} />, to: "/calendar" },
     { key: "mypage", label: "Forms", icon: <WebOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <WebIcon sx={{ fontSize: SZ }} />, to: "/lead-page" },
+    // A team lead (e.g. Bennie): what each of their agents did with their leads.
+    ...(isTeamLead && !isOperator ? [{ key: "team", label: "My team", icon: <GroupsOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <GroupsIcon sx={{ fontSize: SZ }} />, to: "/team" }] : []),
   ];
 
   // A self-run account (another agency runs it): its own Overview and Automations.
@@ -176,6 +179,7 @@ export default function AppShell() {
     { key: "leads", label: "Leads", icon: <ContactsOutlinedIcon />, activeIcon: <ContactsIcon />, to: "/leads" },
     { key: "calendar", label: "Calendar", icon: <CalendarMonthOutlinedIcon />, activeIcon: <CalendarMonthIcon />, to: "/calendar" },
     { key: "mypage", label: "Forms", icon: <WebOutlinedIcon />, activeIcon: <WebIcon />, to: "/lead-page" },
+    ...(isTeamLead && !isOperator ? [{ key: "team", label: "My team", icon: <GroupsOutlinedIcon />, activeIcon: <GroupsIcon />, to: "/team" }] : []),
     ...(isOperator || selfRun
       ? [
           { key: "overview", label: "Overview", icon: <DashboardOutlinedIcon />, activeIcon: <DashboardIcon />, to: myClientPage },
