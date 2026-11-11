@@ -29,14 +29,14 @@ function Change({ now, before, lessIsBetter = false }: { now: number; before: nu
 }
 
 /** 7 → "7 min", 150 → "2.5 hours", 1610 → "1.1 days". */
-function duration(mins: number): string {
+export function duration(mins: number): string {
   if (mins < 60) return `${mins} min`;
   if (mins < 1440) { const h = Math.round(mins / 6) / 10; return `${h} hour${h === 1 ? "" : "s"}`; }
   const d = Math.round(mins / 144) / 10;
   return `${d} day${d === 1 ? "" : "s"}`;
 }
 
-function speedVerdict(mins: number): { cls: "great" | "ok" | "slow"; word: string } {
+export function speedVerdict(mins: number): { cls: "great" | "ok" | "slow"; word: string } {
   if (mins <= 5) return { cls: "great", word: "Great" };
   if (mins <= 30) return { cls: "ok", word: "OK" };
   return { cls: "slow", word: "Too slow" };

@@ -10,6 +10,7 @@ import LoginPage from "./pages/LoginPage";
 import WelcomePage from "./pages/WelcomePage";
 import LeadsPage from "./pages/LeadsPage";
 import TeamPipelinePage from "./pages/TeamPipelinePage";
+import TeamReportPage from "./pages/TeamReportPage";
 import LeadDetailPage from "./pages/LeadDetailPage";
 import CalendarPage from "./pages/CalendarPage";
 import { getActiveAgentIdSync } from "./api/_client";
@@ -159,6 +160,7 @@ export default function App() {
           <Route element={<OnboardingGate><AppShell /></OnboardingGate>}>
             <Route path="/leads" element={<LeadsPage />} />
             <Route path="/team-pipeline/:id" element={<TeamPipelinePage />} />
+            <Route path="/team" element={<TeamReportPage />} />
             <Route path="/leads/:id" element={<LeadDetailPage />} />
             <Route path="/calendar" element={<CalendarPage />} />
             {/* Overview now lives on the client's page (Overview tab). */}
