@@ -194,6 +194,44 @@ export async function listLeadIdsForAds(agentId: string, adIds: string[], since:
   return ids.filter((id) => hit.has(id));
 }
 
+export interface UnlinkedResults {
+  booked: number;
+  mandates: number;
+  /** Why no ad is known, for those booked or signed. */
+  imported: number;
+  page: number;
+  form: number;
+}
+
+/** Booked and signed leads in these dates with no ad recorded, so the ads
+ *  table can't count them (the leads bar does). Same dates and rules as the
+ *  table's Booked and Mandates columns (fb-adset-table's ekResults). */
+export async function unlinkedResults(agentId: string, since: string, until: string): Promise<UnlinkedResults> {
+  const end = new Date(`${until}T00:00:00Z`);
+  end.setUTCDate(end.getUTCDate() + 1);
+  const { data, error } = await supabase.from("leads").select("id, stage, fb_lead_id, source_page_id")
+    .eq("agent_id", agentId).is("fb_ad_id", null)
+    .gte("created_at", `${since}T00:00:00Z`).lt("created_at", end.toISOString()).range(0, 9999);
+  if (error) throw new Error(error.message);
+  const leads = (data ?? []) as { id: string; stage: string; fb_lead_id: string | null; source_page_id: string | null }[];
+  const booked = new Set(leads.filter((l) => BOOKED_STAGES.includes(l.stage)).map((l) => l.id));
+  const signed = new Set(leads.filter((l) => l.stage === MANDATE_STAGE).map((l) => l.id));
+  const ids = leads.map((l) => l.id);
+  for (let i = 0; i < ids.length; i += 300) {
+    const { data: ev, error: e2 } = await supabase.from("lead_events").select("lead_id, to_value").in("lead_id", ids.slice(i, i + 300)).eq("event_type", "stage_changed").in("to_value", BOOKED_STAGES);
+    if (e2) throw new Error(e2.message);
+    for (const e of ev ?? []) { booked.add(e.lead_id as string); if (e.to_value === MANDATE_STAGE) signed.add(e.lead_id as string); }
+  }
+  const hit = leads.filter((l) => booked.has(l.id));
+  return {
+    booked: booked.size,
+    mandates: signed.size,
+    imported: hit.filter((l) => !l.fb_lead_id && !l.source_page_id).length,
+    page: hit.filter((l) => !!l.source_page_id).length,
+    form: hit.filter((l) => !!l.fb_lead_id && !l.source_page_id).length,
+  };
+}
+
 /** The Facebook ad this lead came from, resolved from its fb_lead_id. */
 export async function getLeadSourceAd(leadId: string): Promise<SourceAd | null> {
   const { data, error } = await supabase.functions.invoke("fb-lead-source-ad", { body: { leadId } });

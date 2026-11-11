@@ -164,14 +164,17 @@ function FilePlayer({ src, accent, autoplay, endCta, report }: { src: string; ac
   );
 }
 
-function Frame({ children, frameRef, onPointerMove, tall }: { children: React.ReactNode; frameRef?: React.Ref<HTMLDivElement>; onPointerMove?: React.PointerEventHandler<HTMLDivElement>; /** An upright video (TikTok, Reels). */ tall?: boolean }) {
+/** The box a video sits in. `ratio` is height ÷ width (16:9 unless said);
+ *  an upright video gets an upright box, no wider than a phone. */
+function Frame({ children, frameRef, onPointerMove, ratio = 9 / 16 }: { children: React.ReactNode; frameRef?: React.Ref<HTMLDivElement>; onPointerMove?: React.PointerEventHandler<HTMLDivElement>; ratio?: number }) {
+  const upright = ratio > 1;
   return (
     <Box
       ref={frameRef}
       onPointerMove={onPointerMove}
       sx={{
-        position: "relative", pt: tall ? "177.78%" : "56.25%", borderRadius: "10px", overflow: "hidden", bgcolor: "#000",
-        ...(tall ? { width: "min(100%, 340px)", mx: "auto" } : {}),
+        position: "relative", pt: `${(ratio * 100).toFixed(2)}%`, borderRadius: "10px", overflow: "hidden", bgcolor: "#000",
+        ...(upright ? { width: `min(100%, ${Math.round(420 / ratio)}px)`, pt: 0, aspectRatio: `${1} / ${ratio}`, mx: "auto" } : {}),
         "& iframe, & video": { position: "absolute", inset: 0, width: "100%", height: "100%", border: 0 },
         "&:fullscreen": { pt: 0, borderRadius: 0 },
       }}
@@ -186,7 +189,7 @@ function Frame({ children, frameRef, onPointerMove, tall }: { children: React.Re
 // how far people watch inside someone else's player, so these aren't tracked.
 function EmbedPlayer({ src, site, tall }: { src: string; site: string; tall?: boolean }) {
   return (
-    <Frame tall={tall}>
+    <Frame ratio={tall ? 16 / 9 : undefined}>
       <iframe
         src={src}
         title={`Video (${site})`}
@@ -199,95 +202,19 @@ function EmbedPlayer({ src, site, tall }: { src: string; site: string; tall?: bo
   );
 }
 
-// ── Vimeo: Vimeo's clean player, tracked through its API ────────────────────
-type VimeoApi = {
-  on(event: string, cb: (d: { seconds: number; duration: number }) => void): void;
-  play(): Promise<void>;
-  setMuted(m: boolean): Promise<boolean>;
-  setVolume(v: number): Promise<number>;
-  setCurrentTime(s: number): Promise<number>;
-  destroy(): Promise<void>;
-};
-declare global {
-  interface Window { Vimeo?: { Player: new (el: HTMLIFrameElement) => VimeoApi } }
-}
-let vimeoReady: Promise<NonNullable<Window["Vimeo"]>> | null = null;
-function loadVimeo() {
-  if (window.Vimeo?.Player) return Promise.resolve(window.Vimeo);
-  if (!vimeoReady) {
-    vimeoReady = new Promise((resolve, reject) => {
-      const s = document.createElement("script");
-      s.src = "https://player.vimeo.com/api/player.js";
-      s.async = true;
-      s.onload = () => (window.Vimeo ? resolve(window.Vimeo) : reject(new Error("vimeo")));
-      s.onerror = () => { vimeoReady = null; reject(new Error("vimeo")); };
-      document.head.appendChild(s);
-    });
-  }
-  return vimeoReady;
-}
+// ── YouTube and Vimeo: their video, our controls ────────────────────────────
+// Each site's player sits underneath, with its own buttons switched off where
+// it allows, and our layer on top: the video's thumbnail and one big play
+// button, then a slim bar. Taps go to us, so the site's own menus, titles and
+// suggested videos never appear. A "driver" is the one site-specific part.
 
-function VimeoPlayer({ id, hash, accent, autoplay, endCta, report }: { id: string; hash?: string; accent: string; autoplay: boolean; endCta?: EndCta; report: Report }) {
-  const frame = useRef<HTMLIFrameElement>(null);
-  const player = useRef<VimeoApi | null>(null);
-  // Playing silently by itself, waiting for the tap that turns the sound on.
-  const teaser = useRef(autoplay);
-  const [teasing, setTeasing] = useState(false);
-  const [ended, setEnded] = useState(false);
-  const params = new URLSearchParams({ title: "0", byline: "0", portrait: "0", dnt: "1", playsinline: "1", pip: "0" });
-  if (hash) params.set("h", hash);
-  if (autoplay) { params.set("autoplay", "1"); params.set("muted", "1"); }
-  if (accent.startsWith("#")) params.set("color", accent.slice(1));
-  const src = `https://player.vimeo.com/video/${id}?${params.toString()}`;
+interface Driver { play(): void; pause(): void; seek(s: number): void; mute(): void; unMute(): void; destroy(): void }
+interface DriverEvents { ready(duration: number): void; state(s: "playing" | "paused" | "ended"): void; time(position: number, duration: number): void }
+type Mount = (el: HTMLDivElement, ev: DriverEvents, autoplay: boolean) => Promise<Driver>;
 
-  useEffect(() => {
-    let gone = false;
-    loadVimeo().then((V) => {
-      if (gone || !frame.current) return;
-      const p = new V.Player(frame.current);
-      player.current = p;
-      const send = (d: { seconds: number; duration: number }, playing: boolean, end = false) => {
-        if (!teaser.current) report.current?.({ position: d.seconds, duration: d.duration || 0, playing, ...(end ? { ended: true } : {}) });
-      };
-      p.on("play", () => { setEnded(false); if (teaser.current) setTeasing(true); });
-      p.on("timeupdate", (d) => send(d, true));
-      p.on("pause", (d) => send(d, false));
-      p.on("ended", (d) => {
-        if (teaser.current) { teaser.current = false; setTeasing(false); return; }
-        send({ seconds: d.duration, duration: d.duration }, false, true);
-        setEnded(true);
-      });
-    }).catch(() => { /* the video still plays; it just isn't tracked */ });
-    return () => { gone = true; void player.current?.destroy().catch(() => {}); player.current = null; };
-  }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const soundOn = () => {
-    const p = player.current;
-    teaser.current = false;
-    setTeasing(false);
-    if (!p) return;
-    void p.setMuted(false).then(() => p.setVolume(1)).then(() => p.setCurrentTime(0)).then(() => p.play()).catch(() => {});
-  };
-  const replay = () => { setEnded(false); void player.current?.setCurrentTime(0).then(() => player.current?.play()).catch(() => {}); };
-
-  return (
-    <Frame>
-      <iframe ref={frame} src={src} title="Video" allow="autoplay; fullscreen; picture-in-picture; encrypted-media" allowFullScreen />
-      {ended && endCta && <EndOverlay accent={accent} cta={endCta} onReplay={replay} />}
-      {teasing && (
-        <ButtonBase onClick={soundOn} aria-label="Turn on sound" sx={{ position: "absolute", inset: 0, display: "block" }}>
-          <SoundBadge accent={accent} />
-        </ButtonBase>
-      )}
-    </Frame>
-  );
-}
-
-// ── YouTube, with our own controls ──────────────────────────────────────────
 type YTPlayer = {
   getCurrentTime(): number;
   getDuration(): number;
-  getPlayerState(): number;
   playVideo(): void;
   pauseVideo(): void;
   seekTo(s: number, allowSeekAhead: boolean): void;
@@ -299,12 +226,25 @@ type YTNamespace = {
   Player: new (el: HTMLElement, opts: Record<string, unknown>) => YTPlayer;
   PlayerState: { PLAYING: number; ENDED: number; PAUSED: number; BUFFERING: number };
 };
+type VimeoApi = {
+  on(event: string, cb: (d: { seconds: number; duration: number }) => void): void;
+  play(): Promise<void>;
+  pause(): Promise<void>;
+  getDuration(): Promise<number>;
+  setMuted(m: boolean): Promise<boolean>;
+  setVolume(v: number): Promise<number>;
+  setCurrentTime(s: number): Promise<number>;
+  ready(): Promise<void>;
+  destroy(): Promise<void>;
+};
 declare global {
   interface Window {
     YT?: YTNamespace;
     onYouTubeIframeAPIReady?: () => void;
+    Vimeo?: { Player: new (el: HTMLIFrameElement) => VimeoApi };
   }
 }
+
 let ytReady: Promise<YTNamespace> | null = null;
 function loadYouTube(): Promise<YTNamespace> {
   if (window.YT?.Player) return Promise.resolve(window.YT);
@@ -324,16 +264,141 @@ function loadYouTube(): Promise<YTNamespace> {
   return ytReady;
 }
 
+let vimeoReady: Promise<NonNullable<Window["Vimeo"]>> | null = null;
+function loadVimeo() {
+  if (window.Vimeo?.Player) return Promise.resolve(window.Vimeo);
+  if (!vimeoReady) {
+    vimeoReady = new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = "https://player.vimeo.com/api/player.js";
+      s.async = true;
+      s.onload = () => (window.Vimeo ? resolve(window.Vimeo) : reject(new Error("vimeo")));
+      s.onerror = () => { vimeoReady = null; reject(new Error("vimeo")); };
+      document.head.appendChild(s);
+    });
+  }
+  return vimeoReady;
+}
+
+const youTubeMount = (id: string): Mount => async (holder, ev, autoplay) => {
+  const YT = await loadYouTube();
+  const el = document.createElement("div");
+  holder.appendChild(el);
+  let timer: number | undefined;
+  return await new Promise<Driver>((resolve) => {
+    const p: YTPlayer = new YT.Player(el, {
+      videoId: id,
+      width: "100%",
+      height: "100%",
+      host: "https://www.youtube-nocookie.com",
+      // Everything of YouTube's own switched off: we draw the controls.
+      // iPhones only let a video start by itself if it's created muted and set to play.
+      playerVars: { controls: 0, rel: 0, playsinline: 1, modestbranding: 1, iv_load_policy: 3, fs: 0, disablekb: 1, cc_load_policy: 0, ...(autoplay ? { autoplay: 1, mute: 1 } : {}) },
+      events: {
+        onReady: () => {
+          ev.ready(p.getDuration());
+          resolve({
+            play: () => p.playVideo(),
+            pause: () => p.pauseVideo(),
+            seek: (s) => p.seekTo(s, true),
+            mute: () => p.mute(),
+            unMute: () => p.unMute(),
+            destroy: () => { window.clearInterval(timer); p.destroy(); el.remove(); },
+          });
+        },
+        onStateChange: (e: { data: number }) => {
+          // YouTube has no "progress" event: while it plays, ask every second.
+          const tick = () => ev.time(p.getCurrentTime(), p.getDuration());
+          window.clearInterval(timer);
+          if (e.data === YT.PlayerState.PLAYING) { ev.state("playing"); timer = window.setInterval(tick, 1000); tick(); }
+          else if (e.data === YT.PlayerState.ENDED) { ev.time(p.getDuration(), p.getDuration()); ev.state("ended"); }
+          else if (e.data === YT.PlayerState.PAUSED) { tick(); ev.state("paused"); }
+        },
+      },
+    });
+  });
+};
+
+const vimeoMount = (id: string, hash?: string): Mount => async (holder, ev, autoplay) => {
+  const V = await loadVimeo();
+  // Vimeo's own buttons off (controls=0; on a free Vimeo plan it may still
+  // show them, but our layer on top takes the taps), no title or logo.
+  const params = new URLSearchParams({ controls: "0", title: "0", byline: "0", portrait: "0", dnt: "1", playsinline: "1", pip: "0", keyboard: "0", vimeo_logo: "0" });
+  if (hash) params.set("h", hash);
+  if (autoplay) { params.set("autoplay", "1"); params.set("muted", "1"); }
+  const frame = document.createElement("iframe");
+  frame.src = `https://player.vimeo.com/video/${id}?${params.toString()}`;
+  frame.allow = "autoplay; fullscreen; picture-in-picture; encrypted-media";
+  frame.title = "Video";
+  holder.appendChild(frame);
+  const p = new V.Player(frame);
+  p.on("play", () => ev.state("playing"));
+  p.on("pause", (d) => { ev.time(d.seconds, d.duration); ev.state("paused"); });
+  p.on("timeupdate", (d) => ev.time(d.seconds, d.duration));
+  p.on("ended", (d) => { ev.time(d.duration, d.duration); ev.state("ended"); });
+  await p.ready();
+  ev.ready(await p.getDuration().catch(() => 0));
+  const quiet = (x: Promise<unknown>) => { void x.catch(() => {}); };
+  return {
+    play: () => quiet(p.play()),
+    pause: () => quiet(p.pause()),
+    seek: (s) => quiet(p.setCurrentTime(s)),
+    mute: () => quiet(p.setMuted(true)),
+    unMute: () => quiet(p.setMuted(false).then(() => p.setVolume(1))),
+    destroy: () => { quiet(p.destroy()); frame.remove(); },
+  };
+};
+
+function YouTubePlayer({ id, ...rest }: { id: string; accent: string; autoplay: boolean; endCta?: EndCta; report: Report }) {
+  return (
+    <HostedPlayer
+      {...rest}
+      mountKey={id}
+      mount={youTubeMount(id)}
+      thumb={`https://i.ytimg.com/vi/${id}/hqdefault.jpg`}
+      // YouTube pins its title bar, "More videos" strip and logo to the top
+      // and bottom edges of its own frame. A frame twice as tall as the box
+      // (centred) keeps the video filling the box and pushes those strips out of sight.
+      holderSx={{ "& iframe": { top: "-50% !important", bottom: "auto !important", height: "200% !important" } }}
+    />
+  );
+}
+
+/** Vimeo tells us the video's shape and thumbnail (oEmbed), so an upright
+ *  video gets an upright box and the cover shows its own picture. */
+function VimeoPlayer({ id, hash, ...rest }: { id: string; hash?: string; accent: string; autoplay: boolean; endCta?: EndCta; report: Report }) {
+  const [meta, setMeta] = useState<{ thumb?: string; ratio?: number }>({});
+  useEffect(() => {
+    let gone = false;
+    const page = `https://vimeo.com/${id}${hash ? `/${hash}` : ""}`;
+    fetch(`https://vimeo.com/api/oembed.json?url=${encodeURIComponent(page)}&width=1280`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((o: { thumbnail_url?: string; width?: number; height?: number } | null) => {
+        if (gone || !o) return;
+        setMeta({ thumb: o.thumbnail_url, ratio: o.width && o.height ? o.height / o.width : undefined });
+      })
+      .catch(() => {});
+    return () => { gone = true; };
+  }, [id, hash]);
+  return <HostedPlayer {...rest} mountKey={`${id}/${hash ?? ""}`} mount={vimeoMount(id, hash)} thumb={meta.thumb} ratio={meta.ratio} />;
+}
+
 type Status = "idle" | "playing" | "paused" | "ended";
 
-function YouTubePlayer({ id, accent, autoplay, endCta, report }: { id: string; accent: string; autoplay: boolean; endCta?: EndCta; report: Report }) {
+function HostedPlayer({ mount, mountKey, thumb, ratio, holderSx, accent, autoplay, endCta, report }: {
+  mount: Mount; mountKey: string; thumb?: string; ratio?: number; holderSx?: object;
+  accent: string; autoplay: boolean; endCta?: EndCta; report: Report;
+}) {
   const frame = useRef<HTMLDivElement>(null);
   const holder = useRef<HTMLDivElement>(null);
-  const player = useRef<YTPlayer | null>(null);
+  const player = useRef<Driver | null>(null);
   const [ready, setReady] = useState(false);
   const [status, setStatus] = useState<Status>("idle");
+  const statusRef = useRef<Status>("idle");
   const [pos, setPos] = useState(0);
-  const [dur, setDur] = useState(0);
+  const [dur, setDurState] = useState(0);
+  const durRef = useRef(0);
+  const setDur = (d: number) => { durRef.current = d; setDurState(d); };
   const [muted, setMuted] = useState(false);
   // Playing silently by itself, waiting for the tap that turns the sound on.
   const teaser = useRef(autoplay);
@@ -367,70 +432,42 @@ function YouTubePlayer({ id, accent, autoplay, endCta, report }: { id: string; a
 
   useEffect(() => {
     if (!holder.current) return;
-    let timer: number | undefined;
     let cancelled = false;
-    const el = document.createElement("div");
-    holder.current.appendChild(el);
-    loadYouTube().then((YT) => {
-      if (cancelled) return;
-      const p: YTPlayer = new YT.Player(el, {
-        videoId: id,
-        width: "100%",
-        height: "100%",
-        host: "https://www.youtube-nocookie.com",
-        // Everything of YouTube's own switched off: we draw the controls.
-        // iPhones only let a video start by itself if it's created muted and
-        // set to play; muting it after it loads (as we did) is refused there.
-        playerVars: { controls: 0, rel: 0, playsinline: 1, modestbranding: 1, iv_load_policy: 3, fs: 0, disablekb: 1, cc_load_policy: 0, ...(autoplay ? { autoplay: 1, mute: 1 } : {}) },
-        events: {
-          onReady: () => {
-            player.current = p;
-            setDur(p.getDuration());
-            setReady(true);
-            if (teaser.current) {
-              p.mute();
-              setMuted(true);
-              p.playVideo();
-            }
-          },
-          onStateChange: (e: { data: number }) => {
-            const tick = () => {
-              const position = p.getCurrentTime();
-              const duration = p.getDuration();
-              setPos(position);
-              setDur(duration);
-              if (!teaser.current) report.current?.({ position, duration, playing: p.getPlayerState() === YT.PlayerState.PLAYING });
-            };
-            window.clearInterval(timer);
-            if (e.data === YT.PlayerState.PLAYING) {
-              setStatus("playing");
-              setTeasing(teaser.current);
-              timer = window.setInterval(tick, 1000);
-              tick();
-            } else if (e.data === YT.PlayerState.ENDED) {
-              setPos(p.getDuration());
-              if (teaser.current) {
-                // The silent preview ran out: back to Play (sound on, from the start).
-                setTeasing(false);
-                setStatus("idle");
-              } else setStatus("ended");
-              if (!teaser.current) report.current?.({ position: p.getDuration(), duration: p.getDuration(), playing: false, ended: true });
-            } else if (e.data === YT.PlayerState.PAUSED) {
-              setStatus("paused");
-              tick();
-            }
-          },
-        },
-      });
-    });
+    const setS = (s: Status) => { statusRef.current = s; setStatus(s); };
+    mount(holder.current, {
+      ready: (d) => { if (!cancelled) { setDur(d); setReady(true); } },
+      time: (position, duration) => {
+        if (cancelled) return;
+        setPos(position);
+        if (duration) setDur(duration);
+        if (!teaser.current) report.current?.({ position, duration, playing: statusRef.current === "playing" });
+      },
+      state: (s) => {
+        if (cancelled) return;
+        if (s === "playing") { setS("playing"); setTeasing(teaser.current); }
+        else if (s === "paused") setS("paused");
+        else {
+          if (teaser.current) {
+            // The silent preview ran out: back to Play (sound on, from the start).
+            setTeasing(false);
+            setS("idle");
+          } else {
+            setS("ended");
+            report.current?.({ position: durRef.current, duration: durRef.current, playing: false, ended: true });
+          }
+        }
+      },
+    }, autoplay).then((d) => {
+      if (cancelled) { d.destroy(); return; }
+      player.current = d;
+      if (teaser.current) { d.mute(); setMuted(true); d.play(); }
+    }).catch(() => { /* couldn't load the site's player: the cover stays */ });
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
       player.current?.destroy();
       player.current = null;
-      el.remove();
     };
-  }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [mountKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const play = () => {
     const p = player.current;
@@ -441,11 +478,11 @@ function YouTubePlayer({ id, accent, autoplay, endCta, report }: { id: string; a
       setTeasing(false);
       p.unMute();
       setMuted(false);
-      p.seekTo(0, true);
-    } else if (status === "ended") p.seekTo(0, true);
-    p.playVideo();
+      p.seek(0);
+    } else if (status === "ended") p.seek(0);
+    p.play();
   };
-  const toggle = () => (status === "playing" && !teasing ? player.current?.pauseVideo() : play());
+  const toggle = () => (status === "playing" && !teasing ? player.current?.pause() : play());
   // A tap on the picture while the bar is hidden only brings the bar back
   // (as on YouTube); with it showing, the tap pauses.
   const tapPicture = () => {
@@ -455,7 +492,7 @@ function YouTubePlayer({ id, accent, autoplay, endCta, report }: { id: string; a
   const seek = (fraction: number) => {
     if (!player.current || !dur) return;
     const s = Math.max(0, Math.min(dur, fraction * dur));
-    player.current.seekTo(s, true);
+    player.current.seek(s);
     setPos(s);
   };
   const toggleMute = () => {
@@ -478,15 +515,10 @@ function YouTubePlayer({ id, accent, autoplay, endCta, report }: { id: string; a
   const pct = dur ? Math.min(100, (pos / dur) * 100) : 0;
 
   return (
-    <Frame frameRef={frame} onPointerMove={(e) => { if (e.pointerType === "mouse" && status === "playing") wake(); }}>
-      {/* YouTube pins its title bar, "AI" button, "More videos" strip and logo
-          to the top and bottom edges of its own frame. Making that frame twice
-          as tall as the box (centred) keeps the video exactly filling the box,
-          and pushes those strips into the hidden part. */}
-      <Box ref={holder} sx={{ position: "absolute", inset: 0, "& iframe": { top: "-50% !important", bottom: "auto !important", height: "200% !important" } }} />
+    <Frame ratio={ratio} frameRef={frame} onPointerMove={(e) => { if (e.pointerType === "mouse" && status === "playing") wake(); }}>
+      <Box ref={holder} sx={{ position: "absolute", inset: 0, ...holderSx }} />
 
-      {/* Our layer over YouTube's: taps go to us, so YouTube's own menus,
-          title and suggested videos never appear. */}
+      {/* Our layer over the site's: taps go to us. */}
       <ButtonBase
         onClick={tapPicture}
         disabled={!ready}
@@ -498,8 +530,8 @@ function YouTubePlayer({ id, accent, autoplay, endCta, report }: { id: string; a
           <Box
             sx={{
               position: "absolute", inset: 0,
-              // Before it starts: the video's own thumbnail, not YouTube's player screen.
-              backgroundImage: status === "idle" ? `url(https://i.ytimg.com/vi/${id}/hqdefault.jpg)` : undefined,
+              // Before it starts: the video's own thumbnail, not the site's player screen.
+              backgroundImage: status === "idle" && thumb ? `url(${thumb})` : undefined,
               backgroundSize: "cover", backgroundPosition: "center",
               bgcolor: status === "idle" ? "#000" : "rgba(0,0,0,.55)",
               display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 1,
