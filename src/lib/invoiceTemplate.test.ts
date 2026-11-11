@@ -28,6 +28,15 @@ describe("invoice wording", () => {
     expect(buildInvoice({ ...base, plan: "quarter" })).toMatchObject({ adSpend: 0, total: 7500 });
   });
 
+  it("the 3-month package in 2 payments", () => {
+    const base = { name: "A", agency: "", email: "", phone: "0821234567", item: "3-Month Package, payment 2 of 2", description: "Fee", period: "90 days", amount: 3750, issueDate: "2026-11-10", dueDate: "2026-11-17" };
+    const doc = buildInvoice({ ...base, plan: "quarter", instalment: 2 });
+    expect(doc).toMatchObject({ instalment: 2, total: 3750 });
+    expect(doc.terms[0]).toBe("3-month package of R7 500.00, paid in 2 equal payments of R3 750.00: the first before campaign management begins, the second 30 days after launch. This invoice is payment 2 of 2.");
+    // A monthly invoice never says it's a payment of 2.
+    expect(buildInvoice({ ...base, plan: "monthly", instalment: 1 }).terms[0]).toMatch(/^Billed monthly/);
+  });
+
   it("handles dates without slipping a day", () => {
     expect(longDate("2026-11-03")).toBe("3 November 2026");
     expect(defaultDueDate("2026-12-28")).toBe("2027-01-04");

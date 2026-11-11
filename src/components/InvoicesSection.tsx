@@ -4,7 +4,7 @@ import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogCont
 import AddIcon from "@mui/icons-material/Add";
 import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
 import { cancelInvoice, createInvoice, deleteInvoice, InvoicesNotSetUp, listInvoices, markInvoicePaid, markInvoiceShared, type InvoiceRow } from "../api/invoices";
-import { buildInvoice, DEFAULT_AMOUNT, DEFAULT_DESCRIPTION, DEFAULT_ITEM, DEFAULT_PERIOD, defaultDueDate, INVOICE_PLANS, invoiceStatus, longDate, MIN_DAILY_AD_SPEND, money, todaySA, whatsappDigits, type InvoicePlan } from "../lib/invoiceTemplate";
+import { buildInvoice, DEFAULT_AMOUNT, DEFAULT_DESCRIPTION, DEFAULT_ITEM, DEFAULT_PERIOD, defaultDueDate, INVOICE_PLANS, instalmentItem, invoiceStatus, longDate, MIN_DAILY_AD_SPEND, money, QUARTER_HALF, todaySA, whatsappDigits, type Instalment, type InvoicePlan } from "../lib/invoiceTemplate";
 import { useSnack } from "../hooks/useSnack";
 import { tokens } from "../theme";
 import { toneColours, type ContractClient } from "./ContractsSection";
@@ -134,11 +134,25 @@ function NewInvoiceDialog({ onClose, client }: { onClose: () => void; client: Co
     name: client.name, agency: client.company ?? "", phone: client.phone ?? "", email: client.email ?? "",
     item: DEFAULT_ITEM as string, description: DEFAULT_DESCRIPTION, period: DEFAULT_PERIOD as string, amount: String(DEFAULT_AMOUNT), dueDate: defaultDueDate(),
     plan: "monthly" as InvoicePlan, adSpendOn: "no", adSpend: String(MIN_DAILY_AD_SPEND * INVOICE_PLANS.monthly.days),
+    /** 3-month package: "full", or which of 2 payments this invoice is. */
+    pay: "full" as "full" | "1" | "2",
   });
+  /** Ad spend to start from: the minimum for the days this invoice covers. */
+  const startAdSpend = (plan: InvoicePlan, split: boolean) => String(MIN_DAILY_AD_SPEND * INVOICE_PLANS[plan].days / (split ? 2 : 1));
+  /** 3-month package: in full, or payment 1 or 2 of 2 (half each). */
+  const pickPay = (pay: "full" | "1" | "2") => {
+    const split = pay !== "full";
+    setForm((f) => ({
+      ...f, pay,
+      item: split ? instalmentItem(Number(pay) as Instalment) : INVOICE_PLANS.quarter.item,
+      amount: String(split ? QUARTER_HALF : INVOICE_PLANS.quarter.amount),
+      adSpend: startAdSpend("quarter", split),
+    }));
+  };
   /** Picking a plan fills in its item, period, price and a starting ad spend. */
   const pickPlan = (plan: InvoicePlan) => {
     const p = INVOICE_PLANS[plan];
-    setForm((f) => ({ ...f, plan, item: p.item, period: p.period, amount: String(p.amount), adSpend: String(MIN_DAILY_AD_SPEND * p.days) }));
+    setForm((f) => ({ ...f, plan, pay: "full", item: p.item, period: p.period, amount: String(p.amount), adSpend: startAdSpend(plan, false) }));
   };
   const [previewing, setPreviewing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -151,7 +165,7 @@ function NewInvoiceDialog({ onClose, client }: { onClose: () => void; client: Co
   const phoneOk = !!whatsappDigits(form.phone);
   const complete = !!form.name.trim() && phoneOk && !!form.item.trim() && amount > 0 && (form.adSpendOn === "no" || adSpend > 0) && form.dueDate >= today;
   const doc = useMemo(
-    () => (previewing ? buildInvoice({ ...form, amount, adSpend, issueDate: today }) : null),
+    () => (previewing ? buildInvoice({ ...form, amount, adSpend, issueDate: today, instalment: form.plan === "quarter" && form.pay !== "full" ? (Number(form.pay) as Instalment) : undefined }) : null),
     [previewing], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
@@ -186,14 +200,22 @@ function NewInvoiceDialog({ onClose, client }: { onClose: () => void; client: Co
             <TextField select label="Plan" required value={form.plan} onChange={(e) => pickPlan(e.target.value as InvoicePlan)}>
               {(Object.keys(INVOICE_PLANS) as InvoicePlan[]).map((k) => <MenuItem key={k} value={k}>{INVOICE_PLANS[k].label}</MenuItem>)}
             </TextField>
-            <TextField label="Fee" required value={form.amount} onChange={set("amount")} helperText={form.plan === "quarter" ? "Splitting it into 2 payments? Put half here." : undefined} slotProps={{ htmlInput: { inputMode: "decimal" }, input: { startAdornment: <InputAdornment position="start">R</InputAdornment> } }} />
+            {form.plan === "quarter" && (
+              <TextField select label="How they pay" required value={form.pay} onChange={(e) => pickPay(e.target.value as "full" | "1" | "2")}
+                helperText={form.pay === "full" ? undefined : `Half now, half 30 days after launch. This invoice is payment ${form.pay} of 2.`}>
+                <MenuItem value="full">In full: {money(INVOICE_PLANS.quarter.amount)}</MenuItem>
+                <MenuItem value="1">2 payments: this is payment 1 of 2 (before launch)</MenuItem>
+                <MenuItem value="2">2 payments: this is payment 2 of 2 (30 days after launch)</MenuItem>
+              </TextField>
+            )}
+            <TextField label="Fee" required value={form.amount} onChange={set("amount")} slotProps={{ htmlInput: { inputMode: "decimal" }, input: { startAdornment: <InputAdornment position="start">R</InputAdornment> } }} />
             <TextField select label="Ad spend" required value={form.adSpendOn} onChange={set("adSpendOn")}>
               <MenuItem value="no">Not on this invoice: they pay Meta directly</MenuItem>
               <MenuItem value="yes">On this invoice: we pay Meta for them</MenuItem>
             </TextField>
             {form.adSpendOn === "yes" && (
               <TextField label="Ad spend amount" required value={form.adSpend} onChange={set("adSpend")}
-                helperText={`R${MIN_DAILY_AD_SPEND} a day × ${INVOICE_PLANS[form.plan].days} days = ${money(MIN_DAILY_AD_SPEND * INVOICE_PLANS[form.plan].days)} at the minimum. Paid to Meta at cost.`}
+                helperText={(() => { const days = INVOICE_PLANS[form.plan].days / (form.plan === "quarter" && form.pay !== "full" ? 2 : 1); return `R${MIN_DAILY_AD_SPEND} a day × ${days} days = ${money(MIN_DAILY_AD_SPEND * days)} at the minimum. Paid to Meta at cost.`; })()}
                 slotProps={{ htmlInput: { inputMode: "decimal" }, input: { startAdornment: <InputAdornment position="start">R</InputAdornment> } }} />
             )}
             {(amount > 0 || adSpend > 0) && <Typography sx={{ fontSize: 15, fontWeight: 600 }}>Total due: {money(amount + adSpend)}</Typography>}
