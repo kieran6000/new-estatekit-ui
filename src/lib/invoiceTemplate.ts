@@ -17,6 +17,12 @@ export const INVOICE_PLANS = {
   quarter: { label: "3-month package: R7,500", item: "3-Month Package", period: "90 days", amount: 7500, days: 90 },
 } as const;
 export type InvoicePlan = keyof typeof INVOICE_PLANS;
+/** The 3-month package can be paid in 2 equal payments (as the agreement allows):
+ *  the first before launch, the second 30 days after launch. Which one this invoice is. */
+export type Instalment = 1 | 2;
+export const QUARTER_HALF = INVOICE_PLANS.quarter.amount / 2;
+/** "3-Month Package, payment 1 of 2" */
+export const instalmentItem = (n: Instalment) => `${INVOICE_PLANS.quarter.item}, payment ${n} of 2`;
 /** The least ad spend the agreement allows, a day. */
 export const MIN_DAILY_AD_SPEND = 70;
 
@@ -26,11 +32,12 @@ export const DEFAULT_PERIOD = INVOICE_PLANS.monthly.period;
 export const DEFAULT_AMOUNT = INVOICE_PLANS.monthly.amount;
 
 /** What the invoice's terms say: how the plan is billed, and whether ad spend is on it. */
-export function invoiceTerms(plan: InvoicePlan, adSpend: number): string[] {
+export function invoiceTerms(plan: InvoicePlan, adSpend: number, instalment?: Instalment): string[] {
+  const quarter = instalment
+    ? `3-month package of ${money(INVOICE_PLANS.quarter.amount)}, paid in 2 equal payments of ${money(QUARTER_HALF)}: the first before campaign management begins, the second 30 days after launch. This invoice is payment ${instalment} of 2.`
+    : "3-month package, paid in advance. Payment is due before campaign management begins.";
   return [
-    plan === "quarter"
-      ? "3-month package, paid in advance. Payment is due before campaign management begins."
-      : "Billed monthly. Payment is due before each 30-day cycle of campaign management begins.",
+    plan === "quarter" ? quarter : "Billed monthly. Payment is due before each 30-day cycle of campaign management begins.",
     adSpend > 0
       ? `Ad spend of ${money(adSpend)} is included in this invoice. EstateKit pays it to Meta (Facebook) at cost, with no markup, and refunds any unspent balance when the agreement ends.`
       : "Ad spend is not included in this invoice. It is paid directly to Meta (Facebook).",
@@ -53,6 +60,8 @@ export interface InvoiceTerms {
   plan?: InvoicePlan;
   /** Ad spend on this invoice, paid on to Meta at cost. 0 or missing = not on it. */
   adSpend?: number;
+  /** The 3-month package in 2 payments: which one this is. Missing = paid in full. */
+  instalment?: Instalment;
 }
 
 export interface InvoiceDocument extends InvoiceTerms {
@@ -79,7 +88,8 @@ export function buildInvoice(t: InvoiceTerms): InvoiceDocument {
     plan: t.plan ?? "monthly",
     adSpend: t.adSpend && t.adSpend > 0 ? t.adSpend : 0,
     total: t.amount + (t.adSpend && t.adSpend > 0 ? t.adSpend : 0),
-    terms: invoiceTerms(t.plan ?? "monthly", t.adSpend ?? 0),
+    ...(t.plan === "quarter" && t.instalment ? { instalment: t.instalment } : {}),
+    terms: invoiceTerms(t.plan ?? "monthly", t.adSpend ?? 0, t.plan === "quarter" ? t.instalment : undefined),
     bank: INVOICE_BANK,
     location: INVOICE_LOCATION,
     contactEmail: INVOICE_EMAIL,
