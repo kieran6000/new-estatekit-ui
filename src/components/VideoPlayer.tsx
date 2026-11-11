@@ -10,6 +10,7 @@ import VolumeOffRoundedIcon from "@mui/icons-material/VolumeOffRounded";
 import FullscreenRoundedIcon from "@mui/icons-material/FullscreenRounded";
 import { accentButton, accentOnVideo, readableOn } from "../lib/contrast";
 import { videoKind } from "../lib/videoLink";
+import { bandOfImage, fitVideo, type Rect } from "../lib/videoFit";
 
 export { canPlayVideo, videoKind } from "../lib/videoLink";
 
@@ -364,10 +365,11 @@ function YouTubePlayer({ id, ...rest }: { id: string; accent: string; autoplay: 
   );
 }
 
-/** Vimeo tells us the video's shape and thumbnail (oEmbed), so an upright
- *  video gets an upright box and the cover shows its own picture. */
+/** Vimeo tells us the video's shape and thumbnail (oEmbed). The box stays
+ *  landscape: an upright video is fitted in the middle with its picture
+ *  blurred behind, and black bands baked into it are left outside the box. */
 function VimeoPlayer({ id, hash, ...rest }: { id: string; hash?: string; accent: string; autoplay: boolean; endCta?: EndCta; report: Report }) {
-  const [meta, setMeta] = useState<{ thumb?: string; ratio?: number }>({});
+  const [meta, setMeta] = useState<{ thumb?: string; fit?: Rect }>({});
   useEffect(() => {
     let gone = false;
     const page = `https://vimeo.com/${id}${hash ? `/${hash}` : ""}`;
@@ -375,18 +377,23 @@ function VimeoPlayer({ id, hash, ...rest }: { id: string; hash?: string; accent:
       .then((r) => (r.ok ? r.json() : null))
       .then((o: { thumbnail_url?: string; width?: number; height?: number } | null) => {
         if (gone || !o) return;
-        setMeta({ thumb: o.thumbnail_url, ratio: o.width && o.height ? o.height / o.width : undefined });
+        const ratio = o.width && o.height ? o.height / o.width : 9 / 16;
+        setMeta({ thumb: o.thumbnail_url, fit: ratio > 9 / 16 + 0.01 ? fitVideo(ratio) : undefined });
+        // Upright: find the real picture in the thumbnail, so baked-in black bands fall outside.
+        if (ratio > 9 / 16 + 0.01 && o.thumbnail_url) {
+          bandOfImage(o.thumbnail_url).then((band) => { if (!gone) setMeta((m) => ({ ...m, fit: fitVideo(ratio, band) })); }).catch(() => {});
+        }
       })
       .catch(() => {});
     return () => { gone = true; };
   }, [id, hash]);
-  return <HostedPlayer {...rest} mountKey={`${id}/${hash ?? ""}`} mount={vimeoMount(id, hash)} thumb={meta.thumb} ratio={meta.ratio} />;
+  return <HostedPlayer {...rest} mountKey={`${id}/${hash ?? ""}`} mount={vimeoMount(id, hash)} thumb={meta.thumb} fit={meta.fit} />;
 }
 
 type Status = "idle" | "playing" | "paused" | "ended";
 
-function HostedPlayer({ mount, mountKey, thumb, ratio, holderSx, accent, autoplay, endCta, report }: {
-  mount: Mount; mountKey: string; thumb?: string; ratio?: number; holderSx?: object;
+function HostedPlayer({ mount, mountKey, thumb, fit, holderSx, accent, autoplay, endCta, report }: {
+  mount: Mount; mountKey: string; thumb?: string; /** Where the video sits in the box (an upright one); the whole box if not set. */ fit?: Rect; holderSx?: object;
   accent: string; autoplay: boolean; endCta?: EndCta; report: Report;
 }) {
   const frame = useRef<HTMLDivElement>(null);
@@ -515,8 +522,14 @@ function HostedPlayer({ mount, mountKey, thumb, ratio, holderSx, accent, autopla
   const pct = dur ? Math.min(100, (pos / dur) * 100) : 0;
 
   return (
-    <Frame ratio={ratio} frameRef={frame} onPointerMove={(e) => { if (e.pointerType === "mouse" && status === "playing") wake(); }}>
-      <Box ref={holder} sx={{ position: "absolute", inset: 0, ...holderSx }} />
+    <Frame frameRef={frame} onPointerMove={(e) => { if (e.pointerType === "mouse" && status === "playing") wake(); }}>
+      {/* An upright video: its own picture, blurred and darkened, fills the sides. */}
+      {fit && thumb && (
+        <Box aria-hidden sx={{ position: "absolute", inset: "-24px", backgroundImage: `url(${thumb})`, backgroundSize: "cover", backgroundPosition: "center", filter: "blur(22px) brightness(0.55)" }} />
+      )}
+      <Box ref={holder} sx={fit
+        ? { position: "absolute", left: `${fit.left}%`, top: `${fit.top}%`, width: `${fit.width}%`, height: `${fit.height}%`, ...holderSx }
+        : { position: "absolute", inset: 0, ...holderSx }} />
 
       {/* Our layer over the site's: taps go to us. */}
       <ButtonBase
@@ -531,22 +544,25 @@ function HostedPlayer({ mount, mountKey, thumb, ratio, holderSx, accent, autopla
             sx={{
               position: "absolute", inset: 0,
               // Before it starts: the video's own thumbnail, not the site's player screen.
-              backgroundImage: status === "idle" && thumb ? `url(${thumb})` : undefined,
+              backgroundImage: status === "idle" && thumb && !fit ? `url(${thumb})` : undefined,
               backgroundSize: "cover", backgroundPosition: "center",
-              bgcolor: status === "idle" ? "#000" : "rgba(0,0,0,.55)",
+              bgcolor: status === "idle" ? (fit ? "transparent" : "#000") : "rgba(0,0,0,.55)",
               display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 1,
             }}
           >
+            {status === "idle" && thumb && fit && (
+              <Box aria-hidden sx={{ position: "absolute", left: `${fit.left}%`, top: `${fit.top}%`, width: `${fit.width}%`, height: `${fit.height}%`, backgroundImage: `url(${thumb})`, backgroundSize: "100% 100%" }} />
+            )}
             {autoplay && teaser.current && status !== "ended" ? (
               // Meant to start by itself: nothing while it's starting, then
               // (if the phone wouldn't) the same box as the sound badge.
               startWaited || status === "paused" ? <SoundBadge accent={accent} blocked /> : null
             ) : (
-              <Box sx={{ width: 72, height: 72, borderRadius: "50%", bgcolor: accent, color: onAccent, display: "grid", placeItems: "center", boxShadow: "0 6px 20px rgba(0,0,0,.35)" }}>
+              <Box sx={{ position: "relative", width: 72, height: 72, borderRadius: "50%", bgcolor: accent, color: onAccent, display: "grid", placeItems: "center", boxShadow: "0 6px 20px rgba(0,0,0,.35)" }}>
                 {status === "ended" ? <ReplayRoundedIcon sx={{ fontSize: 40 }} /> : <PlayArrowRoundedIcon sx={{ fontSize: 48 }} />}
               </Box>
             )}
-            {status === "ended" && <Typography sx={{ color: "#fff", fontWeight: 600, fontSize: 15 }}>Watch again</Typography>}
+            {status === "ended" && <Typography sx={{ position: "relative", color: "#fff", fontWeight: 600, fontSize: 15 }}>Watch again</Typography>}
             {status === "idle" && dur > 0 && (
               <Box sx={{ position: "absolute", right: 10, bottom: 10, bgcolor: "rgba(0,0,0,.7)", color: "#fff", fontSize: 12.5, fontWeight: 600, px: 0.75, py: 0.25, borderRadius: "4px" }}>
                 {clock(dur)}
