@@ -502,7 +502,7 @@ export default function LeadPagePage() {
                 </Box>
               </Box>
               <Typography sx={{ fontSize: 12, color: "text.secondary", mt: -1 }}>
-                Logo shows in the page header. Profile photo shows on the thank-you screen.
+                Logo shows in the page header. Profile photo shows on the thank-you screen. New pages start from your account settings (Settings: logo, photo and colour).
               </Typography>
 
               <Box>
