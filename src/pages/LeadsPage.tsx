@@ -70,8 +70,8 @@ const CameBackBadge = () => <Box component="span" sx={{ fontSize: 10, fontWeight
 function leadSortValue(l: LeadRow, k: LeadSortKey): string | number {
   if (k === "name") return l.name;
   if (k === "came") return lastIn(l);
-  // When to call: most urgent first; Lost/Invalid last.
-  return whenToCallSortValue(whenToCall(l));
+  // When to call: new leads first, then the most urgent; Lost/Invalid last.
+  return (isNewLead(l) ? 0 : 1e15) + whenToCallSortValue(whenToCall(l));
 }
 import { LeadTags } from "../components/LeadTag";
 import { leadTags } from "../lib/leadTags";
@@ -79,7 +79,7 @@ import { useDatasetByPage } from "../hooks/useLeadPages";
 import LocalOfferIcon from "@mui/icons-material/LocalOffer";
 import { DEAD_STAGES, PIPELINE_KIND_LABEL, PIPELINE_STAGES, type LeadRow, type OutcomeStep, type Pipeline, type PipelineKind, type Stage } from "../types";
 import { stageLabel } from "../types";
-import { dueLeads, pipelineKindFor, sortLeadsForList, stepForStage, computeStagePatch, stageForKind, whenToCall, whenToCallSortValue } from "../lib/stageLogic";
+import { dueLeads, isNewLead, pipelineKindFor, sortLeadsForList, stepForStage, computeStagePatch, stageForKind, whenToCall, whenToCallSortValue } from "../lib/stageLogic";
 import { timeAgo } from "../lib/timeAgo";
 import { useLeads, useUpdateLeadStage } from "../hooks/useLeads";
 import { useAddPipeline, usePipelines, useSyncPipelineSheet, useTeamPipelines } from "../hooks/usePipelines";

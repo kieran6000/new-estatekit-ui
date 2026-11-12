@@ -104,12 +104,22 @@ export function rank(l: Pick<LeadRow, "stage" | "due">): number {
   return l.due ? 0 : 1;
 }
 
+/** A new lead nobody has called yet: still on New Lead, came in within 24 hours
+ *  (the NEW badge). These always come first in the lists. */
+export function isNewLead(l: LeadRow, now = new Date()): boolean {
+  const cameBack = !!l.came_back_at && now.getTime() - Date.parse(l.came_back_at) < 7 * 24 * HOUR;
+  return l.stage === "New Lead" && now.getTime() - Date.parse(l.created_at) < 24 * HOUR && !cameBack;
+}
+
 export function sortLeadsForList(leads: LeadRow[]): LeadRow[] {
   const now = new Date();
   const when = new Map(leads.map((l) => [l.id, whenToCall(l, now)]));
   // Lost and parked leads stay at the bottom; the rest go by how soon they need a call.
   const group = (l: LeadRow) => (rank(l) <= 1 ? 0 : rank(l));
   return [...leads].sort((a, b) => {
+    // New leads first, whatever else is going on (they are never Lost).
+    const n = Number(!isNewLead(b, now)) - Number(!isNewLead(a, now));
+    if (n !== 0) return n;
     const r = group(a) - group(b);
     if (r !== 0) return r;
     const w = compareWhenToCall(when.get(a.id)!, when.get(b.id)!);
