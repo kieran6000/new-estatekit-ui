@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compareWhenToCall, whenToCall } from "./stageLogic";
+import { compareWhenToCall, sortLeadsForList, whenToCall } from "./stageLogic";
 
 const now = new Date(2026, 10, 2, 12, 0); // Mon 2 Nov 2026, 12:00 local
 const ago = (mins: number) => new Date(now.getTime() - mins * 60_000).toISOString();
@@ -61,6 +61,11 @@ describe("whenToCall", () => {
   it("orders missed, now, today, later; upcoming soonest first, the rest newest first", () => {
     const missed = whenToCall(lead({ next_label: "Call A: they picked this time", call_at: ago(DAY) }), now);
     const fresh = whenToCall(lead({ next_label: "Just came in", created_at: ago(5) }), now);
+    // A new lead who picked a call time still comes first (it's still new and nobody has called).
+    const base = { id: "", agent_id: "", pipeline_id: "", source_page_id: null, fb_lead_id: null, fb_ad_id: null, archived: false, came_back_at: null, name: "", phone: "", email: "", form_answers: null } as const;
+    const picked = { ...base, id: "picked", ...lead({ stage: "New Lead", created_at: ago(5), reminder_at: inMins(DAY), next_label: "They picked a time" }) };
+    const old = { ...base, id: "old", ...lead({ stage: "New Lead", created_at: ago(3 * DAY), next_label: "Just came in" }) };
+    expect(sortLeadsForList([old, picked] as never)[0]).toBe(picked);
     const newer = whenToCall(lead({ next_label: "Just came in", created_at: ago(2 * DAY) }), now);
     const older = whenToCall(lead({ next_label: "Just came in", created_at: ago(9 * DAY) }), now);
     const soon = whenToCall(lead({ next_label: "Call B: they picked this time", call_at: inMins(DAY) }), now);
