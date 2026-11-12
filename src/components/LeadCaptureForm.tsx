@@ -25,6 +25,15 @@ function emailIsValid(v: string): boolean {
   return /^\S+@\S+\.\S+$/.test(v);
 }
 
+/** How full the bar looks on a step (0-based) of a form with n steps. It starts
+ *  part-way full and moves faster at the start than at the end, so the form
+ *  feels quick; it only reaches the end once they are done. */
+export function formProgress(step: number, n: number): number {
+  // Finishing counts as one more step, so the last question sits near the end, not at it.
+  const done = Math.min(1, (step + 1) / (Math.max(1, n) + 1));
+  return Math.round(10 + 90 * (1 - (1 - done) ** 2));
+}
+
 /**
  * The one fixed landing-page template — a plain branded header (visually
  * separate from the card below it, optional — see `showHeader`), an
@@ -81,7 +90,7 @@ export default function LeadCaptureForm({
   const step = steps[Math.min(stepIndex, steps.length - 1)];
   const isLast = stepIndex === steps.length - 1;
   const isFirst = stepIndex === 0;
-  const progress = ((stepIndex + 1) / steps.length) * 100;
+  const progress = formProgress(stepIndex, steps.length);
 
   // Funnel tracking for the published page — never fires in the dashboard
   // preview. Each step counts once per visitor session.
@@ -263,12 +272,16 @@ export default function LeadCaptureForm({
 
           {phase === "steps" && (
             <>
-              <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
-                <EventNoteIcon sx={{ fontSize: 16, color: "text.disabled" }} />
-                <Typography sx={{ fontSize: 11, fontWeight: 600, color: "text.secondary", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                  Step {stepIndex + 1} of {steps.length}
-                </Typography>
-              </Box>
+              {/* No "Step 3 of 8": counting the steps makes a longer form feel long.
+                  Only the last one says so, which gives a push to finish. */}
+              {isLast && steps.length > 1 && (
+                <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
+                  <EventNoteIcon sx={{ fontSize: 16, color: accentOnWhite(page.accentColor) }} />
+                  <Typography sx={{ fontSize: 11.5, fontWeight: 700, color: accentOnWhite(page.accentColor), textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                    Last step
+                  </Typography>
+                </Box>
+              )}
 
               {step.kind === "question" && (
                 <QuestionStep
@@ -501,35 +514,7 @@ function DisqualifiedScreen({ page }: { page: LeadPage }) {
   );
 }
 
-/** Up to this many answers: a tap-able list. More than that: a dropdown
- *  (the phone's own picker), so the list doesn't run on for screens. */
-const LIST_MAX = 5;
-
-export function ChoiceStep({ question, options, value, onPick, accent, error }: { question: string; options: string[]; value: string; onPick: (v: string) => void; accent: string; error?: string }) {
-  if (options.length > LIST_MAX) {
-    return (
-      <Box sx={{ mt: 1.5 }}>
-        <Typography sx={{ fontSize: 18, fontWeight: 600, mb: 1.25 }}>{question}</Typography>
-        <TextField
-          select
-          fullWidth
-          value={value}
-          onChange={(e) => onPick(e.target.value)}
-          error={!!error}
-          helperText={error}
-          slotProps={{
-            select: { native: true },
-            inputLabel: { shrink: true },
-            input: { sx: { fontSize: 16, bgcolor: "#fff", borderRadius: "8px", "&.Mui-focused fieldset": { borderColor: accent, borderWidth: 2 }, "& fieldset": { borderColor: value ? accent : "#dadce0" } } },
-            htmlInput: { "aria-label": question },
-          }}
-        >
-          <option value="" disabled>Choose one</option>
-          {options.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
-        </TextField>
-      </Box>
-    );
-  }
+function ChoiceStep({ question, options, value, onPick, accent, error }: { question: string; options: string[]; value: string; onPick: (v: string) => void; accent: string; error?: string }) {
   return (
     <Box sx={{ mt: 1.5 }}>
       <Typography sx={{ fontSize: 18, fontWeight: 600, mb: 1 }}>{question}</Typography>
