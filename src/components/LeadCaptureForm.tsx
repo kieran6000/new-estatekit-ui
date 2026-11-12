@@ -501,7 +501,35 @@ function DisqualifiedScreen({ page }: { page: LeadPage }) {
   );
 }
 
-function ChoiceStep({ question, options, value, onPick, accent, error }: { question: string; options: string[]; value: string; onPick: (v: string) => void; accent: string; error?: string }) {
+/** Up to this many answers: a tap-able list. More than that: a dropdown
+ *  (the phone's own picker), so the list doesn't run on for screens. */
+const LIST_MAX = 5;
+
+export function ChoiceStep({ question, options, value, onPick, accent, error }: { question: string; options: string[]; value: string; onPick: (v: string) => void; accent: string; error?: string }) {
+  if (options.length > LIST_MAX) {
+    return (
+      <Box sx={{ mt: 1.5 }}>
+        <Typography sx={{ fontSize: 18, fontWeight: 600, mb: 1.25 }}>{question}</Typography>
+        <TextField
+          select
+          fullWidth
+          value={value}
+          onChange={(e) => onPick(e.target.value)}
+          error={!!error}
+          helperText={error}
+          slotProps={{
+            select: { native: true },
+            inputLabel: { shrink: true },
+            input: { sx: { fontSize: 16, bgcolor: "#fff", borderRadius: "8px", "&.Mui-focused fieldset": { borderColor: accent, borderWidth: 2 }, "& fieldset": { borderColor: value ? accent : "#dadce0" } } },
+            htmlInput: { "aria-label": question },
+          }}
+        >
+          <option value="" disabled>Choose one</option>
+          {options.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+        </TextField>
+      </Box>
+    );
+  }
   return (
     <Box sx={{ mt: 1.5 }}>
       <Typography sx={{ fontSize: 18, fontWeight: 600, mb: 1 }}>{question}</Typography>
