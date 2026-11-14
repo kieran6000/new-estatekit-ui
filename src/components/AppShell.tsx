@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useMemo } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   Avatar,
@@ -59,8 +59,23 @@ import { TodoBadge } from "./NoteFor";
 import estateKitLogoBlue from "../assets/blue logo full.png";
 import ErrorBoundary from "./ErrorBoundary";
 import { preloadPages } from "../lib/lazyPage";
+import { PageTitleContext, appTitle } from "../lib/pageTitle";
 
 const RAIL_WIDTH = 240;
+
+/** The tab's name for each part of the app, when the page doesn't name it. */
+const SECTION_TITLES: Record<string, string> = {
+  leads: "Leads",
+  calendar: "Calendar",
+  mypage: "Forms",
+  account: "Settings",
+  setup: "Get set up",
+  clients: "Accounts",
+  overview: "Overview",
+  automations: "Automations",
+  team: "My team",
+  home: "Dashboard",
+};
 
 /** While a page downloads (the first time it's opened), inside the app. */
 function PageLoading() {
@@ -108,6 +123,11 @@ export default function AppShell() {
   const section = (isManagingOther || selfRun) && (pathname === myClientBase || pathname.startsWith(myClientBase + "/")) ? "overview" : activeSection(pathname);
   usePageviewTracking();
   useRealtimeSubscriptions();
+  // The tab says where you are: the page's own name if it gave one, else the section.
+  const [pageTitle, setPageTitle] = useState<string | null>(null);
+  useEffect(() => {
+    document.title = appTitle(pageTitle || SECTION_TITLES[section] || "Leads");
+  }, [pageTitle, section]);
   // The pages agents open most, fetched in the background once the app is up,
   // so tapping them is as instant as before they loaded on demand.
   useEffect(() => {
@@ -321,7 +341,9 @@ export default function AppShell() {
         )}
         <ErrorBoundary inline resetKey={pathname}>
           <Suspense fallback={<PageLoading />}>
-            <Outlet />
+            <PageTitleContext.Provider value={setPageTitle}>
+              <Outlet />
+            </PageTitleContext.Provider>
           </Suspense>
         </ErrorBoundary>
       </Box>

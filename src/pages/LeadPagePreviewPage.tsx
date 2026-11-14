@@ -55,6 +55,14 @@ export default function LeadPagePreviewPage() {
     if (page?.id) trackPageEvent(page.id, "view");
   }, [page?.id]);
 
+  // The agent's name in the tab, and in the top bar of the Facebook and
+  // Instagram in-app browsers (where most visitors come from), instead of
+  // EstateKit's own tagline: this is the agent's page.
+  useEffect(() => {
+    const who = page?.agentName?.trim() || page?.headline?.trim();
+    if (who) document.title = who;
+  }, [page?.agentName, page?.headline]);
+
   // Stash which ad/campaign sent them before they start the form — the query
   // string is only present on this first hit, and the form is multi-step.
   useEffect(() => {

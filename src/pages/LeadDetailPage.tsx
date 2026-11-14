@@ -39,6 +39,7 @@ import OutcomeSheet from "../components/OutcomeSheet";
 import LeadHistory from "../components/LeadHistory";
 import { logLeadCall } from "../api/leadEvents";
 import type { LeadRow, OutcomeStep, Stage } from "../types";
+import { usePageTitle } from "../lib/pageTitle";
 
 /** The lead, as its own page (/leads/:id) or in the Leads list's side panel
  *  (leadId + onClose), so agents can go down the list without losing it. */
@@ -55,6 +56,7 @@ export default function LeadDetailPage({ leadId, onClose, nav }: {
   // another agent's link), then switches to that agent's account.
   const { lead, isLoading: leadLoading } = useLeadWithStatus(id);
   useFollowLeadAccount(lead);
+  usePageTitle(lead?.name);
   const { data: pipelines = [] } = usePipelines();
   const { data: isOperator } = useIsOperator();
   const datasetByPage = useDatasetByPage(isOperator === true);

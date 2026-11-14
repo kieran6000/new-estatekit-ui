@@ -88,6 +88,7 @@ import InvoicesSection from "../components/InvoicesSection";
 import { useAdminAccess } from "../hooks/useAdminAccess";
 import { TodoBadge } from "../components/NoteFor";
 import { prettyPhone, toE164, waDigits } from "../lib/phone";
+import { usePageTitle } from "../lib/pageTitle";
 
 /** Digits in international form, so 083… and +2783… compare equal. */
 const digits = (s: string) => waDigits(s) || (s || "").replace(/\D/g, "");
@@ -123,6 +124,7 @@ export default function ClientDetailPage() {
   // Their page is the account you're working in (it replaced /overview and,
   // for staff, /account): opening it switches you into them.
   useFollowAccount(agentId ? { agent_id: agentId } : null, "account");
+  usePageTitle(data?.profile.display_name);
   // A self-run account sees only its own Overview; the other tabs are EstateKit's.
   const { isOperator: staffView } = useAdminAccess();
   const tab: TabKey = !staffView ? "overview" : CLIENT_TABS.includes(tabParam as TabKey) ? (tabParam as TabKey) : "overview";
