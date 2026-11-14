@@ -25,8 +25,12 @@ import { ThankYouCallTime } from "../components/ThankYouExtras";
 import VideoPlayer, { canPlayVideo, type EndCta, type VideoProgress } from "../components/VideoPlayer";
 import { supabase } from "../api/_client";
 import { waDigits } from "../lib/phone";
+import { useLeadOutbox } from "../lib/leadOutbox";
 
 export default function ThankYouPage() {
+  // The form they just sent is still saving in the background (lib/leadOutbox):
+  // if the signal drops, it goes again as soon as it's back.
+  useLeadOutbox();
   const [params] = useSearchParams();
   const slug = params.get("p");
   // The dashboard's preview (Forms → Thank-you page): everything shows, nothing is saved or tracked.

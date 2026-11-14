@@ -5,7 +5,8 @@ import { Box, Skeleton, Typography } from "@mui/material";
 import { usePostHog } from "@posthog/react";
 import { tokens } from "../theme";
 import { readableOn } from "../lib/contrast";
-import { getLeadPageBySlug, submitMockLead, reportCapiLead } from "../api/leadPages";
+import { getLeadPageBySlug, reportCapiLead } from "../api/leadPages";
+import { submitLead, useLeadOutbox } from "../lib/leadOutbox";
 import { getPipelinePublic } from "../api/pipelines";
 import { listCustomQuestionsPublic } from "../api/customQuestions";
 import LeadCaptureForm, { HeaderBrand } from "../components/LeadCaptureForm";
@@ -22,6 +23,8 @@ export default function LeadPagePreviewPage() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const posthog = usePostHog();
+  // A form from an earlier visit that never got through: send it now.
+  useLeadOutbox();
 
   const { data: page, isLoading: pageLoading } = useQuery({
     queryKey: ["publicPageSlug", slug],
@@ -124,7 +127,9 @@ export default function LeadPagePreviewPage() {
                   const planToken = resolveMagnet(page, pipeline.kind).kind !== "none" || page.thankYouAskCall ? newPlanToken() : null;
                   rememberPlanToken(page.slug, planToken);
 
-                  void submitMockLead(page.id, name, phone, answers, email, attribution, quality, planToken)
+                  // Kept on the phone and retried until it's saved (lib/leadOutbox):
+                  // a failed save here used to lose the lead without a trace.
+                  void submitLead({ pageId: page.id, name, phone, formAnswers: answers, email, attribution, quality, planToken })
                     .then((res) => {
                       if (res?.id && quality === "good" && page.fbPixelId) {
                         void reportCapiLead({
