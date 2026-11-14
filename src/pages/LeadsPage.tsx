@@ -79,6 +79,7 @@ import LocalOfferIcon from "@mui/icons-material/LocalOffer";
 import { DEAD_STAGES, PIPELINE_KIND_LABEL, PIPELINE_STAGES, type LeadRow, type OutcomeStep, type Pipeline, type PipelineKind, type Stage } from "../types";
 import { stageLabel } from "../types";
 import { dueLeads, isNewLead, pipelineKindFor, sortLeadsForList, stepForStage, computeStagePatch, stageForKind, whenToCall, whenToCallSortValue } from "../lib/stageLogic";
+import { leadMatchesSearch } from "../lib/leadSearch";
 import { timeAgo } from "../lib/timeAgo";
 import { useLeads, useUpdateLeadStage } from "../hooks/useLeads";
 import { useAddPipeline, usePipelines, useSyncPipelineSheet, useTeamPipelines } from "../hooks/usePipelines";
@@ -102,6 +103,7 @@ import GSheetIcon from "../components/GSheetIcon";
 import StageMenu from "../components/StageMenu";
 import OutcomeSheet from "../components/OutcomeSheet";
 import FocusCallModal from "../components/FocusCallModal";
+import { prettyPhone } from "../lib/phone";
 
 export default function LeadsPage() {
   const navigate = useNavigate();
@@ -272,14 +274,12 @@ export default function LeadsPage() {
   const callList = useMemo(() => dueLeads(pipelineLeads), [pipelineLeads]);
 
   const filtered = useMemo(() => {
-    const query = q.toLowerCase().trim();
     return sortLeadsForList(pipelineLeads).filter((l) => {
       if (filter !== "All" && l.stage !== filter) return false;
       if (tagFilter && !leadTags(l, datasetByPage).includes(tagFilter)) return false;
-      if (!query) return true;
-      return l.name.toLowerCase().includes(query) || l.phone.replace(/\s/g, "").includes(query.replace(/\s/g, ""));
+      return leadMatchesSearch(l, q);
     });
-  }, [pipelineLeads, filter, tagFilter, q]);
+  }, [pipelineLeads, filter, tagFilter, q, datasetByPage]);
 
   // Column sorting on the desktop table (same behaviour as every table).
   // "stage" is the usual view: grouped by stage, most urgent first in each.
@@ -452,7 +452,7 @@ export default function LeadsPage() {
           <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
             <SearchIcon sx={{ color: "text.disabled" }} />
             <InputBase
-              placeholder={searchAll ? "Search every account by name, phone or email" : "Search leads"}
+              placeholder={searchAll ? "Search every account by name, phone or email" : "Search by name, phone or email"}
               value={q}
               onChange={(e) => setQ(e.target.value)}
               fullWidth
@@ -1240,7 +1240,7 @@ function LeadsTable({
             <LeadTags lead={l} sx={{ ml: 0.75 }} />
           </Box>
           <Typography sx={{ color: "text.secondary", fontSize: 13, display: "block" }}>
-            {canSeeFullPhone ? l.phone : maskPhone(l.phone)}
+            {canSeeFullPhone ? prettyPhone(l.phone) : maskPhone(l.phone)}
           </Typography>
         </TableCell>
         <TableCell sx={{ fontSize: 13, color: "text.secondary", whiteSpace: "nowrap" }} title={`Came in ${new Date(l.created_at).toLocaleString("en-ZA")}${l.came_back_at ? ` · came back ${new Date(l.came_back_at).toLocaleString("en-ZA")}` : ""}`}>
@@ -1454,7 +1454,7 @@ function MobileLeadsList({
             <LeadTags lead={l} sx={{ ml: 0.75 }} />
       </Box>
       <Typography sx={{ color: "text.secondary", fontSize: 13 }}>
-        {canSeeFullPhone ? l.phone : maskPhone(l.phone)}
+        {canSeeFullPhone ? prettyPhone(l.phone) : maskPhone(l.phone)}
         <Box component="span" sx={{ color: "text.disabled", mx: 0.75 }}>·</Box>
         {cameBack(l) ? `came back ${timeAgo(l.came_back_at!)}` : timeAgo(l.created_at)}
       </Typography>

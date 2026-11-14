@@ -18,6 +18,7 @@ import type { GoogleEvent } from "../api/googleCalendar";
 import GoogleCalendarIcon from "../components/GoogleCalendarIcon";
 import LeadDetailPage from "./LeadDetailPage";
 import { allDayCovers, calendarItems, DURATION, KIND_STYLE, layoutBlocks, overdue, spanOnDay, syncKind, weekStart, type CalItem } from "../lib/calendar";
+import { prettyPhone } from "../lib/phone";
 
 // Calendar, laid out like Google Calendar (what agents already know): days
 // across, hours down, each appointment, viewing, picked call time and
@@ -534,7 +535,7 @@ function EventCard({ it, phone, canSeeFullPhone, googleLink, onOpen, onClose }: 
         <IconButton aria-label="Close" onClick={onClose} sx={{ width: 44, height: 44, mt: -1, mr: -1 }}><CloseIcon /></IconButton>
       </Box>
       <Box sx={{ display: "flex", flexDirection: "column", gap: 1, mt: 1.5, ml: 3.25, fontSize: 15 }}>
-        <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}><PhoneIcon sx={{ fontSize: 18, color: "text.secondary" }} />{canSeeFullPhone ? it.lead.phone : maskPhone(it.lead.phone)}</Box>
+        <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}><PhoneIcon sx={{ fontSize: 18, color: "text.secondary" }} />{canSeeFullPhone ? prettyPhone(it.lead.phone) : maskPhone(it.lead.phone)}</Box>
         <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}><ScheduleIcon sx={{ fontSize: 18, color: "text.secondary" }} />{it.label}</Box>
         {googleLink && <InGoogleLink href={googleLink} />}
       </Box>

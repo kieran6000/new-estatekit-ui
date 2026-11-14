@@ -40,6 +40,7 @@ import LeadHistory from "../components/LeadHistory";
 import { logLeadCall } from "../api/leadEvents";
 import type { LeadRow, OutcomeStep, Stage } from "../types";
 import { usePageTitle } from "../lib/pageTitle";
+import { prettyPhone } from "../lib/phone";
 
 /** The lead, as its own page (/leads/:id) or in the Leads list's side panel
  *  (leadId + onClose), so agents can go down the list without losing it. */
@@ -227,7 +228,7 @@ export default function LeadDetailPage({ leadId, onClose, nav }: {
 
         <Section title="Contact" action={<Button size="small" startIcon={<EditOutlinedIcon />} onClick={() => setEditOpen(true)}>Edit</Button>}>
           <Row k="Full name" v={lead.name} />
-          <Row k="Phone" v={canSeeFullPhone ? lead.phone : maskPhone(lead.phone)} />
+          <Row k="Phone" v={canSeeFullPhone ? prettyPhone(lead.phone) : maskPhone(lead.phone)} />
           <Row k="Email" v={lead.email || ""} />
           <Row k="Stage" v={stageLabel(lead.stage, pipelineKind)} />
           <Row k="Received" v={`${new Date(lead.created_at).toLocaleString("en-ZA", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })} (${timeAgo(lead.created_at)})`} />
