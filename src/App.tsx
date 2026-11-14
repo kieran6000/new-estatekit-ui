@@ -11,6 +11,7 @@ import WelcomePage from "./pages/WelcomePage";
 import LeadsPage from "./pages/LeadsPage";
 import TeamPipelinePage from "./pages/TeamPipelinePage";
 import TeamReportPage from "./pages/TeamReportPage";
+import CallBookingPage from "./pages/CallBookingPage";
 import LeadDetailPage from "./pages/LeadDetailPage";
 import CalendarPage from "./pages/CalendarPage";
 import { getActiveAgentIdSync } from "./api/_client";
@@ -144,6 +145,7 @@ export default function App() {
       <Route path="/c/:token" element={<ContractPage />} />
       <Route path="/contract/:token" element={<ContractPage />} />
       <Route path="/i/:token" element={<InvoicePage />} />
+      <Route path="/call/:token" element={<CallBookingPage />} />
       <Route path="/k/:token" element={<CheckInPage />} />
 
       {!user ? (

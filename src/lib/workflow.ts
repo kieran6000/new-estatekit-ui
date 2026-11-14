@@ -245,9 +245,9 @@ export const EXITS: { kind: ExitKind; label: string }[] = [
 export const FIELDS = {
   whatsapp_agent: ["first_name", "name", "lead_type", "phone", "email", "address", "form", "answers", "form_answers", "note", "appointment", "call_time", "stage", "next_label", "action_link"],
   // Never the call-and-log link: that's the agent's.
-  whatsapp_lead: ["first_name", "area", "address", "form_answers", "note", "appointment", "call_time", "whatsapp_link", "agent_name", "agent_phone"],
+  whatsapp_lead: ["first_name", "area", "address", "form_answers", "note", "appointment", "call_time", "whatsapp_link", "call_link", "agent_name", "agent_phone"],
   daily: ["first_name", "count", "leads_word", "follow_ups", "today", "pipeline", "not_called"],
-  email_lead: ["first_name", "area", "address", "form_answers", "note", "appointment", "call_time", "lead_magnet", "recent_sales", "whatsapp_link", "agent_name", "agent_phone", "plan_link"],
+  email_lead: ["first_name", "area", "address", "form_answers", "note", "appointment", "call_time", "lead_magnet", "recent_sales", "whatsapp_link", "call_link", "agent_name", "agent_phone", "plan_link"],
 } as const;
 export type FieldSet = keyof typeof FIELDS;
 
@@ -292,6 +292,7 @@ const INFO: Record<string, FieldInfo> = {
   lead_magnet: { label: "Lead magnet box", example: "YOUR MARKETING PLAN IS READY\nHow to sell your home without losing money or time.\nOpen my marketing plan: leads.estatekit.co/plan/…", group: "Extras" },
   recent_sales: { label: "Recent sales nearby", example: "Here's what's moved near you recently:\n- 12 Elm Road: sold for R2 150 000\nSee them all: leads.estatekit.co/sold/…", group: "Extras" },
   whatsapp_link: { label: "WhatsApp-the-agent link", example: "leads.estatekit.co/w/…", group: "Links" },
+  call_link: { label: "Book-a-call link", example: "leads.estatekit.co/call/…", group: "Links" },
   plan_link: { label: "Marketing plan link", example: "leads.estatekit.co/plan/…", group: "Links" },
   count: { label: "Leads to call today", example: "7 leads", group: "Their day" },
   leads_word: { label: "\"lead\" or \"leads\"", example: "leads", group: "Their day" },
