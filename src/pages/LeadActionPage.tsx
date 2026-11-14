@@ -34,8 +34,9 @@ import { useLeadWithStatus, useUpdateLeadNote, useUpdateLeadStage } from "../hoo
 import { usePipelines } from "../hooks/usePipelines";
 import { getPipelinePublic } from "../api/pipelines";
 import { useSnack } from "../hooks/useSnack";
-import { MAIN_OUTCOME_OPTIONS, stepForStage, type MainOutcomeOption } from "../lib/stageLogic";
+import { MAIN_OUTCOME_OPTIONS, stepForStage, whenToCall, type MainOutcomeOption } from "../lib/stageLogic";
 import { prettyAnswer, intlDigits, telHref } from "../lib/format";
+import { prettyPhone } from "../lib/phone";
 import { timeAgo, whenLabel, isUpcoming } from "../lib/timeAgo";
 import { trackActivity } from "../lib/activity";
 import { armPendingCall, clearPendingCall } from "../lib/pendingCall";
@@ -193,7 +194,8 @@ function LeadActionUI({
   function logTokenOutcome(stage: Stage, offerUndo: boolean, label?: string, at?: string | null) {
     if (!token || !lead) return;
     const prevStage = lead.stage as Stage;
-    if (stage === prevStage) return;
+    // The same outcome again is real work too (a second "No answer" resets the
+    // retry reminder, a new booking time moves the appointment), as in the list.
     setTokenStage(stage);            // instant
     setLogged({ stage, label: label ?? labelForStage(stage, pipelineKind), status: "saving" });
     clearPendingCall();
@@ -203,7 +205,8 @@ function LeadActionUI({
         // The server works out the follow-up (next_label / reminder_at) from the
         // stage, so pull the row back to show the agent what's actually been set.
         qc.invalidateQueries({ queryKey: ["leadByToken", token] });
-        if (offerUndo) showSnack(outcomeSnack(stage), () => undoTokenOutcome(prevStage));
+        // Undo puts the old stage back; logging the same one again has nothing to undo.
+        if (offerUndo && stage !== prevStage) showSnack(outcomeSnack(stage), () => undoTokenOutcome(prevStage));
         else showSnack(outcomeSnack(stage));
       })
       .catch(() => {
@@ -348,6 +351,11 @@ function LeadActionUI({
     : [];
 
   const firstName = lead?.name.split(" ")[0] ?? "";
+  const when = lead ? whenLine(lead) : null;
+  // The tab and the phone's app switcher say whose lead this is.
+  useEffect(() => {
+    if (lead?.name) document.title = `${lead.name} · EstateKit`;
+  }, [lead?.name]);
 
   return (
     // Sized to one screen on a normal phone; on very short screens the content
@@ -409,34 +417,33 @@ function LeadActionUI({
               <LeadTags lead={lead} />
             </Box>
 
-            {/* What's already committed for this lead, stated up front. Without
-                it an agent opening the link has no idea an appointment is an
-                hour away — the single most useful thing to know before ringing. */}
-            {isUpcoming(lead.reminder_at) && (
+            {/* When to call, in the same words as the leads list: a time they
+                picked (red once it has gone by), an appointment, a retry. The
+                single most useful thing to know before ringing. Not shown for
+                a lead nobody has called yet: the WhatsApp that brought them
+                here already says it's new. */}
+            {when && (
               <Box
                 sx={{
                   display: "flex", alignItems: "center", gap: 1, mt: 1,
-                  bgcolor: tokens.amberTint, border: `1px solid ${tokens.amberBorder}`,
+                  bgcolor: when.tone.bg, border: `1px solid ${when.tone.border}`,
                   borderRadius: "8px", p: "8px 10px",
                 }}
               >
-                <EventAvailableIcon sx={{ fontSize: 18, color: tokens.amber, flex: "0 0 auto" }} />
+                <EventAvailableIcon sx={{ fontSize: 18, color: when.tone.fg, flex: "0 0 auto" }} />
                 <Box sx={{ minWidth: 0 }}>
-                  <Typography sx={{ fontSize: 13.5, fontWeight: 700, color: tokens.amber, lineHeight: 1.3 }}>
-                    {lead.next_label && lead.next_label !== "—" ? lead.next_label : "Follow up"}
-                  </Typography>
-                  <Typography sx={{ fontSize: 12.5, color: tokens.amber, lineHeight: 1.3 }}>
-                    {whenLabel(lead.reminder_at)}
-                  </Typography>
+                  <Typography sx={{ fontSize: 13.5, fontWeight: 700, color: when.tone.fg, lineHeight: 1.3 }}>{when.when}</Typography>
+                  {when.why && <Typography sx={{ fontSize: 12.5, color: when.tone.fg, lineHeight: 1.3 }}>{when.why}</Typography>}
                 </Box>
               </Box>
             )}
 
             <Divider sx={{ my: 1 }} />
 
-            <InfoLine icon={<CallIcon fontSize="small" />} value={showIntl(digits)} href={telHref(lead.phone)} strong />
+            <InfoLine icon={<CallIcon fontSize="small" />} value={prettyPhone(lead.phone)} href={telHref(lead.phone)} strong />
             {lead.email && <InfoLine icon={<EmailOutlinedIcon fontSize="small" />} value={lead.email} href={`mailto:${lead.email}`} />}
-            {addressAnswer && <InfoLine icon={<PlaceIcon fontSize="small" />} value={addressAnswer.a} />}
+            {/* Tap the address for directions: the phone opens its maps app. */}
+            {addressAnswer && <InfoLine icon={<PlaceIcon fontSize="small" />} value={addressAnswer.a} href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addressAnswer.a)}`} external />}
 
             {answeredQuestions.length > 0 && (
               <Box sx={{ mt: 1, borderTop: `1px solid ${tokens.divider2}` }}>
@@ -522,13 +529,12 @@ function LeadActionUI({
                 open={outcomeOpen}
                 onOpen={() => setOutcomeOpen(true)}
                 onClose={() => setOutcomeOpen(false)}
-                onChange={(e) => {
-                  const opt = MAIN_OUTCOME_OPTIONS[pipelineKind].find((o) => o.stage === e.target.value);
-                  if (opt) pickOutcome(opt);
-                }}
               >
+                {/* Each option logs on tap, even the one already showing: a
+                    second "No answer" is a real outcome, and a select's change
+                    event never fires for the value it already has. */}
                 {MAIN_OUTCOME_OPTIONS[pipelineKind].map((opt) => (
-                  <MenuItem key={opt.label} value={opt.stage}>
+                  <MenuItem key={opt.label} value={opt.stage} onClick={() => pickOutcome(opt)}>
                     <ListItemIcon sx={{ minWidth: 36, color: "text.secondary" }}>{OUTCOME_ICONS[opt.icon]}</ListItemIcon>
                     {opt.label}
                   </MenuItem>
@@ -598,6 +604,19 @@ function LeadActionUI({
   );
 }
 
+/** The leads list's "When to call" (its words, its red for a missed time), as
+ *  a line on the card. null when there's nothing beyond "it's new". */
+function whenLine(lead: LeadRow): { when: string; why: string; tone: { bg: string; border: string; fg: string } } | null {
+  const w = whenToCall(lead);
+  if (w.level === "none" || w.why === "Just came in" || w.why === "Not called yet") return null;
+  const tone = w.level === "missed"
+    ? { bg: tokens.redTint, border: tokens.redBorder, fg: tokens.red }
+    : w.level === "now"
+      ? { bg: tokens.greenTint, border: tokens.greenBorder, fg: tokens.greenDark }
+      : { bg: tokens.amberTint, border: tokens.amberBorder, fg: tokens.amber };
+  return { when: w.when, why: w.why, tone };
+}
+
 /** The readable label for a stage, so a confirmation can say "Booked an
  *  appointment" rather than the bare stage name. Falls back to the stage. */
 function labelForStage(stage: Stage, kind: PipelineKind): string {
@@ -616,6 +635,11 @@ function atHour(daysAhead: number, hour: number): Date {
   d.setDate(d.getDate() + daysAhead);
   d.setHours(hour, 0, 0, 0);
   return d;
+}
+
+/** 9 → "9am", 12 → "12pm", 14 → "2pm": as the other quick times are written. */
+function hourWords(h: number): string {
+  return h === 12 ? "12pm" : h > 12 ? `${h - 12}pm` : `${h}am`;
 }
 
 /**
@@ -640,8 +664,12 @@ function WhenIsItStep({
 }) {
   const [custom, setCustom] = useState(() => toLocalInput(atHour(1, 9)));
 
+  // "Today" says its time, like the other two, and only while there's a sensible
+  // one left: two hours from now on the hour, between 9am and 6pm. It used to
+  // save 6pm even at 7pm (an appointment already gone by), and 3am at 1am.
+  const todayHour = Math.max(9, new Date().getHours() + 2);
   const quick: { text: string; at: Date }[] = [
-    { text: "Today", at: atHour(0, Math.min(new Date().getHours() + 2, 18)) },
+    ...(todayHour <= 18 ? [{ text: `Today ${hourWords(todayHour)}`, at: atHour(0, todayHour) }] : []),
     { text: "Tomorrow 9am", at: atHour(1, 9) },
     { text: "Tomorrow 2pm", at: atHour(1, 14) },
   ];
@@ -786,17 +814,12 @@ function Step({ n, label, optional, children }: { n: number; label: string; opti
   );
 }
 
-/** "27826685452" → "+27 82 668 5452". */
-function showIntl(d: string): string {
-  return d.length === 11 && d.startsWith("27") ? `+27 ${d.slice(2, 4)} ${d.slice(4, 7)} ${d.slice(7)}` : `+${d}`;
-}
-
-function InfoLine({ icon, value, href, strong }: { icon: React.ReactNode; value: string; href?: string; strong?: boolean }) {
+function InfoLine({ icon, value, href, strong, external }: { icon: React.ReactNode; value: string; href?: string; strong?: boolean; external?: boolean }) {
   return (
     <Box sx={{ display: "flex", alignItems: "center", gap: 1.25, py: 0.4 }}>
       <Box sx={{ color: "text.disabled", display: "flex" }}>{icon}</Box>
       {href ? (
-        <Typography component="a" href={href} sx={{ fontSize: strong ? 16 : 14, fontWeight: strong ? 700 : 500, color: tokens.primaryDark, textDecoration: "none", wordBreak: "break-word" }}>
+        <Typography component="a" href={href} {...(external ? { target: "_blank", rel: "noopener" } : {})} sx={{ fontSize: strong ? 16 : 14, fontWeight: strong ? 700 : 500, color: tokens.primaryDark, textDecoration: "none", wordBreak: "break-word" }}>
           {value}
         </Typography>
       ) : (
