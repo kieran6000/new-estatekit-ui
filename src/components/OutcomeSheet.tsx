@@ -320,7 +320,7 @@ function CommissionInput({ onSave }: { onSave: (v: number) => void }) {
   const [val, setVal] = useState("");
   return (
     <Box sx={{ display: "flex", gap: 1, px: 2, py: 1, alignItems: "center" }}>
-      <TextField size="small" placeholder="45000" inputMode="numeric" value={val} onChange={(e) => setVal(e.target.value.replace(/\D/g, ""))} fullWidth />
+      <TextField size="small" placeholder="45000" slotProps={{ htmlInput: { inputMode: "numeric" } }} value={val} onChange={(e) => setVal(e.target.value.replace(/\D/g, ""))} fullWidth />
       <Button variant="contained" onClick={() => onSave(val ? +val : 0)}>
         Save
       </Button>

@@ -285,12 +285,11 @@ export default function SignupPage() {
                       <TextField
                         fullWidth
                         placeholder="WhatsApp number, e.g. 082 000 0000"
-                        inputMode="tel"
                         autoComplete="tel"
                         value={phone}
                         onChange={(e) => setPhone(e.target.value)}
                         onKeyDown={(e) => e.key === "Enter" && onContinue()}
-                        slotProps={{ input: { startAdornment: <InputAdornment position="start"><WhatsAppIcon fontSize="small" sx={{ color: "text.disabled" }} /></InputAdornment> } }}
+                        slotProps={{ input: { startAdornment: <InputAdornment position="start"><WhatsAppIcon fontSize="small" sx={{ color: "text.disabled" }} /></InputAdornment> }, htmlInput: { inputMode: "tel" } }}
                       />
                     </Question>
                   )}

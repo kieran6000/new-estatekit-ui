@@ -338,7 +338,8 @@ function AutoSaveField({
       label={label}
       value={draft}
       fullWidth
-      inputMode={inputMode}
+      // On the <input> itself: a phone shows the number pad, or the @ key.
+      slotProps={{ htmlInput: { inputMode } }}
       type={inputMode === "email" ? "email" : "text"}
       error={touched && !!problem}
       helperText={touched && problem ? problem : " "}

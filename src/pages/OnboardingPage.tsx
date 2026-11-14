@@ -257,11 +257,10 @@ export default function OnboardingPage() {
                         fullWidth
                         label="Website (if you have one)"
                         placeholder="e.g. www.youragency.co.za"
-                        inputMode="url"
                         value={website}
                         onChange={(e) => setWebsite(e.target.value)}
                         onKeyDown={(e) => e.key === "Enter" && onNext()}
-                        slotProps={{ input: { startAdornment: <InputAdornment position="start"><LanguageIcon fontSize="small" sx={{ color: "text.disabled" }} /></InputAdornment> } }}
+                        slotProps={{ input: { startAdornment: <InputAdornment position="start"><LanguageIcon fontSize="small" sx={{ color: "text.disabled" }} /></InputAdornment> }, htmlInput: { inputMode: "url", autoCapitalize: "none", spellCheck: false } }}
                       />
                     </Question>
                   )}
@@ -293,9 +292,9 @@ export default function OnboardingPage() {
                         slotProps={{ input: { startAdornment: <InputAdornment position="start"><PersonOutlineIcon fontSize="small" sx={{ color: "text.disabled" }} /></InputAdornment> } }} />
                       <TextField fullWidth type="email" placeholder="Email address" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)}
                         slotProps={{ input: { startAdornment: <InputAdornment position="start"><EmailOutlinedIcon fontSize="small" sx={{ color: "text.disabled" }} /></InputAdornment> } }} />
-                      <TextField fullWidth placeholder="WhatsApp number, e.g. 082 000 0000" inputMode="tel" autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
+                      <TextField fullWidth placeholder="WhatsApp number, e.g. 082 000 0000" autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
                         onKeyDown={(e) => e.key === "Enter" && onNext()}
-                        slotProps={{ input: { startAdornment: <InputAdornment position="start"><WhatsAppIcon fontSize="small" sx={{ color: "text.disabled" }} /></InputAdornment> } }} />
+                        slotProps={{ input: { startAdornment: <InputAdornment position="start"><WhatsAppIcon fontSize="small" sx={{ color: "text.disabled" }} /></InputAdornment> }, htmlInput: { inputMode: "tel" } }} />
                     </Question>
                   )}
 
