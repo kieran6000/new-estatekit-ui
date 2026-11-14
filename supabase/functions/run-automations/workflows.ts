@@ -791,6 +791,7 @@ class Context {
       note: noteText(l),
       form_answers: answersText(l),
     };
+    if (/\{\{\s*call_link\s*\}\}/.test(step.text)) fields.call_link = await this.callLink(l);
     const text = fill(step.text, fields);
 
     if (this.deps.budget.sends >= this.deps.maxSends) return { kind: "hold", until: new Date() };
@@ -809,6 +810,20 @@ class Context {
       await this.deps.logToDiscord?.(`\u{26A0}\u{FE0F} Workflow **${this.wfName}** could NOT send WhatsApp to the lead **${l.name}** (${result})`);
     }
     return { kind: "done" };
+  }
+
+  /** The lead's book-a-call page (/call/<code>): they pick a day and time, the
+   *  same as on the thank-you page. Uses the lead's private code (the one the
+   *  plan link uses), made now if they don't have one yet. */
+  private async callLink(l: Lead): Promise<string> {
+    if (!l.plan_token) {
+      const token = crypto.randomUUID().replace(/-/g, "");
+      await this.supabase.from("leads").update({ plan_token: token }).eq("id", l.id).is("plan_token", null);
+      // Another step may have set one first: use whatever is saved.
+      const { data } = await this.supabase.from("leads").select("plan_token").eq("id", l.id).maybeSingle();
+      l.plan_token = (data?.plan_token as string | null) ?? null;
+    }
+    return l.plan_token ? `${APP}/call/${l.plan_token}` : `${APP}/w/${l.id}`;
   }
 
   /** The lead magnet's link (KEEP IN STEP with the form's lead magnet: no
@@ -873,6 +888,7 @@ class Context {
     };
     const uses = (f: string) => new RegExp(`\\{\\{\\s*${f}\\s*\\}\\}`).test(`${step.subject}\n${step.body}`);
     if (uses("plan_link")) fields.plan_link = await this.planLink(l);
+    if (uses("call_link")) fields.call_link = await this.callLink(l);
     if (uses("recent_sales")) fields.recent_sales = await this.recentSales(l);
     // The form's lead magnet, drawn as a box below. None for this form: nothing.
     let magnet: (Magnet & { url: string }) | null = null;
