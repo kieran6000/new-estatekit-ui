@@ -14,6 +14,7 @@ import { SnackProvider } from "./hooks/useSnack";
 import { TierProvider } from "./hooks/useTier";
 import PreviewBanner from "./components/PreviewBanner";
 import { ThemeModeProvider } from "./lib/themeMode";
+import ErrorBoundary from "./components/ErrorBoundary";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
@@ -49,7 +50,9 @@ createRoot(document.getElementById("root")!).render(
                 <BrowserRouter>
                   <ThemeModeProvider>
                     <PreviewBanner />
-                    <App />
+                    <ErrorBoundary>
+                      <App />
+                    </ErrorBoundary>
                   </ThemeModeProvider>
                 </BrowserRouter>
               </SnackProvider>

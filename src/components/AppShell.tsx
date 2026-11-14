@@ -1,8 +1,9 @@
-import { useMemo } from "react";
+import { Suspense, useEffect, useMemo } from "react";
 import { Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   Avatar,
   Box,
+  CircularProgress,
   Divider,
   Drawer,
   List,
@@ -56,8 +57,19 @@ import estateKitLogoWhite from "../assets/whitelogofull.png";
 import { useAdminAccess } from "../hooks/useAdminAccess";
 import { TodoBadge } from "./NoteFor";
 import estateKitLogoBlue from "../assets/blue logo full.png";
+import ErrorBoundary from "./ErrorBoundary";
+import { preloadPages } from "../lib/lazyPage";
 
 const RAIL_WIDTH = 240;
+
+/** While a page downloads (the first time it's opened), inside the app. */
+function PageLoading() {
+  return (
+    <Box sx={{ display: "flex", justifyContent: "center", pt: 10 }}>
+      <CircularProgress />
+    </Box>
+  );
+}
 
 function activeSection(pathname: string): string {
   if (pathname.startsWith("/lead-page")) return "mypage";
@@ -96,6 +108,17 @@ export default function AppShell() {
   const section = (isManagingOther || selfRun) && (pathname === myClientBase || pathname.startsWith(myClientBase + "/")) ? "overview" : activeSection(pathname);
   usePageviewTracking();
   useRealtimeSubscriptions();
+  // The pages agents open most, fetched in the background once the app is up,
+  // so tapping them is as instant as before they loaded on demand.
+  useEffect(() => {
+    preloadPages([
+      () => import("../pages/LeadsPage"),
+      () => import("../pages/LeadDetailPage"),
+      () => import("../pages/CalendarPage"),
+      () => import("../pages/LeadPagePage"),
+      () => import("../pages/AccountPage"),
+    ]);
+  }, []);
   const { data: profile } = useQuery({ queryKey: ["myProfile"], queryFn: getMyProfile, enabled: !!user, staleTime: 5 * 60_000 });
   const { data: sales } = useQuery({ queryKey: ["mySold"], queryFn: listMySoldListings, enabled: !!user, staleTime: 5 * 60_000 });
   // "Get set up" sits in the menu until the account is complete (or while on it).
@@ -296,7 +319,11 @@ export default function AppShell() {
             <AccountSwitcher variant="light" staff={!!isOperator} />
           </Box>
         )}
-        <Outlet />
+        <ErrorBoundary inline resetKey={pathname}>
+          <Suspense fallback={<PageLoading />}>
+            <Outlet />
+          </Suspense>
+        </ErrorBoundary>
       </Box>
 
       {!isDesktop && (

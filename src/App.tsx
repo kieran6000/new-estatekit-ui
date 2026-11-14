@@ -1,48 +1,110 @@
+import { Suspense, useEffect } from "react";
 import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { Box, CircularProgress } from "@mui/material";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "./hooks/useAuth";
 import { useIsOperator } from "./hooks/useAutomations";
 import { amIOnboarded, getMyAccountStatus } from "./api/agentProfile";
-import AccountPausedPage from "./pages/AccountPausedPage";
-import AppShell from "./components/AppShell";
 import LoginPage from "./pages/LoginPage";
-import WelcomePage from "./pages/WelcomePage";
-import LeadsPage from "./pages/LeadsPage";
-import TeamPipelinePage from "./pages/TeamPipelinePage";
-import TeamReportPage from "./pages/TeamReportPage";
-import CallBookingPage from "./pages/CallBookingPage";
-import LeadDetailPage from "./pages/LeadDetailPage";
-import CalendarPage from "./pages/CalendarPage";
 import { getActiveAgentIdSync } from "./api/_client";
-import HomePage from "./pages/HomePage";
-import LeadPagePage from "./pages/LeadPagePage";
-import UpgradePage from "./pages/UpgradePage";
-import AdminAutomationsPage from "./pages/AdminAutomationsPage";
-import ClientsPage from "./pages/ClientsPage";
-import ClientDetailPage from "./pages/ClientDetailPage";
-import AccountPage from "./pages/AccountPage";
-import SetupPage from "./pages/SetupPage";
-import LeadActionPage from "./pages/LeadActionPage";
-import LeadPagePreviewPage from "./pages/LeadPagePreviewPage";
-import ThankYouPage from "./pages/ThankYouPage";
-import UnsubscribePage from "./pages/UnsubscribePage";
-import PrivacyPolicyPage from "./pages/PrivacyPolicyPage";
-import SignupPage from "./pages/SignupPage";
-import OnboardingPage from "./pages/OnboardingPage";
-import OnboardingNextPage from "./pages/OnboardingNextPage";
-import SoldPage from "./pages/SoldPage";
-import PlanPage from "./pages/PlanPage";
-import WeeklyReportPage from "./pages/WeeklyReportPage";
-import SharedReportPage from "./pages/SharedReportPage";
-import ContractPage from "./pages/ContractPage";
-import InvoicePage from "./pages/InvoicePage";
-import CheckInPage from "./pages/CheckInPage";
-import ContractsAdminPage from "./pages/ContractsAdminPage";
-import WeeklyReportsAdminPage from "./pages/WeeklyReportsAdminPage";
 import { useAdminAccess } from "./hooks/useAdminAccess";
-import { findNoteByCode } from "./api/checkins";
-import AuditLogPage from "./pages/AuditLogPage";
+import { lazyPage } from "./lib/lazyPage";
+
+// Each page downloads the first time it's opened (see lib/lazyPage), and so
+// does the app's frame (menu, account switcher): a seller opening a lead
+// form downloads none of the dashboard.
+const load = {
+  AppShell: () => import("./components/AppShell"),
+  AccountPausedPage: () => import("./pages/AccountPausedPage"),
+  WelcomePage: () => import("./pages/WelcomePage"),
+  LeadsPage: () => import("./pages/LeadsPage"),
+  TeamPipelinePage: () => import("./pages/TeamPipelinePage"),
+  TeamReportPage: () => import("./pages/TeamReportPage"),
+  CallBookingPage: () => import("./pages/CallBookingPage"),
+  LeadDetailPage: () => import("./pages/LeadDetailPage"),
+  CalendarPage: () => import("./pages/CalendarPage"),
+  HomePage: () => import("./pages/HomePage"),
+  LeadPagePage: () => import("./pages/LeadPagePage"),
+  UpgradePage: () => import("./pages/UpgradePage"),
+  AdminAutomationsPage: () => import("./pages/AdminAutomationsPage"),
+  ClientsPage: () => import("./pages/ClientsPage"),
+  ClientDetailPage: () => import("./pages/ClientDetailPage"),
+  AccountPage: () => import("./pages/AccountPage"),
+  SetupPage: () => import("./pages/SetupPage"),
+  LeadActionPage: () => import("./pages/LeadActionPage"),
+  LeadPagePreviewPage: () => import("./pages/LeadPagePreviewPage"),
+  ThankYouPage: () => import("./pages/ThankYouPage"),
+  UnsubscribePage: () => import("./pages/UnsubscribePage"),
+  PrivacyPolicyPage: () => import("./pages/PrivacyPolicyPage"),
+  SignupPage: () => import("./pages/SignupPage"),
+  OnboardingPage: () => import("./pages/OnboardingPage"),
+  OnboardingNextPage: () => import("./pages/OnboardingNextPage"),
+  SoldPage: () => import("./pages/SoldPage"),
+  PlanPage: () => import("./pages/PlanPage"),
+  WeeklyReportPage: () => import("./pages/WeeklyReportPage"),
+  SharedReportPage: () => import("./pages/SharedReportPage"),
+  ContractPage: () => import("./pages/ContractPage"),
+  InvoicePage: () => import("./pages/InvoicePage"),
+  CheckInPage: () => import("./pages/CheckInPage"),
+  ContractsAdminPage: () => import("./pages/ContractsAdminPage"),
+  WeeklyReportsAdminPage: () => import("./pages/WeeklyReportsAdminPage"),
+  AuditLogPage: () => import("./pages/AuditLogPage"),
+};
+const AppShell = lazyPage(load.AppShell);
+const AccountPausedPage = lazyPage(load.AccountPausedPage);
+const WelcomePage = lazyPage(load.WelcomePage);
+const LeadsPage = lazyPage(load.LeadsPage);
+const TeamPipelinePage = lazyPage(load.TeamPipelinePage);
+const TeamReportPage = lazyPage(load.TeamReportPage);
+const CallBookingPage = lazyPage(load.CallBookingPage);
+const LeadDetailPage = lazyPage(load.LeadDetailPage);
+const CalendarPage = lazyPage(load.CalendarPage);
+const HomePage = lazyPage(load.HomePage);
+const LeadPagePage = lazyPage(load.LeadPagePage);
+const UpgradePage = lazyPage(load.UpgradePage);
+const AdminAutomationsPage = lazyPage(load.AdminAutomationsPage);
+const ClientsPage = lazyPage(load.ClientsPage);
+const ClientDetailPage = lazyPage(load.ClientDetailPage);
+const AccountPage = lazyPage(load.AccountPage);
+const SetupPage = lazyPage(load.SetupPage);
+const LeadActionPage = lazyPage(load.LeadActionPage);
+const LeadPagePreviewPage = lazyPage(load.LeadPagePreviewPage);
+const ThankYouPage = lazyPage(load.ThankYouPage);
+const UnsubscribePage = lazyPage(load.UnsubscribePage);
+const PrivacyPolicyPage = lazyPage(load.PrivacyPolicyPage);
+const SignupPage = lazyPage(load.SignupPage);
+const OnboardingPage = lazyPage(load.OnboardingPage);
+const OnboardingNextPage = lazyPage(load.OnboardingNextPage);
+const SoldPage = lazyPage(load.SoldPage);
+const PlanPage = lazyPage(load.PlanPage);
+const WeeklyReportPage = lazyPage(load.WeeklyReportPage);
+const SharedReportPage = lazyPage(load.SharedReportPage);
+const ContractPage = lazyPage(load.ContractPage);
+const InvoicePage = lazyPage(load.InvoicePage);
+const CheckInPage = lazyPage(load.CheckInPage);
+const ContractsAdminPage = lazyPage(load.ContractsAdminPage);
+const WeeklyReportsAdminPage = lazyPage(load.WeeklyReportsAdminPage);
+const AuditLogPage = lazyPage(load.AuditLogPage);
+
+/** Signed in, the frame and the page being opened download side by side
+ *  (not the page only after the frame). */
+const PAGE_FOR_PATH: [string, () => Promise<unknown>][] = [
+  ["/leads/", load.LeadDetailPage],
+  ["/calendar", load.CalendarPage],
+  ["/lead-page", load.LeadPagePage],
+  ["/clients/", load.ClientDetailPage],
+  ["/clients", load.ClientsPage],
+  ["/admin/automations", load.AdminAutomationsPage],
+  ["/account", load.AccountPage],
+  ["/setup", load.SetupPage],
+  ["/team-pipeline", load.TeamPipelinePage],
+  ["/team", load.TeamReportPage],
+];
+function preloadFirstPage(pathname: string) {
+  void load.AppShell().catch(() => {});
+  const page = PAGE_FOR_PATH.find(([start]) => pathname.startsWith(start))?.[1] ?? load.LeadsPage;
+  void page().catch(() => {});
+}
 
 function Splash() {
   return (
@@ -79,7 +141,7 @@ function OperatorOnly({ children }: { children: React.ReactNode }) {
 /** /t/<code>: the short link in a to-do's WhatsApp. Opens it on the client's Check-ins tab. */
 function ShortTodoLink() {
   const { code = "" } = useParams();
-  const { data, isLoading } = useQuery({ queryKey: ["noteByCode", code], queryFn: () => findNoteByCode(code) });
+  const { data, isLoading } = useQuery({ queryKey: ["noteByCode", code], queryFn: () => import("./api/checkins").then((m) => m.findNoteByCode(code)) });
   if (isLoading) return <Splash />;
   if (!data) return <Navigate to="/clients" replace />;
   return <Navigate to={`/clients/${data.agent_id}/checkins#note-${data.id}`} replace />;
@@ -123,10 +185,14 @@ export default function App() {
     refetchOnWindowFocus: true,
   });
   const paused = !!user && !!myStatus?.deactivated && !myStatus.isOperator;
+  useEffect(() => {
+    if (user) preloadFirstPage(window.location.pathname);
+  }, [user]);
 
   if (loading) return <Splash />;
 
   return (
+    <Suspense fallback={<Splash />}>
     <Routes>
       {/* Public routes — no login required */}
       <Route path="/l/:leadId" element={<LeadActionPage />} />
@@ -190,5 +256,6 @@ export default function App() {
         </>
       )}
     </Routes>
+    </Suspense>
   );
 }
