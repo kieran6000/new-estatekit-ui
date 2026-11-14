@@ -264,7 +264,9 @@ function Header({ data }: { data: Data }) {
   return (
     <Box sx={{ bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
       <Box sx={{ maxWidth: 1440, mx: "auto", px: { xs: 2, md: 3 }, py: { xs: 2, md: 2.5 }, display: "flex", gap: { xs: 2, md: 3 }, alignItems: { xs: "flex-start", md: "center" }, flexDirection: { xs: "column", md: "row" } }}>
-        <Box sx={{ display: "flex", gap: 2, alignItems: "center", flex: 1, minWidth: 0 }}>
+        {/* Full width on phones (the header stacks there), so a long name or
+            agency wraps or trims inside the screen instead of running off it. */}
+        <Box sx={{ display: "flex", gap: 2, alignItems: "center", flex: 1, minWidth: 0, width: { xs: "100%", md: "auto" } }}>
           <ClientArrows agentId={p.agent_id} />
           <Box
             component="button"

@@ -102,7 +102,8 @@ export default function AppShell() {
   const calendarReady = useCalendarReady();
   const setup = profile && sales ? setupProgress({ ...profile, salesCount: sales.length, calendarReady }) : null;
   const showSetup = (!!setup && !setup.complete) || pathname.startsWith("/setup");
-  const initial = useMemo(() => (user?.phone || "?")[0].toUpperCase(), [user]);
+  // The same account as the photo: its name's first letter, not a phone digit.
+  const initial = useMemo(() => ((profile?.displayName || "").trim()[0] || "?").toUpperCase(), [profile?.displayName]);
   // Staff (admins, media buyers) work in clients' accounts: in their own they
   // only need the admin tabs, unless their own account gets leads too (e.g.
   // EstateKit's own, from agents signing up). Switched into an account (a

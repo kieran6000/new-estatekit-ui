@@ -5,7 +5,6 @@ import {
   Drawer,
   Tooltip,
   AppBar,
-  Avatar,
   Box,
   Button,
   Dialog,
@@ -422,10 +421,9 @@ export default function LeadsPage() {
           <IconButton onClick={() => runTour(false)} title="How it works" aria-label="How it works">
             <HelpOutlineIcon />
           </IconButton>
-          <IconButton onClick={() => setSearchOpen((v) => !v)}>
+          <IconButton onClick={() => setSearchOpen((v) => !v)} title="Search leads" aria-label="Search leads">
             <SearchIcon />
           </IconButton>
-          <Avatar sx={{ width: 32, height: 32, bgcolor: tokens.primary, color: tokens.onPrimary, fontSize: 14, ml: 0.5 }}>K</Avatar>
         </Toolbar>
       </AppBar>
 

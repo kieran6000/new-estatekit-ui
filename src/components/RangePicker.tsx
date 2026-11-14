@@ -25,7 +25,8 @@ export default function RangePicker({ value, onChange, options = DEFAULT_RANGES 
         endIcon={<ArrowDropDownIcon />}
         aria-label="Date range"
         aria-haspopup="menu"
-        sx={{ textTransform: "none", fontWeight: 400, fontSize: 14, borderColor: "divider", minHeight: 40, whiteSpace: "nowrap" }}
+        // One line where it fits; on a phone it wraps rather than run off the screen.
+        sx={{ textTransform: "none", fontWeight: 400, fontSize: 14, borderColor: "divider", minHeight: 40, whiteSpace: { xs: "normal", sm: "nowrap" }, textAlign: "left", maxWidth: "100%" }}
       >
         <b>{value.key === "custom" ? "Custom" : RANGE_LABELS[value.key]}:</b>&nbsp;{rangeDates(value)}
       </Button>
