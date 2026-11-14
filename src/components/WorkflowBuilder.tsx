@@ -1689,6 +1689,7 @@ function MessageField({ label, value, onChange, kind, trigger, minRows }: { labe
   const used = new Set(usedFields(value));
   const bad = badFields(value, kind, trigger);
   const daily = trigger.kind === "daily_at";
+  const agentId = useAgentId();
   return (
     <>
       {kind !== "email_lead" && <WaToolbar editor={editor} />}
@@ -1706,6 +1707,14 @@ function MessageField({ label, value, onChange, kind, trigger, minRows }: { labe
             </Box>
           ))}
         </Box>
+      )}
+      {used.has("call_link") && agentId && (
+        <Typography sx={{ mt: -1, fontSize: 13 }}>
+          The book-a-call link opens a page where the lead picks a day and time.{" "}
+          <Box component="a" href={`/call/sample/${agentId}`} target="_blank" rel="noopener" sx={{ color: "primary.main", fontWeight: 600 }}>
+            See what the lead sees
+          </Box>
+        </Typography>
       )}
       <Box sx={{ mt: bad.length ? 0 : -1 }}>
         <Typography sx={{ fontSize: 13, fontWeight: 600 }}>Add a detail</Typography>

@@ -145,6 +145,7 @@ export default function App() {
       <Route path="/c/:token" element={<ContractPage />} />
       <Route path="/contract/:token" element={<ContractPage />} />
       <Route path="/i/:token" element={<InvoicePage />} />
+      <Route path="/call/sample/:agentId" element={<CallBookingPage />} />
       <Route path="/call/:token" element={<CallBookingPage />} />
       <Route path="/k/:token" element={<CheckInPage />} />
 
