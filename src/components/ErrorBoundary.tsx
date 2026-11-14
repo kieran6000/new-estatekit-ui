@@ -12,19 +12,27 @@ interface Props {
   resetKey?: string;
 }
 
-export default class ErrorBoundary extends Component<Props, { failed: boolean }> {
-  state = { failed: false };
+interface State {
+  failed: boolean;
+  /** The address the error happened on. */
+  at?: string;
+}
+
+export default class ErrorBoundary extends Component<Props, State> {
+  state: State = { failed: false, at: this.props.resetKey };
 
   static getDerivedStateFromError() {
     return { failed: true };
   }
 
-  componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error("Page crashed:", error, info.componentStack);
+  /** A new address clears the error, in the same render (no second pass). */
+  static getDerivedStateFromProps(props: Props, state: State): Partial<State> | null {
+    if (props.resetKey === state.at) return null;
+    return { at: props.resetKey, failed: false };
   }
 
-  componentDidUpdate(prev: Props) {
-    if (this.state.failed && prev.resetKey !== this.props.resetKey) this.setState({ failed: false });
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("Page crashed:", error, info.componentStack);
   }
 
   render() {
