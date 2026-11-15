@@ -33,7 +33,7 @@ export function withPreview(html, { title, description }, url, image) {
 /** The picture's address on /api/og (blank values left out). */
 export function ogImage(origin, params) {
   // v: the design version. Pictures are cached for good, so a new design needs a new address.
-  const q = new URLSearchParams(Object.entries({ ...params, v: "2" }).filter(([, v]) => v));
+  const q = new URLSearchParams(Object.entries({ ...params, v: "3" }).filter(([, v]) => v));
   return `${origin}/api/og?${q}`;
 }
 

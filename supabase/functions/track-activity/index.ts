@@ -26,6 +26,7 @@ type EventKey =
   | "form_type_changed" | "email_switched" | "email_wording_changed" | "client_details_edited"
   | "whatsapp_number_changed" | "page_link_changed"
   // Access and automation switches (audit log)
+  | "call_time_set"
   | "logout" | "account_switched" | "password_reset" | "automation_toggled" | "automations_stopped";
 
 const EVENTS: Record<EventKey, { emoji: string; label: string; color: number; cat: string }> = {
@@ -34,6 +35,7 @@ const EVENTS: Record<EventKey, { emoji: string; label: string; color: number; ca
   checkin_answered:   { emoji: "💬", label: "Weekly check-in answered", color: 0x6366f1, cat: "Client" },
   form_submitted:     { emoji: "📥", label: "New lead",             color: 0x22c55e, cat: "Lead" },
   lead_disqualified:  { emoji: "🚫", label: "Lead disqualified",    color: 0x9ca3af, cat: "Lead" },
+  call_time_set:      { emoji: "🕒", label: "Picked a time to call", color: 0x0e7490, cat: "Lead" },
   stage_change:       { emoji: "🔀", label: "Lead stage changed",   color: 0x3b82f6, cat: "Lead" },
   call_started:       { emoji: "📞", label: "Called a lead",        color: 0x14b8a6, cat: "Agent" },
   note_added:         { emoji: "📝", label: "Added a note",         color: 0x64748b, cat: "Agent" },
@@ -77,24 +79,27 @@ const AUDIT_CATEGORY: Partial<Record<EventKey, string>> = {
   account_switched: "account", password_reset: "account",
 };
 
-// Discord only hears the moments that matter: a new lead, a lead moving on,
-// a client's check-in. Everything else is still in the audit log.
-const TO_DISCORD = new Set<string>(["new_lead", "form_submitted", "stage_change", "checkin_answered"]);
+// Discord only hears the moments that matter: a new lead, a picked call
+// time, a lead moving on, a client's check-in. Everything else is still in
+// the audit log.
+const TO_DISCORD = new Set<string>(["new_lead", "form_submitted", "call_time_set", "stage_change", "checkin_answered"]);
 
-// The card for each moment: its banner (/api/og?t=…), colour and emoji.
-type Kind = "new_lead" | "contacted" | "booked" | "viewing" | "offer" | "mandate" | "bought" | "lost" | "not_owner" | "invalid" | "checkin";
-const CARD: Record<Kind, { title: string; emoji: string; color: number }> = {
-  new_lead: { title: "New lead", emoji: "📥", color: 0x10b981 },
-  contacted: { title: "Spoke · following up", emoji: "💬", color: 0x2563eb },
-  booked: { title: "Appointment booked", emoji: "📅", color: 0x7c3aed },
-  viewing: { title: "Viewing booked", emoji: "👀", color: 0x7c3aed },
-  offer: { title: "Offer made", emoji: "💰", color: 0x0d9488 },
-  mandate: { title: "Mandate signed", emoji: "🏆", color: 0xf59e0b },
-  bought: { title: "Bought", emoji: "🔑", color: 0xf59e0b },
-  lost: { title: "Not selling", emoji: "🚫", color: 0x64748b },
-  not_owner: { title: "Not the owner", emoji: "🙅", color: 0x64748b },
-  invalid: { title: "Wrong number", emoji: "📵", color: 0x64748b },
-  checkin: { title: "Check-in answered", emoji: "⭐", color: 0xdb2777 },
+// The card for each moment: its banner (/api/og?t=…), colour and emoji, and
+// the word for it at the end of the lead's history line.
+type Kind = "new_lead" | "call_time" | "contacted" | "booked" | "viewing" | "offer" | "mandate" | "bought" | "lost" | "not_owner" | "invalid" | "checkin";
+const CARD: Record<Kind, { title: string; emoji: string; color: number; step: string }> = {
+  new_lead: { title: "New lead", emoji: "📥", color: 0x059669, step: "New lead" },
+  call_time: { title: "Picked a time to call", emoji: "🕒", color: 0x0e7490, step: "Picked a time" },
+  contacted: { title: "Spoke · following up", emoji: "💬", color: 0x2563eb, step: "Spoke" },
+  booked: { title: "Appointment booked", emoji: "📅", color: 0x6d28d9, step: "Booked" },
+  viewing: { title: "Viewing booked", emoji: "👀", color: 0x6d28d9, step: "Viewing booked" },
+  offer: { title: "Offer made", emoji: "💰", color: 0x0d9488, step: "Offer" },
+  mandate: { title: "Mandate signed", emoji: "🏆", color: 0xd97706, step: "Mandate signed" },
+  bought: { title: "Bought", emoji: "🔑", color: 0xd97706, step: "Bought" },
+  lost: { title: "Not selling", emoji: "🚫", color: 0x475569, step: "Not selling" },
+  not_owner: { title: "Not the owner", emoji: "🙅", color: 0x475569, step: "Not the owner" },
+  invalid: { title: "Wrong number", emoji: "📵", color: 0x475569, step: "Wrong number" },
+  checkin: { title: "Check-in answered", emoji: "⭐", color: 0xdb2777, step: "" },
 };
 const STAGE_KIND: Record<string, Kind> = {
   Contacted: "contacted", Booked: "booked", "Viewing Booked": "viewing", "Offer Made": "offer",
@@ -117,13 +122,111 @@ function addressOf(answers: unknown): string {
   return a?.a ? String(a.a).trim() : "";
 }
 
-/** "Tue 17 Nov, 10:00", South African time. */
-function sast(iso: string): string {
+/** The parts of a time in South Africa: weekday, day, month, 24-hour time. */
+function sastParts(iso: string) {
   const p = Object.fromEntries(
     new Intl.DateTimeFormat("en-ZA", { timeZone: "Africa/Johannesburg", weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
       .formatToParts(new Date(iso)).map((x) => [x.type, x.value]),
   );
-  return `${p.weekday} ${p.day} ${p.month}, ${p.hour}:${p.minute}`;
+  return { day: p.weekday, date: p.day, month: p.month, time: `${p.hour}:${p.minute}` };
+}
+/** "Tue 17 Nov, 10:00" */
+const sast = (iso: string) => { const p = sastParts(iso); return `${p.day} ${p.date} ${p.month}, ${p.time}`; };
+/** "Tue|17|Nov|10:00", for the banner's calendar. */
+const sastCal = (iso: string) => { const p = sastParts(iso); return [p.day, p.date, p.month, p.time].join("|"); };
+
+/** "just now", "5m ago", "3h ago", "4d ago", "3w ago". */
+function ago(iso: string): string {
+  const m = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60_000));
+  if (m < 2) return "just now";
+  if (m < 60) return `${m}m ago`;
+  if (m < 48 * 60) return `${Math.round(m / 60)}h ago`;
+  if (m < 14 * 1440) return `${Math.round(m / 1440)}d ago`;
+  return `${Math.round(m / 10080)}w ago`;
+}
+
+/** The lead's story so far, in four steps at most: when they came in, a
+ *  picked time, how many calls, a booking on the way, and this moment. */
+async function historyOf(leadId: string, createdAt: string, now: string): Promise<string[]> {
+  const { data } = await supabase.from("lead_events").select("event_type, to_value").eq("lead_id", leadId)
+    .in("event_type", ["call", "stage_changed", "call_time_set"]).limit(500);
+  const ev = data ?? [];
+  const calls = ev.filter((e) => e.event_type === "call").length;
+  const steps = [`Came in ${ago(createdAt)}`];
+  if (now !== "Picked a time" && ev.some((e) => e.event_type === "call_time_set")) steps.push("Picked a time");
+  if (calls) steps.push(`Called ${calls}×`);
+  if (!/Booked|booked/.test(now) && ev.some((e) => e.event_type === "stage_changed" && /Booked/.test(String(e.to_value ?? "")))) steps.push("Booked");
+  if (now) steps.push(now);
+  return steps.length > 4 ? [steps[0], ...steps.slice(-3)] : steps;
+}
+
+/** Where the lead came from, in a word. */
+function sourceOf(row: { fb_lead_id?: string | null; attribution?: Record<string, string> | null } | null): string {
+  if (row?.fb_lead_id) return "Facebook instant form";
+  const a = row?.attribution ?? {};
+  if (a.fbclid || /^(fb|facebook|ig|instagram)$/i.test(a.utm_source ?? "") || /facebook|instagram/i.test(a.referrer ?? "")) return "Facebook ad";
+  if (/google/i.test(`${a.utm_source ?? ""} ${a.referrer ?? ""}`) || a.gclid) return "Google";
+  return "Website";
+}
+
+/** Is the address in the suburbs the agent works? From their Brief (top
+ *  suburbs) and their town. Words, not a map: no distances without a
+ *  geocoding key on the server. */
+async function areaNote(agentId: string, address: string, town: string): Promise<string> {
+  if (!address) return "";
+  const { data: d } = await supabase.from("client_dossiers").select("data").eq("agent_id", agentId).maybeSingle();
+  const data = (d?.data ?? {}) as { onboarding?: { q?: string; a?: string }[]; oldDashboard?: { targetAreas?: string[] } };
+  const answer = (q: string) => (Array.isArray(data.onboarding) ? data.onboarding : []).find((x) => x?.q === q && x?.a?.trim())?.a ?? "";
+  const list = answer("Top suburbs") || answer("Top areas to target") || (data.oldDashboard?.targetAreas ?? []).join(",");
+  const squash = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const where = squash(address);
+  const suburbs = String(list).split(/[;,\n]/).map((s) => s.trim()).filter((s) => squash(s).length > 3);
+  const hit = suburbs.find((s) => where.includes(squash(s)));
+  if (hit) return `✅ In their area (${hit})`;
+  const city = town.split(/[,/•|]/)[0].trim();
+  if (city && squash(city).length > 3 && where.includes(squash(city))) return suburbs.length ? `🟡 In ${city}, not one of their suburbs` : `✅ In ${city}`;
+  return suburbs.length || city ? "🔴 Not one of their suburbs" : "";
+}
+
+/** The ad a Facebook lead came from (fb-lead-source-ad works it out). */
+async function adOf(leadId: string): Promise<{ image: string; name: string } | null> {
+  try {
+    const r = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/fb-lead-source-ad`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}` },
+      body: JSON.stringify({ leadId }),
+      signal: AbortSignal.timeout(5000),
+    });
+    const d = await r.json();
+    return d?.ad ? { image: String(d.ad.imageUrl ?? ""), name: String(d.ad.name ?? "") } : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A picked call time comes from the lead's own page, so it says which lead
+ *  only by its private code (or the form and their number). The lead must
+ *  really have just picked a time, so nobody can post one for them. */
+async function leadForCallTime(b: Record<string, unknown>) {
+  let leadId: string | null = null;
+  if (typeof b.planToken === "string" && b.planToken.length >= 8) {
+    const { data } = await supabase.from("lead_plan_tokens").select("lead_id").eq("token", b.planToken).maybeSingle();
+    leadId = data?.lead_id ?? null;
+  } else if (typeof b.slug === "string" && typeof b.phone === "string") {
+    const digits = b.phone.replace(/\D/g, "").slice(-9);
+    const { data: page } = await supabase.from("lead_pages").select("id").eq("slug", b.slug).maybeSingle();
+    if (page && digits.length === 9) {
+      const { data } = await supabase.from("leads").select("id, phone").eq("source_page_id", page.id).order("created_at", { ascending: false }).limit(50);
+      leadId = (data ?? []).find((l) => String(l.phone ?? "").replace(/\D/g, "").endsWith(digits))?.id ?? null;
+    }
+  }
+  if (!leadId) return null;
+  const since = new Date(Date.now() - 10 * 60_000).toISOString();
+  const { count } = await supabase.from("lead_events").select("id", { count: "exact", head: true })
+    .eq("lead_id", leadId).eq("event_type", "call_time_set").gte("created_at", since);
+  if (!count) return null;
+  const { data: lead } = await supabase.from("leads").select("id, name, phone, agent_id").eq("id", leadId).maybeSingle();
+  return lead;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -302,9 +405,16 @@ Deno.serve(async (req) => {
     if (!TO_DISCORD.has(b.event)) return json({ ok: true, quiet: true });
 
     // ── Discord: one card per moment, with its banner ──────────────────────
+    if (b.event === "call_time_set") {
+      const found = await leadForCallTime(b);
+      if (!found) return json({ ok: true, quiet: true });
+      b.agentId = found.agent_id;
+      b.lead = { id: found.id, name: found.name, phone: found.phone };
+    }
     const lead = b.lead || {};
     let kind: Kind;
     if (b.event === "checkin_answered") kind = "checkin";
+    else if (b.event === "call_time_set") kind = "call_time";
     else if (b.event === "stage_change") {
       const k = stageKind(String(lead.toStage ?? ""));
       if (!k) return json({ ok: true, quiet: true });
@@ -319,64 +429,83 @@ Deno.serve(async (req) => {
     let company = "";
     let logo = "";
     let photo = "";
+    let photoRaw = "";
+    let town = "";
     if (b.agentId) {
       const { data: prof } = await supabase
         .from("agent_profiles")
-        .select("display_name, company, sidebar_logo_url, avatar_url")
+        .select("display_name, company, sidebar_logo_url, avatar_url, area")
         .eq("agent_id", b.agentId)
         .maybeSingle();
       if (prof) {
         agentName = prof.display_name || agentName;
         company = prof.company || "";
-        // Discord shows PNG, JPEG and WebP, not SVG.
+        town = prof.area || "";
+        // Discord shows PNG, JPEG and WebP, not SVG. The banner converts its own.
         const shown = (u: unknown) => (typeof u === "string" && u.startsWith("https://") && !/\.svg(\?|$)/i.test(u) ? u : "");
         logo = shown(prof.sidebar_logo_url);
         photo = shown(prof.avatar_url);
+        photoRaw = typeof prof.avatar_url === "string" ? prof.avatar_url : "";
       }
     }
 
-    // The lead as it is now: where they live and any appointment.
-    let address = String(lead.address ?? "");
-    let appointment = "";
-    if (lead.id && UUID.test(String(lead.id))) {
-      const { data: row } = await supabase.from("leads").select("form_answers, appointment_at").eq("id", lead.id).maybeSingle();
-      if (row) {
-        address ||= addressOf(row.form_answers);
-        if (row.appointment_at && (kind === "booked" || kind === "viewing")) appointment = sast(row.appointment_at);
-      }
-    }
+    // The lead as it is now.
+    const leadId = lead.id && UUID.test(String(lead.id)) ? String(lead.id) : "";
+    const { data: row } = leadId
+      ? await supabase.from("leads").select("created_at, phone, form_answers, appointment_at, call_at, fb_lead_id, attribution, source_page_id").eq("id", leadId).maybeSingle()
+      : { data: null };
+    const address = String(lead.address ?? "") || addressOf(row?.form_answers);
+    const phone = String(lead.phone ?? row?.phone ?? "");
 
     const card = CARD[kind];
     const title = (lead.pipeline === "general" && GENERAL_TITLE[kind]) || card.title;
-    const who = kind === "checkin" ? agentName : String(lead.name || "A lead");
-    const avg = /average ([\d.]+) of 5/i.exec(String(b.detail ?? ""));
+    const who = kind === "checkin" ? agentName : String(lead.name || "A lead").trim();
     const was = String(lead.fromStage ?? "").split(" · ")[0];
-    const line = kind === "checkin"
-      ? `${/^At risk/i.test(String(b.detail ?? "")) ? "At risk · " : ""}${avg ? `Average ${avg[1]} of 5` : "New answers"}`
-      : appointment || address || (was ? `Was ${was === "New Lead" ? "a new lead" : was.toLowerCase()}` : "");
+    const at = (kind === "booked" || kind === "viewing") ? row?.appointment_at : kind === "call_time" ? row?.call_at : null;
+    const avg = /average ([\d.]+) of 5/i.exec(String(b.detail ?? ""));
+
+    // Where they came from: the form (with its link) and the ad.
+    const source = sourceOf(row);
+    let page: { name: string; slug: string; source_type: string } | null = null;
+    if (row?.source_page_id) {
+      const { data: p } = await supabase.from("lead_pages").select("name, slug, source_type").eq("id", row.source_page_id).maybeSingle();
+      page = p ?? null;
+    }
+    const ad = kind === "new_lead" && leadId && source.startsWith("Facebook") ? await adOf(leadId) : null;
+    const history = row && leadId && kind !== "new_lead" && kind !== "checkin" ? await historyOf(leadId, row.created_at, (lead.pipeline === "general" && GENERAL_TITLE[kind]) || card.step) : [];
+    const area = kind === "new_lead" && b.agentId ? await areaNote(String(b.agentId), address, town) : "";
 
     const banner = new URL(`${APP}/api/og`);
-    for (const [k, v] of Object.entries({ t: kind, n: who, s: line, a: kind === "checkin" ? "" : agentName, c: company, l: title !== card.title ? title : "", v: "2" })) {
-      if (v) banner.searchParams.set(k, v.slice(0, 60));
+    const line = kind === "checkin"
+      ? `${/^At risk/i.test(String(b.detail ?? "")) ? "At risk · " : ""}${avg ? `Average ${avg[1]} of 5` : "New answers"}`
+      : address;
+    for (const [k, v] of Object.entries({
+      t: kind, n: who, s: line, a: agentName, ph: photoRaw, ad: ad?.image ?? "", src: source === "Facebook instant form" ? "Instant form" : source,
+      w: at ? sastCal(at) : "", h: history.join("|"), sc: avg?.[1] ?? "", l: title !== card.title ? title : "", v: "3",
+    })) {
+      if (v) banner.searchParams.set(k, k === "ph" || k === "ad" ? v : v.slice(0, 80));
     }
 
-    // A few plain lines under the banner, then the links.
+    // A few plain lines under the title, then the links.
     const lines: string[] = [];
     if (kind === "new_lead") {
-      if (address) lines.push(`📍 ${address}`);
-      if (lead.phone) lines.push(`📞 ${lead.phone}`);
-      const from = [lead.source, b.page?.name].filter(Boolean).join(" · ");
+      if (address) lines.push(`📍 ${address}${area ? `\n${area}` : ""}`);
+      if (row?.call_at) lines.push(`🕒 Wants a call ${sast(row.call_at)}`);
+      if (phone) lines.push(`📞 ${phone}`);
+      const form = page ? (page.source_type === "website" && page.slug ? `[${page.name}](${APP}/p/${page.slug})` : page.name) : "";
+      const from = [form, source, ad?.name ? `“${ad.name}”` : ""].filter(Boolean).join(" · ");
       if (from) lines.push(`📣 ${from}`);
     } else if (kind === "checkin") {
       if (b.detail) lines.push(String(b.detail).slice(0, 600));
     } else {
-      if (was) lines.push(`${was}  →  **${title}**`);
-      if (appointment) lines.push(`🗓️ ${appointment}`);
+      if (was && kind !== "call_time") lines.push(`${was}  →  **${title}**`);
+      if (at) lines.push(`🗓️ ${sast(at)}`);
+      if (phone && (kind === "call_time" || kind === "booked" || kind === "viewing")) lines.push(`📞 ${phone}`);
     }
     const links: string[] = [];
     let leadLink: string | null = null;
-    if (lead.id && b.agentId) {
-      leadLink = await leadShareLink(String(lead.id), String(b.agentId));
+    if (leadId && b.agentId) {
+      leadLink = await leadShareLink(leadId, String(b.agentId));
       if (leadLink) links.push(`[📇 Open lead](${leadLink})`);
     }
     if (b.sessionId && kind === "new_lead") {
@@ -390,7 +519,7 @@ Deno.serve(async (req) => {
       // Their own face by their name, their company logo in the corner.
       author: { name: company ? `${agentName} · ${company}` : agentName, icon_url: photo || logo || EK_LOGO },
       ...(logo ? { thumbnail: { url: logo } } : {}),
-      title: `${card.emoji}  ${title} · ${who}`.slice(0, 250),
+      title: (kind === "new_lead" ? `${card.emoji}  ${who}` : `${card.emoji}  ${title} · ${who}`).slice(0, 250),
       ...(leadLink ? { url: leadLink } : {}),
       description: lines.join("\n").slice(0, 3800) || undefined,
       color: card.color,

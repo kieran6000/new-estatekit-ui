@@ -59,6 +59,11 @@ export function ThankYouCallTime({ token, slug, byPhone, seller, preview, accent
         ? await supabase.rpc("request_call_time", { p_slug: slug ?? "", p_phone: phone, p_value: value })
         : await supabase.rpc("set_call_time", { p_token: token, p_value: value });
       if (e || data !== true) throw e ?? new Error("not saved");
+      // Tell the team (Discord). The function checks the lead really just
+      // picked a time, so nothing here is trusted beyond finding the lead.
+      void supabase.functions
+        .invoke("track-activity", { body: { event: "call_time_set", ...(byPhone ? { slug, phone } : { planToken: token }) } })
+        .catch(() => {});
       setSaved(value);
       onSaved?.();
     } catch (err) {

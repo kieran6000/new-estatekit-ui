@@ -1,27 +1,42 @@
 // Pictures for links and Discord, drawn on request:
-//   /api/og?t=new_lead|contacted|booked|viewing|offer|mandate|bought|lost|not_owner|invalid|checkin
-//     Discord activity banners (1200×480): who → what happened.
+//   /api/og?t=new_lead|call_time|contacted|booked|viewing|offer|mandate|bought|lost|not_owner|invalid|checkin
+//     Discord banners (1200×480): what happened, as "this → that" with a word under each.
 //   /api/og?t=contract|invoice|lead
 //     Link previews (1200×630) for WhatsApp, Discord, iMessage and the rest.
-// Text comes in the address (n name, s line under it, a agent, c company,
-// r reference, ok=1 signed), trimmed short. Same address, same picture, so
-// it's cached for good.
+// In the address: n lead, s line under the name, a agent, l label, ph agent
+// photo, ad ad picture, src where it came from, w day and time
+// ("Tue|17|Nov|10:00"), h history ("Came in 2d ago|Called 3×|Booked"),
+// sc score; r reference, ok=1 signed. Same address, same picture, so it's
+// cached for good (v= changes it).
+// Node, not edge: photos are WebP, which the drawing can't read, so sharp
+// turns them into PNG first.
 
+import { readFile } from "node:fs/promises";
 import { ImageResponse } from "@vercel/og";
-
-export const config = { runtime: "edge" };
+import sharp from "sharp";
 
 // ── Fonts ──────────────────────────────────────────────────────────────────
 let fontsP;
 const loadFonts = () =>
   (fontsP ??= Promise.all(
-    [500, 700, 800].map(async (weight) => ({
-      name: "Inter",
-      weight,
-      style: "normal",
-      data: await (await fetch(new URL(`./_og/inter-${weight}.woff`, import.meta.url))).arrayBuffer(),
-    })),
-  ).catch(() => null));
+    [500, 700, 800].map(async (weight) => ({ name: "Inter", weight, style: "normal", data: await readFile(new URL(`./_og/inter-${weight}.woff`, import.meta.url)) })),
+  ).catch((e) => { console.error("og fonts", e); fontsP = undefined; return null; }));
+
+// Photos only from our own storage and Facebook's, made small and PNG.
+const IMAGE_HOSTS = /^https:\/\/(yfcnsvrhojpysrzqrkdi\.supabase\.co\/storage\/v1\/object\/public\/|[a-z0-9.-]+\.fbcdn\.net\/|lookaside\.fbsbx\.com\/)/i;
+async function picture(url) {
+  if (!url || !IMAGE_HOSTS.test(url)) return null;
+  try {
+    const r = await fetch(url, { signal: AbortSignal.timeout(3500) });
+    if (!r.ok) return null;
+    const buf = Buffer.from(await r.arrayBuffer());
+    if (buf.length > 8_000_000) return null;
+    const png = await sharp(buf).resize(300, 300, { fit: "cover" }).png().toBuffer();
+    return `data:image/png;base64,${png.toString("base64")}`;
+  } catch {
+    return null;
+  }
+}
 
 // ── Drawing helpers ────────────────────────────────────────────────────────
 const h = (style, ...children) => ({
@@ -59,6 +74,7 @@ const I = {
   arrow: "M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z",
   check: "M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z",
   phone: "M20.01 15.38c-1.23 0-2.42-.2-3.53-.56-.35-.12-.74-.03-1.01.24l-1.57 1.97c-2.83-1.35-5.48-3.9-6.89-6.83l1.95-1.66c.27-.28.35-.67.24-1.02-.37-1.11-.56-2.3-.56-3.53 0-.54-.45-.99-.99-.99H4.19C3.65 3 3 3.24 3 3.99 3 13.28 10.73 21 20.01 21c.71 0 .99-.63.99-1.18v-3.45c0-.54-.45-.99-.99-.99z",
+  clock: "M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z",
   pin: "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z",
 };
 
@@ -71,9 +87,10 @@ const brand = (color, size) =>
 const SLATE = "#475569";
 const BANNERS = {
   new_lead: { label: "New lead", icon: I.person, bg: "#059669" },
-  contacted: { label: "Spoke · following up", icon: I.chat, bg: "#2563eb" },
+  call_time: { label: "Picked a time to call", icon: I.clock, bg: "#0e7490" },
+  contacted: { label: "Spoke · following up", icon: I.phone, bg: "#2563eb" },
   booked: { label: "Appointment booked", icon: I.event, bg: "#6d28d9" },
-  viewing: { label: "Viewing booked", icon: I.eye, bg: "#6d28d9" },
+  viewing: { label: "Viewing booked", icon: I.event, bg: "#6d28d9" },
   offer: { label: "Offer made", icon: I.offer, bg: "#0d9488" },
   mandate: { label: "Mandate signed", icon: I.home, bg: "#d97706" },
   bought: { label: "Bought", icon: I.key, bg: "#d97706" },
@@ -82,30 +99,73 @@ const BANNERS = {
   invalid: { label: "Wrong number", icon: I.phoneOff, bg: SLATE },
   checkin: { label: "Check-in answered", icon: I.star, bg: "#db2777" },
 };
+const SOFT = "rgba(255,255,255,0.8)";
+const firstOf = (n) => n.split(" ")[0] || n;
+const img = (src) => ({ type: "img", props: { src, width: 150, height: 150, style: { width: 150, height: 150, objectFit: "cover" } } });
 
-function banner(kind, q) {
+// One side of the picture: a photo, initials or a white tile, with a word under it.
+const node = (child, caption, round = true) =>
+  h({ flexDirection: "column", alignItems: "center", gap: 12, width: 170 },
+    h({ width: 150, height: 150, borderRadius: round ? 9999 : 34, background: "#fff", alignItems: "center", justifyContent: "center", overflow: "hidden" }, child),
+    caption ? h({ fontSize: 22, fontWeight: 700, color: SOFT, justifyContent: "center" }, caption) : null,
+  );
+const initialsOf = (name, color) => h({ fontSize: 54, fontWeight: 800, color }, initials(name));
+// A day and time, like a desk calendar: TUE / 17 / Nov · 10:00.
+const calendar = (when, color) => {
+  const [day, date, month, time] = when.split("|");
+  return h({ flexDirection: "column", width: "100%", height: "100%" },
+    h({ height: 40, background: color, color: "#fff", fontSize: 20, fontWeight: 800, letterSpacing: 2, alignItems: "center", justifyContent: "center" }, (day || "").toUpperCase()),
+    h({ flexGrow: 1, flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#0f172a" },
+      h({ fontSize: 50, fontWeight: 800, lineHeight: 1 }, date || ""),
+      h({ marginTop: 4, fontSize: 19, fontWeight: 700, color: "#475569" }, [month, time].filter(Boolean).join(" · ")),
+    ),
+  );
+};
+
+function banner(kind, q, pics) {
   const b = BANNERS[kind];
   const name = clean(q.get("n"), 28) || "A lead";
-  const sub = clean(q.get("s"), 36);
+  const sub = clean(q.get("s"), 40);
   const agent = clean(q.get("a"), 30);
-  const company = clean(q.get("c"), 30);
   const label = clean(q.get("l"), 26) || b.label;
-  const soft = "rgba(255,255,255,0.78)";
-  const circle = (child, size) => h({ width: size, height: size, borderRadius: 9999, background: "#fff", alignItems: "center", justifyContent: "center" }, child);
-  const from = kind === "new_lead" ? circle(svg(I.form, 64, b.bg), 140) : circle(h({ fontSize: 54, fontWeight: 800, color: b.bg }, initials(name)), 140);
-  const to = kind === "new_lead"
-    ? circle(h({ fontSize: 54, fontWeight: 800, color: b.bg }, initials(name)), 140)
-    : circle(svg(b.icon, 72, b.bg), 140);
+  const when = clean(q.get("w"), 40);
+  const score = clean(q.get("sc"), 4);
+  const history = (q.get("h") || "").split("|").map((x) => clean(x, 22)).filter(Boolean).slice(0, 4);
+  const lead = node(initialsOf(name, b.bg), firstOf(name));
+  const agentNode = node(pics.photo ? img(pics.photo) : initialsOf(agent || "?", b.bg), agent ? firstOf(agent) : "Agent");
+  const tile = (iconD, caption) => node(svg(iconD, 76, b.bg), caption, false);
+  const dated = (caption, iconD) => node(when ? calendar(when, b.bg) : svg(iconD, 76, b.bg), caption, false);
+
+  const pair = {
+    // Facebook (their ad) → the agent: where the lead came from and who has it now.
+    new_lead: [node(pics.ad ? img(pics.ad) : h({ fontSize: 110, fontWeight: 800, color: "#1877f2", marginTop: 18 }, "f"), clean(q.get("src"), 16) || "Facebook ad", false), agentNode],
+    call_time: [lead, dated("Call then", I.clock)],
+    contacted: [agentNode, lead],
+    booked: [lead, dated("Appointment", I.event)],
+    viewing: [lead, dated("Viewing", I.event)],
+    offer: [lead, tile(I.offer, "Offer")],
+    mandate: [lead, tile(I.home, "Mandate")],
+    bought: [lead, tile(I.key, "Bought")],
+    lost: [lead, tile(I.block, "Not selling")],
+    not_owner: [lead, tile(I.personOff, "Not the owner")],
+    invalid: [lead, tile(I.phoneOff, "Wrong number")],
+    checkin: [agentNode, node(score ? h({ flexDirection: "column", alignItems: "center" }, svg(I.star, 34, b.bg), h({ fontSize: 46, fontWeight: 800, color: b.bg }, score)) : svg(I.star, 76, b.bg), "out of 5", false)],
+  }[kind];
+
   return h(
-    { width: 1200, height: 480, padding: "0 72px", background: b.bg, fontFamily: "Inter", color: "#fff", alignItems: "center", justifyContent: "space-between" },
+    { width: 1200, height: 480, padding: "0 60px 0 72px", background: b.bg, fontFamily: "Inter", color: "#fff", alignItems: "center", justifyContent: "space-between" },
     h(
       { flexDirection: "column", width: 600 },
-      h({ alignItems: "center", gap: 12, fontSize: 26, fontWeight: 700, color: soft }, svg(b.icon, 30, soft), label),
+      h({ alignItems: "center", gap: 12, fontSize: 26, fontWeight: 700, color: SOFT }, svg(b.icon, 30, SOFT), label),
       h({ marginTop: 16, fontSize: nameSize(name, 76), fontWeight: 800, lineHeight: 1.05, letterSpacing: -1.5 }, name),
-      sub ? h({ marginTop: 12, fontSize: 30, fontWeight: 500, color: soft }, sub) : null,
-      agent ? h({ marginTop: 34, fontSize: 24, fontWeight: 500, color: soft }, company ? `${agent} · ${company}` : agent) : null,
+      sub ? h({ marginTop: 12, fontSize: 28, fontWeight: 500, color: SOFT }, sub) : null,
+      // How they got here, in a line: the 1% that matters, not the log.
+      history.length
+        ? h({ marginTop: 30, alignItems: "center", gap: 10, fontSize: 21, fontWeight: 600, color: SOFT, flexWrap: "wrap" },
+            history.flatMap((step, i) => [i ? h({ color: "rgba(255,255,255,0.5)" }, "›") : null, h({ padding: "6px 12px", borderRadius: 999, background: "rgba(255,255,255,0.14)", color: i === history.length - 1 ? "#fff" : SOFT }, step)]))
+        : null,
     ),
-    h({ alignItems: "center", gap: 24 }, from, svg(I.arrow, 52, "rgba(255,255,255,0.85)"), to),
+    h({ alignItems: "flex-start", gap: 6 }, pair[0], h({ height: 150, alignItems: "center" }, svg(I.arrow, 46, "rgba(255,255,255,0.85)")), pair[1]),
   );
 }
 
@@ -166,20 +226,22 @@ function lead(q) {
   ));
 }
 
-export default async function handler(req) {
-  const q = new URL(req.url).searchParams;
+export default async function handler(req, res) {
+  const q = new URL(req.url, "http://localhost").searchParams;
   const t = q.get("t") || "";
   let el;
   let size = { width: 1200, height: 630 };
-  if (BANNERS[t]) { el = banner(t, q); size = { width: 1200, height: 480 }; }
-  else if (t === "contract") el = contract(q);
+  if (BANNERS[t]) {
+    const [photo, ad] = await Promise.all([picture(q.get("ph")), picture(q.get("ad"))]);
+    el = banner(t, q, { photo, ad });
+    size = { width: 1200, height: 480 };
+  } else if (t === "contract") el = contract(q);
   else if (t === "invoice") el = invoice();
   else if (t === "lead") el = lead(q);
-  else return new Response("Unknown picture", { status: 404 });
+  else { res.status(404).send("Unknown picture"); return; }
   const fonts = await loadFonts();
-  return new ImageResponse(el, {
-    ...size,
-    ...(fonts ? { fonts } : {}),
-    headers: { "Cache-Control": "public, max-age=31536000, immutable" },
-  });
+  const png = Buffer.from(await new ImageResponse(el, { ...size, ...(fonts ? { fonts } : {}) }).arrayBuffer());
+  res.setHeader("Content-Type", "image/png");
+  res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+  res.status(200).send(png);
 }
