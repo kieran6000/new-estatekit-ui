@@ -595,7 +595,7 @@ export default function LeadPagePage() {
               <>
               <Section
                 title="If they don't qualify"
-                info="Shown instead of the message for leads when someone picks an answer you've set to “Send to end page”. They aren't saved as a lead. Leave it blank for our standard wording, or add a button to send them somewhere useful. A question can have its own message instead: edit the question."
+                info="Shown instead of the message for leads when someone picks an answer you've set to “Send to end page”. They aren't saved as a lead. Leave it blank for our standard wording, or add a button to send them somewhere useful."
               >
                 <TextField label="Headline" placeholder="Thanks for your interest!" value={form.dqHeadline} onChange={(e) => fieldChange("dqHeadline", e.target.value)} fullWidth />
                 <TextField label="Description" placeholder="Based on your answers, this might not be the right time for a valuation…" value={form.dqText} onChange={(e) => fieldChange("dqText", e.target.value)} fullWidth multiline minRows={2} />
@@ -1884,8 +1884,6 @@ function EditQuestionRow({ pageId, question, onDone }: { pageId: string; questio
         label: label.trim(),
         required,
         ...(question.type === "address" || question.type === "call_time" ? { helperText: helperText.trim() } : {}),
-        // A choice question's own end page message, kept only while its answers end the form.
-        ...(isChoice ? { helperText: treatment === "stop" && badInOptions.length ? helperText.trim() : "" } : {}),
         ...(question.type === "multiple_choice" ? { options: savedOptions } : {}),
         // The ticked answers go into whichever column matches the treatment,
         // and the other is cleared. Options that no longer exist are dropped,
@@ -1967,22 +1965,6 @@ function EditQuestionRow({ pageId, question, onDone }: { pageId: string; questio
                   sx={{ m: 0, mt: 0.25 }}
                 />
               </RadioGroup>
-              {/* Each reason needs its own words: "not the owner" isn't "not
-                  selling". Empty uses the page's "If they don't qualify". */}
-              {treatment === "stop" && (
-                <TextField
-                  label="Message on the end page (optional)"
-                  placeholder="Empty uses your usual one"
-                  helperText="Only for these answers. {agent} becomes your first name."
-                  size="small"
-                  multiline
-                  minRows={2}
-                  value={helperText}
-                  onChange={(e) => setHelperText(e.target.value)}
-                  fullWidth
-                  sx={{ mt: 1.25, "& .MuiInputBase-root": { bgcolor: "background.paper" } }}
-                />
-              )}
             </Box>
           )}
         </Box>

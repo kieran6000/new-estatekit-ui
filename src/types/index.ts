@@ -270,9 +270,7 @@ export interface CustomQuestion {
   lowQualityAnswers?: string[];
   /** Small example/caption text shown under the question — mainly for "address".
    *  For "call_time" it is the line shown once a day and time are picked
-   *  ({agent} = the agent's first name). For a choice question it is the end
-   *  page's message when one of its disqualifyAnswers ends the form (blank =
-   *  the page's dqText), since each such question has its own reason. */
+   *  ({agent} = the agent's first name). */
   helperText?: string;
   /** Extra check on the answer. "street_number": an address must contain a
    *  number (browsers type a suburb, sellers type their address). */
