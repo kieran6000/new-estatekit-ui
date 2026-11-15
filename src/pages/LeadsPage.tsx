@@ -5,7 +5,6 @@ import {
   Drawer,
   Tooltip,
   AppBar,
-  Avatar,
   Box,
   Button,
   Dialog,
@@ -80,6 +79,7 @@ import LocalOfferIcon from "@mui/icons-material/LocalOffer";
 import { DEAD_STAGES, PIPELINE_KIND_LABEL, PIPELINE_STAGES, type LeadRow, type OutcomeStep, type Pipeline, type PipelineKind, type Stage } from "../types";
 import { stageLabel } from "../types";
 import { dueLeads, isNewLead, pipelineKindFor, sortLeadsForList, stepForStage, computeStagePatch, stageForKind, whenToCall, whenToCallSortValue } from "../lib/stageLogic";
+import { leadMatchesSearch } from "../lib/leadSearch";
 import { timeAgo } from "../lib/timeAgo";
 import { useLeads, useUpdateLeadStage } from "../hooks/useLeads";
 import { useAddPipeline, usePipelines, useSyncPipelineSheet, useTeamPipelines } from "../hooks/usePipelines";
@@ -103,6 +103,11 @@ import GSheetIcon from "../components/GSheetIcon";
 import StageMenu from "../components/StageMenu";
 import OutcomeSheet from "../components/OutcomeSheet";
 import FocusCallModal from "../components/FocusCallModal";
+import { prettyPhone } from "../lib/phone";
+
+/** The "N leads to call · Start calling" bar above the list. Hidden for now
+ *  (Nov 2026): the list itself is the way in. true brings it back. */
+const SHOW_CALL_MODE = false;
 
 export default function LeadsPage() {
   const navigate = useNavigate();
@@ -264,7 +269,7 @@ export default function LeadsPage() {
     const m = new Map<string, number>();
     for (const l of pipelineLeads) for (const t of leadTags(l, datasetByPage)) m.set(t, (m.get(t) ?? 0) + 1);
     return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  }, [pipelineLeads]);
+  }, [pipelineLeads, datasetByPage]);
   // A tag's chip disappears when no lead has it; don't leave its filter on.
   useEffect(() => { if (tagFilter && !tagCounts.some(([t]) => t === tagFilter)) setTagFilter(null); }, [tagCounts, tagFilter]);
 
@@ -273,14 +278,12 @@ export default function LeadsPage() {
   const callList = useMemo(() => dueLeads(pipelineLeads), [pipelineLeads]);
 
   const filtered = useMemo(() => {
-    const query = q.toLowerCase().trim();
     return sortLeadsForList(pipelineLeads).filter((l) => {
       if (filter !== "All" && l.stage !== filter) return false;
       if (tagFilter && !leadTags(l, datasetByPage).includes(tagFilter)) return false;
-      if (!query) return true;
-      return l.name.toLowerCase().includes(query) || l.phone.replace(/\s/g, "").includes(query.replace(/\s/g, ""));
+      return leadMatchesSearch(l, q);
     });
-  }, [pipelineLeads, filter, tagFilter, q]);
+  }, [pipelineLeads, filter, tagFilter, q, datasetByPage]);
 
   // Column sorting on the desktop table (same behaviour as every table).
   // "stage" is the usual view: grouped by stage, most urgent first in each.
@@ -422,10 +425,9 @@ export default function LeadsPage() {
           <IconButton onClick={() => runTour(false)} title="How it works" aria-label="How it works">
             <HelpOutlineIcon />
           </IconButton>
-          <IconButton onClick={() => setSearchOpen((v) => !v)}>
+          <IconButton onClick={() => setSearchOpen((v) => !v)} title="Search leads" aria-label="Search leads">
             <SearchIcon />
           </IconButton>
-          <Avatar sx={{ width: 32, height: 32, bgcolor: tokens.primary, color: tokens.onPrimary, fontSize: 14, ml: 0.5 }}>K</Avatar>
         </Toolbar>
       </AppBar>
 
@@ -454,7 +456,7 @@ export default function LeadsPage() {
           <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
             <SearchIcon sx={{ color: "text.disabled" }} />
             <InputBase
-              placeholder={searchAll ? "Search every account by name, phone or email" : "Search leads"}
+              placeholder={searchAll ? "Search every account by name, phone or email" : "Search by name, phone or email"}
               value={q}
               onChange={(e) => setQ(e.target.value)}
               fullWidth
@@ -644,7 +646,7 @@ export default function LeadsPage() {
       {/* One-at-a-time call mode. Shown only when there's actually something to
           call, so the list isn't cluttered on a quiet day. This is the whole
           "don't make me think" path: tap once, work the list top to bottom. */}
-      {/* Hidden for now (Nov 2026): the list itself is the way in. */ false && !selectMode && !showArchived && !showGlobalSearch && callList.length > 0 && (
+      {SHOW_CALL_MODE && !selectMode && !showArchived && !showGlobalSearch && callList.length > 0 && (
         <Box
           sx={{
             display: "flex", alignItems: "center", gap: 1.5,
@@ -1242,7 +1244,7 @@ function LeadsTable({
             <LeadTags lead={l} sx={{ ml: 0.75 }} />
           </Box>
           <Typography sx={{ color: "text.secondary", fontSize: 13, display: "block" }}>
-            {canSeeFullPhone ? l.phone : maskPhone(l.phone)}
+            {canSeeFullPhone ? prettyPhone(l.phone) : maskPhone(l.phone)}
           </Typography>
         </TableCell>
         <TableCell sx={{ fontSize: 13, color: "text.secondary", whiteSpace: "nowrap" }} title={`Came in ${new Date(l.created_at).toLocaleString("en-ZA")}${l.came_back_at ? ` · came back ${new Date(l.came_back_at).toLocaleString("en-ZA")}` : ""}`}>
@@ -1456,7 +1458,7 @@ function MobileLeadsList({
             <LeadTags lead={l} sx={{ ml: 0.75 }} />
       </Box>
       <Typography sx={{ color: "text.secondary", fontSize: 13 }}>
-        {canSeeFullPhone ? l.phone : maskPhone(l.phone)}
+        {canSeeFullPhone ? prettyPhone(l.phone) : maskPhone(l.phone)}
         <Box component="span" sx={{ color: "text.disabled", mx: 0.75 }}>·</Box>
         {cameBack(l) ? `came back ${timeAgo(l.came_back_at!)}` : timeAgo(l.created_at)}
       </Typography>

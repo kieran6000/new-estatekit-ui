@@ -25,8 +25,12 @@ import { ThankYouCallTime } from "../components/ThankYouExtras";
 import VideoPlayer, { canPlayVideo, type EndCta, type VideoProgress } from "../components/VideoPlayer";
 import { supabase } from "../api/_client";
 import { waDigits } from "../lib/phone";
+import { useLeadOutbox } from "../lib/leadOutbox";
 
 export default function ThankYouPage() {
+  // The form they just sent is still saving in the background (lib/leadOutbox):
+  // if the signal drops, it goes again as soon as it's back.
+  useLeadOutbox();
   const [params] = useSearchParams();
   const slug = params.get("p");
   // The dashboard's preview (Forms → Thank-you page): everything shows, nothing is saved or tracked.
@@ -80,6 +84,13 @@ export default function ThankYouPage() {
   useEffect(() => {
     if (page?.sourceType === "fb_form" && !preview) trackPageEvent(page.id, "view");
   }, [page?.id, page?.sourceType, preview]);
+
+  // The agent's name in the tab (and in the Facebook / Instagram browser's top
+  // bar), not EstateKit's tagline: this is the agent's page.
+  useEffect(() => {
+    const who = page?.agentName?.trim() || page?.headline?.trim();
+    if (who) document.title = who;
+  }, [page?.agentName, page?.headline]);
 
   if (!slug) return <GenericThankYou />;
 

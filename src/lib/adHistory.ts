@@ -103,7 +103,7 @@ export function isKeyChange(item: Item): boolean {
 }
 
 const targetingBits = (text: string) =>
-  text.replace(/\s*\([^)]*\)/g, "").split(/[;,]/).map((b) => b.replace(/^Location:\s*(South Africa:\s*)?/i, "").trim()).filter((b) => b && !/[{}"\[\]]/.test(b)); // Custom audiences come as code: no use to anyone.
+  text.replace(/\s*\([^)]*\)/g, "").split(/[;,]/).map((b) => b.replace(/^Location:\s*(South Africa:\s*)?/i, "").trim()).filter((b) => b && !/[{}"[\]]/.test(b)); // Custom audiences come as code: no use to anyone.
 
 /** What a targeting change added and removed, rather than two long lists. */
 export function targetingDiff(from: string, to: string): { added: string[]; removed: string[] } {

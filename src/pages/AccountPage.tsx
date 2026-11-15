@@ -420,7 +420,9 @@ export default function AccountPage() {
                         <IconButton
                           size="small"
                           onClick={onLogoRemove}
-                          sx={{ position: "absolute", top: -8, right: -8, width: 20, height: 20, bgcolor: tokens.surface2, color: tokens.ink2, "&:hover": { bgcolor: tokens.outline } }}
+                          aria-label="Remove logo"
+                          title="Remove logo"
+                          sx={{ position: "absolute", top: -8, right: -8, width: 20, height: 20, bgcolor: tokens.surface2, color: tokens.ink2, "&:hover": { bgcolor: tokens.outline }, "&::after": { content: '""', position: "absolute", inset: -8 } }}
                         >
                           <CloseIcon sx={{ fontSize: 12 }} />
                         </IconButton>
@@ -470,7 +472,9 @@ export default function AccountPage() {
                         <IconButton
                           size="small"
                           onClick={onAvatarRemove}
-                          sx={{ position: "absolute", top: -4, right: -4, width: 20, height: 20, bgcolor: tokens.surface2, color: tokens.ink2, "&:hover": { bgcolor: tokens.outline } }}
+                          aria-label="Remove photo"
+                          title="Remove photo"
+                          sx={{ position: "absolute", top: -4, right: -4, width: 20, height: 20, bgcolor: tokens.surface2, color: tokens.ink2, "&:hover": { bgcolor: tokens.outline }, "&::after": { content: '""', position: "absolute", inset: -8 } }}
                         >
                           <CloseIcon sx={{ fontSize: 12 }} />
                         </IconButton>

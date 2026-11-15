@@ -88,6 +88,7 @@ import InvoicesSection from "../components/InvoicesSection";
 import { useAdminAccess } from "../hooks/useAdminAccess";
 import { TodoBadge } from "../components/NoteFor";
 import { prettyPhone, toE164, waDigits } from "../lib/phone";
+import { usePageTitle } from "../lib/pageTitle";
 
 /** Digits in international form, so 083… and +2783… compare equal. */
 const digits = (s: string) => waDigits(s) || (s || "").replace(/\D/g, "");
@@ -123,6 +124,7 @@ export default function ClientDetailPage() {
   // Their page is the account you're working in (it replaced /overview and,
   // for staff, /account): opening it switches you into them.
   useFollowAccount(agentId ? { agent_id: agentId } : null, "account");
+  usePageTitle(data?.profile.display_name);
   // A self-run account sees only its own Overview; the other tabs are EstateKit's.
   const { isOperator: staffView } = useAdminAccess();
   const tab: TabKey = !staffView ? "overview" : CLIENT_TABS.includes(tabParam as TabKey) ? (tabParam as TabKey) : "overview";
@@ -264,7 +266,9 @@ function Header({ data }: { data: Data }) {
   return (
     <Box sx={{ bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
       <Box sx={{ maxWidth: 1440, mx: "auto", px: { xs: 2, md: 3 }, py: { xs: 2, md: 2.5 }, display: "flex", gap: { xs: 2, md: 3 }, alignItems: { xs: "flex-start", md: "center" }, flexDirection: { xs: "column", md: "row" } }}>
-        <Box sx={{ display: "flex", gap: 2, alignItems: "center", flex: 1, minWidth: 0 }}>
+        {/* Full width on phones (the header stacks there), so a long name or
+            agency wraps or trims inside the screen instead of running off it. */}
+        <Box sx={{ display: "flex", gap: 2, alignItems: "center", flex: 1, minWidth: 0, width: { xs: "100%", md: "auto" } }}>
           <ClientArrows agentId={p.agent_id} />
           <Box
             component="button"

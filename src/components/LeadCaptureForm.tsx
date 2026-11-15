@@ -239,7 +239,14 @@ export default function LeadCaptureForm({
         </>
       )}
 
-      <Box sx={{ border: "1px solid #e0e0e0", borderRadius: "8px", overflow: "hidden", bgcolor: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,.08)" }}>
+      <Box
+        sx={{
+          border: "1px solid #e0e0e0", borderRadius: "8px", overflow: "hidden", bgcolor: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,.08)",
+          // The box being typed in is outlined in the agent's colour, like the
+          // bar and the buttons, not the dashboard's blue.
+          "& .MuiOutlinedInput-root.Mui-focused:not(.Mui-error) .MuiOutlinedInput-notchedOutline": { borderColor: accentOnWhite(page.accentColor) },
+        }}
+      >
         {phase === "steps" && (
           <LinearProgress
             variant="determinate"
@@ -306,9 +313,10 @@ export default function LeadCaptureForm({
                       onChange={(e) => setName(e.target.value)}
                       fullWidth
                       autoFocus
+                      autoComplete="name"
                       error={!!errors.name}
                       helperText={errors.name}
-                      slotProps={{ input: { startAdornment: <InputAdornment position="start"><PersonOutlineIcon fontSize="small" sx={{ color: "text.disabled" }} /></InputAdornment> } }}
+                      slotProps={{ input: { startAdornment: <InputAdornment position="start"><PersonOutlineIcon fontSize="small" sx={{ color: "text.disabled" }} /></InputAdornment> }, htmlInput: { autoCapitalize: "words" } }}
                     />
                   </Box>
                   {page.collectEmail && (
@@ -319,9 +327,10 @@ export default function LeadCaptureForm({
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         fullWidth
+                        autoComplete="email"
                         error={!!errors.email}
                         helperText={errors.email}
-                        slotProps={{ input: { startAdornment: <InputAdornment position="start"><EmailOutlinedIcon fontSize="small" sx={{ color: "text.disabled" }} /></InputAdornment> } }}
+                        slotProps={{ input: { startAdornment: <InputAdornment position="start"><EmailOutlinedIcon fontSize="small" sx={{ color: "text.disabled" }} /></InputAdornment> }, htmlInput: { inputMode: "email", autoCapitalize: "none", spellCheck: false } }}
                       />
                     </Box>
                   )}
@@ -338,11 +347,10 @@ export default function LeadCaptureForm({
                         if (errors.phone) setErrors((x) => ({ ...x, phone: undefined }));
                       }}
                       fullWidth
-                      inputMode="tel"
                       autoComplete="tel"
                       error={!!errors.phone}
                       helperText={errors.phone}
-                      slotProps={{ input: { startAdornment: <InputAdornment position="start"><WhatsAppIcon fontSize="small" sx={{ color: "text.disabled" }} /></InputAdornment> } }}
+                      slotProps={{ input: { startAdornment: <InputAdornment position="start"><WhatsAppIcon fontSize="small" sx={{ color: "text.disabled" }} /></InputAdornment> }, htmlInput: { inputMode: "tel" } }}
                     />
                   </Box>
                 </Box>

@@ -2,8 +2,12 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <!-- The EstateKit house: tabs and bookmarks, then the phone home screen
+         (iPhones need a solid PNG; an SVG there showed a blurry screenshot). -->
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#1976d2" />
     <!-- Light/dark before first paint, so dark-mode users get no white
@@ -11,7 +15,7 @@
     <script>
     (function(){try{var d=document.documentElement,p=localStorage.getItem('ek-theme')||'light';
     var s=p==='system'?(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):p;
-    if(/^\/(p|r|c|contract|thank-you|privacy|start|sold|plan|report|unsubscribe)(\/|$)/.test(location.pathname))s='light';
+    if(/^\/(p|r|c|i|k|call|contract|thank-you|privacy|start|sold|plan|report|unsubscribe)(\/|$)/.test(location.pathname))s='light';
     if(s!=='dark')s='light';d.setAttribute('data-theme',s);
     if(s==='dark')document.querySelector('meta[name="theme-color"]').setAttribute('content','#181c21');}catch(e){document.documentElement.setAttribute('data-theme','light');}})();
     </script>
@@ -24,7 +28,9 @@
     <meta property="og:site_name" content="EstateKit" />
     <meta property="og:title" content="EstateKit — Real estate leads, handled" />
     <meta property="og:description" content="Capture, call, and close your Facebook leads from one simple dashboard." />
-    <meta property="og:image" content="/favicon.svg" />
+    <!-- No og:image here on purpose: this page also serves agents' lead pages,
+         which shouldn't carry an EstateKit picture when shared. (It pointed at
+         /favicon.svg, which WhatsApp and Facebook can't show anyway.) -->
     <meta name="twitter:card" content="summary" />
     <meta name="twitter:title" content="EstateKit" />
     <meta name="twitter:description" content="Capture, call, and close your Facebook leads from one simple dashboard." />

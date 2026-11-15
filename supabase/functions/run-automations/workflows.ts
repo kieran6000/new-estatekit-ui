@@ -12,7 +12,7 @@
 //
 // KEEP IN STEP with src/lib/workflow.ts (the model the builder saves).
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
-import { prettyPhone as tidyPhone, toE164, waDigits } from "../_shared/phone.ts";
+import { prettyPhone as tidyPhone, waDigits } from "../_shared/phone.ts";
 
 type Unit = "minutes" | "hours" | "days";
 /** A picture or a PDF sent with a WhatsApp step (a public link). */

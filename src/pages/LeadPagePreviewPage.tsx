@@ -5,7 +5,8 @@ import { Box, Skeleton, Typography } from "@mui/material";
 import { usePostHog } from "@posthog/react";
 import { tokens } from "../theme";
 import { readableOn } from "../lib/contrast";
-import { getLeadPageBySlug, submitMockLead, reportCapiLead } from "../api/leadPages";
+import { getLeadPageBySlug, reportCapiLead } from "../api/leadPages";
+import { submitLead, useLeadOutbox } from "../lib/leadOutbox";
 import { getPipelinePublic } from "../api/pipelines";
 import { listCustomQuestionsPublic } from "../api/customQuestions";
 import LeadCaptureForm, { HeaderBrand } from "../components/LeadCaptureForm";
@@ -22,6 +23,8 @@ export default function LeadPagePreviewPage() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const posthog = usePostHog();
+  // A form from an earlier visit that never got through: send it now.
+  useLeadOutbox();
 
   const { data: page, isLoading: pageLoading } = useQuery({
     queryKey: ["publicPageSlug", slug],
@@ -54,6 +57,14 @@ export default function LeadPagePreviewPage() {
   useEffect(() => {
     if (page?.id) trackPageEvent(page.id, "view");
   }, [page?.id]);
+
+  // The agent's name in the tab, and in the top bar of the Facebook and
+  // Instagram in-app browsers (where most visitors come from), instead of
+  // EstateKit's own tagline: this is the agent's page.
+  useEffect(() => {
+    const who = page?.agentName?.trim() || page?.headline?.trim();
+    if (who) document.title = who;
+  }, [page?.agentName, page?.headline]);
 
   // Stash which ad/campaign sent them before they start the form — the query
   // string is only present on this first hit, and the form is multi-step.
@@ -116,7 +127,9 @@ export default function LeadPagePreviewPage() {
                   const planToken = resolveMagnet(page, pipeline.kind).kind !== "none" || page.thankYouAskCall ? newPlanToken() : null;
                   rememberPlanToken(page.slug, planToken);
 
-                  void submitMockLead(page.id, name, phone, answers, email, attribution, quality, planToken)
+                  // Kept on the phone and retried until it's saved (lib/leadOutbox):
+                  // a failed save here used to lose the lead without a trace.
+                  void submitLead({ pageId: page.id, name, phone, formAnswers: answers, email, attribution, quality, planToken })
                     .then((res) => {
                       if (res?.id && quality === "good" && page.fbPixelId) {
                         void reportCapiLead({

@@ -335,6 +335,8 @@ export default function LeadPagePage() {
                   setRenameDraft(p.name);
                   setRenameDialogId(p.id);
                 }}
+                aria-label={`Rename ${p.name}`}
+                title="Rename"
                 sx={{ ml: 0.5, p: 0.5 }}
               >
                 <EditOutlinedIcon sx={{ fontSize: 15 }} />
@@ -346,6 +348,8 @@ export default function LeadPagePage() {
                   setPageMenuAnchor(null);
                   setDeleteConfirmId(p.id);
                 }}
+                aria-label={`Delete ${p.name}`}
+                title="Delete"
                 sx={{ p: 0.5 }}
               >
                 <DeleteOutlineIcon sx={{ fontSize: 15 }} />
@@ -465,8 +469,8 @@ export default function LeadPagePage() {
                       <input type="file" hidden accept="image/*" onChange={(e) => onLogoChange(e.target.files?.[0] ?? null)} />
                     </Box>
                     {page.logoDataUrl && (
-                      <IconButton size="small" onClick={() => { update({ logoDataUrl: null }); showSnack("Logo removed"); }}
-                        sx={{ position: "absolute", top: -8, right: -8, width: 20, height: 20, bgcolor: tokens.surface2, color: tokens.ink2, "&:hover": { bgcolor: tokens.outline } }}>
+                      <IconButton size="small" onClick={() => { update({ logoDataUrl: null }); showSnack("Logo removed"); }} aria-label="Remove logo" title="Remove logo"
+                        sx={{ position: "absolute", top: -8, right: -8, width: 20, height: 20, bgcolor: tokens.surface2, color: tokens.ink2, "&:hover": { bgcolor: tokens.outline }, "&::after": { content: '""', position: "absolute", inset: -8 } }}>
                         <CloseIcon sx={{ fontSize: 12 }} />
                       </IconButton>
                     )}
@@ -492,8 +496,8 @@ export default function LeadPagePage() {
                       <input type="file" hidden accept="image/*" onChange={(e) => onPhotoChange(e.target.files?.[0] ?? null)} />
                     </Box>
                     {page.profilePhotoDataUrl && (
-                      <IconButton size="small" onClick={() => { update({ profilePhotoDataUrl: null }); showSnack("Photo removed"); }}
-                        sx={{ position: "absolute", top: -4, right: -4, width: 20, height: 20, bgcolor: tokens.surface2, color: tokens.ink2, "&:hover": { bgcolor: tokens.outline } }}>
+                      <IconButton size="small" onClick={() => { update({ profilePhotoDataUrl: null }); showSnack("Photo removed"); }} aria-label="Remove photo" title="Remove photo"
+                        sx={{ position: "absolute", top: -4, right: -4, width: 20, height: 20, bgcolor: tokens.surface2, color: tokens.ink2, "&:hover": { bgcolor: tokens.outline }, "&::after": { content: '""', position: "absolute", inset: -8 } }}>
                         <CloseIcon sx={{ fontSize: 12 }} />
                       </IconButton>
                     )}

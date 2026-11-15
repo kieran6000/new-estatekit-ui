@@ -84,7 +84,7 @@ export default function RecentSalesEditor() {
               </Typography>
             )}
           </Box>
-          <IconButton size="small" onClick={() => remove(l.id)}>
+          <IconButton size="small" onClick={() => remove(l.id)} aria-label={`Remove ${l.address || "this home"}`} title="Remove">
             <DeleteOutlineIcon fontSize="small" />
           </IconButton>
         </Box>
@@ -109,7 +109,7 @@ export default function RecentSalesEditor() {
           onChange={(e) => setPrice(e.target.value.replace(/\D/g, ""))}
           fullWidth
           placeholder="e.g. 1970000"
-          inputMode="numeric"
+          slotProps={{ htmlInput: { inputMode: "numeric" } }}
         />
         <Button component="label" variant="contained" size="small" disabled={busy || !address.trim()} startIcon={busy ? <CircularProgress size={14} /> : <AddIcon fontSize="small" />} sx={{ alignSelf: "flex-start" }}>
           {busy ? "Adding…" : `Add ${status} home (pick photo)`}

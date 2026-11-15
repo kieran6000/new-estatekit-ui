@@ -53,26 +53,65 @@ export async function listLeadEvents(leadId: string): Promise<LeadEvent[]> {
 
 const NO_SESSION = "00000000-0000-0000-0000-000000000000";
 
+/** A small write that must never get in the way of dialling. The tap opens the
+ *  phone's dialer at once, which can cut the request off: so if it fails, it
+ *  goes again when the agent comes back to the page (three tries in all). A
+ *  lost call log made an agent look like they never phoned (speed to lead,
+ *  "still waiting for your call" nudges). */
+function tryUntilSaved(write: () => Promise<boolean>): void {
+  let left = 3;
+  const go = async () => {
+    left--;
+    let ok = false;
+    try {
+      ok = await write();
+    } catch {
+      ok = false;
+    }
+    if (ok || left <= 0) return;
+    if (document.visibilityState === "visible") {
+      setTimeout(() => void go(), 4000);
+      return;
+    }
+    const back = () => {
+      if (document.visibilityState !== "visible") return;
+      document.removeEventListener("visibilitychange", back);
+      void go();
+    };
+    document.addEventListener("visibilitychange", back);
+  };
+  void go();
+}
+
 /** Record a Call tap from the signed-in dashboard. Fire-and-forget — a history
  *  entry must never get in the way of actually dialling. */
 export function logLeadCall(leadId: string, agentId: string): void {
-  getCurrentUserId()
-    .then((uid) => {
-      if (uid === NO_SESSION) return;
-      return supabase.from("lead_events").insert({
-        lead_id: leadId,
-        agent_id: agentId,
-        actor_id: uid,
-        event_type: "call",
-        source: "dashboard",
-      });
-    })
-    .catch(() => {});
+  // Its id is chosen here, so a second try of a save that did get through is
+  // refused as a duplicate (23505) instead of counting the call twice.
+  const id = crypto.randomUUID();
+  tryUntilSaved(async () => {
+    const uid = await getCurrentUserId();
+    if (uid === NO_SESSION) return true;
+    const { error } = await supabase.from("lead_events").insert({
+      id,
+      lead_id: leadId,
+      agent_id: agentId,
+      actor_id: uid,
+      event_type: "call",
+      source: "dashboard",
+    });
+    return !error || error.code === "23505";
+  });
 }
 
-/** Record a Call tap from a signed-out WhatsApp action link. */
+/** Record a Call tap from a signed-out WhatsApp action link. Tried again only
+ *  when no answer came back at all (cut off as the dialer opened); an answer,
+ *  even an error, means the server had it. */
 export function logCallByToken(token: string): void {
-  supabase.functions.invoke("lead-call", { body: { token } }).catch(() => {});
+  tryUntilSaved(async () => {
+    const { error } = await supabase.functions.invoke("lead-call", { body: { token } });
+    return !error || error.name === "FunctionsHttpError";
+  });
 }
 
 export interface EmailStats {

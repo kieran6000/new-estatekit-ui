@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { runWorkflows } from "./workflows.ts";
-import { prettyPhone as tidyPhone, toE164, waDigits } from "../_shared/phone.ts";
+import { waDigits } from "../_shared/phone.ts";
 import { needsAttention } from "../_shared/attention.ts";
 
 const BATCH_SIZE = 200;

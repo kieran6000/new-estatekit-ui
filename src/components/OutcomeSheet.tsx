@@ -133,14 +133,14 @@ export default function OutcomeSheet({
     <>
       <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, p: "8px 8px 4px 16px" }}>
         {showBack && (
-          <IconButton onClick={goBack}>
+          <IconButton onClick={goBack} aria-label="Back">
             <ArrowBackIcon />
           </IconButton>
         )}
         <Typography variant="h6" sx={{ flex: 1, fontWeight: 500, fontSize: 17 }}>
           {t.title}
         </Typography>
-        <IconButton onClick={close}>
+        <IconButton onClick={close} aria-label="Close">
           <CloseIcon />
         </IconButton>
       </Box>
@@ -320,7 +320,7 @@ function CommissionInput({ onSave }: { onSave: (v: number) => void }) {
   const [val, setVal] = useState("");
   return (
     <Box sx={{ display: "flex", gap: 1, px: 2, py: 1, alignItems: "center" }}>
-      <TextField size="small" placeholder="45000" inputMode="numeric" value={val} onChange={(e) => setVal(e.target.value.replace(/\D/g, ""))} fullWidth />
+      <TextField size="small" placeholder="45000" slotProps={{ htmlInput: { inputMode: "numeric" } }} value={val} onChange={(e) => setVal(e.target.value.replace(/\D/g, ""))} fullWidth />
       <Button variant="contained" onClick={() => onSave(val ? +val : 0)}>
         Save
       </Button>

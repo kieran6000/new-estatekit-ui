@@ -60,6 +60,7 @@ function MapLoader() {
  *  looked up then, which is one lookup per address, ever (geocode_cache). */
 export default function AddressMapDialog({ address, agentId, open, onClose }: { address: string; agentId?: string; open: boolean; onClose: () => void }) {
   useEffect(() => { warmUpMaps(); }, []);
+  const [mapFailed, setMapFailed] = useState(false);
   // Never leave them on the loader: if Google says no, use the plain embed.
   useEffect(() => onMapsKeyRefused(() => setMapFailed(true)), []);
   const { data: saved, isLoading: checking } = useQuery({
@@ -79,7 +80,6 @@ export default function AddressMapDialog({ address, agentId, open, onClose }: { 
   const geo = saved === "unknown" || saved === undefined ? looked : saved;
 
   const [mapEl, setMapEl] = useState<HTMLElement | null>(null);
-  const [mapFailed, setMapFailed] = useState(false);
   // Google can go quiet without saying no, so the wait for the address has a
   // limit. If the address does come after that, our map takes over.
   const [waitedEnough, setWaitedEnough] = useState(false);

@@ -62,7 +62,7 @@ export default function EditLeadContactDialog({ lead, open, onClose, showPhone }
             onChange={(e) => setPhone(e.target.value)}
             error={!phoneOk}
             helperText={phoneOk ? " " : "That number looks too short."}
-            inputMode="tel"
+            slotProps={{ htmlInput: { inputMode: "tel" } }}
             fullWidth
           />
         )}
@@ -72,7 +72,7 @@ export default function EditLeadContactDialog({ lead, open, onClose, showPhone }
           onChange={(e) => setEmail(e.target.value)}
           error={!emailOk}
           helperText={emailOk ? " " : "That email doesn't look right."}
-          inputMode="email"
+          slotProps={{ htmlInput: { inputMode: "email", autoCapitalize: "none", spellCheck: false } }}
           fullWidth
         />
       </DialogContent>

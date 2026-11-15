@@ -1,8 +1,9 @@
-import { useMemo } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   Avatar,
   Box,
+  CircularProgress,
   Divider,
   Drawer,
   List,
@@ -56,8 +57,34 @@ import estateKitLogoWhite from "../assets/whitelogofull.png";
 import { useAdminAccess } from "../hooks/useAdminAccess";
 import { TodoBadge } from "./NoteFor";
 import estateKitLogoBlue from "../assets/blue logo full.png";
+import ErrorBoundary from "./ErrorBoundary";
+import { preloadPages } from "../lib/lazyPage";
+import { PageTitleContext, appTitle } from "../lib/pageTitle";
 
 const RAIL_WIDTH = 240;
+
+/** The tab's name for each part of the app, when the page doesn't name it. */
+const SECTION_TITLES: Record<string, string> = {
+  leads: "Leads",
+  calendar: "Calendar",
+  mypage: "Forms",
+  account: "Account",
+  setup: "Get set up",
+  clients: "Accounts",
+  overview: "Overview",
+  automations: "Automations",
+  team: "My team",
+  home: "Dashboard",
+};
+
+/** While a page downloads (the first time it's opened), inside the app. */
+function PageLoading() {
+  return (
+    <Box sx={{ display: "flex", justifyContent: "center", pt: 10 }}>
+      <CircularProgress />
+    </Box>
+  );
+}
 
 function activeSection(pathname: string): string {
   if (pathname.startsWith("/lead-page")) return "mypage";
@@ -96,13 +123,30 @@ export default function AppShell() {
   const section = (isManagingOther || selfRun) && (pathname === myClientBase || pathname.startsWith(myClientBase + "/")) ? "overview" : activeSection(pathname);
   usePageviewTracking();
   useRealtimeSubscriptions();
+  // The tab says where you are: the page's own name if it gave one, else the section.
+  const [pageTitle, setPageTitle] = useState<string | null>(null);
+  useEffect(() => {
+    document.title = appTitle(pageTitle || SECTION_TITLES[section] || "Leads");
+  }, [pageTitle, section]);
+  // The pages agents open most, fetched in the background once the app is up,
+  // so tapping them is as instant as before they loaded on demand.
+  useEffect(() => {
+    preloadPages([
+      () => import("../pages/LeadsPage"),
+      () => import("../pages/LeadDetailPage"),
+      () => import("../pages/CalendarPage"),
+      () => import("../pages/LeadPagePage"),
+      () => import("../pages/AccountPage"),
+    ]);
+  }, []);
   const { data: profile } = useQuery({ queryKey: ["myProfile"], queryFn: getMyProfile, enabled: !!user, staleTime: 5 * 60_000 });
   const { data: sales } = useQuery({ queryKey: ["mySold"], queryFn: listMySoldListings, enabled: !!user, staleTime: 5 * 60_000 });
   // "Get set up" sits in the menu until the account is complete (or while on it).
   const calendarReady = useCalendarReady();
   const setup = profile && sales ? setupProgress({ ...profile, salesCount: sales.length, calendarReady }) : null;
   const showSetup = (!!setup && !setup.complete) || pathname.startsWith("/setup");
-  const initial = useMemo(() => (user?.phone || "?")[0].toUpperCase(), [user]);
+  // The same account as the photo: its name's first letter, not a phone digit.
+  const initial = useMemo(() => ((profile?.displayName || "").trim()[0] || "?").toUpperCase(), [profile?.displayName]);
   // Staff (admins, media buyers) work in clients' accounts: in their own they
   // only need the admin tabs, unless their own account gets leads too (e.g.
   // EstateKit's own, from agents signing up). Switched into an account (a
@@ -295,7 +339,13 @@ export default function AppShell() {
             <AccountSwitcher variant="light" staff={!!isOperator} />
           </Box>
         )}
-        <Outlet />
+        <ErrorBoundary inline resetKey={pathname}>
+          <Suspense fallback={<PageLoading />}>
+            <PageTitleContext.Provider value={setPageTitle}>
+              <Outlet />
+            </PageTitleContext.Provider>
+          </Suspense>
+        </ErrorBoundary>
       </Box>
 
       {!isDesktop && (

@@ -20,7 +20,7 @@ export default function UpgradePage() {
     <Box>
       <AppBar position="sticky">
         <Toolbar sx={{ height: 56, minHeight: "56px !important" }}>
-          <IconButton onClick={() => navigate(-1)}>
+          <IconButton onClick={() => navigate(-1)} aria-label="Back">
             <ArrowBackIcon />
           </IconButton>
           <Typography sx={{ fontSize: 18, fontWeight: 500 }}>Upgrade</Typography>

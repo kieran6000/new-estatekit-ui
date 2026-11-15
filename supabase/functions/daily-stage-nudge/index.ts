@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
-import { prettyPhone as tidyPhone, toE164, waDigits } from "../_shared/phone.ts";
+import { waDigits } from "../_shared/phone.ts";
 
 // End-of-day nudge: one WhatsApp per agent listing how many leads still need
 // their stage updated, with a link straight to the list.

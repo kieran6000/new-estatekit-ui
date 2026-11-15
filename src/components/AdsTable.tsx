@@ -405,7 +405,11 @@ export default function AdsTable({ agentId, adAccountId, since, until, view, onV
   };
 
   const stickyLeft = (left: number, w: number) => ({ position: "sticky", left, zIndex: 1, minWidth: w, maxWidth: w, width: w } as const);
-  const headCell = { bgcolor: FB.head, color: FB.text, fontFamily: FB_FONT, fontSize: 14, fontWeight: 600, py: 0.75, px: 1.25, height: 52, overflow: "hidden", borderRight: `1px solid ${FB.line}`, borderBottom: `1px solid ${FB.line}`, borderTop: `1px solid ${FB.line}`, lineHeight: 1.3, verticalAlign: "middle", position: "relative", textAlign: "left" } as const;
+  const headCell = { bgcolor: FB.head, color: FB.text, fontFamily: FB_FONT, fontSize: 14, fontWeight: 600, py: 0.75, px: 1.25, height: 52, overflow: "hidden", borderRight: `1px solid ${FB.line}`, borderBottom: `1px solid ${FB.line}`, borderTop: `1px solid ${FB.line}`, lineHeight: 1.3, verticalAlign: "middle", textAlign: "left",
+    // Every heading stays at the top of the table while it scrolls down (the
+    // sticky cell also anchors the column resizer). "relative" here used to
+    // override that, so the numbers lost their headings.
+    position: "sticky", top: 0, zIndex: 2 } as const;
   // A header as in Ads Manager: the name, ⇅ to sort (↓/↑ in blue when sorted), ▾ for the column's menu.
   const head = (label: string, key: SortKey, col: ColId | "name" | null, tip?: string) => {
     const active = sort.k === key;
@@ -433,7 +437,16 @@ export default function AdsTable({ agentId, adAccountId, since, until, view, onV
     );
   };
   const phone = useMediaQuery("(max-width:599px)");
-  const nameW = phone ? 150 : width("name");
+  const nameW = phone ? 140 : width("name");
+  // What stays put when you scroll sideways. On a computer: the tick box, the
+  // switch and the name, as in Ads Manager. On a phone only the name (and a
+  // slimmer one): all three froze 280 of the screen's 390 pixels, leaving the
+  // numbers almost no room to scroll through.
+  const fixedW = (w: number) => ({ minWidth: w, maxWidth: w, width: w } as const);
+  const pinTick = phone ? fixedW(48) : stickyLeft(0, 48);
+  const pinSwitch = phone ? fixedW(80) : stickyLeft(48, 80);
+  const pinName = stickyLeft(phone ? 0 : 128, nameW);
+  const headPinZ = phone ? 2 : 3;
   const sortName = (k: SortKey) => (k === "name" ? word.title : k === "status" ? "Off / On" : headLabel(k as ColId));
   const onSort = (k: SortKey) => {
     const dir = sort.k === k ? sort.dir * -1 : k === "name" || k === "delivery" ? 1 : -1;
@@ -618,7 +631,7 @@ export default function AdsTable({ agentId, adAccountId, since, until, view, onV
               <Table size="small" stickyHeader sx={{ tableLayout: "fixed", width: "max-content", borderCollapse: "separate", "& td": { borderBottom: 0, fontFamily: FB_FONT, fontSize: 14, color: FB.text, px: 1.25, py: 1.25, lineHeight: 1.35, verticalAlign: "top", overflow: "hidden" } }}>
                 <TableHead>
                   <TableRow>
-                    <TableCell padding="none" sx={{ ...headCell, ...stickyLeft(0, 48), zIndex: 3, textAlign: "center", px: "0 !important" }}>
+                    <TableCell padding="none" sx={{ ...headCell, ...pinTick, zIndex: headPinZ, textAlign: "center", px: "0 !important" }}>
                       <Checkbox
                         size="small"
                         checked={allTicked}
@@ -628,8 +641,8 @@ export default function AdsTable({ agentId, adAccountId, since, until, view, onV
                         slotProps={{ input: { "aria-label": someTicked ? "Untick all" : "Tick all" } }}
                       />
                     </TableCell>
-                    <TableCell sx={{ ...headCell, ...stickyLeft(48, 80), zIndex: 3 }}>{head("Off / On", "status", null, "Turn it on or off. Off stops it showing and spending straight away.")}</TableCell>
-                    <TableCell sx={{ ...headCell, ...stickyLeft(128, nameW), zIndex: 3 }}>
+                    <TableCell sx={{ ...headCell, ...pinSwitch, zIndex: headPinZ }}>{head("Off / On", "status", null, "Turn it on or off. Off stops it showing and spending straight away.")}</TableCell>
+                    <TableCell sx={{ ...headCell, ...pinName, zIndex: 3 }}>
                       {head(word.title, "name", "name")}
                       {resizer("name")}
                     </TableCell>
@@ -667,7 +680,7 @@ export default function AdsTable({ agentId, adAccountId, since, until, view, onV
                           "&:hover .ek-edit": { opacity: 1 },
                         }}
                       >
-                        <TableCell padding="none" sx={{ ...stickyLeft(0, 48), textAlign: "center", px: "0 !important", pt: "6px !important" }}>
+                        <TableCell padding="none" sx={{ ...pinTick, textAlign: "center", px: "0 !important", pt: "6px !important" }}>
                           <Checkbox
                             size="small"
                             checked={sel}
@@ -677,7 +690,7 @@ export default function AdsTable({ agentId, adAccountId, since, until, view, onV
                             slotProps={{ input: { "aria-label": `Select ${r.name}` } }}
                           />
                         </TableCell>
-                        <TableCell sx={{ ...stickyLeft(48, 80), py: "8px !important", textAlign: "center" }}>
+                        <TableCell sx={{ ...pinSwitch, py: "8px !important", textAlign: "center" }}>
                           <Tooltip title={r.status === "ACTIVE" ? `Turn this ${word.one} off` : `Turn this ${word.one} on`}>
                             <Switch
                               checked={r.status === "ACTIVE"}
@@ -689,9 +702,12 @@ export default function AdsTable({ agentId, adAccountId, since, until, view, onV
                             />
                           </Tooltip>
                         </TableCell>
-                        <TableCell sx={{ ...stickyLeft(128, nameW), borderRight: `1px solid ${FB.line}` }}>
+                        <TableCell sx={{ ...pinName, borderRight: `1px solid ${FB.line}` }}>
                           <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1, minWidth: 0 }}>
-                            {view.level === "ad" && (
+                            {/* On a phone the frozen column is slim: the name gets all
+                                of it, on up to two lines (the picture is a hover
+                                preview, which a phone can't do anyway). */}
+                            {view.level === "ad" && !phone && (
                               <Box
                                 onMouseEnter={(e) => { const el = e.currentTarget; clearTimeout(hoverTimer.current); hoverTimer.current = setTimeout(() => setPreview({ el, row: r }), 200); }}
                                 onMouseLeave={() => { clearTimeout(hoverTimer.current); setPreview(null); }}
@@ -701,9 +717,19 @@ export default function AdsTable({ agentId, adAccountId, since, until, view, onV
                               </Box>
                             )}
                             <Tooltip title={r.created ? `${r.name} · Created ${fbDate(r.created)}` : r.name} placement="top-start">
-                              <Box className="ek-name" sx={{ flex: 1, minWidth: 0, color: clickable ? FB.link : FB.text, fontWeight: 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", pt: view.level === "ad" ? 0.75 : 0 }}>{r.name}</Box>
+                              <Box
+                                className="ek-name"
+                                sx={{
+                                  flex: 1, minWidth: 0, color: clickable ? FB.link : FB.text, fontWeight: 400, overflow: "hidden",
+                                  ...(phone
+                                    ? { display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", wordBreak: "break-word", fontSize: 13.5, lineHeight: 1.3 }
+                                    : { textOverflow: "ellipsis", whiteSpace: "nowrap", pt: view.level === "ad" ? 0.75 : 0 }),
+                                }}
+                              >
+                                {r.name}
+                              </Box>
                             </Tooltip>
-                            {!clickable && (
+                            {!clickable && !phone && (
                               <Tooltip title="Open in Ads Manager">
                                 <IconButton
                                   className="ek-ext"
@@ -734,9 +760,9 @@ export default function AdsTable({ agentId, adAccountId, since, until, view, onV
                     );
                   })}
                   <TableRow sx={{ position: "sticky", bottom: 0, zIndex: 2, "& > td": { bgcolor: "#fff", borderTop: `1px solid ${FB.line}`, fontWeight: 400, whiteSpace: "nowrap" } }}>
-                    <TableCell sx={{ ...stickyLeft(0, 48) }} />
-                    <TableCell sx={{ ...stickyLeft(48, 80) }} />
-                    <TableCell sx={{ ...stickyLeft(128, nameW), borderRight: `1px solid ${FB.line}` }}>
+                    <TableCell sx={{ ...pinTick }} />
+                    <TableCell sx={{ ...pinSwitch }} />
+                    <TableCell sx={{ ...pinName, borderRight: `1px solid ${FB.line}` }}>
                       <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
                         Results from {rows.length} {rows.length === 1 ? word.one : word.many}
                         <Tooltip title="Excludes deleted items"><InfoIcon sx={{ fontSize: 15, color: FB.text }} /></Tooltip>
