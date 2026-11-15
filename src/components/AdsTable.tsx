@@ -447,6 +447,29 @@ export default function AdsTable({ agentId, adAccountId, since, until, view, onV
   const pinSwitch = phone ? fixedW(80) : stickyLeft(48, 80);
   const pinName = stickyLeft(phone ? 0 : 128, nameW);
   const headPinZ = phone ? 2 : 3;
+  // Phones and tablets: the page scrolls up and down, the table only sideways.
+  // A box that scrolls both ways inside a scrolling page can be dragged in
+  // every direction and bounces about. The headings are then their own row,
+  // pinned to the top of the screen while the table is on it, sliding sideways
+  // with the rows. A computer keeps the Ads Manager box (mouse wheels don't drag).
+  const touch = useMediaQuery("(hover: none) and (pointer: coarse)", { noSsr: true });
+  const pageScroll = phone || touch;
+  const headScroll = useRef<HTMLDivElement>(null);
+  const bodyScroll = useRef<HTMLDivElement>(null);
+  // Whichever was touched leads and the other follows, so the two never fight
+  // over a flick that's still gliding.
+  const scrollLead = useRef<"head" | "body">("body");
+  const leadScroll = (who: "head" | "body") => {
+    if (scrollLead.current === who) return;
+    scrollLead.current = who;
+    const [from, to] = who === "head" ? [bodyScroll.current, headScroll.current] : [headScroll.current, bodyScroll.current];
+    if (from && to) to.scrollLeft = from.scrollLeft;
+  };
+  const followScroll = (who: "head" | "body") => {
+    if (scrollLead.current !== who) return;
+    const [from, to] = who === "head" ? [headScroll.current, bodyScroll.current] : [bodyScroll.current, headScroll.current];
+    if (from && to && to.scrollLeft !== from.scrollLeft) to.scrollLeft = from.scrollLeft;
+  };
   const sortName = (k: SortKey) => (k === "name" ? word.title : k === "status" ? "Off / On" : headLabel(k as ColId));
   const onSort = (k: SortKey) => {
     const dir = sort.k === k ? sort.dir * -1 : k === "name" || k === "delivery" ? 1 : -1;
@@ -485,6 +508,48 @@ export default function AdsTable({ agentId, adAccountId, since, until, view, onV
     setPrefs({ ...prefs, choice: "custom", custom: visibleColumns(prefs, "campaign").filter((x) => x !== c) });
     showSnack(`${COLUMN_LABEL[c]} hidden`, () => setPrefs(before));
   };
+
+  const tableSx = { tableLayout: "fixed", width: "max-content", borderCollapse: "separate", "& td": { borderBottom: 0, fontFamily: FB_FONT, fontSize: 14, color: FB.text, px: 1.25, py: 1.25, lineHeight: 1.35, verticalAlign: "top", overflow: "hidden" } } as const;
+  // When the headings are a table of their own, both tables take their column
+  // widths from here, so every heading sits exactly over its numbers.
+  const tableW = 48 + 80 + nameW + colIds.reduce((s, id) => s + width(id), 0);
+  const cols = (
+    <colgroup>
+      <col style={{ width: 48 }} />
+      <col style={{ width: 80 }} />
+      <col style={{ width: nameW }} />
+      {colIds.map((id) => <col key={id} style={{ width: width(id) }} />)}
+    </colgroup>
+  );
+  const headerRow = (
+    <TableRow>
+      <TableCell padding="none" sx={{ ...headCell, ...pinTick, zIndex: headPinZ, textAlign: "center", px: "0 !important" }}>
+        <Checkbox
+          size="small"
+          checked={allTicked}
+          indeterminate={someTicked && !allTicked}
+          onChange={toggleAll}
+          sx={FB_CHECK} {...CHECK_ICONS}
+          slotProps={{ input: { "aria-label": someTicked ? "Untick all" : "Tick all" } }}
+        />
+      </TableCell>
+      <TableCell sx={{ ...headCell, ...pinSwitch, zIndex: headPinZ }}>{head("Off / On", "status", null, "Turn it on or off. Off stops it showing and spending straight away.")}</TableCell>
+      <TableCell sx={{ ...headCell, ...pinName, zIndex: 3 }}>
+        {head(word.title, "name", "name")}
+        {resizer("name")}
+      </TableCell>
+      {colIds.map((id) => {
+        const m = metricOf(id);
+        const w = width(id);
+        return (
+          <TableCell key={id} sx={{ ...headCell, width: w, minWidth: w, maxWidth: w }}>
+            {head(headLabel(id), m ? m.key : id, id, m ? (m.target ? `${m.help} Target: ${m.target}.` : m.help) : COL_HELP[id])}
+            {resizer(id)}
+          </TableCell>
+        );
+      })}
+    </TableRow>
+  );
 
   return (
     <Box sx={{ minWidth: 0 }}>
@@ -533,7 +598,9 @@ export default function AdsTable({ agentId, adAccountId, since, until, view, onV
         })}
       </Box>
 
-      <Box sx={{ bgcolor: "#fff", border: `1px solid ${FB.line}`, borderRadius: "0 8px 8px 8px", overflow: "hidden", position: "relative", zIndex: 1 }}>
+      {/* "clip" rounds the corners like "hidden" without being a scroll box,
+          so the headings can pin to the top of the screen. */}
+      <Box sx={{ bgcolor: "#fff", border: `1px solid ${FB.line}`, borderRadius: "0 8px 8px 8px", overflow: "hidden", "@supports (overflow: clip)": { overflow: "clip" }, position: "relative", zIndex: 1 }}>
         {/* Toolbar: the column chooser, as in Ads Manager. */}
         <Box sx={{ display: "flex", alignItems: "center", gap: 1, px: 1.5, py: 1.25, flexWrap: "wrap" }}>
           {!phone && (
@@ -627,37 +694,32 @@ export default function AdsTable({ agentId, adAccountId, since, until, view, onV
           <Typography sx={{ p: 2, fontSize: 14, color: FB.sub }}>No {word.many} ran in these dates.</Typography>
         ) : (
           <>
-            <Box sx={{ overflow: "auto", maxHeight: 640, ...THIN_SCROLL }}>
-              <Table size="small" stickyHeader sx={{ tableLayout: "fixed", width: "max-content", borderCollapse: "separate", "& td": { borderBottom: 0, fontFamily: FB_FONT, fontSize: 14, color: FB.text, px: 1.25, py: 1.25, lineHeight: 1.35, verticalAlign: "top", overflow: "hidden" } }}>
-                <TableHead>
-                  <TableRow>
-                    <TableCell padding="none" sx={{ ...headCell, ...pinTick, zIndex: headPinZ, textAlign: "center", px: "0 !important" }}>
-                      <Checkbox
-                        size="small"
-                        checked={allTicked}
-                        indeterminate={someTicked && !allTicked}
-                        onChange={toggleAll}
-                        sx={FB_CHECK} {...CHECK_ICONS}
-                        slotProps={{ input: { "aria-label": someTicked ? "Untick all" : "Tick all" } }}
-                      />
-                    </TableCell>
-                    <TableCell sx={{ ...headCell, ...pinSwitch, zIndex: headPinZ }}>{head("Off / On", "status", null, "Turn it on or off. Off stops it showing and spending straight away.")}</TableCell>
-                    <TableCell sx={{ ...headCell, ...pinName, zIndex: 3 }}>
-                      {head(word.title, "name", "name")}
-                      {resizer("name")}
-                    </TableCell>
-                    {colIds.map((id) => {
-                      const m = metricOf(id);
-                      const w = width(id);
-                      return (
-                        <TableCell key={id} sx={{ ...headCell, width: w, minWidth: w, maxWidth: w }}>
-                          {head(headLabel(id), m ? m.key : id, id, m ? (m.target ? `${m.help} Target: ${m.target}.` : m.help) : COL_HELP[id])}
-                          {resizer(id)}
-                        </TableCell>
-                      );
-                    })}
-                  </TableRow>
-                </TableHead>
+            <Box>
+            {pageScroll && (
+              <Box
+                ref={headScroll}
+                onPointerDown={() => leadScroll("head")}
+                onWheel={() => leadScroll("head")}
+                onScroll={() => followScroll("head")}
+                sx={{ position: "sticky", top: 0, zIndex: 3, bgcolor: FB.head, overflowX: "auto", overflowY: "hidden", overscrollBehaviorX: "none", scrollbarWidth: "none", "&::-webkit-scrollbar": { display: "none" } }}
+              >
+                <Table size="small" sx={{ ...tableSx, width: tableW }}>
+                  {cols}
+                  <TableHead>{headerRow}</TableHead>
+                </Table>
+              </Box>
+            )}
+            <Box
+              ref={bodyScroll}
+              onPointerDown={() => leadScroll("body")}
+              onWheel={() => leadScroll("body")}
+              onScroll={() => followScroll("body")}
+              sx={pageScroll
+                ? { overflowX: "auto", overflowY: "hidden", overscrollBehaviorX: "none", ...THIN_SCROLL }
+                : { overflow: "auto", maxHeight: 640, ...THIN_SCROLL }}
+            >
+              <Table size="small" stickyHeader sx={pageScroll ? { ...tableSx, width: tableW } : tableSx}>
+                {pageScroll ? cols : <TableHead>{headerRow}</TableHead>}
                 <TableBody>
                   {rows.map(({ r, v }, i) => {
                     const sel = ticked.includes(r.id);
@@ -779,6 +841,7 @@ export default function AdsTable({ agentId, adAccountId, since, until, view, onV
                   </TableRow>
                 </TableBody>
               </Table>
+            </Box>
             </Box>
             {unlinked && (unlinked.booked > 0 || unlinked.mandates > 0) && (
               <Box sx={{ p: "8px 12px", fontSize: 12.5, color: FB.sub, borderTop: `1px solid ${FB.line}` }}>
