@@ -1980,7 +1980,7 @@ function EditQuestionRow({ pageId, question, onDone }: { pageId: string; questio
                   value={helperText}
                   onChange={(e) => setHelperText(e.target.value)}
                   fullWidth
-                  sx={{ mt: 1.25, bgcolor: "background.paper" }}
+                  sx={{ mt: 1.25, "& .MuiInputBase-root": { bgcolor: "background.paper" } }}
                 />
               )}
             </Box>
