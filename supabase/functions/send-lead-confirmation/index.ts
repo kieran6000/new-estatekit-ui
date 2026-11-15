@@ -15,7 +15,7 @@
 // lead starts the conversation, which needs no WhatsApp Business API.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { prettyPhone as tidyPhone, toE164, waDigits } from "../_shared/phone.ts";
+import { prettyPhone as tidyPhone, waDigits } from "../_shared/phone.ts";
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 const FROM_ADDRESS = "hello@mail.estatekit.co";

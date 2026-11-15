@@ -105,6 +105,10 @@ import OutcomeSheet from "../components/OutcomeSheet";
 import FocusCallModal from "../components/FocusCallModal";
 import { prettyPhone } from "../lib/phone";
 
+/** The "N leads to call · Start calling" bar above the list. Hidden for now
+ *  (Nov 2026): the list itself is the way in. true brings it back. */
+const SHOW_CALL_MODE = false;
+
 export default function LeadsPage() {
   const navigate = useNavigate();
   // The open lead, in the side panel (?lead=…). Each opening is a history
@@ -265,7 +269,7 @@ export default function LeadsPage() {
     const m = new Map<string, number>();
     for (const l of pipelineLeads) for (const t of leadTags(l, datasetByPage)) m.set(t, (m.get(t) ?? 0) + 1);
     return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  }, [pipelineLeads]);
+  }, [pipelineLeads, datasetByPage]);
   // A tag's chip disappears when no lead has it; don't leave its filter on.
   useEffect(() => { if (tagFilter && !tagCounts.some(([t]) => t === tagFilter)) setTagFilter(null); }, [tagCounts, tagFilter]);
 
@@ -642,7 +646,7 @@ export default function LeadsPage() {
       {/* One-at-a-time call mode. Shown only when there's actually something to
           call, so the list isn't cluttered on a quiet day. This is the whole
           "don't make me think" path: tap once, work the list top to bottom. */}
-      {/* Hidden for now (Nov 2026): the list itself is the way in. */ false && !selectMode && !showArchived && !showGlobalSearch && callList.length > 0 && (
+      {SHOW_CALL_MODE && !selectMode && !showArchived && !showGlobalSearch && callList.length > 0 && (
         <Box
           sx={{
             display: "flex", alignItems: "center", gap: 1.5,

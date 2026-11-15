@@ -347,7 +347,6 @@ Deno.serve(async (req) => {
         name: p.display_name,
         agency: p.company,
         area: p.area,
-        email: p.email,
         whatsapp: p.whatsapp_number,
         photo: p.avatar_url,
         ids: { adAccountId: p.fb_ad_account_id, pageId: p.fb_page_id },
@@ -372,7 +371,7 @@ Deno.serve(async (req) => {
           },
         },
         automationsPaused: p.automations_paused,
-        // `email` above is replaced by the email stats; this keeps the address.
+        // The address (`email` is the email stats).
         emailAddress: p.email,
         ...extrasFor(p, myLeads),
       };
