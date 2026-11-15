@@ -318,16 +318,20 @@ Deno.serve(async (req) => {
     let agentName = b.actorName || "Someone";
     let company = "";
     let logo = "";
+    let photo = "";
     if (b.agentId) {
       const { data: prof } = await supabase
         .from("agent_profiles")
-        .select("display_name, company, sidebar_logo_url")
+        .select("display_name, company, sidebar_logo_url, avatar_url")
         .eq("agent_id", b.agentId)
         .maybeSingle();
       if (prof) {
         agentName = prof.display_name || agentName;
         company = prof.company || "";
-        logo = prof.sidebar_logo_url || "";
+        // Discord shows PNG, JPEG and WebP, not SVG.
+        const shown = (u: unknown) => (typeof u === "string" && u.startsWith("https://") && !/\.svg(\?|$)/i.test(u) ? u : "");
+        logo = shown(prof.sidebar_logo_url);
+        photo = shown(prof.avatar_url);
       }
     }
 
@@ -352,7 +356,7 @@ Deno.serve(async (req) => {
       : appointment || address || (was ? `Was ${was === "New Lead" ? "a new lead" : was.toLowerCase()}` : "");
 
     const banner = new URL(`${APP}/api/og`);
-    for (const [k, v] of Object.entries({ t: kind, n: who, s: line, a: kind === "checkin" ? "" : agentName, c: company, l: title !== card.title ? title : "", v: "1" })) {
+    for (const [k, v] of Object.entries({ t: kind, n: who, s: line, a: kind === "checkin" ? "" : agentName, c: company, l: title !== card.title ? title : "", v: "2" })) {
       if (v) banner.searchParams.set(k, v.slice(0, 60));
     }
 
@@ -383,7 +387,9 @@ Deno.serve(async (req) => {
     if (links.length) lines.push(links.join("  ·  "));
 
     const embed: Record<string, unknown> = {
-      author: { name: company ? `${agentName} · ${company}` : agentName, icon_url: logo || EK_LOGO },
+      // Their own face by their name, their company logo in the corner.
+      author: { name: company ? `${agentName} · ${company}` : agentName, icon_url: photo || logo || EK_LOGO },
+      ...(logo ? { thumbnail: { url: logo } } : {}),
       title: `${card.emoji}  ${title} · ${who}`.slice(0, 250),
       ...(leadLink ? { url: leadLink } : {}),
       description: lines.join("\n").slice(0, 3800) || undefined,
