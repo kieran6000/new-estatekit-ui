@@ -129,6 +129,9 @@ export function useUpdateLeadStage() {
       qc.invalidateQueries({ queryKey: LEADS_KEY });
       qc.invalidateQueries({ queryKey: [LEAD_BY_ID_KEY, vars.id] });
       qc.invalidateQueries({ queryKey: ["leadEvents"] });
+      // A WhatsApp link opened while signed in shows its own copy of the lead
+      // (its header and "What happened?"), which needs the new stage too.
+      qc.invalidateQueries({ queryKey: ["leadByToken"] });
     },
   });
 }

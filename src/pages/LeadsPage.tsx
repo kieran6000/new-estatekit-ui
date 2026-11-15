@@ -78,7 +78,7 @@ import { useDatasetByPage } from "../hooks/useLeadPages";
 import LocalOfferIcon from "@mui/icons-material/LocalOffer";
 import { DEAD_STAGES, PIPELINE_KIND_LABEL, PIPELINE_STAGES, type LeadRow, type OutcomeStep, type Pipeline, type PipelineKind, type Stage } from "../types";
 import { stageLabel } from "../types";
-import { dueLeads, isNewLead, pipelineKindFor, sortLeadsForList, stepForStage, computeStagePatch, stageForKind, whenToCall, whenToCallSortValue } from "../lib/stageLogic";
+import { dueLeads, isNewLead, leadStageLabel, pipelineKindFor, sortLeadsForList, stepForStage, computeStagePatch, stageForKind, whenToCall, whenToCallSortValue } from "../lib/stageLogic";
 import { leadMatchesSearch } from "../lib/leadSearch";
 import { timeAgo } from "../lib/timeAgo";
 import { useLeads, useUpdateLeadStage } from "../hooks/useLeads";
@@ -1256,10 +1256,10 @@ function LeadsTable({
               <Box
                 component="button"
                 onClick={(e) => { e.stopPropagation(); open(e); }}
-                aria-label={`Stage: ${stageLabel(l.stage, kind)}. Change stage`}
+                aria-label={`Stage: ${leadStageLabel(l, kind)}. Change stage`}
                 sx={STAGE_PICKER}
               >
-                {stageLabel(l.stage, kind)}
+                {leadStageLabel(l, kind)}
                 <ArrowDropDownIcon sx={{ fontSize: 20, ml: "auto", color: "text.secondary" }} />
               </Box>
             )}
@@ -1468,10 +1468,10 @@ function MobileLeadsList({
             <Box
               component="button"
               onClick={(e) => { e.stopPropagation(); open(e); }}
-              aria-label={`Stage: ${stageLabel(l.stage, kind)}. Change stage`}
+              aria-label={`Stage: ${leadStageLabel(l, kind)}. Change stage`}
               sx={{ ...STAGE_PICKER, color: DEAD_STAGES.includes(l.stage) ? "text.disabled" : "text.primary", minHeight: 40 }}
             >
-              {stageLabel(l.stage, kind)}
+              {leadStageLabel(l, kind)}
               <ArrowDropDownIcon sx={{ fontSize: 20, ml: "auto", color: "text.secondary" }} />
             </Box>
           )}

@@ -3,12 +3,13 @@ import type { LeadRow, PipelineKind, Stage } from "../types";
 
 /** Log an outcome using only the share token — works when the agent isn't
  *  signed in (the WhatsApp action-link case). */
-export async function logOutcomeByToken(token: string, stage: Stage, at?: string | null): Promise<void> {
+export async function logOutcomeByToken(token: string, stage: Stage, at?: string | null, reason?: string): Promise<void> {
   const { data, error } = await supabase.functions.invoke("log-outcome", {
     // `at` is the appointment time for Booked / Viewing Booked. Without it the
     // server has no date to store and the appointment can never appear in a
-    // diary — which is exactly what was happening.
-    body: { token, stage, at: at ?? null },
+    // diary — which is exactly what was happening. `reason` is why a lead is
+    // lost, when the agent said ("Not the owner"; see NOT_OWNER).
+    body: { token, stage, at: at ?? null, ...(reason ? { reason } : {}) },
   });
   if (error) throw new Error(error.message);
   if (data?.error) throw new Error(data.error);

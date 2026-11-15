@@ -1,4 +1,4 @@
-import { DEAD_STAGES, PARKED_STAGES, PIPELINE_STAGES, type LeadRow, type OutcomeStep, type Pipeline, type PipelineKind, type Stage, type StageChangeExtra } from "../types";
+import { DEAD_STAGES, PARKED_STAGES, PIPELINE_STAGES, stageLabel, type LeadRow, type OutcomeStep, type Pipeline, type PipelineKind, type Stage, type StageChangeExtra } from "../types";
 
 /** Stages whose outcome needs more input — picking them (from any stage-change
  * entry point) should open the matching OutcomeSheet step instead of applying
@@ -28,10 +28,25 @@ export function stepForStage(stage: Stage, kind: PipelineKind): OutcomeStep | un
 }
 
 export interface MainOutcomeOption {
-  icon: "event" | "chat" | "no_answer" | "premium" | "offer" | "block" | "wrong_number";
+  icon: "event" | "chat" | "no_answer" | "premium" | "offer" | "block" | "not_owner" | "wrong_number";
   label: string;
   stage: Stage;
+  /** Why a lead is lost, kept with it ("Not the owner"). Options without one
+   *  are told apart by stage alone. */
+  reason?: string;
 }
+
+/**
+ * A seller lead who turned out not to own the property. By law (POPIA) the
+ * agent can't discuss it with them, so the lead is lost, and why is kept.
+ *
+ * It's stored as the stage "Lost" on purpose: everything that knows Lost
+ * (automations stopping, reminders, the calendar, reports) treats it the same
+ * with nothing else to change. A dead lead has no next step, so next_label
+ * (always "—" for one) holds the reason instead.
+ */
+export const NOT_OWNER = "Not the owner";
+const LOST_REASONS: readonly string[] = [NOT_OWNER];
 
 /** The "how did it go?" option list on OutcomeSheet's main step, per pipeline
  * kind — this is the one place seller vs. buyer wording/targets differ. */
@@ -42,6 +57,7 @@ export const MAIN_OUTCOME_OPTIONS: Record<PipelineKind, MainOutcomeOption[]> = {
     { icon: "no_answer", label: "No answer", stage: "No Answer" },
     { icon: "premium", label: "Signed the mandate", stage: "Mandate Signed" },
     { icon: "block", label: "Not selling", stage: "Lost" },
+    { icon: "not_owner", label: NOT_OWNER, stage: "Lost", reason: NOT_OWNER },
     { icon: "wrong_number", label: "Wrong number", stage: "Invalid Number" },
   ],
   buyer: [
@@ -64,6 +80,33 @@ export const MAIN_OUTCOME_OPTIONS: Record<PipelineKind, MainOutcomeOption[]> = {
     { icon: "wrong_number", label: "Wrong number", stage: "Invalid Number" },
   ],
 };
+
+/** Why a lost lead was lost, when the agent said ("Not the owner"); otherwise null. */
+export function lostReason(l: Pick<LeadRow, "stage" | "next_label">): string | null {
+  return l.stage === "Lost" && LOST_REASONS.includes(l.next_label) ? l.next_label : null;
+}
+
+/** What a lead's stage reads as: a lost lead's reason when it has one. */
+export function leadStageLabel(l: Pick<LeadRow, "stage" | "next_label">, kind: PipelineKind): string {
+  return lostReason(l) ?? stageLabel(l.stage, kind);
+}
+
+/** The "What happened?" answer a lead is on now, if any. "Not selling" and
+ *  "Not the owner" are both Lost, told apart by the reason. */
+export function currentOutcome(l: Pick<LeadRow, "stage" | "next_label">, kind: PipelineKind): MainOutcomeOption | undefined {
+  const reason = lostReason(l);
+  return MAIN_OUTCOME_OPTIONS[kind].find((o) => o.stage === l.stage && (o.reason ?? null) === reason);
+}
+
+/** A stage with its reason, for activity logs: "Lost · Not the owner". */
+export function stageWithReason(stage: Stage, reason?: string | null): string {
+  return stage === "Lost" && reason && LOST_REASONS.includes(reason) ? `${stage} · ${reason}` : stage;
+}
+
+/** What an outcome passes with its stage change: its reason, if it has one. */
+export function outcomeExtra(o: MainOutcomeOption): StageChangeExtra | undefined {
+  return o.reason ? { label: o.reason, at: null } : undefined;
+}
 
 export function pipelineKindFor(lead: Pick<LeadRow, "pipeline_id">, pipelines: Pipeline[]): PipelineKind {
   return pipelines.find((p) => p.id === lead.pipeline_id)?.kind ?? "seller";
@@ -166,7 +209,9 @@ export function computeStagePatch(
     return { due: false, next_label: "—", reminder_at: null, ...(commission !== undefined ? { commission } : {}) };
   }
   if (DEAD_STAGES.includes(stage)) {
-    return { due: false, next_label: "—", reminder_at: null };
+    // No next step, so it keeps why, when there's a known reason (see NOT_OWNER).
+    const reason = (extra as StageChangeExtra | undefined)?.label ?? "";
+    return { due: false, next_label: stage === "Lost" && LOST_REASONS.includes(reason) ? reason : "—", reminder_at: null };
   }
   if (stage === "New Lead") {
     return { due: true, next_label: "Just came in", reminder_at: null };

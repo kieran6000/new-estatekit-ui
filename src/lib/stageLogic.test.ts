@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { compareWhenToCall, sortLeadsForList, whenToCall } from "./stageLogic";
+import {
+  compareWhenToCall, computeStagePatch, currentOutcome, leadStageLabel, lostReason, MAIN_OUTCOME_OPTIONS, NOT_OWNER,
+  outcomeExtra, sortLeadsForList, stageWithReason, whenToCall,
+} from "./stageLogic";
 
 const now = new Date(2026, 10, 2, 12, 0); // Mon 2 Nov 2026, 12:00 local
 const ago = (mins: number) => new Date(now.getTime() - mins * 60_000).toISOString();
@@ -71,5 +74,52 @@ describe("whenToCall", () => {
     const soon = whenToCall(lead({ next_label: "Call B: they picked this time", call_at: inMins(DAY) }), now);
     const far = whenToCall(lead({ next_label: "Call C: they picked this time", call_at: inMins(5 * DAY) }), now);
     expect([far, older, soon, fresh, newer, missed].sort(compareWhenToCall)).toEqual([missed, fresh, newer, older, soon, far]);
+  });
+});
+
+describe("Not the owner", () => {
+  const notOwner = MAIN_OUTCOME_OPTIONS.seller.find((o) => o.label === NOT_OWNER)!;
+  const notSelling = { stage: "Lost" as const, next_label: "—" };
+  const notTheOwner = { stage: "Lost" as const, next_label: NOT_OWNER };
+
+  it("is a lost lead that keeps why, where a next step would be", () => {
+    expect(notOwner).toMatchObject({ stage: "Lost", reason: NOT_OWNER });
+    expect(computeStagePatch("Lost", outcomeExtra(notOwner))).toEqual({ due: false, next_label: NOT_OWNER, reminder_at: null });
+    expect(computeStagePatch("Lost")).toMatchObject({ next_label: "—" });
+    // Only a reason it knows, and only for Lost.
+    expect(computeStagePatch("Lost", { label: "tomorrow" })).toMatchObject({ next_label: "—" });
+    expect(computeStagePatch("Invalid Number", { label: NOT_OWNER })).toMatchObject({ next_label: "—" });
+  });
+
+  it("reads as Not the owner, told apart from Not selling", () => {
+    expect(lostReason(notTheOwner)).toBe(NOT_OWNER);
+    expect(lostReason(notSelling)).toBeNull();
+    expect(leadStageLabel(notTheOwner, "seller")).toBe(NOT_OWNER);
+    expect(leadStageLabel(notSelling, "seller")).toBe("Lost");
+    expect(leadStageLabel({ stage: "Booked", next_label: "Appt set" }, "general")).toBe("Meeting booked");
+    expect(currentOutcome(notTheOwner, "seller")?.label).toBe(NOT_OWNER);
+    expect(currentOutcome(notSelling, "seller")?.label).toBe("Not selling");
+    expect(currentOutcome({ stage: "New Lead", next_label: "Just came in" }, "seller")).toBeUndefined();
+    // Moving on from Lost leaves the reason behind: the next step takes its place.
+    expect(lostReason({ stage: "Contacted", next_label: NOT_OWNER })).toBeNull();
+  });
+
+  it("is for sellers only", () => {
+    expect(MAIN_OUTCOME_OPTIONS.buyer.some((o) => o.reason)).toBe(false);
+    expect(MAIN_OUTCOME_OPTIONS.general.some((o) => o.reason)).toBe(false);
+    // Every answer in a list can be told apart from the others.
+    for (const list of Object.values(MAIN_OUTCOME_OPTIONS)) {
+      expect(new Set(list.map((o) => `${o.stage}|${o.reason ?? ""}`)).size).toBe(list.length);
+    }
+  });
+
+  it("has nothing left to do, like any lost lead", () => {
+    expect(whenToCall(lead({ stage: "Lost", next_label: NOT_OWNER }), now).level).toBe("none");
+  });
+
+  it("names its reason in the activity log", () => {
+    expect(stageWithReason("Lost", NOT_OWNER)).toBe("Lost · Not the owner");
+    expect(stageWithReason("Lost", "—")).toBe("Lost");
+    expect(stageWithReason("Contacted", "tomorrow")).toBe("Contacted");
   });
 });

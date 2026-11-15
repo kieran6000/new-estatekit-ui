@@ -34,7 +34,7 @@ import { useLeadWithStatus, useUpdateLeadNote, useUpdateLeadStage } from "../hoo
 import { usePipelines } from "../hooks/usePipelines";
 import { getPipelinePublic } from "../api/pipelines";
 import { useSnack } from "../hooks/useSnack";
-import { MAIN_OUTCOME_OPTIONS, stepForStage, whenToCall, type MainOutcomeOption } from "../lib/stageLogic";
+import { currentOutcome, leadStageLabel, lostReason, MAIN_OUTCOME_OPTIONS, outcomeExtra, stageWithReason, stepForStage, whenToCall, type MainOutcomeOption } from "../lib/stageLogic";
 import { prettyAnswer, intlDigits, telHref } from "../lib/format";
 import { prettyPhone } from "../lib/phone";
 import { timeAgo, whenLabel, isUpcoming } from "../lib/timeAgo";
@@ -45,7 +45,7 @@ import { getLeadByToken, leadIdForLink, logOutcomeByToken, saveNoteByToken } fro
 import { logCallByToken, logLeadCall } from "../api/leadEvents";
 import OutcomeSheet, { OUTCOME_ICONS, outcomeSnack } from "../components/OutcomeSheet";
 import EstateKitLogo from "../components/EstateKitLogo";
-import type { LeadRow, OutcomeStep, PipelineKind, Stage } from "../types";
+import { DEAD_STAGES, type LeadRow, type OutcomeStep, type PipelineKind, type Stage } from "../types";
 
 // Share tokens are 8 hex chars (links sent before 25 Sept 2026) or 32 (after).
 // Lead ids are UUIDs with dashes, so they never match either. This must be
@@ -184,51 +184,56 @@ function LeadActionUI({
   }
 
   // Optimistically reflect a token lead's stage in the cache so the chip and
-  // dropdown update the instant it's tapped — no waiting on the network.
-  function setTokenStage(stage: Stage) {
+  // dropdown update the instant it's tapped — no waiting on the network. A dead
+  // lead's next_label is its reason ("Not the owner") or "—", as the server sets it.
+  function setTokenStage(stage: Stage, reason?: string | null) {
     qc.setQueryData(["leadByToken", token], (old: { lead: LeadRow } | null | undefined) =>
-      old?.lead ? { ...old, lead: { ...old.lead, stage } } : old,
+      old?.lead
+        ? { ...old, lead: { ...old.lead, stage, ...(DEAD_STAGES.includes(stage) ? { next_label: reason || "—" } : {}) } }
+        : old,
     );
   }
 
-  function logTokenOutcome(stage: Stage, offerUndo: boolean, label?: string, at?: string | null) {
+  function logTokenOutcome(stage: Stage, offerUndo: boolean, label?: string, at?: string | null, reason?: string) {
     if (!token || !lead) return;
     const prevStage = lead.stage as Stage;
+    const prevReason = lostReason(lead);
     // The same outcome again is real work too (a second "No answer" resets the
     // retry reminder, a new booking time moves the appointment), as in the list.
-    setTokenStage(stage);            // instant
+    setTokenStage(stage, reason);    // instant
     setLogged({ stage, label: label ?? labelForStage(stage, pipelineKind), status: "saving" });
     clearPendingCall();
-    logOutcomeByToken(token, stage, at)
+    logOutcomeByToken(token, stage, at, reason)
       .then(() => {
         setLogged((l) => (l && l.stage === stage ? { ...l, status: "saved" } : l));
         // The server works out the follow-up (next_label / reminder_at) from the
         // stage, so pull the row back to show the agent what's actually been set.
         qc.invalidateQueries({ queryKey: ["leadByToken", token] });
-        // Undo puts the old stage back; logging the same one again has nothing to undo.
-        if (offerUndo && stage !== prevStage) showSnack(outcomeSnack(stage), () => undoTokenOutcome(prevStage));
-        else showSnack(outcomeSnack(stage));
+        // Undo puts the old outcome back; logging the same one again has nothing to undo.
+        const changed = stage !== prevStage || (reason ?? null) !== prevReason;
+        if (offerUndo && changed) showSnack(outcomeSnack(stage, reason), () => undoTokenOutcome(prevStage, prevReason));
+        else showSnack(outcomeSnack(stage, reason));
       })
       .catch(() => {
-        setTokenStage(prevStage);    // roll back the optimistic change
+        setTokenStage(prevStage, prevReason);    // roll back the optimistic change
         setLogged((l) => (l && l.stage === stage ? { ...l, status: "failed" } : l));
-        showSnack("Couldn't save — try again", () => logTokenOutcome(stage, offerUndo, label, at), "Retry");
+        showSnack("Couldn't save — try again", () => logTokenOutcome(stage, offerUndo, label, at, reason), "Retry");
       });
   }
 
   /** Undo on the WhatsApp-link page: put the stage back and clear the
    *  confirmation, so the screen looks exactly as it did before the mistake. */
-  function undoTokenOutcome(prevStage: Stage) {
+  function undoTokenOutcome(prevStage: Stage, prevReason: string | null) {
     if (!token) return;
-    setTokenStage(prevStage);
+    setTokenStage(prevStage, prevReason);
     setLogged(null);
-    logOutcomeByToken(token, prevStage)
+    logOutcomeByToken(token, prevStage, null, prevReason ?? undefined)
       .then(() => {
         qc.invalidateQueries({ queryKey: ["leadByToken", token] });
         showSnack("Undone");
       })
       .catch(() => {
-        showSnack("Couldn't undo — try again", () => undoTokenOutcome(prevStage), "Retry");
+        showSnack("Couldn't undo — try again", () => undoTokenOutcome(prevStage, prevReason), "Retry");
       });
   }
 
@@ -244,7 +249,7 @@ function LeadActionUI({
         setAskWhen({ stage: opt.stage, label: opt.label });
         return;
       }
-      logTokenOutcome(opt.stage, true, opt.label);
+      logTokenOutcome(opt.stage, true, opt.label, undefined, opt.reason);
       return;
     }
     const sub = stepForStage(opt.stage, pipelineKind);
@@ -255,18 +260,21 @@ function LeadActionUI({
     // Signed in: useUpdateLeadStage is already optimistic with rollback.
     const prev = { stage: lead.stage, next_label: lead.next_label, due: lead.due, reminder_at: lead.reminder_at, commission: lead.commission };
     trackActivity("stage_change", {
-      lead: { id: lead.id, name: lead.name, phone: lead.phone, fromStage: lead.stage, toStage: opt.stage, pipeline: pipelineKind },
+      lead: {
+        id: lead.id, name: lead.name, phone: lead.phone, pipeline: pipelineKind,
+        fromStage: stageWithReason(lead.stage, lead.next_label), toStage: stageWithReason(opt.stage, opt.reason),
+      },
     });
     setLogged({ stage: opt.stage, label: opt.label, status: "saving" });
     updateStage.mutate(
-      { id: lead.id, stage: opt.stage },
+      { id: lead.id, stage: opt.stage, extra: outcomeExtra(opt) },
       {
         onSuccess: () => setLogged((l) => (l && l.stage === opt.stage ? { ...l, status: "saved" } : l)),
         onError: () => setLogged((l) => (l && l.stage === opt.stage ? { ...l, status: "failed" } : l)),
       },
     );
     clearPendingCall();
-    showSnack(outcomeSnack(opt.stage), () => {
+    showSnack(outcomeSnack(opt.stage, opt.reason), () => {
       // Undo: revert the lead and clear the confirmation so the mistake is gone.
       setLogged(null);
       updateStage.mutate(
@@ -413,7 +421,7 @@ function LeadActionUI({
               <Typography sx={{ fontSize: 12, color: "text.secondary", whiteSpace: "nowrap" }}>{timeAgo(lead.created_at)}</Typography>
             </Box>
             <Box sx={{ mt: 0.75, display: "flex", alignItems: "center", gap: 0.75, flexWrap: "wrap" }}>
-              <StageChip stage={lead.stage} />
+              <StageChip stage={lead.stage} label={leadStageLabel(lead, pipelineKind)} />
               <LeadTags lead={lead} />
             </Box>
 
@@ -503,7 +511,8 @@ function LeadActionUI({
               <LoggedConfirmation
                 label={logged.label}
                 status={logged.status}
-                nextLabel={lead.next_label}
+                // A dead lead has no next step; its next_label is its reason.
+                nextLabel={DEAD_STAGES.includes(lead.stage) ? "" : lead.next_label}
                 reminderAt={lead.reminder_at}
                 onChange={() => { setLogged(null); setOutcomeOpen(true); }}
               />
@@ -517,14 +526,11 @@ function LeadActionUI({
               }}
             >
               <InputLabel id="outcome-label">What happened?</InputLabel>
-              <Select<Stage | "">
+              <Select<string>
                 labelId="outcome-label"
                 label="What happened?"
-                value={
-                  MAIN_OUTCOME_OPTIONS[pipelineKind].some((o) => o.stage === lead.stage)
-                    ? (lead.stage as Stage)
-                    : ""
-                }
+                // By answer, not stage: "Not selling" and "Not the owner" are both Lost.
+                value={currentOutcome(lead, pipelineKind)?.label ?? ""}
                 displayEmpty
                 open={outcomeOpen}
                 onOpen={() => setOutcomeOpen(true)}
@@ -534,7 +540,7 @@ function LeadActionUI({
                     second "No answer" is a real outcome, and a select's change
                     event never fires for the value it already has. */}
                 {MAIN_OUTCOME_OPTIONS[pipelineKind].map((opt) => (
-                  <MenuItem key={opt.label} value={opt.stage} onClick={() => pickOutcome(opt)}>
+                  <MenuItem key={opt.label} value={opt.label} onClick={() => pickOutcome(opt)}>
                     <ListItemIcon sx={{ minWidth: 36, color: "text.secondary" }}>{OUTCOME_ICONS[opt.icon]}</ListItemIcon>
                     {opt.label}
                   </MenuItem>
@@ -842,11 +848,11 @@ const STAGE_CHIP: Record<string, { bg: string; fg: string }> = {
   "Invalid Number": { bg: tokens.surface2, fg: tokens.ink2 },
 };
 
-function StageChip({ stage }: { stage: string }) {
+function StageChip({ stage, label }: { stage: string; label: string }) {
   const c = STAGE_CHIP[stage] ?? { bg: tokens.surface2, fg: tokens.ink };
   return (
     <Box sx={{ display: "inline-flex", alignItems: "center", bgcolor: c.bg, color: c.fg, fontSize: 12, fontWeight: 700, borderRadius: "999px", px: 1.25, py: 0.35 }}>
-      {stage}
+      {label}
     </Box>
   );
 }
