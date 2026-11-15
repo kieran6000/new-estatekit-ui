@@ -101,23 +101,23 @@ const BANNERS = {
 };
 const SOFT = "rgba(255,255,255,0.8)";
 const firstOf = (n) => n.split(" ")[0] || n;
-const img = (src) => ({ type: "img", props: { src, width: 150, height: 150, style: { width: 150, height: 150, objectFit: "cover" } } });
+const img = (src) => ({ type: "img", props: { src, width: 200, height: 200, style: { width: 200, height: 200, objectFit: "cover" } } });
 
 // One side of the picture: a photo, initials or a white tile, with a word under it.
 const node = (child, caption, round = true) =>
-  h({ flexDirection: "column", alignItems: "center", gap: 12, width: 170 },
-    h({ width: 150, height: 150, borderRadius: round ? 9999 : 34, background: "#fff", alignItems: "center", justifyContent: "center", overflow: "hidden" }, child),
-    caption ? h({ fontSize: 22, fontWeight: 700, color: SOFT, justifyContent: "center" }, caption) : null,
+  h({ flexDirection: "column", alignItems: "center", gap: 14, width: 230 },
+    h({ width: 200, height: 200, borderRadius: round ? 9999 : 44, background: "#fff", alignItems: "center", justifyContent: "center", overflow: "hidden" }, child),
+    caption ? h({ fontSize: 32, fontWeight: 700, color: "#fff", justifyContent: "center" }, caption) : null,
   );
-const initialsOf = (name, color) => h({ fontSize: 54, fontWeight: 800, color }, initials(name));
+const initialsOf = (name, color) => h({ fontSize: 76, fontWeight: 800, color }, initials(name));
 // A day and time, like a desk calendar: TUE / 17 / Nov · 10:00.
 const calendar = (when, color) => {
   const [day, date, month, time] = when.split("|");
   return h({ flexDirection: "column", width: "100%", height: "100%" },
-    h({ height: 40, background: color, color: "#fff", fontSize: 20, fontWeight: 800, letterSpacing: 2, alignItems: "center", justifyContent: "center" }, (day || "").toUpperCase()),
+    h({ height: 54, background: color, color: "#fff", fontSize: 28, fontWeight: 800, letterSpacing: 2, alignItems: "center", justifyContent: "center" }, (day || "").toUpperCase()),
     h({ flexGrow: 1, flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#0f172a" },
-      h({ fontSize: 50, fontWeight: 800, lineHeight: 1 }, date || ""),
-      h({ marginTop: 4, fontSize: 19, fontWeight: 700, color: "#475569" }, [month, time].filter(Boolean).join(" · ")),
+      h({ fontSize: 72, fontWeight: 800, lineHeight: 1 }, date || ""),
+      h({ marginTop: 6, fontSize: 26, fontWeight: 700, color: "#475569" }, [month, time].filter(Boolean).join(" · ")),
     ),
   );
 };
@@ -133,12 +133,12 @@ function banner(kind, q, pics) {
   const history = (q.get("h") || "").split("|").map((x) => clean(x, 22)).filter(Boolean).slice(0, 4);
   const lead = node(initialsOf(name, b.bg), firstOf(name));
   const agentNode = node(pics.photo ? img(pics.photo) : initialsOf(agent || "?", b.bg), agent ? firstOf(agent) : "Agent");
-  const tile = (iconD, caption) => node(svg(iconD, 76, b.bg), caption, false);
-  const dated = (caption, iconD) => node(when ? calendar(when, b.bg) : svg(iconD, 76, b.bg), caption, false);
+  const tile = (iconD, caption) => node(svg(iconD, 108, b.bg), caption, false);
+  const dated = (caption, iconD) => node(when ? calendar(when, b.bg) : svg(iconD, 108, b.bg), caption, false);
 
   const pair = {
     // Facebook (their ad) → the agent: where the lead came from and who has it now.
-    new_lead: [node(pics.ad ? img(pics.ad) : h({ fontSize: 110, fontWeight: 800, color: "#1877f2", marginTop: 18 }, "f"), clean(q.get("src"), 16) || "Facebook ad", false), agentNode],
+    new_lead: [node(pics.ad ? img(pics.ad) : h({ fontSize: 150, fontWeight: 800, color: "#1877f2", marginTop: 26 }, "f"), clean(q.get("src"), 16) || "Facebook ad", false), agentNode],
     call_time: [lead, dated("Call then", I.clock)],
     contacted: [agentNode, lead],
     booked: [lead, dated("Appointment", I.event)],
@@ -149,23 +149,23 @@ function banner(kind, q, pics) {
     lost: [lead, tile(I.block, "Not selling")],
     not_owner: [lead, tile(I.personOff, "Not the owner")],
     invalid: [lead, tile(I.phoneOff, "Wrong number")],
-    checkin: [agentNode, node(score ? h({ flexDirection: "column", alignItems: "center" }, svg(I.star, 34, b.bg), h({ fontSize: 46, fontWeight: 800, color: b.bg }, score)) : svg(I.star, 76, b.bg), "out of 5", false)],
+    checkin: [agentNode, node(score ? h({ flexDirection: "column", alignItems: "center" }, svg(I.star, 46, b.bg), h({ fontSize: 64, fontWeight: 800, color: b.bg }, score)) : svg(I.star, 108, b.bg), "out of 5", false)],
   }[kind];
 
   return h(
-    { width: 1200, height: 480, padding: "0 60px 0 72px", background: b.bg, fontFamily: "Inter", color: "#fff", alignItems: "center", justifyContent: "space-between" },
+    { width: 1200, height: 540, padding: "0 44px 0 64px", background: b.bg, fontFamily: "Inter", color: "#fff", alignItems: "center", justifyContent: "space-between" },
     h(
-      { flexDirection: "column", width: 600 },
-      h({ alignItems: "center", gap: 12, fontSize: 26, fontWeight: 700, color: SOFT }, svg(b.icon, 30, SOFT), label),
-      h({ marginTop: 16, fontSize: nameSize(name, 76), fontWeight: 800, lineHeight: 1.05, letterSpacing: -1.5 }, name),
-      sub ? h({ marginTop: 12, fontSize: 28, fontWeight: 500, color: SOFT }, sub) : null,
+      { flexDirection: "column", width: 560 },
+      h({ alignItems: "center", gap: 14, fontSize: 34, fontWeight: 700, color: SOFT }, svg(b.icon, 40, SOFT), label),
+      h({ marginTop: 14, fontSize: nameSize(name, 84), fontWeight: 800, lineHeight: 1.05, letterSpacing: -1.5 }, name),
+      sub ? h({ marginTop: 12, fontSize: 36, fontWeight: 500, color: SOFT }, sub) : null,
       // How they got here, in a line: the 1% that matters, not the log.
       history.length
-        ? h({ marginTop: 30, alignItems: "center", gap: 10, fontSize: 21, fontWeight: 600, color: SOFT, flexWrap: "wrap" },
-            history.flatMap((step, i) => [i ? h({ color: "rgba(255,255,255,0.5)" }, "›") : null, h({ padding: "6px 12px", borderRadius: 999, background: "rgba(255,255,255,0.14)", color: i === history.length - 1 ? "#fff" : SOFT }, step)]))
+        ? h({ marginTop: 30, alignItems: "center", gap: 10, rowGap: 12, fontSize: 30, fontWeight: 600, color: SOFT, flexWrap: "wrap" },
+            history.flatMap((step, i) => [i ? h({ color: "rgba(255,255,255,0.5)" }, "›") : null, h({ padding: "8px 16px", borderRadius: 999, background: "rgba(255,255,255,0.16)", color: i === history.length - 1 ? "#fff" : SOFT }, step)]))
         : null,
     ),
-    h({ alignItems: "flex-start", gap: 6 }, pair[0], h({ height: 150, alignItems: "center" }, svg(I.arrow, 46, "rgba(255,255,255,0.85)")), pair[1]),
+    h({ alignItems: "flex-start", gap: 0 }, pair[0], h({ height: 200, alignItems: "center" }, svg(I.arrow, 56, "#fff")), pair[1]),
   );
 }
 
@@ -234,7 +234,7 @@ export default async function handler(req, res) {
   if (BANNERS[t]) {
     const [photo, ad] = await Promise.all([picture(q.get("ph")), picture(q.get("ad"))]);
     el = banner(t, q, { photo, ad });
-    size = { width: 1200, height: 480 };
+    size = { width: 1200, height: 540 };
   } else if (t === "contract") el = contract(q);
   else if (t === "invoice") el = invoice();
   else if (t === "lead") el = lead(q);

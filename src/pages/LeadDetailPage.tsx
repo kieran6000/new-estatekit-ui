@@ -1,6 +1,6 @@
 import NoteBox from "../components/NoteBox";
 import { useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   AppBar, Box, Button, FormControl, IconButton, InputLabel, MenuItem,
   Paper, Select, Skeleton, Toolbar, Typography,
@@ -72,7 +72,9 @@ export default function LeadDetailPage({ leadId, onClose, nav }: {
   const [outcomeOpen, setOutcomeOpen] = useState(false);
   const [stageStep, setStageStep] = useState<{ step: OutcomeStep; stage: Stage } | null>(null);
   const [editOpen, setEditOpen] = useState(false);
-  const [formOpen, setFormOpen] = useState(false);
+  // ?form=1 opens their form straight away (the link on a Discord new-lead card).
+  const [search] = useSearchParams();
+  const [formOpen, setFormOpen] = useState(() => search.get("form") === "1");
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // Fetched only when the lead's pipeline isn't among the ones we loaded.

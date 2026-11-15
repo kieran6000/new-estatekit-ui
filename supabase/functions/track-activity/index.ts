@@ -182,10 +182,11 @@ async function areaNote(agentId: string, address: string, town: string): Promise
   const where = squash(address);
   const suburbs = String(list).split(/[;,\n]/).map((s) => s.trim()).filter((s) => squash(s).length > 3);
   const hit = suburbs.find((s) => where.includes(squash(s)));
-  if (hit) return `✅ In their area (${hit})`;
+  if (hit) return `In their area: ${hit}`;
   const city = town.split(/[,/•|]/)[0].trim();
-  if (city && squash(city).length > 3 && where.includes(squash(city))) return suburbs.length ? `🟡 In ${city}, not one of their suburbs` : `✅ In ${city}`;
-  return suburbs.length || city ? "🔴 Not one of their suburbs" : "";
+  if (city && squash(city).length > 3 && where.includes(squash(city))) return suburbs.length ? `In ${city}, but not one of their suburbs` : `In their town: ${city}`;
+  // Their suburbs known and none named: say so. Nothing known: say nothing, rather than guess.
+  return suburbs.length ? `Not one of their suburbs (${suburbs.slice(0, 3).join(", ")}${suburbs.length > 3 ? "…" : ""})` : "";
 }
 
 /** The ad a Facebook lead came from (fb-lead-source-ad works it out). */
@@ -424,6 +425,12 @@ Deno.serve(async (req) => {
     const webhook = await secret("DISCORD_ACTIVITY_WEBHOOK");
     if (!webhook) return json({ ok: true, skipped: "no webhook configured" });
 
+    // A stage change logged without the account says whose it is through the lead.
+    if (!b.agentId && lead.id && UUID.test(String(lead.id))) {
+      const { data: owner } = await supabase.from("leads").select("agent_id").eq("id", lead.id).maybeSingle();
+      if (owner?.agent_id) b.agentId = owner.agent_id;
+    }
+
     // Whose account it is.
     let agentName = b.actorName || "Someone";
     let company = "";
@@ -481,7 +488,7 @@ Deno.serve(async (req) => {
       : address;
     for (const [k, v] of Object.entries({
       t: kind, n: who, s: line, a: agentName, ph: photoRaw, ad: ad?.image ?? "", src: source === "Facebook instant form" ? "Instant form" : source,
-      w: at ? sastCal(at) : "", h: history.join("|"), sc: avg?.[1] ?? "", l: title !== card.title ? title : "", v: "3",
+      w: at ? sastCal(at) : "", h: history.join("|"), sc: avg?.[1] ?? "", l: title !== card.title ? title : "", v: "4",
     })) {
       if (v) banner.searchParams.set(k, k === "ph" || k === "ad" ? v : v.slice(0, 80));
     }
@@ -489,10 +496,12 @@ Deno.serve(async (req) => {
     // A few plain lines under the title, then the links.
     const lines: string[] = [];
     if (kind === "new_lead") {
-      if (address) lines.push(`📍 ${address}${area ? `\n${area}` : ""}`);
+      // The area in Discord's small grey text, under the address.
+      if (address) lines.push(`📍 ${address}${area ? `\n-# ${area}` : ""}`);
       if (row?.call_at) lines.push(`🕒 Wants a call ${sast(row.call_at)}`);
       if (phone) lines.push(`📞 ${phone}`);
-      const form = page ? (page.source_type === "website" && page.slug ? `[${page.name}](${APP}/p/${page.slug})` : page.name) : "";
+      // A web form links to itself; an instant form to the lead with their form open.
+      const form = page ? (page.source_type === "website" && page.slug ? `[${page.name}](${APP}/p/${page.slug})` : leadId ? `[${page.name}](${APP}/leads/${leadId}?form=1)` : page.name) : "";
       const from = [form, source, ad?.name ? `“${ad.name}”` : ""].filter(Boolean).join(" · ");
       if (from) lines.push(`📣 ${from}`);
     } else if (kind === "checkin") {

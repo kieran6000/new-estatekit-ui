@@ -22,6 +22,7 @@ import CallIcon from "@mui/icons-material/Call";
 import WhatsAppIcon from "@mui/icons-material/WhatsApp";
 import LinkOffIcon from "@mui/icons-material/LinkOff";
 import ViewListIcon from "@mui/icons-material/ViewList";
+import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import EmailOutlinedIcon from "@mui/icons-material/EmailOutlined";
 import PlaceIcon from "@mui/icons-material/Place";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
@@ -369,14 +370,9 @@ function LeadActionUI({
     // Sized to one screen on a normal phone; on very short screens the content
     // area scrolls rather than clipping.
     <Box sx={{ minHeight: "100dvh", maxHeight: "100dvh", display: "flex", flexDirection: "column", overflow: "hidden", bgcolor: tokens.bg }}>
-      {/* Slim header: logo + a shortcut to the full leads list (also the sign-in
-          funnel when opened from a WhatsApp link while logged out). */}
-      <Box sx={{ flex: "0 0 auto", display: "flex", alignItems: "center", gap: 1, p: "6px 6px 6px 14px", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
-        <EstateKitLogo sx={{ height: 20 }} />
-        <Box sx={{ flex: 1 }} />
-        <IconButton component="a" href="/leads" size="small" aria-label="All my leads" sx={{ color: tokens.primaryDark }}>
-          <ViewListIcon />
-        </IconButton>
+      {/* Just the logo, no bar: the way to the full list is at the bottom. */}
+      <Box sx={{ flex: "0 0 auto", display: "flex", justifyContent: "center", pt: 1.75, pb: 0.25 }}>
+        <EstateKitLogo sx={{ height: 22 }} />
       </Box>
 
       {isLoading ? (
@@ -486,7 +482,7 @@ function LeadActionUI({
                 target="_blank"
                 rel="noopener"
                 aria-label="Message on WhatsApp"
-                sx={{ color: "#25D366", border: `1px solid ${tokens.divider}`, borderRadius: "8px", width: 46, height: 46, flex: "0 0 auto" }}
+                sx={{ bgcolor: "#25D366", color: "#fff", borderRadius: "8px", width: 50, alignSelf: "stretch", flex: "0 0 auto", "&:hover": { bgcolor: "#1ebe5d" } }}
               >
                 <WhatsAppIcon />
               </IconButton>
@@ -576,16 +572,14 @@ function LeadActionUI({
       {/* Sticky footer — always one tap to the full list, never scrolled away. */}
       {!isLoading && lead && (
         <Box sx={{ flex: "0 0 auto", p: "10px 12px calc(10px + env(safe-area-inset-bottom))", bgcolor: "background.paper", borderTop: `1px solid ${tokens.divider}` }}>
-          <Button
-            component="a"
-            href="/leads"
-            variant="outlined"
-            fullWidth
-            startIcon={<ViewListIcon />}
-            sx={{ textTransform: "none", fontWeight: 600, py: 1 }}
-          >
-            View all my leads
-          </Button>
+          <Box sx={{ display: "flex", gap: 1, maxWidth: 480, mx: "auto" }}>
+            <Button component="a" href="/leads" variant="outlined" startIcon={<ViewListIcon />} sx={{ flex: 1, textTransform: "none", fontWeight: 600, py: 1 }}>
+              All my leads
+            </Button>
+            <Button component="a" href={`/leads/${lead.id}`} variant="outlined" startIcon={<OpenInNewIcon />} sx={{ flex: 1, textTransform: "none", fontWeight: 600, py: 1 }}>
+              Dashboard
+            </Button>
+          </Box>
         </Box>
       )}
 
