@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Alert,
@@ -50,6 +50,7 @@ import { PlainHead, SortHead, headCellSx, sortRows, useTableSort, type Dir, type
 
 const LEAD_SORT_KEYS = ["name", "came", "stage", "next"] as const;
 type LeadSortKey = (typeof LEAD_SORT_KEYS)[number];
+const NEWEST_FIRST: Sort<LeadSortKey> = { k: "came", dir: "desc" };
 
 /** "NEW" badge: still on New Lead and came in within the last 24 hours.
  *  Older untouched leads say how long they've waited in the Next column. */
@@ -278,7 +279,12 @@ export default function LeadsPage() {
   const callList = useMemo(() => dueLeads(pipelineLeads), [pipelineLeads]);
 
   const filtered = useMemo(() => {
-    return sortLeadsForList(pipelineLeads).filter((l) => {
+    // New Lead: newest first, top to bottom, always. A missed call time from
+    // weeks ago put old leads above yesterday's, which read as a jumble.
+    const ordered = filter === "New Lead"
+      ? [...pipelineLeads].sort((a, b) => lastIn(b).localeCompare(lastIn(a)))
+      : sortLeadsForList(pipelineLeads);
+    return ordered.filter((l) => {
       if (filter !== "All" && l.stage !== filter) return false;
       if (tagFilter && !leadTags(l, datasetByPage).includes(tagFilter)) return false;
       return leadMatchesSearch(l, q);
@@ -287,7 +293,16 @@ export default function LeadsPage() {
 
   // Column sorting on the desktop table (same behaviour as every table).
   // "stage" is the usual view: grouped by stage, most urgent first in each.
-  const { sort: leadSort, onSort: onLeadSort } = useTableSort<LeadSortKey>("estatekit_leads_sort", { k: "stage", dir: "asc" }, LEAD_SORT_KEYS);
+  const { sort: savedSort, onSort: onSavedSort } = useTableSort<LeadSortKey>("estatekit_leads_sort", { k: "stage", dir: "asc" }, LEAD_SORT_KEYS);
+  // The New Lead tab opens newest first every time, whatever another tab was
+  // sorted by. A heading click there re-sorts it until the tab is left.
+  const [newTabSort, setNewTabSort] = useState<Sort<LeadSortKey>>(NEWEST_FIRST);
+  useEffect(() => { if (filter === "New Lead") setNewTabSort(NEWEST_FIRST); }, [filter]);
+  const onNewTabSort = useCallback((k: LeadSortKey, firstDir: Dir) => {
+    setNewTabSort((s) => (s.k === k ? { k, dir: s.dir === "asc" ? "desc" : "asc" } : { k, dir: firstDir }));
+  }, []);
+  const leadSort = filter === "New Lead" ? newTabSort : savedSort;
+  const onLeadSort = filter === "New Lead" ? onNewTabSort : onSavedSort;
   const tableLeads = useMemo(
     () => (leadSort.k === "stage" ? filtered : sortRows(filtered, (l) => leadSortValue(l, leadSort.k), leadSort.dir)),
     [filtered, leadSort],

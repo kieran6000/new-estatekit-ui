@@ -13,7 +13,8 @@ const CORS = {
 };
 
 const APP = "https://leads.estatekit.co";
-const EK_LOGO = "https://leads.estatekit.co/favicon.svg";
+// A PNG: Discord can't show an SVG.
+const EK_LOGO = "https://leads.estatekit.co/icon-192.png";
 
 type EventKey =
   | "login" | "checkin_answered" | "new_lead" | "form_submitted" | "lead_disqualified" | "stage_change"
@@ -76,8 +77,54 @@ const AUDIT_CATEGORY: Partial<Record<EventKey, string>> = {
   account_switched: "account", password_reset: "account",
 };
 
-// Audit-only: too frequent or too routine to post to Discord.
-const NOT_TO_DISCORD = new Set<string>(["logout", "account_switched"]);
+// Discord only hears the moments that matter: a new lead, a lead moving on,
+// a client's check-in. Everything else is still in the audit log.
+const TO_DISCORD = new Set<string>(["new_lead", "form_submitted", "stage_change", "checkin_answered"]);
+
+// The card for each moment: its banner (/api/og?t=…), colour and emoji.
+type Kind = "new_lead" | "contacted" | "booked" | "viewing" | "offer" | "mandate" | "bought" | "lost" | "not_owner" | "invalid" | "checkin";
+const CARD: Record<Kind, { title: string; emoji: string; color: number }> = {
+  new_lead: { title: "New lead", emoji: "📥", color: 0x10b981 },
+  contacted: { title: "Spoke · following up", emoji: "💬", color: 0x2563eb },
+  booked: { title: "Appointment booked", emoji: "📅", color: 0x7c3aed },
+  viewing: { title: "Viewing booked", emoji: "👀", color: 0x7c3aed },
+  offer: { title: "Offer made", emoji: "💰", color: 0x0d9488 },
+  mandate: { title: "Mandate signed", emoji: "🏆", color: 0xf59e0b },
+  bought: { title: "Bought", emoji: "🔑", color: 0xf59e0b },
+  lost: { title: "Not selling", emoji: "🚫", color: 0x64748b },
+  not_owner: { title: "Not the owner", emoji: "🙅", color: 0x64748b },
+  invalid: { title: "Wrong number", emoji: "📵", color: 0x64748b },
+  checkin: { title: "Check-in answered", emoji: "⭐", color: 0xdb2777 },
+};
+const STAGE_KIND: Record<string, Kind> = {
+  Contacted: "contacted", Booked: "booked", "Viewing Booked": "viewing", "Offer Made": "offer",
+  "Mandate Signed": "mandate", Bought: "bought", Lost: "lost", "Invalid Number": "invalid",
+};
+// A recruitment ("general") pipeline uses the seller stages with its own words.
+const GENERAL_TITLE: Partial<Record<Kind, string>> = { booked: "Meeting booked", mandate: "Signed up", lost: "Not interested" };
+
+/** Which card a stage change gets, or null for one not worth a post
+ *  ("No answer" happens on most calls; back to "New lead" is a correction). */
+function stageKind(toStage: string): Kind | null {
+  const [stage, reason] = toStage.split(" · ");
+  if (stage === "Lost" && reason === "Not the owner") return "not_owner";
+  return STAGE_KIND[stage] ?? null;
+}
+
+/** Their answer to the address question, if the form asked. */
+function addressOf(answers: unknown): string {
+  const a = (Array.isArray(answers) ? answers : []).find((x) => /address|where/i.test(String(x?.q ?? "")));
+  return a?.a ? String(a.a).trim() : "";
+}
+
+/** "Tue 17 Nov, 10:00", South African time. */
+function sast(iso: string): string {
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat("en-ZA", { timeZone: "Africa/Johannesburg", weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
+      .formatToParts(new Date(iso)).map((x) => [x.type, x.value]),
+  );
+  return `${p.weekday} ${p.day} ${p.month}, ${p.hour}:${p.minute}`;
+}
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -88,16 +135,6 @@ function json(body: unknown, status = 200) {
 async function secret(name: string): Promise<string> {
   const { data } = await supabase.rpc("get_secret", { secret_name: name });
   return data || "";
-}
-
-function deviceLabel(ua: string): string {
-  if (!ua) return "";
-  const tablet = /iPad|Tablet|PlayBook|Silk|(Android(?!.*Mobile))/i.test(ua);
-  const mobile = /Mobi|iPhone|iPod|Android.*Mobile|Windows Phone/i.test(ua);
-  const os = /iPhone|iPad|iPod/i.test(ua) ? "iOS" : /Android/i.test(ua) ? "Android"
-    : /Windows/i.test(ua) ? "Windows" : /Mac OS X|Macintosh/i.test(ua) ? "macOS"
-    : /Linux/i.test(ua) ? "Linux" : "Unknown";
-  return `${tablet ? "📱 Tablet" : mobile ? "📱 Phone" : "💻 Desktop"} · ${os}`;
 }
 
 function flagOf(cc?: string): string {
@@ -130,8 +167,6 @@ async function verifiedActor(req: Request): Promise<string | null> {
     return null;
   }
 }
-
-interface Field { name: string; value: string; inline?: boolean }
 
 /** 12 letters/digits with no look-alikes (no 0/o, 1/l): 60 random bits.
  *  Short enough to read in a WhatsApp message, far too many to guess, and
@@ -264,12 +299,22 @@ Deno.serve(async (req) => {
       });
       if (error) console.error("audit_log insert failed", error.message);
     }
-    if (NOT_TO_DISCORD.has(b.event)) return json({ ok: true });
+    if (!TO_DISCORD.has(b.event)) return json({ ok: true, quiet: true });
+
+    // ── Discord: one card per moment, with its banner ──────────────────────
+    const lead = b.lead || {};
+    let kind: Kind;
+    if (b.event === "checkin_answered") kind = "checkin";
+    else if (b.event === "stage_change") {
+      const k = stageKind(String(lead.toStage ?? ""));
+      if (!k) return json({ ok: true, quiet: true });
+      kind = k;
+    } else kind = "new_lead";
 
     const webhook = await secret("DISCORD_ACTIVITY_WEBHOOK");
     if (!webhook) return json({ ok: true, skipped: "no webhook configured" });
 
-    // Agent identity for the author line + thumbnail.
+    // Whose account it is.
     let agentName = b.actorName || "Someone";
     let company = "";
     let logo = "";
@@ -286,83 +331,78 @@ Deno.serve(async (req) => {
       }
     }
 
-    const now = Math.floor(Date.now() / 1000);
-    const fields: Field[] = [];
-
-    const lead = b.lead || {};
-    if (lead.name) fields.push({ name: "Lead", value: String(lead.name), inline: true });
-    if (lead.phone) fields.push({ name: "Phone", value: String(lead.phone), inline: true });
-    if (lead.pipeline) fields.push({ name: "Pipeline", value: String(lead.pipeline), inline: true });
-    if (lead.address) fields.push({ name: "Address", value: String(lead.address), inline: false });
-    if (b.event === "stage_change" && lead.fromStage && lead.toStage) {
-      fields.push({ name: "Stage", value: `\`${lead.fromStage}\` → **${lead.toStage}**`, inline: false });
-    } else if (lead.stage) {
-      fields.push({ name: "Stage", value: String(lead.stage), inline: true });
-    }
-    if (lead.source) fields.push({ name: "Source", value: String(lead.source), inline: true });
-    if (b.event === "lead_disqualified" && lead.reason) fields.push({ name: "Reason", value: String(lead.reason), inline: false });
-
-    const page = b.page || {};
-    if (page.name) fields.push({ name: "Page", value: String(page.name), inline: true });
-    if (page.slug) fields.push({ name: "Link", value: `${APP}/p/${page.slug}`, inline: false });
-
-    const sale = b.sale || {};
-    if (sale.address) fields.push({ name: "Sold", value: `${sale.address}${sale.price ? ` — R${Number(sale.price).toLocaleString("en-ZA")}` : ""}`, inline: false });
-
-    // Pause/resume is done by an operator acting on a client's account — the
-    // author line already shows *which account*; this shows *who did it*.
-    const ad = b.ad || {};
-    if (ad.name) fields.push({ name: "Ad", value: String(ad.name), inline: true });
-    if (b.event === "ad_paused" || b.event === "ad_resumed") {
-      if (b.actorName) fields.push({ name: "Changed by", value: String(b.actorName), inline: true });
-      if (ad.link) fields.push({ name: "Ads Manager", value: `[Open this ad](${ad.link})`, inline: false });
+    // The lead as it is now: where they live and any appointment.
+    let address = String(lead.address ?? "");
+    let appointment = "";
+    if (lead.id && UUID.test(String(lead.id))) {
+      const { data: row } = await supabase.from("leads").select("form_answers, appointment_at").eq("id", lead.id).maybeSingle();
+      if (row) {
+        address ||= addressOf(row.form_answers);
+        if (row.appointment_at && (kind === "booked" || kind === "viewing")) appointment = sast(row.appointment_at);
+      }
     }
 
-    if (b.detail) fields.push({ name: "Details", value: String(b.detail).slice(0, 1000), inline: false });
-    if (b.actorName && b.event && (EVENTS[b.event as EventKey]?.cat === "Setup")) fields.push({ name: "Changed by", value: String(b.actorName), inline: true });
+    const card = CARD[kind];
+    const title = (lead.pipeline === "general" && GENERAL_TITLE[kind]) || card.title;
+    const who = kind === "checkin" ? agentName : String(lead.name || "A lead");
+    const avg = /average ([\d.]+) of 5/i.exec(String(b.detail ?? ""));
+    const was = String(lead.fromStage ?? "").split(" · ")[0];
+    const line = kind === "checkin"
+      ? `${/^At risk/i.test(String(b.detail ?? "")) ? "At risk · " : ""}${avg ? `Average ${avg[1]} of 5` : "New answers"}`
+      : appointment || address || (was ? `Was ${was === "New Lead" ? "a new lead" : was.toLowerCase()}` : "");
 
-    if (b.device) fields.push({ name: "Device", value: deviceLabel(b.device), inline: true });
+    const banner = new URL(`${APP}/api/og`);
+    for (const [k, v] of Object.entries({ t: kind, n: who, s: line, a: kind === "checkin" ? "" : agentName, c: company, l: title !== card.title ? title : "", v: "1" })) {
+      if (v) banner.searchParams.set(k, v.slice(0, 60));
+    }
 
-    if (geo) { fields.push({ name: "Location", value: geo.label, inline: true }); fields.push({ name: "IP", value: `\`${geo.ip}\``, inline: true }); }
-
-    // Deep links: PostHog replay + open the lead + dashboard.
+    // A few plain lines under the banner, then the links.
+    const lines: string[] = [];
+    if (kind === "new_lead") {
+      if (address) lines.push(`📍 ${address}`);
+      if (lead.phone) lines.push(`📞 ${lead.phone}`);
+      const from = [lead.source, b.page?.name].filter(Boolean).join(" · ");
+      if (from) lines.push(`📣 ${from}`);
+    } else if (kind === "checkin") {
+      if (b.detail) lines.push(String(b.detail).slice(0, 600));
+    } else {
+      if (was) lines.push(`${was}  →  **${title}**`);
+      if (appointment) lines.push(`🗓️ ${appointment}`);
+    }
     const links: string[] = [];
-    if (b.sessionId) {
-      const projectId = await secret("POSTHOG_PROJECT_ID");
-      const host = (await secret("POSTHOG_HOST")) || "https://us.posthog.com";
-      const replay = projectId
-        ? `${host}/project/${projectId}/replay/${b.sessionId}`
-        : `${host}/replay/${b.sessionId}`;
-      links.push(`[▶ Session replay](${replay})`);
-    } else if (b.distinctId) {
-      const projectId = await secret("POSTHOG_PROJECT_ID");
-      const host = (await secret("POSTHOG_HOST")) || "https://us.posthog.com";
-      if (projectId) links.push(`[👤 Person in PostHog](${host}/project/${projectId}/person/${b.distinctId})`);
-    }
+    let leadLink: string | null = null;
     if (lead.id && b.agentId) {
-      const link = await leadShareLink(String(lead.id), String(b.agentId));
-      if (link) links.push(`[📇 Open lead](${link})`);
+      leadLink = await leadShareLink(String(lead.id), String(b.agentId));
+      if (leadLink) links.push(`[📇 Open lead](${leadLink})`);
     }
-    links.push(`[📊 Dashboard](${APP}/leads)`);
-
-    const descLines = [`-# ${cfg.cat} · <t:${now}:R>`];
-    if (links.length) descLines.push(links.join("  ·  "));
+    if (b.sessionId && kind === "new_lead") {
+      const projectId = await secret("POSTHOG_PROJECT_ID");
+      const host = (await secret("POSTHOG_HOST")) || "https://us.posthog.com";
+      links.push(`[▶ Watch them fill it in](${projectId ? `${host}/project/${projectId}/replay/${b.sessionId}` : `${host}/replay/${b.sessionId}`})`);
+    }
+    if (links.length) lines.push(links.join("  ·  "));
 
     const embed: Record<string, unknown> = {
       author: { name: company ? `${agentName} · ${company}` : agentName, icon_url: logo || EK_LOGO },
-      title: `${cfg.emoji}  ${cfg.label}`,
-      description: descLines.join("\n"),
-      color: cfg.color,
-      fields,
-      thumbnail: { url: logo || EK_LOGO },
-      footer: { text: `EstateKit Activity · ${agentName}`, icon_url: EK_LOGO },
+      title: `${card.emoji}  ${title} · ${who}`.slice(0, 250),
+      ...(leadLink ? { url: leadLink } : {}),
+      description: lines.join("\n").slice(0, 3800) || undefined,
+      color: card.color,
+      image: { url: banner.toString() },
+      footer: { text: "EstateKit", icon_url: EK_LOGO },
       timestamp: new Date().toISOString(),
     };
+    const win = kind === "mandate" || kind === "bought";
 
     const res = await fetch(webhook, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "EstateKit Activity", avatar_url: EK_LOGO, embeds: [embed] }),
+      body: JSON.stringify({
+        username: "EstateKit",
+        avatar_url: EK_LOGO,
+        ...(win ? { content: `🎉 **${title}!** ${who} with ${agentName}` } : {}),
+        embeds: [embed],
+      }),
     });
     if (!res.ok) return json({ error: `discord ${res.status}` }, 502);
     return json({ ok: true });

@@ -4,9 +4,9 @@
 // If anything here fails the client still gets the contract, with a plainer
 // preview at worst.
 
-const CONTRACT_FN = "https://yfcnsvrhojpysrzqrkdi.supabase.co/functions/v1/contract";
+import { ogImage, originOf, withPreview } from "./_og/preview.js";
 
-const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const CONTRACT_FN = "https://yfcnsvrhojpysrzqrkdi.supabase.co/functions/v1/contract";
 
 export function previewText(c) {
   if (!c || c.cancelled) return { title: "EstateKit agreement", description: "An agreement from EstateKit." };
@@ -17,32 +17,6 @@ export function previewText(c) {
       ? `Signed by ${c.signerName}. Open for the signed copy.`
       : `Prepared for ${c.signerName}. Please read and sign.`,
   };
-}
-
-/** The page's own social tags and title out, the contract's in. */
-export function withPreview(html, { title, description }, url, image) {
-  const tags = [
-    `<title>${esc(title)}</title>`,
-    `<meta name="description" content="${esc(description)}" />`,
-    `<meta name="robots" content="noindex, nofollow" />`,
-    `<meta property="og:type" content="website" />`,
-    `<meta property="og:site_name" content="EstateKit" />`,
-    `<meta property="og:title" content="${esc(title)}" />`,
-    `<meta property="og:description" content="${esc(description)}" />`,
-    `<meta property="og:url" content="${esc(url)}" />`,
-    `<meta property="og:image" content="${esc(image)}" />`,
-    `<meta property="og:image:type" content="image/png" />`,
-    `<meta property="og:image:width" content="1200" />`,
-    `<meta property="og:image:height" content="630" />`,
-    `<meta name="twitter:card" content="summary_large_image" />`,
-    `<meta name="twitter:title" content="${esc(title)}" />`,
-    `<meta name="twitter:description" content="${esc(description)}" />`,
-    `<meta name="twitter:image" content="${esc(image)}" />`,
-  ].join("\n    ");
-  return html
-    .replace(/<title>[\s\S]*?<\/title>\s*/i, "")
-    .replace(/<meta\s+(name="description"|name="twitter:[^"]*"|property="og:[^"]*")[^>]*>\s*/gi, "")
-    .replace(/<\/head>/i, `    ${tags}\n  </head>`);
 }
 
 async function lookUp(token) {
@@ -62,11 +36,13 @@ async function lookUp(token) {
 
 export default async function handler(req, res) {
   const token = String(req.query.token ?? "");
-  const origin = `https://${req.headers["x-forwarded-host"] || req.headers.host}`;
+  const origin = originOf(req);
   try {
     const [page, contract] = await Promise.all([fetch(`${origin}/index.html`), lookUp(token)]);
     if (!page.ok) throw new Error(`index.html ${page.status}`);
-    const html = withPreview(await page.text(), previewText(contract), `${origin}/c/${token}`, `${origin}/contract-preview.png`);
+    const live = contract && !contract.cancelled;
+    const image = ogImage(origin, { t: "contract", n: live ? contract.signerName : "", r: live ? contract.reference : "", ok: live && contract.signed ? "1" : "" });
+    const html = withPreview(await page.text(), previewText(contract), `${origin}/c/${token}`, image);
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.setHeader("Cache-Control", "public, max-age=0, s-maxage=60");
     res.status(200).send(html);
