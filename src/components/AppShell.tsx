@@ -68,7 +68,7 @@ const SECTION_TITLES: Record<string, string> = {
   leads: "Leads",
   calendar: "Calendar",
   mypage: "Forms",
-  account: "Settings",
+  account: "Account",
   setup: "Get set up",
   clients: "Accounts",
   overview: "Overview",

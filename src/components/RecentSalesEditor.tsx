@@ -84,7 +84,7 @@ export default function RecentSalesEditor() {
               </Typography>
             )}
           </Box>
-          <IconButton size="small" onClick={() => remove(l.id)}>
+          <IconButton size="small" onClick={() => remove(l.id)} aria-label={`Remove ${l.address || "this home"}`} title="Remove">
             <DeleteOutlineIcon fontSize="small" />
           </IconButton>
         </Box>

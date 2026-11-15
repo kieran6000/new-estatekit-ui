@@ -114,7 +114,7 @@ export default function FocusCallModal({
         <Typography variant="caption" sx={{ color: "#b0bec5" }}>
           {!done ? `${qi + 1} of ${total}` : ""}
         </Typography>
-        <IconButton onClick={onClose} sx={{ ml: "auto", color: "#fff" }}>
+        <IconButton onClick={onClose} aria-label="Close" sx={{ ml: "auto", color: "#fff" }}>
           <CloseIcon />
         </IconButton>
       </Box>

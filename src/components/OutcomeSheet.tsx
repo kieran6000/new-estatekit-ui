@@ -133,14 +133,14 @@ export default function OutcomeSheet({
     <>
       <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, p: "8px 8px 4px 16px" }}>
         {showBack && (
-          <IconButton onClick={goBack}>
+          <IconButton onClick={goBack} aria-label="Back">
             <ArrowBackIcon />
           </IconButton>
         )}
         <Typography variant="h6" sx={{ flex: 1, fontWeight: 500, fontSize: 17 }}>
           {t.title}
         </Typography>
-        <IconButton onClick={close}>
+        <IconButton onClick={close} aria-label="Close">
           <CloseIcon />
         </IconButton>
       </Box>
