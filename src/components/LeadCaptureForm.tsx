@@ -83,7 +83,8 @@ export default function LeadCaptureForm({
   const [email, setEmail] = useState("");
   const [errors, setErrors] = useState<FieldErrors>({});
   const [submittedName, setSubmittedName] = useState("");
-  const [disqualified, setDisqualified] = useState(false);
+  // The question whose answer ended the form, if one did: its end page can say why.
+  const [endedBy, setEndedBy] = useState<CustomQuestion | null>(null);
 
   const steps: StepDef[] = [...customQuestions.map((question) => ({ kind: "question" as const, question })), { kind: "contact" }];
   const [stepIndex, setStepIndex] = useState(0);
@@ -212,7 +213,7 @@ export default function LeadCaptureForm({
     // both continue normally; the difference only shows up at submit.
     if (step.kind === "question" && step.question.disqualifyAnswers?.includes(value)) {
       if (!preview) trackPageEvent(page.id, "disqualified", `${step.question.label}: ${value}`);
-      setDisqualified(true);
+      setEndedBy(step.question);
       setPhase("done");
       return;
     }
@@ -383,7 +384,7 @@ export default function LeadCaptureForm({
             </>
           )}
 
-          {phase === "done" && (disqualified ? <DisqualifiedScreen page={page} /> : <ThankYouScreen page={page} name={submittedName} />)}
+          {phase === "done" && (endedBy ? <DisqualifiedScreen page={page} question={endedBy} /> : <ThankYouScreen page={page} name={submittedName} />)}
         </Box>
       </Box>
 
@@ -493,8 +494,11 @@ function ThankYouScreen({ page, name }: { page: LeadPage; name: string }) {
   );
 }
 
-/** Shown when a visitor picks a "stop — not a lead" answer — polite, no lead saved. */
-function DisqualifiedScreen({ page }: { page: LeadPage }) {
+/** Shown when a visitor picks a "stop — not a lead" answer — polite, no lead saved.
+ *  The question can have its own message, since the reason differs ("Not the
+ *  owner" isn't "Not planning to sell"); otherwise the page's, then ours. */
+export function DisqualifiedScreen({ page, question }: { page: LeadPage; question: CustomQuestion }) {
+  const own = (question.helperText ?? "").trim();
   return (
     <Box sx={{ textAlign: "center", m: "auto 0" }}>
       <Box sx={{ width: 72, height: 72, borderRadius: "50%", bgcolor: `${page.accentColor}14`, display: "flex", alignItems: "center", justifyContent: "center", mx: "auto", mb: 2.5 }}>
@@ -502,7 +506,8 @@ function DisqualifiedScreen({ page }: { page: LeadPage }) {
       </Box>
       <Typography sx={{ fontSize: 20, fontWeight: 700 }}>{page.dqHeadline || "Thanks for your interest!"}</Typography>
       <Typography sx={{ fontSize: 14, color: "text.secondary", mt: 1, lineHeight: 1.6 }}>
-        {page.dqText ||
+        {(own && fillMessage(own, "", page.agentName)) ||
+          page.dqText ||
           "Based on your answers, this might not be the right time for a valuation. If anything changes, we'd love to help down the line."}
       </Typography>
       {page.dqCtaLabel && /^https?:\/\//i.test(page.dqCtaUrl) && (

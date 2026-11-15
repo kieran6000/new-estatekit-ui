@@ -27,8 +27,8 @@ import { useFollowLeadAccount } from "../hooks/useFollowLeadAccount";
 import { usePipelines } from "../hooks/usePipelines";
 import { getPipelinePublic } from "../api/pipelines";
 import { useSnack } from "../hooks/useSnack";
-import { PIPELINE_STAGES, stageLabel } from "../types";
-import { stageForKind, stepForStage, whenToCall } from "../lib/stageLogic";
+import { PIPELINE_STAGES } from "../types";
+import { leadStageLabel, stageForKind, stepForStage, whenToCall } from "../lib/stageLogic";
 import { prettyAnswer, maskPhone, telHref } from "../lib/format";
 import { describeAttribution, type AdAttribution } from "../lib/adAttribution";
 import { timeAgo, whenLabel } from "../lib/timeAgo";
@@ -230,7 +230,7 @@ export default function LeadDetailPage({ leadId, onClose, nav }: {
           <Row k="Full name" v={lead.name} />
           <Row k="Phone" v={canSeeFullPhone ? prettyPhone(lead.phone) : maskPhone(lead.phone)} />
           <Row k="Email" v={lead.email || ""} />
-          <Row k="Stage" v={stageLabel(lead.stage, pipelineKind)} />
+          <Row k="Stage" v={leadStageLabel(lead, pipelineKind)} />
           <Row k="Received" v={`${new Date(lead.created_at).toLocaleString("en-ZA", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })} (${timeAgo(lead.created_at)})`} />
           <Row k="When to call" v={(() => { const w = whenToCall(lead); return w.why ? `${w.when} · ${w.why}` : w.when; })()} />
           {isOperator && leadTags(lead, datasetByPage).length > 0 && (

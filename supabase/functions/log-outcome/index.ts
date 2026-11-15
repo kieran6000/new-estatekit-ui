@@ -19,6 +19,9 @@ function json(body: unknown, status = 200) {
 }
 
 const DEAD_STAGES = ["Lost", "Invalid Number"];
+// Why a lead is lost, when the agent said. A dead lead has no next step, so
+// next_label keeps it. Must stay in step with LOST_REASONS in src/lib/stageLogic.
+const LOST_REASONS = ["Not the owner"];
 
 // Must stay in step with PIPELINE_STAGES in src/types.
 const STAGES_FOR_KIND: Record<string, string[]> = {
@@ -33,7 +36,7 @@ function reminderISO(days: number): string {
 /** Mirrors computeStagePatch in src/lib/stageLogic.ts — the SOP for each stage.
  *  Logged-out logging skips the follow-up questions, so sensible defaults are
  *  applied (the agent can refine later in the dashboard). */
-function stagePatch(stage: string, appointmentAt?: string | null): Record<string, unknown> {
+function stagePatch(stage: string, appointmentAt?: string | null, reason?: unknown): Record<string, unknown> {
   if (stage === "Contacted" || stage === "Offer Made") {
     return { due: false, next_label: "Follow up in 2 days", reminder_at: reminderISO(2) };
   }
@@ -58,7 +61,8 @@ function stagePatch(stage: string, appointmentAt?: string | null): Record<string
     return { due: false, next_label: "—", reminder_at: null };
   }
   if (DEAD_STAGES.includes(stage)) {
-    return { due: false, next_label: "—", reminder_at: null };
+    const why = stage === "Lost" && typeof reason === "string" && LOST_REASONS.includes(reason) ? reason : "—";
+    return { due: false, next_label: why, reminder_at: null };
   }
   return {};
 }
@@ -83,7 +87,7 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
 
   try {
-    const { token, stage, at } = await req.json();
+    const { token, stage, at, reason } = await req.json();
     if (!token || !stage) return json({ error: "token and stage required" }, 400);
 
     const admin = createClient(SUPABASE_URL, SERVICE_KEY);
@@ -129,11 +133,14 @@ Deno.serve(async (req) => {
         },
       },
     });
+    const patch = stagePatch(stage, typeof at === "string" ? at : null, reason);
     const { error } = await writer
       .from("leads")
-      .update({ stage, ...stagePatch(stage, typeof at === "string" ? at : null) })
+      .update({ stage, ...patch })
       .eq("id", lead.id);
     if (error) return json({ error: error.message }, 500);
+    // "Lost · Not the owner" in the activity log, when it has a reason.
+    const toStage = stage === "Lost" && patch.next_label !== "—" ? `${stage} · ${patch.next_label}` : stage;
 
     // Best-effort activity log so it still shows up in Discord/PostHog.
     try {
@@ -143,7 +150,7 @@ Deno.serve(async (req) => {
         body: JSON.stringify({
           event: "stage_change",
           agentId: lead.agent_id,
-          lead: { id: lead.id, name: lead.name, phone: lead.phone, fromStage: lead.stage, toStage: stage, pipeline: kind },
+          lead: { id: lead.id, name: lead.name, phone: lead.phone, fromStage: lead.stage, toStage, pipeline: kind },
           note: "logged from action link (not signed in)",
         }),
       });

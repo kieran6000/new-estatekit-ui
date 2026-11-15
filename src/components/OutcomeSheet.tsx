@@ -22,8 +22,9 @@ import PhoneDisabledIcon from "@mui/icons-material/PhoneDisabled";
 import WorkspacePremiumIcon from "@mui/icons-material/WorkspacePremium";
 import RequestQuoteIcon from "@mui/icons-material/RequestQuote";
 import BlockIcon from "@mui/icons-material/Block";
+import PersonOffIcon from "@mui/icons-material/PersonOff";
 import CloseFullscreenIcon from "@mui/icons-material/CallEnd";
-import { defaultReminderISO, MAIN_OUTCOME_OPTIONS, stepForStage, type MainOutcomeOption } from "../lib/stageLogic";
+import { defaultReminderISO, MAIN_OUTCOME_OPTIONS, NOT_OWNER, outcomeExtra, stageWithReason, stepForStage, type MainOutcomeOption } from "../lib/stageLogic";
 import { trackActivity } from "../lib/activity";
 import { useUpdateLeadStage } from "../hooks/useLeads";
 import type { LeadRow, OutcomeStep, PipelineKind, Stage, StageChangeExtra } from "../types";
@@ -35,6 +36,7 @@ export const OUTCOME_ICONS: Record<MainOutcomeOption["icon"], React.ReactNode> =
   premium: <WorkspacePremiumIcon />,
   offer: <RequestQuoteIcon />,
   block: <BlockIcon />,
+  not_owner: <PersonOffIcon />,
   wrong_number: <CloseFullscreenIcon />,
 };
 
@@ -96,12 +98,16 @@ export default function OutcomeSheet({
     }
   }
   function commitStage(toStage: Stage, extra?: StageChangeExtra | number) {
+    const reason = typeof extra === "object" ? extra.label : undefined;
     posthog.capture("lead_stage_changed", { pipeline: pipelineKind, from: lead!.stage, to: toStage });
     trackActivity("stage_change", {
-      lead: { id: lead!.id, name: lead!.name, phone: lead!.phone, fromStage: lead!.stage, toStage, pipeline: pipelineKind },
+      lead: {
+        id: lead!.id, name: lead!.name, phone: lead!.phone, pipeline: pipelineKind,
+        fromStage: stageWithReason(lead!.stage, lead!.next_label), toStage: stageWithReason(toStage, reason),
+      },
     });
     updateStage.mutate({ id: lead!.id, stage: toStage, extra });
-    finish(outcomeSnack(toStage), toStage);
+    finish(outcomeSnack(toStage, reason), toStage);
   }
   function pickMain(option: MainOutcomeOption) {
     const subStep = stepForStage(option.stage, pipelineKind);
@@ -110,7 +116,7 @@ export default function OutcomeSheet({
       setStep(subStep);
       return;
     }
-    commitStage(option.stage);
+    commitStage(option.stage, outcomeExtra(option));
   }
 
   if (!lead) return null;
@@ -231,7 +237,8 @@ export default function OutcomeSheet({
   );
 }
 
-export function outcomeSnack(stage: Stage): string {
+export function outcomeSnack(stage: Stage, reason?: string | null): string {
+  if (stage === "Lost" && reason === NOT_OWNER) return "Marked as not the owner";
   switch (stage) {
     case "No Answer":
       return "Retry reminder set";
