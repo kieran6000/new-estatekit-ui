@@ -356,7 +356,7 @@ Deno.serve(async (req) => {
       : appointment || address || (was ? `Was ${was === "New Lead" ? "a new lead" : was.toLowerCase()}` : "");
 
     const banner = new URL(`${APP}/api/og`);
-    for (const [k, v] of Object.entries({ t: kind, n: who, s: line, a: kind === "checkin" ? "" : agentName, c: company, l: title !== card.title ? title : "", v: "1" })) {
+    for (const [k, v] of Object.entries({ t: kind, n: who, s: line, a: kind === "checkin" ? "" : agentName, c: company, l: title !== card.title ? title : "", v: "2" })) {
       if (v) banner.searchParams.set(k, v.slice(0, 60));
     }
 

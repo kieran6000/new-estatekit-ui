@@ -62,41 +62,25 @@ const I = {
   pin: "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z",
 };
 
-const brand = (color = "#fff", size = 28) =>
-  h({ alignItems: "center", gap: Math.round(size * 0.4) }, svg(I.home, Math.round(size * 1.15), color), h({ fontSize: size, fontWeight: 800, color, letterSpacing: -0.5 }, "EstateKit"));
-
-const pill = (text, iconD, bg = "rgba(255,255,255,0.16)", color = "#fff") =>
-  h(
-    { alignItems: "center", gap: 12, alignSelf: "flex-start", background: bg, border: "2px solid rgba(255,255,255,0.26)", borderRadius: 999, padding: "9px 22px 9px 14px", fontSize: 24, fontWeight: 700, letterSpacing: 2.5, color },
-    iconD ? svg(iconD, 28, color) : null,
-    text.toUpperCase(),
-  );
-
-const glow = (style) => h({ position: "absolute", borderRadius: 9999, ...style });
-
-// Confetti for wins: fixed spots, so the picture is the same every time.
-const CONFETTI = [
-  [70, 40, 18, 8, 25, "#fde68a"], [210, 380, 14, 14, 0, "#ffffff"], [330, 30, 22, 9, -30, "#fecaca"], [520, 420, 16, 7, 50, "#bbf7d0"],
-  [600, 60, 12, 12, 0, "#fde68a"], [760, 420, 20, 8, -15, "#ffffff"], [880, 40, 16, 7, 40, "#bfdbfe"], [1010, 400, 14, 14, 0, "#fecaca"],
-  [1130, 90, 20, 8, -40, "#ffffff"], [1150, 300, 12, 12, 0, "#fde68a"], [460, 200, 10, 10, 0, "rgba(255,255,255,0.7)"], [40, 250, 16, 7, 60, "#fde68a"],
-  [950, 230, 10, 10, 0, "rgba(255,255,255,0.8)"], [690, 250, 18, 7, 20, "#fef3c7"], [1080, 190, 9, 9, 0, "#bbf7d0"], [150, 160, 9, 9, 0, "#ffffff"],
-];
-const confetti = () => CONFETTI.map(([x, y, w, hh, r, c]) => h({ position: "absolute", left: x, top: y, width: w, height: hh, borderRadius: w === hh ? 9999 : 3, background: c, transform: `rotate(${r}deg)`, opacity: 0.9 }));
+// Plain on purpose: one flat colour, the facts, one picture. No shapes,
+// confetti or badges behind them.
+const brand = (color, size) =>
+  h({ alignItems: "center", gap: Math.round(size * 0.35) }, svg(I.home, Math.round(size * 1.1), color), h({ fontSize: size, fontWeight: 800, color, letterSpacing: -0.5 }, "EstateKit"));
 
 // ── Discord banners ────────────────────────────────────────────────────────
-const SLATE = ["#64748b", "#334155", "#1e293b"];
+const SLATE = "#475569";
 const BANNERS = {
-  new_lead: { label: "New lead", icon: I.person, grad: ["#34d399", "#059669", "#064e3b"], from: I.form },
-  contacted: { label: "Spoke · following up", icon: I.chat, grad: ["#38bdf8", "#2563eb", "#1e3a8a"] },
-  booked: { label: "Appointment booked", icon: I.event, grad: ["#a78bfa", "#6d28d9", "#3b0764"] },
-  viewing: { label: "Viewing booked", icon: I.eye, grad: ["#a78bfa", "#6d28d9", "#3b0764"] },
-  offer: { label: "Offer made", icon: I.offer, grad: ["#2dd4bf", "#0d9488", "#134e4a"] },
-  mandate: { label: "Mandate signed", icon: I.home, grad: ["#fcd34d", "#f59e0b", "#c2410c"], win: true },
-  bought: { label: "Bought", icon: I.key, grad: ["#fcd34d", "#f59e0b", "#c2410c"], win: true },
-  lost: { label: "Not selling", icon: I.block, grad: SLATE },
-  not_owner: { label: "Not the owner", icon: I.personOff, grad: SLATE },
-  invalid: { label: "Wrong number", icon: I.phoneOff, grad: SLATE },
-  checkin: { label: "Check-in answered", icon: I.star, grad: ["#f472b6", "#db2777", "#701a75"] },
+  new_lead: { label: "New lead", icon: I.person, bg: "#059669" },
+  contacted: { label: "Spoke · following up", icon: I.chat, bg: "#2563eb" },
+  booked: { label: "Appointment booked", icon: I.event, bg: "#6d28d9" },
+  viewing: { label: "Viewing booked", icon: I.eye, bg: "#6d28d9" },
+  offer: { label: "Offer made", icon: I.offer, bg: "#0d9488" },
+  mandate: { label: "Mandate signed", icon: I.home, bg: "#d97706" },
+  bought: { label: "Bought", icon: I.key, bg: "#d97706" },
+  lost: { label: "Not selling", icon: I.block, bg: SLATE },
+  not_owner: { label: "Not the owner", icon: I.personOff, bg: SLATE },
+  invalid: { label: "Wrong number", icon: I.phoneOff, bg: SLATE },
+  checkin: { label: "Check-in answered", icon: I.star, bg: "#db2777" },
 };
 
 function banner(kind, q) {
@@ -105,166 +89,81 @@ function banner(kind, q) {
   const sub = clean(q.get("s"), 36);
   const agent = clean(q.get("a"), 30);
   const company = clean(q.get("c"), 30);
-  // A recruitment pipeline's own words for the same stage ("Signed up").
   const label = clean(q.get("l"), 26) || b.label;
-  const [c1, c2, c3] = b.grad;
-  const tile = (child, size, extra = {}) =>
-    h({ width: size, height: size, borderRadius: size * 0.27, background: "#fff", alignItems: "center", justifyContent: "center", boxShadow: "0 24px 48px rgba(0,0,0,0.28)", position: "relative", ...extra }, child);
-  const avatar = h(
-    { width: 150, height: 150, borderRadius: 9999, background: "#fff", alignItems: "center", justifyContent: "center", border: "6px solid rgba(255,255,255,0.45)", boxShadow: "0 24px 48px rgba(0,0,0,0.28)", fontSize: 58, fontWeight: 800, color: c2, letterSpacing: -1 },
-    initials(name),
-  );
-  const flow = h({ alignItems: "center", gap: 10 },
-    h({ width: 10, height: 10, borderRadius: 9999, background: "rgba(255,255,255,0.55)" }),
-    h({ width: 10, height: 10, borderRadius: 9999, background: "rgba(255,255,255,0.75)" }),
-    svg(I.arrow, 54, "#fff"),
-  );
-  const outcome = tile(
-    [
-      svg(b.icon, 96, c2),
-      b.win ? h({ position: "absolute", top: -22, right: -22, width: 64, height: 64, borderRadius: 9999, background: "#16a34a", border: "5px solid #fff", alignItems: "center", justifyContent: "center", boxShadow: "0 10px 20px rgba(0,0,0,0.25)" }, svg(I.trophy, 32, "#fff")) : null,
-    ],
-    172,
-  );
-  const motif = kind === "new_lead"
-    ? [tile(svg(I.form, 78, c2), 136), flow, avatar]
-    : [avatar, flow, outcome];
-
+  const soft = "rgba(255,255,255,0.78)";
+  const circle = (child, size) => h({ width: size, height: size, borderRadius: 9999, background: "#fff", alignItems: "center", justifyContent: "center" }, child);
+  const from = kind === "new_lead" ? circle(svg(I.form, 64, b.bg), 140) : circle(h({ fontSize: 54, fontWeight: 800, color: b.bg }, initials(name)), 140);
+  const to = kind === "new_lead"
+    ? circle(h({ fontSize: 54, fontWeight: 800, color: b.bg }, initials(name)), 140)
+    : circle(svg(b.icon, 72, b.bg), 140);
   return h(
-    { width: 1200, height: 480, position: "relative", overflow: "hidden", padding: "52px 64px", fontFamily: "Inter", color: "#fff", alignItems: "center", justifyContent: "space-between", backgroundImage: `linear-gradient(135deg, ${c1} 0%, ${c2} 52%, ${c3} 100%)` },
-    glow({ width: 560, height: 560, top: -240, right: -150, background: "rgba(255,255,255,0.10)" }),
-    glow({ width: 340, height: 340, bottom: -200, left: 300, background: "rgba(255,255,255,0.07)" }),
-    b.win ? confetti() : null,
-    h({ position: "absolute", top: 40, right: 60 }, brand("rgba(255,255,255,0.92)", 24)),
+    { width: 1200, height: 480, padding: "0 72px", background: b.bg, fontFamily: "Inter", color: "#fff", alignItems: "center", justifyContent: "space-between" },
     h(
-      { flexDirection: "column", width: 560, height: "100%", justifyContent: "center" },
-      pill(label, b.icon),
-      h({ marginTop: 22, fontSize: nameSize(name, 80), fontWeight: 800, lineHeight: 1.04, letterSpacing: -2 }, name),
-      sub ? h({ marginTop: 12, fontSize: 30, fontWeight: 500, color: "rgba(255,255,255,0.88)" }, sub) : null,
-      agent
-        ? h(
-            { marginTop: 30, alignItems: "center", gap: 14 },
-            h({ width: 46, height: 46, borderRadius: 9999, background: "rgba(255,255,255,0.22)", border: "2px solid rgba(255,255,255,0.4)", alignItems: "center", justifyContent: "center", fontSize: 19, fontWeight: 800 }, initials(agent)),
-            h({ flexDirection: "column" },
-              h({ fontSize: 25, fontWeight: 700 }, agent),
-              company ? h({ fontSize: 20, fontWeight: 500, color: "rgba(255,255,255,0.75)" }, company) : null,
-            ),
-          )
-        : null,
+      { flexDirection: "column", width: 600 },
+      h({ alignItems: "center", gap: 12, fontSize: 26, fontWeight: 700, color: soft }, svg(b.icon, 30, soft), label),
+      h({ marginTop: 16, fontSize: nameSize(name, 76), fontWeight: 800, lineHeight: 1.05, letterSpacing: -1.5 }, name),
+      sub ? h({ marginTop: 12, fontSize: 30, fontWeight: 500, color: soft }, sub) : null,
+      agent ? h({ marginTop: 34, fontSize: 24, fontWeight: 500, color: soft }, company ? `${agent} · ${company}` : agent) : null,
     ),
-    h({ alignItems: "center", gap: 18, marginTop: 40 }, motif),
+    h({ alignItems: "center", gap: 24 }, from, svg(I.arrow, 52, "rgba(255,255,255,0.85)"), to),
   );
 }
 
 // ── Link previews ──────────────────────────────────────────────────────────
+// WhatsApp shows these as a small square cut from the middle, with the
+// title and words beside it. So: one picture, in the middle, no words.
 const bar = (w, color = "#e2e8f0", hh = 10) => h({ width: w, height: hh, borderRadius: 6, background: color });
-const cta = (text, iconD, done) =>
-  h(
-    { alignSelf: "flex-start", alignItems: "center", gap: 12, marginTop: 34, padding: "16px 28px", borderRadius: 999, background: done ? "#22c55e" : "#fff", color: done ? "#fff" : "#0f172a", fontSize: 28, fontWeight: 800, boxShadow: "0 16px 32px rgba(0,0,0,0.25)" },
-    text,
-    svg(iconD, 30, done ? "#fff" : "#0f172a"),
-  );
-const card = (grad, left, right) =>
-  h(
-    { width: 1200, height: 630, position: "relative", overflow: "hidden", fontFamily: "Inter", color: "#fff", padding: "56px 0 0 72px", backgroundImage: grad },
-    glow({ width: 700, height: 700, top: -260, right: -200, background: "rgba(255,255,255,0.08)" }),
-    glow({ width: 380, height: 380, bottom: -240, left: -100, background: "rgba(255,255,255,0.06)" }),
-    h({ flexDirection: "column", width: 600 }, brand("#fff", 28), left),
-    right,
-  );
+const preview = (bg, picture) =>
+  h({ width: 1200, height: 630, background: bg, fontFamily: "Inter", alignItems: "center", justifyContent: "center" }, picture);
+const paper = (children) =>
+  h({ width: 380, height: 500, flexDirection: "column", background: "#fff", borderRadius: 20, padding: 34, color: "#0f172a", boxShadow: "0 30px 60px rgba(0,0,0,0.25)" }, children);
 
 function contract(q) {
-  const who = clean(q.get("n"), 30);
-  const ref = clean(q.get("r"), 24);
+  const who = clean(q.get("n"), 26);
   const signed = q.get("ok") === "1";
-  const paper = h(
-    { position: "absolute", right: 70, top: 64, width: 400, height: 540, flexDirection: "column", background: "#fff", borderRadius: 18, padding: "34px 34px", color: "#0f172a", boxShadow: "0 40px 80px rgba(0,0,0,0.45)", transform: "rotate(4deg)" },
-    h({ justifyContent: "space-between", alignItems: "center" }, h({ fontSize: 17, fontWeight: 800, letterSpacing: 3, color: "#0b5bd3" }, "ESTATEKIT"), h({ fontSize: 14, fontWeight: 700, color: "#94a3b8" }, ref || "AGREEMENT")),
-    h({ height: 4, background: "#0f172a", marginTop: 14, borderRadius: 2 }),
-    h({ marginTop: 22, fontSize: 30, fontWeight: 800, letterSpacing: -0.5 }, "Service Agreement"),
-    h({ marginTop: 18, flexDirection: "column", gap: 12 }, bar(330), bar(300), bar(320), bar(250), bar(310), bar(180)),
+  return preview("#0b5bd3", paper([
+    h({ fontSize: 28, fontWeight: 800, letterSpacing: -0.5 }, "Service Agreement"),
+    h({ marginTop: 22, flexDirection: "column", gap: 12 }, bar(310), bar(280), bar(300), bar(220), bar(290)),
     h({ marginTop: "auto", flexDirection: "column" },
-      h({ fontSize: 14, fontWeight: 700, color: "#94a3b8", letterSpacing: 1.5 }, "SIGNATURE"),
       {
         type: "svg",
-        props: { width: 230, height: 64, viewBox: "0 0 230 64", style: { marginTop: 4 }, children: [{ type: "path", props: { d: "M8 46 C 14 20, 26 6, 32 18 C 38 30, 20 50, 28 54 C 38 58, 48 26, 56 30 C 62 34, 54 50, 63 50 C 73 50, 80 28, 88 33 C 94 37, 89 48, 97 48 C 108 48, 116 18, 125 24 C 131 29, 123 46, 133 46 C 150 46, 158 32, 174 35 C 190 38, 198 30, 222 20", fill: "none", stroke: signed ? "#1d4ed8" : "#cbd5e1", strokeWidth: 4, strokeLinecap: "round" } }] },
+        props: { width: 230, height: 64, viewBox: "0 0 230 64", children: [{ type: "path", props: { d: "M8 46 C 14 20, 26 6, 32 18 C 38 30, 20 50, 28 54 C 38 58, 48 26, 56 30 C 62 34, 54 50, 63 50 C 73 50, 80 28, 88 33 C 94 37, 89 48, 97 48 C 108 48, 116 18, 125 24 C 131 29, 123 46, 133 46 C 150 46, 158 32, 174 35 C 190 38, 198 30, 222 20", fill: "none", stroke: signed ? "#1d4ed8" : "#cbd5e1", strokeWidth: 4, strokeLinecap: "round" } }] },
       },
       h({ height: 2, background: "#94a3b8", marginTop: 2 }),
-      h({ marginTop: 8, fontSize: 15, fontWeight: 700, color: "#475569" }, who || "Client"),
+      h({ marginTop: 10, justifyContent: "space-between", alignItems: "center" },
+        h({ fontSize: 16, fontWeight: 700, color: "#475569" }, who || "Signature"),
+        signed
+          ? h({ alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 999, background: "#16a34a", color: "#fff", fontSize: 17, fontWeight: 800 }, svg(I.check, 20, "#fff"), "Signed")
+          : h({ padding: "8px 14px", borderRadius: 999, background: "#facc15", color: "#422006", fontSize: 17, fontWeight: 800 }, "Sign here"),
+      ),
     ),
-    signed
-      ? h({ position: "absolute", right: 26, top: 170, width: 150, height: 150, borderRadius: 9999, border: "7px solid #16a34a", color: "#16a34a", alignItems: "center", justifyContent: "center", flexDirection: "column", transform: "rotate(-16deg)", background: "rgba(255,255,255,0.9)" }, svg(I.check, 46, "#16a34a"), h({ fontSize: 24, fontWeight: 800, letterSpacing: 2 }, "SIGNED"))
-      : h({ position: "absolute", right: -30, bottom: 104, alignItems: "center", gap: 8, background: "#facc15", color: "#422006", fontSize: 20, fontWeight: 800, padding: "12px 18px 12px 16px", borderRadius: "12px 0 0 12px", boxShadow: "0 10px 20px rgba(0,0,0,0.25)" }, svg(I.arrow, 24, "#422006"), "SIGN HERE"),
-  );
-  return card(
-    "linear-gradient(135deg, #0b1324 0%, #0e2a63 55%, #0b5bd3 100%)",
-    h({ flexDirection: "column", marginTop: 54 },
-      pill("Agreement", I.form),
-      h({ marginTop: 24, fontSize: 70, fontWeight: 800, lineHeight: 1.04, letterSpacing: -2 }, "Service Agreement"),
-      who ? h({ marginTop: 16, fontSize: 32, fontWeight: 500, color: "rgba(255,255,255,0.9)" }, `${signed ? "Signed by" : "Prepared for"} ${who}`) : null,
-      cta(signed ? "Signed" : "Read & sign", signed ? I.check : I.arrow, signed),
-    ),
-    paper,
-  );
+  ]));
 }
 
 function invoice() {
   const row = (w) => h({ justifyContent: "space-between", alignItems: "center", marginTop: 16 }, bar(w), bar(70, "#cbd5e1"));
-  const paper = h(
-    { position: "absolute", right: 76, top: 70, width: 390, height: 520, flexDirection: "column", background: "#fff", borderRadius: 18, padding: 34, color: "#0f172a", boxShadow: "0 40px 80px rgba(0,0,0,0.45)", transform: "rotate(-4deg)" },
-    h({ justifyContent: "space-between", alignItems: "flex-start" },
-      h({ flexDirection: "column" }, h({ fontSize: 34, fontWeight: 800, letterSpacing: 1 }, "INVOICE"), h({ marginTop: 8 }, bar(120, "#e2e8f0", 9))),
-      h({ padding: "6px 10px", borderRadius: 8, background: "#eef2ff", alignItems: "center" }, svg(I.home, 26, "#4338ca")),
-    ),
-    h({ marginTop: 26, gap: 14 }, h({ flexDirection: "column", gap: 8 }, bar(90, "#cbd5e1", 8), bar(130)), h({ flexDirection: "column", gap: 8, marginLeft: 40 }, bar(70, "#cbd5e1", 8), bar(100))),
-    h({ height: 2, background: "#e2e8f0", marginTop: 28 }),
+  return preview("#4338ca", paper([
+    h({ fontSize: 32, fontWeight: 800, letterSpacing: 1 }, "INVOICE"),
+    h({ height: 2, background: "#e2e8f0", marginTop: 24 }),
     row(170), row(140), row(190),
     h({ height: 2, background: "#e2e8f0", marginTop: 22 }),
-    h({ justifyContent: "space-between", alignItems: "center", marginTop: 18 }, h({ fontSize: 22, fontWeight: 800 }, "Total"), bar(120, "#4338ca", 16)),
-    h({ marginTop: "auto", alignItems: "center", justifyContent: "center", height: 54, borderRadius: 12, background: "#4338ca", color: "#fff", fontSize: 20, fontWeight: 800, letterSpacing: 1 }, "VIEW INVOICE"),
-  );
-  return card(
-    "linear-gradient(135deg, #1e1b4b 0%, #3730a3 55%, #6366f1 100%)",
-    h({ flexDirection: "column", marginTop: 54 },
-      pill("Invoice", I.form),
-      h({ marginTop: 24, fontSize: 74, fontWeight: 800, lineHeight: 1.04, letterSpacing: -2 }, "Your invoice"),
-      h({ marginTop: 16, fontSize: 32, fontWeight: 500, color: "rgba(255,255,255,0.9)" }, "From EstateKit. Open it to see the amount and how to pay."),
-      cta("View invoice", I.arrow, false),
-    ),
-    paper,
-  );
+    h({ justifyContent: "space-between", alignItems: "center", marginTop: 18 }, h({ fontSize: 22, fontWeight: 800 }, "Total"), bar(110, "#4338ca", 16)),
+    h({ marginTop: "auto", alignItems: "center", justifyContent: "center", height: 54, borderRadius: 12, background: "#4338ca", color: "#fff", fontSize: 20, fontWeight: 800 }, "View invoice"),
+  ]));
 }
 
 function lead(q) {
-  const name = clean(q.get("n"), 26) || "Your lead";
-  const sub = clean(q.get("s"), 40);
-  const what = clean(q.get("w"), 22) || "Lead";
-  const first = name.split(" ")[0].toUpperCase();
-  const phone = h(
-    { position: "absolute", right: 96, top: 54, width: 340, height: 660, borderRadius: 54, background: "#0b1220", padding: 14, boxShadow: "0 40px 90px rgba(0,0,0,0.5)", transform: "rotate(-5deg)" },
-    h(
-      { flexDirection: "column", width: "100%", height: "100%", borderRadius: 42, background: "#f1f5f9", padding: "22px 18px", color: "#0f172a" },
-      h({ alignSelf: "center", width: 96, height: 24, borderRadius: 999, background: "#0b1220" }),
-      h({ marginTop: 18, flexDirection: "column", background: "#fff", borderRadius: 20, padding: 18, boxShadow: "0 2px 6px rgba(15,23,42,0.08)" },
-        h({ fontSize: 26, fontWeight: 800, letterSpacing: -0.5 }, name.length > 16 ? `${name.slice(0, 15)}…` : name),
-        h({ marginTop: 10, alignSelf: "flex-start", padding: "5px 12px", borderRadius: 999, background: "#fef3c7", color: "#92400e", fontSize: 15, fontWeight: 700 }, what),
-        h({ marginTop: 14, alignItems: "center", gap: 8, fontSize: 16, fontWeight: 600, color: "#475569" }, svg(I.pin, 20, "#94a3b8"), sub ? (sub.length > 22 ? `${sub.slice(0, 21)}…` : sub) : "From your ad"),
-      ),
-      h({ marginTop: 16, height: 68, borderRadius: 16, background: "#16a34a", color: "#fff", alignItems: "center", justifyContent: "center", gap: 12, fontSize: 22, fontWeight: 800, letterSpacing: 1, boxShadow: "0 10px 20px rgba(22,163,74,0.35)" }, svg(I.phone, 28, "#fff"), first.length > 9 ? "CALL" : `CALL ${first}`),
-      h({ marginTop: 12, height: 56, borderRadius: 16, border: "2px solid #cbd5e1", background: "#fff", alignItems: "center", padding: "0 16px", fontSize: 17, fontWeight: 600, color: "#64748b" }, "What happened?"),
-      h({ marginTop: 12, height: 56, borderRadius: 16, border: "2px solid #e2e8f0", background: "#fff", alignItems: "center", padding: "0 16px", fontSize: 17, fontWeight: 500, color: "#94a3b8" }, "Add a note"),
-    ),
-  );
-  return card(
-    "linear-gradient(135deg, #022c22 0%, #047857 55%, #10b981 100%)",
-    h({ flexDirection: "column", marginTop: 54 },
-      pill(what, I.person),
-      h({ marginTop: 24, fontSize: nameSize(name, 76), fontWeight: 800, lineHeight: 1.04, letterSpacing: -2 }, name),
-      sub ? h({ marginTop: 14, alignItems: "center", gap: 10, fontSize: 30, fontWeight: 500, color: "rgba(255,255,255,0.9)" }, svg(I.pin, 32, "rgba(255,255,255,0.8)"), sub) : null,
-      cta("Tap to call", I.phone, false),
-    ),
-    phone,
-  );
+  const name = clean(q.get("n"), 16) || "Your lead";
+  const sub = clean(q.get("s"), 22);
+  const first = name.split(" ")[0];
+  return preview("#047857", h(
+    { width: 320, height: 540, flexDirection: "column", background: "#fff", borderRadius: 36, padding: 26, color: "#0f172a", boxShadow: "0 30px 60px rgba(0,0,0,0.25)" },
+    h({ fontSize: 30, fontWeight: 800, letterSpacing: -0.5 }, name),
+    sub ? h({ marginTop: 10, alignItems: "center", gap: 6, fontSize: 17, fontWeight: 600, color: "#64748b" }, svg(I.pin, 20, "#94a3b8"), sub) : null,
+    h({ marginTop: 28, height: 70, borderRadius: 16, background: "#16a34a", color: "#fff", alignItems: "center", justifyContent: "center", gap: 12, fontSize: 23, fontWeight: 800 }, svg(I.phone, 28, "#fff"), first.length > 9 ? "Call" : `Call ${first}`),
+    h({ marginTop: 14, height: 58, borderRadius: 16, border: "2px solid #cbd5e1", alignItems: "center", padding: "0 18px", fontSize: 18, fontWeight: 600, color: "#64748b" }, "What happened?"),
+    h({ marginTop: "auto", justifyContent: "center" }, brand("#94a3b8", 18)),
+  ));
 }
 
 export default async function handler(req) {
