@@ -47,6 +47,7 @@ const load = {
   InvoicePage: () => import("./pages/InvoicePage"),
   CheckInPage: () => import("./pages/CheckInPage"),
   ContractsAdminPage: () => import("./pages/ContractsAdminPage"),
+  SalesPage: () => import("./pages/SalesPage"),
   WeeklyReportsAdminPage: () => import("./pages/WeeklyReportsAdminPage"),
   AuditLogPage: () => import("./pages/AuditLogPage"),
 };
@@ -83,6 +84,7 @@ const ContractPage = lazyPage(load.ContractPage);
 const InvoicePage = lazyPage(load.InvoicePage);
 const CheckInPage = lazyPage(load.CheckInPage);
 const ContractsAdminPage = lazyPage(load.ContractsAdminPage);
+const SalesPage = lazyPage(load.SalesPage);
 const WeeklyReportsAdminPage = lazyPage(load.WeeklyReportsAdminPage);
 const AuditLogPage = lazyPage(load.AuditLogPage);
 
@@ -94,6 +96,7 @@ const PAGE_FOR_PATH: [string, () => Promise<unknown>][] = [
   ["/lead-page", load.LeadPagePage],
   ["/clients/", load.ClientDetailPage],
   ["/clients", load.ClientsPage],
+  ["/sales", load.SalesPage],
   ["/admin/automations", load.AdminAutomationsPage],
   ["/account", load.AccountPage],
   ["/setup", load.SetupPage],
@@ -248,6 +251,7 @@ export default function App() {
             <Route path="/admin/clients/:agentId/*" element={<OldClientLink />} />
             <Route path="/admin/reports" element={<OperatorOnly><WeeklyReportsAdminPage /></OperatorOnly>} />
             <Route path="/admin/contracts" element={<OperatorOnly><ContractsAdminPage /></OperatorOnly>} />
+            <Route path="/sales" element={<OperatorOnly><SalesPage /></OperatorOnly>} />
             <Route path="/account" element={<AccountRoute />} />
             <Route path="/account/audit" element={<OperatorOnly><AuditLogPage /></OperatorOnly>} />
             <Route path="/setup" element={<SetupPage />} />

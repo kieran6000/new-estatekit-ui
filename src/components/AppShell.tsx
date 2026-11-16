@@ -34,6 +34,8 @@ import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
 import DashboardIcon from "@mui/icons-material/Dashboard";
 import GroupsOutlinedIcon from "@mui/icons-material/GroupsOutlined";
 import GroupsIcon from "@mui/icons-material/Groups";
+import TrendingUpOutlinedIcon from "@mui/icons-material/TrendingUpOutlined";
+import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import ChecklistIcon from "@mui/icons-material/Checklist";
 import ChecklistOutlinedIcon from "@mui/icons-material/ChecklistRtl";
 import { tokens } from "../theme";
@@ -91,6 +93,7 @@ function activeSection(pathname: string): string {
   if (pathname.startsWith("/home")) return "home";
   if (pathname.startsWith("/overview")) return "overview";
   if (pathname.startsWith("/clients")) return "clients";
+  if (pathname.startsWith("/sales")) return "sales";
   // Weekly reports and contracts live under Accounts, so Accounts stays lit there.
   if (pathname.startsWith("/admin/reports") || pathname.startsWith("/admin/contracts")) return "clients";
   if (pathname.startsWith("/admin")) return "automations";
@@ -200,6 +203,8 @@ export default function AppShell() {
     ...(staffMode ? [] : [{ key: "overview", label: "Overview", icon: <DashboardOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <DashboardIcon sx={{ fontSize: SZ }} />, to: myClientPage }]),
     // Staff with no account open start here. Otherwise the switcher at the top lists everyone.
     ...(staffMode ? [{ key: "clients", label: "Accounts", icon: <GroupsOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <GroupsIcon sx={{ fontSize: SZ }} />, to: "/clients" }] : []),
+    // Our own sales pipeline (acquiring clients), operators only.
+    ...(isOperator ? [{ key: "sales", label: "Sales", icon: <TrendingUpOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <TrendingUpIcon sx={{ fontSize: SZ }} />, to: "/sales" }] : []),
     { key: "automations", label: "Automations", icon: <SettingsOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <SettingsIcon sx={{ fontSize: SZ }} />, to: "/admin/automations" },
   ];
 
@@ -216,8 +221,8 @@ export default function AppShell() {
   const mobileNav = staffMode ? [
     ...(shared ? [{ key: "leads", label: "Leads", icon: <ContactsOutlinedIcon />, activeIcon: <ContactsIcon />, to: `/team-pipeline/${shared.id}` }] : []),
     { key: "clients", label: "Accounts", icon: <GroupsOutlinedIcon />, activeIcon: <GroupsIcon />, to: "/clients" },
+    { key: "sales", label: "Sales", icon: <TrendingUpOutlinedIcon />, activeIcon: <TrendingUpIcon />, to: "/sales" },
     { key: "automations", label: "Automations", icon: <SettingsOutlinedIcon />, activeIcon: <SettingsIcon />, to: "/admin/automations" },
-    { key: "account", label: "Account", icon: <AccountCircleOutlinedIcon />, activeIcon: <AccountCircleIcon />, to: "/account" },
   ] : [
     ...(showSetup && !isOperator ? [{ key: "setup", label: "Set up", icon: <ChecklistOutlinedIcon />, activeIcon: <ChecklistIcon />, to: "/setup" }] : []),
     { key: "leads", label: "Leads", icon: <ContactsOutlinedIcon />, activeIcon: <ContactsIcon />, to: "/leads" },
