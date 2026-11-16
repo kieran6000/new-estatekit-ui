@@ -11,7 +11,7 @@ import SearchIcon from "@mui/icons-material/Search";
 import ReplyIcon from "@mui/icons-material/Reply";
 import ForwardIcon from "@mui/icons-material/Forward";
 import ArchiveOutlinedIcon from "@mui/icons-material/ArchiveOutlined";
-import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import Draw from "@mui/icons-material/DriveFileRenameOutline";
 import { tokens } from "../theme";
