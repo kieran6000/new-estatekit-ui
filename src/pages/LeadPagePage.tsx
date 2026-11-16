@@ -1702,7 +1702,7 @@ function CustomQuestionEditor({
           {type === "multiple_choice" && <OptionsEditor value={options} onChange={setOptions} />}
           {type === "call_time" && (
             <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
-              Leads pick a day (the next 7) and a time (08:00 to 18:00), like setting an appointment. It&apos;s a request for a
+              Leads pick a day (the next 4) and a time (08:00 to 18:00), like setting an appointment. It&apos;s a request for a
               call, not a booked slot, so the line under it says you&apos;ll confirm. Best as the last question.
             </Typography>
           )}
