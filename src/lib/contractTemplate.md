@@ -91,7 +91,7 @@ If we fall short:
 - **Or get half back:** instead of the free period, you may choose a 50% refund of the service fee you paid. You choose one or the other, not both.
 - **You can check it yourself:** every lead shows on your dashboard with the date it came in.
 
-You don't need to claim it. Within 7 days after the 90 days end, we tell you in writing whether you reached 60, and if not, the free period starts the next day. This guarantee covers the number of leads only. What those leads turn into depends on your follow-up and the market (see "No other guarantees").
+You don't need to claim it. Within 7 days after the 90 days end, we tell you in writing whether you reached 60, and if not, the free period starts the next day. If you sign 2 or more sole mandates from leads delivered during the 90 days, the Lead Guarantee is considered met regardless of the total lead count. This guarantee covers the number of leads only. What those leads turn into depends on your follow-up and the market (see "No other guarantees").
 
 ### No other guarantees
 
