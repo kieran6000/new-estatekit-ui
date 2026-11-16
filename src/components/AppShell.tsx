@@ -36,8 +36,6 @@ import GroupsOutlinedIcon from "@mui/icons-material/GroupsOutlined";
 import GroupsIcon from "@mui/icons-material/Groups";
 import ChecklistIcon from "@mui/icons-material/Checklist";
 import ChecklistOutlinedIcon from "@mui/icons-material/ChecklistRtl";
-import MailIcon from "@mui/icons-material/Mail";
-import MailOutlineIcon from "@mui/icons-material/MailOutlined";
 import { tokens } from "../theme";
 import { useAuth } from "../hooks/useAuth";
 import { useIsOperator } from "../hooks/useAutomations";
@@ -100,7 +98,6 @@ function activeSection(pathname: string): string {
   if (pathname.startsWith("/setup")) return "setup";
   if (pathname.startsWith("/calendar")) return "calendar";
   if (pathname === "/team") return "team";
-  if (pathname.startsWith("/mail")) return "mail";
   return "leads";
 }
 
@@ -204,7 +201,6 @@ export default function AppShell() {
     // Staff with no account open start here. Otherwise the switcher at the top lists everyone.
     ...(staffMode ? [{ key: "clients", label: "Accounts", icon: <GroupsOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <GroupsIcon sx={{ fontSize: SZ }} />, to: "/clients" }] : []),
     { key: "automations", label: "Automations", icon: <SettingsOutlinedIcon sx={{ fontSize: SZ }} />, activeIcon: <SettingsIcon sx={{ fontSize: SZ }} />, to: "/admin/automations" },
-    ...(isOperator ? [{ key: "mail", label: "Mail", icon: <MailOutlineIcon sx={{ fontSize: SZ }} />, activeIcon: <MailIcon sx={{ fontSize: SZ }} />, to: "/mail" }] : []),
   ];
 
   const navButtonSx = (active: boolean) => ({
@@ -231,7 +227,6 @@ export default function AppShell() {
     ...(isOperator || selfRun
       ? [
           { key: "overview", label: "Overview", icon: <DashboardOutlinedIcon />, activeIcon: <DashboardIcon />, to: myClientPage },
-          ...(isOperator ? [{ key: "mail", label: "Mail", icon: <MailOutlineIcon />, activeIcon: <MailIcon />, to: "/mail" }] : []),
         ]
       : [{ key: "account", label: "Account", icon: <AccountCircleOutlinedIcon />, activeIcon: <AccountCircleIcon />, to: "/account" }]),
   ];

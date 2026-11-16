@@ -86,7 +86,7 @@ const TO_DISCORD = new Set<string>(["new_lead", "form_submitted", "call_time_set
 
 // The card for each moment: its banner (/api/og?t=…), colour and emoji, and
 // the word for it at the end of the lead's history line.
-type Kind = "new_lead" | "call_time" | "contacted" | "booked" | "viewing" | "offer" | "mandate" | "bought" | "lost" | "not_owner" | "invalid" | "checkin" | "showed" | "proposal" | "paid" | "churned";
+type Kind = "new_lead" | "call_time" | "contacted" | "booked" | "viewing" | "offer" | "mandate" | "bought" | "lost" | "not_owner" | "invalid" | "checkin";
 const CARD: Record<Kind, { title: string; emoji: string; color: number; step: string }> = {
   new_lead: { title: "New lead", emoji: "📥", color: 0x059669, step: "New lead" },
   call_time: { title: "Picked a time to call", emoji: "🕒", color: 0x0e7490, step: "Picked a time" },
@@ -100,21 +100,13 @@ const CARD: Record<Kind, { title: string; emoji: string; color: number; step: st
   not_owner: { title: "Not the owner", emoji: "🙅", color: 0x475569, step: "Not the owner" },
   invalid: { title: "Wrong number", emoji: "📵", color: 0x475569, step: "Wrong number" },
   checkin: { title: "Check-in answered", emoji: "⭐", color: 0xdb2777, step: "" },
-  showed: { title: "Showed up", emoji: "👋", color: 0x2563eb, step: "Showed" },
-  proposal: { title: "Proposal sent", emoji: "📄", color: 0x0d9488, step: "Proposal" },
-  paid: { title: "Paid", emoji: "💳", color: 0xd97706, step: "Paid" },
-  churned: { title: "Churned", emoji: "🚫", color: 0x475569, step: "Churned" },
 };
 const STAGE_KIND: Record<string, Kind> = {
   Contacted: "contacted", Booked: "booked", "Viewing Booked": "viewing", "Offer Made": "offer",
   "Mandate Signed": "mandate", Bought: "bought", Lost: "lost", "Invalid Number": "invalid",
-  "Call booked": "booked", Showed: "showed", "No-show": "lost",
-  "Proposal sent": "proposal", Signed: "mandate", Paid: "paid",
-  Churned: "churned",
 };
 // A recruitment ("general") pipeline uses the seller stages with its own words.
 const GENERAL_TITLE: Partial<Record<Kind, string>> = { booked: "Meeting booked", mandate: "Signed up", lost: "Not interested" };
-const AGENCY_TITLE: Partial<Record<Kind, string>> = { booked: "Call booked", mandate: "Signed", lost: "Lost" };
 
 /** Which card a stage change gets, or null for one not worth a post
  *  ("No answer" happens on most calls; back to "New lead" is a correction). */
@@ -473,8 +465,7 @@ Deno.serve(async (req) => {
     const phone = String(lead.phone ?? row?.phone ?? "");
 
     const card = CARD[kind];
-    const titleOverride = lead.pipeline === "general" ? GENERAL_TITLE[kind] : lead.pipeline === "agency" ? AGENCY_TITLE[kind] : undefined;
-    const title = titleOverride || card.title;
+    const title = (lead.pipeline === "general" && GENERAL_TITLE[kind]) || card.title;
     const who = kind === "checkin" ? agentName : String(lead.name || "A lead").trim();
     const was = String(lead.fromStage ?? "").split(" · ")[0];
     const at = (kind === "booked" || kind === "viewing") ? row?.appointment_at : kind === "call_time" ? row?.call_at : null;
@@ -488,8 +479,7 @@ Deno.serve(async (req) => {
       page = p ?? null;
     }
     const ad = kind === "new_lead" && leadId && source.startsWith("Facebook") ? await adOf(leadId) : null;
-    const stepOverride = lead.pipeline === "general" ? GENERAL_TITLE[kind] : lead.pipeline === "agency" ? AGENCY_TITLE[kind] : undefined;
-    const history = row && leadId && kind !== "new_lead" && kind !== "checkin" ? await historyOf(leadId, row.created_at, stepOverride || card.step) : [];
+    const history = row && leadId && kind !== "new_lead" && kind !== "checkin" ? await historyOf(leadId, row.created_at, (lead.pipeline === "general" && GENERAL_TITLE[kind]) || card.step) : [];
     const area = kind === "new_lead" && b.agentId ? await areaNote(String(b.agentId), address, town) : "";
 
     const banner = new URL(`${APP}/api/og`);
@@ -546,7 +536,7 @@ Deno.serve(async (req) => {
       footer: { text: "EstateKit", icon_url: EK_LOGO },
       timestamp: new Date().toISOString(),
     };
-    const win = kind === "mandate" || kind === "bought" || kind === "paid";
+    const win = kind === "mandate" || kind === "bought";
 
     const res = await fetch(webhook, {
       method: "POST",

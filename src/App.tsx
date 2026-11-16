@@ -49,7 +49,6 @@ const load = {
   ContractsAdminPage: () => import("./pages/ContractsAdminPage"),
   WeeklyReportsAdminPage: () => import("./pages/WeeklyReportsAdminPage"),
   AuditLogPage: () => import("./pages/AuditLogPage"),
-  MailPage: () => import("./pages/MailPage"),
 };
 const AppShell = lazyPage(load.AppShell);
 const AccountPausedPage = lazyPage(load.AccountPausedPage);
@@ -86,7 +85,6 @@ const CheckInPage = lazyPage(load.CheckInPage);
 const ContractsAdminPage = lazyPage(load.ContractsAdminPage);
 const WeeklyReportsAdminPage = lazyPage(load.WeeklyReportsAdminPage);
 const AuditLogPage = lazyPage(load.AuditLogPage);
-const MailPage = lazyPage(load.MailPage);
 
 /** Signed in, the frame and the page being opened download side by side
  *  (not the page only after the frame). */
@@ -250,7 +248,6 @@ export default function App() {
             <Route path="/admin/clients/:agentId/*" element={<OldClientLink />} />
             <Route path="/admin/reports" element={<OperatorOnly><WeeklyReportsAdminPage /></OperatorOnly>} />
             <Route path="/admin/contracts" element={<OperatorOnly><ContractsAdminPage /></OperatorOnly>} />
-            <Route path="/mail" element={<OperatorOnly><MailPage /></OperatorOnly>} />
             <Route path="/account" element={<AccountRoute />} />
             <Route path="/account/audit" element={<OperatorOnly><AuditLogPage /></OperatorOnly>} />
             <Route path="/setup" element={<SetupPage />} />
