@@ -217,6 +217,7 @@ export default function AppShell() {
     ...(shared ? [{ key: "leads", label: "Leads", icon: <ContactsOutlinedIcon />, activeIcon: <ContactsIcon />, to: `/team-pipeline/${shared.id}` }] : []),
     { key: "clients", label: "Accounts", icon: <GroupsOutlinedIcon />, activeIcon: <GroupsIcon />, to: "/clients" },
     { key: "automations", label: "Automations", icon: <SettingsOutlinedIcon />, activeIcon: <SettingsIcon />, to: "/admin/automations" },
+    { key: "account", label: "Account", icon: <AccountCircleOutlinedIcon />, activeIcon: <AccountCircleIcon />, to: "/account" },
   ] : [
     ...(showSetup && !isOperator ? [{ key: "setup", label: "Set up", icon: <ChecklistOutlinedIcon />, activeIcon: <ChecklistIcon />, to: "/setup" }] : []),
     { key: "leads", label: "Leads", icon: <ContactsOutlinedIcon />, activeIcon: <ContactsIcon />, to: "/leads" },
