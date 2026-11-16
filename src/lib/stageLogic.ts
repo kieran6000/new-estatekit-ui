@@ -12,6 +12,12 @@ export const STEP_FOR_STAGE: Partial<Record<Stage, OutcomeStep>> = {
   "Viewing Booked": "booked",
   "Offer Made": "reminder",
   Bought: "commission",
+  // Agency sales: a booked call asks for the time; the follow-up-ish stages
+  // ask when to follow up next. No commission step (handled per-kind below).
+  "Call booked": "booked",
+  Showed: "reminder",
+  "Proposal sent": "reminder",
+  "Renewal due": "reminder",
 };
 
 /**
@@ -79,6 +85,17 @@ export const MAIN_OUTCOME_OPTIONS: Record<PipelineKind, MainOutcomeOption[]> = {
     { icon: "block", label: "Not interested", stage: "Lost" },
     { icon: "wrong_number", label: "Wrong number", stage: "Invalid Number" },
   ],
+  // EstateKit's own sales calls to prospective agents. The later lifecycle
+  // (Paid, Live, Renewal, Churned) is set from the full stage menu, not this
+  // quick "how did the call go?" list.
+  agency: [
+    { icon: "event", label: "Booked a call", stage: "Call booked" },
+    { icon: "chat", label: "Showed — following up", stage: "Showed" },
+    { icon: "no_answer", label: "No-show", stage: "No-show" },
+    { icon: "offer", label: "Sent a proposal", stage: "Proposal sent" },
+    { icon: "premium", label: "Signed them up", stage: "Signed" },
+    { icon: "block", label: "Lost", stage: "Lost" },
+  ],
 };
 
 /** Why a lost lead was lost, when the agent said ("Not the owner"); otherwise null. */
@@ -124,6 +141,28 @@ const BUYER_TO_SELLER: Partial<Record<Stage, Stage>> = {
   Bought: "Mandate Signed",
   "Offer Made": "Contacted",
 };
+// Agency stages paired with their seller-equivalent, so a lead moved out of
+// the agency pipeline keeps its meaning, and one moved in lands sensibly.
+const AGENCY_TO_SELLER: Partial<Record<Stage, Stage>> = {
+  Applied: "New Lead",
+  "Call booked": "Booked",
+  Showed: "Contacted",
+  "No-show": "No Answer",
+  "Proposal sent": "Contacted",
+  Signed: "Mandate Signed",
+  Paid: "Mandate Signed",
+  Live: "Mandate Signed",
+  "Renewal due": "Contacted",
+  Churned: "Lost",
+};
+const SELLER_TO_AGENCY: Partial<Record<Stage, Stage>> = {
+  "New Lead": "Applied",
+  "No Answer": "No-show",
+  Contacted: "Showed",
+  Booked: "Call booked",
+  "Mandate Signed": "Signed",
+  "Invalid Number": "Lost",
+};
 
 /**
  * Translate a stage into the target pipeline kind, so a lead moved between
@@ -132,7 +171,14 @@ const BUYER_TO_SELLER: Partial<Record<Stage, Stage>> = {
  */
 export function stageForKind(stage: Stage, kind: PipelineKind): Stage {
   if (PIPELINE_STAGES[kind].includes(stage)) return stage;
-  const mapped = kind === "buyer" ? SELLER_TO_BUYER[stage] : BUYER_TO_SELLER[stage];
+  // Normalise an agency stage to its seller-equivalent first, so a move out of
+  // the agency pipeline, or across it, keeps meaning.
+  const base = AGENCY_TO_SELLER[stage] ?? stage;
+  if (kind === "agency") {
+    const mapped = SELLER_TO_AGENCY[base] ?? SELLER_TO_AGENCY[stage];
+    return mapped && PIPELINE_STAGES.agency.includes(mapped) ? mapped : "Applied";
+  }
+  const mapped = kind === "buyer" ? SELLER_TO_BUYER[base] : base !== stage ? base : BUYER_TO_SELLER[stage];
   return mapped && PIPELINE_STAGES[kind].includes(mapped) ? mapped : "New Lead";
 }
 
@@ -151,7 +197,7 @@ export function rank(l: Pick<LeadRow, "stage" | "due">): number {
  *  (the NEW badge). These always come first in the lists. */
 export function isNewLead(l: LeadRow, now = new Date()): boolean {
   const cameBack = !!l.came_back_at && now.getTime() - Date.parse(l.came_back_at) < 7 * 24 * HOUR;
-  return l.stage === "New Lead" && now.getTime() - Date.parse(l.created_at) < 24 * HOUR && !cameBack;
+  return (l.stage === "New Lead" || l.stage === "Applied") && now.getTime() - Date.parse(l.created_at) < 24 * HOUR && !cameBack;
 }
 
 export function sortLeadsForList(leads: LeadRow[]): LeadRow[] {
@@ -189,32 +235,40 @@ export function computeStagePatch(
   stage: Stage,
   extra?: StageChangeExtra | number,
 ): Partial<Pick<LeadRow, "next_label" | "due" | "reminder_at" | "commission">> {
-  if (stage === "Contacted" || stage === "Offer Made") {
+  // Follow-up stages: a date to come back on. Agency "Showed", "Proposal sent"
+  // and "Renewal due" behave the same way.
+  if (stage === "Contacted" || stage === "Offer Made" || stage === "Showed" || stage === "Proposal sent" || stage === "Renewal due") {
     const e = (extra as StageChangeExtra) || {};
+    const verb = stage === "Renewal due" ? "Renewal " : "Follow up ";
     return {
       due: false,
-      next_label: "Follow up " + (e.label || "in 2 days"),
+      next_label: verb + (e.label || "in 2 days"),
       reminder_at: e.at ?? defaultReminderISO(2),
     };
   }
-  if (stage === "No Answer") {
-    return { due: true, next_label: "Retry today", reminder_at: new Date().toISOString() };
+  if (stage === "No Answer" || stage === "No-show") {
+    return { due: true, next_label: stage === "No-show" ? "Rebook today" : "Retry today", reminder_at: new Date().toISOString() };
   }
-  if (stage === "Booked" || stage === "Viewing Booked") {
+  if (stage === "Booked" || stage === "Viewing Booked" || stage === "Call booked") {
     const e = (extra as StageChangeExtra) || {};
-    return { due: false, next_label: e.label || "Appt set", reminder_at: e.at ?? null };
+    const fallback = stage === "Call booked" ? "Call set" : "Appt set";
+    return { due: false, next_label: e.label || fallback, reminder_at: e.at ?? null };
   }
   if (stage === "Mandate Signed" || stage === "Bought") {
     const commission = typeof extra === "number" ? extra : undefined;
     return { due: false, next_label: "—", reminder_at: null, ...(commission !== undefined ? { commission } : {}) };
   }
+  // Agency sale milestones: each a parked step on the way to a live client.
+  if (stage === "Signed") return { due: false, next_label: "Signed — collect payment", reminder_at: null };
+  if (stage === "Paid") return { due: false, next_label: "Paid — set up launch", reminder_at: null };
+  if (stage === "Live") return { due: false, next_label: "—", reminder_at: null };
   if (DEAD_STAGES.includes(stage)) {
     // No next step, so it keeps why, when there's a known reason (see NOT_OWNER).
     const reason = (extra as StageChangeExtra | undefined)?.label ?? "";
     return { due: false, next_label: stage === "Lost" && LOST_REASONS.includes(reason) ? reason : "—", reminder_at: null };
   }
-  if (stage === "New Lead") {
-    return { due: true, next_label: "Just came in", reminder_at: null };
+  if (stage === "New Lead" || stage === "Applied") {
+    return { due: true, next_label: stage === "Applied" ? "New application" : "Just came in", reminder_at: null };
   }
   return {};
 }
@@ -286,8 +340,8 @@ export function whenToCall(
     }
   }
 
-  if (l.stage === "Booked" || l.stage === "Viewing Booked") {
-    const word = l.stage === "Viewing Booked" ? "Viewing" : "Appointment";
+  if (l.stage === "Booked" || l.stage === "Viewing Booked" || l.stage === "Call booked") {
+    const word = l.stage === "Viewing Booked" ? "Viewing" : l.stage === "Call booked" ? "Call" : "Appointment";
     const iso = l.appointment_at ?? l.reminder_at;
     const at = iso ? new Date(iso) : null;
     if (!at || Number.isNaN(at.getTime())) return { level: "later", when: "No time set", why: word, at: created };

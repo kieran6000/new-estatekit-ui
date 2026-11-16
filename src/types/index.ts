@@ -7,11 +7,21 @@ export type Stage =
   | "Viewing Booked"
   | "Offer Made"
   | "Bought"
+  // Our own sales pipeline (kind "agency"), added alongside the others. No
+  // existing stage changes — see PIPELINE_STAGES.agency below.
+  | "Applied"
+  | "Call booked"
+  | "Showed"
+  | "No-show"
+  | "Proposal sent"
+  | "Signed"
+  | "Paid"
+  | "Live"
+  | "Renewal due"
+  | "Churned"
   | "Lost"
   | "Invalid Number";
 
-/** The two built-in pipeline shapes. A pipeline's stage list is always one of
- * these two presets — there is no custom-stage editor. */
 /**
  * "general" exists so a lead type that is neither buying nor selling
  * (recruitment being the reason it was added) needs no custom work: the same
@@ -19,13 +29,20 @@ export type Stage =
  * wording. It deliberately reuses the seller stage list so every stage-driven
  * feature keeps working untouched — only the words an agent reads differ,
  * via stageLabel().
+ *
+ * "agency" is EstateKit's own client-acquisition pipeline. It has its own
+ * stage list (application → signed client → renewal) but rides the same
+ * machinery: every stage carries a behaviour the engine already understands
+ * (a new lead, a booked appointment, a win, a dead lead), so the call list,
+ * reminders, outcome sheet and cards all work with no special-casing.
  */
-export type PipelineKind = "seller" | "buyer" | "general";
+export type PipelineKind = "seller" | "buyer" | "general" | "agency";
 
 export const PIPELINE_STAGES: Record<PipelineKind, Stage[]> = {
   seller: ["New Lead", "No Answer", "Contacted", "Booked", "Mandate Signed", "Lost", "Invalid Number"],
   buyer: ["New Lead", "No Answer", "Contacted", "Viewing Booked", "Offer Made", "Bought", "Lost", "Invalid Number"],
   general: ["New Lead", "No Answer", "Contacted", "Booked", "Mandate Signed", "Lost", "Invalid Number"],
+  agency: ["Applied", "Call booked", "Showed", "No-show", "Proposal sent", "Signed", "Paid", "Live", "Renewal due", "Churned", "Lost"],
 };
 
 /** Per-kind wording for a stage. Only "general" renames anything; the others
@@ -44,6 +61,7 @@ export const PIPELINE_KIND_LABEL: Record<PipelineKind, string> = {
   seller: "Seller",
   buyer: "Buyer",
   general: "General",
+  agency: "Agency sales",
 };
 
 /** A named pipeline instance. `kind` fixes its stage list — adding a pipeline
@@ -55,8 +73,10 @@ export interface Pipeline {
   sheet_url: string | null;
 }
 
-export const DEAD_STAGES: Stage[] = ["Lost", "Invalid Number"];
-export const PARKED_STAGES: Stage[] = ["Booked", "Mandate Signed", "Viewing Booked", "Offer Made", "Bought"];
+// "Churned" (agency) joins the dead stages: no call button, sorted out of the
+// working list. "Live" (a running client) parks like a won lead.
+export const DEAD_STAGES: Stage[] = ["Lost", "Invalid Number", "Churned"];
+export const PARKED_STAGES: Stage[] = ["Booked", "Mandate Signed", "Viewing Booked", "Offer Made", "Bought", "Live"];
 
 export interface FormAnswer {
   q: string;
