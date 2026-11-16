@@ -115,7 +115,7 @@ As far as the law allows, our total liability is limited to the fees you paid in
 
 ### Ending the agreement
 
-Either side may end the agreement if the other breaks it and doesn't fix it within 7 days of written notice. Where the Consumer Protection Act or Electronic Communications and Transactions Act gives you a cooling-off right, you may cancel within 5 business days of signing (or longer if the Act allows) and get your fees back, but not ad spend already paid to Meta. Where the Consumer Protection Act applies, you may also cancel the 3-month package early on 20 business days' notice and get a pro rata refund for the unused days, less R1,500 for set-up work. When the agreement ends, we stop the ads, take down the pages, release your suburbs and remove our access to your accounts.
+Either side may end the agreement if the other breaks it and doesn't fix it within 7 days of written notice. Where the Consumer Protection Act or Electronic Communications and Transactions Act gives you a cooling-off right, you may cancel within 5 business days of signing (or longer if the Act allows) and get your fees back, but not ad spend already paid to Meta. Where the Consumer Protection Act applies, you may also cancel the 3-month package early on 20 business days' notice; fees already paid are not refunded on early cancellation. When the agreement ends, we stop the ads, take down the pages, release your suburbs and remove our access to your accounts.
 
 ### General
 
