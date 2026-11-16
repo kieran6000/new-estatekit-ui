@@ -88,6 +88,7 @@ We guarantee you at least **60 qualified leads** during the 90 days. The guarant
 If we fall short:
 
 - **We work for free:** we keep managing your ads with no management fee until you reach 60 qualified leads. You keep paying ad spend during this time.
+- **Or get half back:** instead of the free period, you may choose a 50% refund of the service fee you paid. You choose one or the other, not both.
 - **You can check it yourself:** every lead shows on your dashboard with the date it came in.
 
 You don't need to claim it. Within 7 days after the 90 days end, we tell you in writing whether you reached 60, and if not, the free period starts the next day. This guarantee covers the number of leads only. What those leads turn into depends on your follow-up and the market (see "No other guarantees").
@@ -114,7 +115,7 @@ As far as the law allows, our total liability is limited to the fees you paid in
 
 ### Ending the agreement
 
-Either side may end the agreement if the other breaks it and doesn't fix it within 7 days of written notice. Where the Consumer Protection Act or Electronic Communications and Transactions Act gives you a cooling-off right, you may cancel within 5 business days of signing (or longer if the Act allows) and get your fees back, but not ad spend already paid to Meta. Where the Consumer Protection Act applies, you may also cancel the 3-month package early on 20 business days' notice and get a 50% refund of your service fee. When the agreement ends, we stop the ads, take down the pages, release your suburbs and remove our access to your accounts.
+Either side may end the agreement if the other breaks it and doesn't fix it within 7 days of written notice. Where the Consumer Protection Act or Electronic Communications and Transactions Act gives you a cooling-off right, you may cancel within 5 business days of signing (or longer if the Act allows) and get your fees back, but not ad spend already paid to Meta. Where the Consumer Protection Act applies, you may also cancel the 3-month package early on 20 business days' notice and get a pro rata refund for the unused days, less R1,500 for set-up work. When the agreement ends, we stop the ads, take down the pages, release your suburbs and remove our access to your accounts.
 
 ### General
 
