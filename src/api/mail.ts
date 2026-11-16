@@ -34,7 +34,14 @@ export interface MessageFull {
   attachments: { filename: string; mimeType: string; size: number; attachmentId: string }[];
 }
 
-export type Folder = "inbox" | "sent" | "all";
+export type Folder = "inbox" | "sent" | "archive" | "all";
+
+/** A file the user is attaching to an outgoing message. `data` is base64. */
+export interface Upload {
+  filename: string;
+  mimeType: string;
+  data: string;
+}
 
 /** Raised when the Gmail service account hasn't been connected yet. */
 export class MailNotConnected extends Error {}
@@ -74,10 +81,20 @@ export function getThread(mailbox: string, id: string) {
   return call<{ messages: MessageFull[]; subject: string }>({ action: "thread", mailbox, id });
 }
 
-export function sendMail(mailbox: string, msg: { to: string; cc?: string; subject: string; html: string; threadId?: string; inReplyTo?: string; references?: string }) {
+export function sendMail(mailbox: string, msg: { to: string; cc?: string; subject: string; html: string; threadId?: string; inReplyTo?: string; references?: string; attachments?: Upload[] }) {
   return call<{ ok: true; id: string; threadId: string }>({ action: "send", mailbox, ...msg });
 }
 
 export function modifyThread(mailbox: string, id: string, change: { read?: boolean; archive?: boolean; trash?: boolean }) {
   return call<{ ok: true }>({ action: "modify", mailbox, id, ...change });
+}
+
+/** Fetch one attachment's bytes (base64) so the browser can open or save it. */
+export function getAttachment(mailbox: string, messageId: string, attachmentId: string) {
+  return call<{ data: string; size: number }>({ action: "attachment", mailbox, messageId, attachmentId });
+}
+
+/** Count of unread inbox threads, for the nav badge (capped at the page size). */
+export function unreadCount(mailbox: string) {
+  return call<{ count: number; more: boolean }>({ action: "unread", mailbox });
 }

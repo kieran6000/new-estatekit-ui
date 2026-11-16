@@ -153,25 +153,63 @@ function listAttachments(payload: any): { filename: string; mimeType: string; si
 }
 
 // ── MIME builder for sending ────────────────────────────────────────────────
-function buildMime(o: { fromName: string; from: string; to: string; cc?: string; subject: string; html: string; inReplyTo?: string; references?: string }): string {
-  const lines = [
+type Upload = { filename: string; mimeType: string; data: string }; // data = base64
+
+function buildMime(o: {
+  fromName: string; from: string; to: string; cc?: string; subject: string; html: string;
+  inReplyTo?: string; references?: string; attachments?: Upload[];
+}): string {
+  const head = [
     `From: ${o.fromName ? `${o.fromName.replace(/[\r\n"]/g, "")} <${o.from}>` : o.from}`,
     `To: ${o.to}`,
     ...(o.cc ? [`Cc: ${o.cc}`] : []),
-    `Subject: ${o.subject}`,
+    `Subject: ${encodeHeader(o.subject)}`,
     ...(o.inReplyTo ? [`In-Reply-To: ${o.inReplyTo}`] : []),
     ...(o.references ? [`References: ${o.references}`] : []),
     "MIME-Version: 1.0",
+  ];
+  const atts = (o.attachments ?? []).filter((a) => a.data);
+
+  // No attachments → simple single-part html message.
+  if (atts.length === 0) {
+    return [...head, 'Content-Type: text/html; charset="UTF-8"', "Content-Transfer-Encoding: base64", "", b64Chunks(o.html)].join("\r\n");
+  }
+
+  // With attachments → multipart/mixed: the html body, then each file.
+  const boundary = `ek_${crypto.randomUUID().replace(/-/g, "")}`;
+  const parts: string[] = [];
+  parts.push(
+    `--${boundary}`,
     'Content-Type: text/html; charset="UTF-8"',
     "Content-Transfer-Encoding: base64",
     "",
     b64Chunks(o.html),
-  ];
-  return lines.join("\r\n");
+  );
+  for (const a of atts) {
+    const name = (a.filename || "attachment").replace(/[\r\n"]/g, "");
+    parts.push(
+      `--${boundary}`,
+      `Content-Type: ${(a.mimeType || "application/octet-stream").replace(/[\r\n]/g, "")}; name="${name}"`,
+      "Content-Transfer-Encoding: base64",
+      `Content-Disposition: attachment; filename="${name}"`,
+      "",
+      // Gmail attachment data is already base64 (possibly url-safe); normalise + rechunk.
+      (a.data.replace(/-/g, "+").replace(/_/g, "/").replace(/\s+/g, "").match(/.{1,76}/g) ?? []).join("\r\n"),
+    );
+  }
+  parts.push(`--${boundary}--`, "");
+  return [...head, `Content-Type: multipart/mixed; boundary="${boundary}"`, "", ...parts].join("\r\n");
 }
 function b64Chunks(s: string): string {
   const b = btoa(unescape(encodeURIComponent(s)));
   return (b.match(/.{1,76}/g) ?? [b]).join("\r\n");
+}
+// RFC 2047 encode a header value when it has non-ASCII (so emoji/accents in
+// subjects don't get mangled).
+function encodeHeader(s: string): string {
+  // deno-lint-ignore no-control-regex
+  if (/^[\x00-\x7F]*$/.test(s)) return s;
+  return `=?UTF-8?B?${btoa(unescape(encodeURIComponent(s)))}?=`;
 }
 
 // ── Handler ─────────────────────────────────────────────────────────────────
@@ -210,9 +248,11 @@ Deno.serve(async (req) => {
           ? String(payload.q)
           : folder === "sent"
             ? "in:sent"
-            : folder === "all"
-              ? "in:all -in:trash -in:spam"
-              : "in:inbox";
+            : folder === "archive"
+              ? "-in:inbox -in:sent -in:trash -in:spam -in:drafts in:anywhere"
+              : folder === "all"
+                ? "in:all -in:trash -in:spam"
+                : "in:inbox";
         const listed = await gmail(mailbox, `/threads?maxResults=25&q=${encodeURIComponent(q)}${payload.pageToken ? `&pageToken=${payload.pageToken}` : ""}`);
         const ids: string[] = (listed.threads ?? []).map((t: any) => t.id);
         const threads = await Promise.all(
@@ -273,6 +313,7 @@ Deno.serve(async (req) => {
           html: payload.html || "",
           inReplyTo: payload.inReplyTo || undefined,
           references: payload.references || payload.inReplyTo || undefined,
+          attachments: Array.isArray(payload.attachments) ? payload.attachments : undefined,
         });
         const sent = await gmail(mailbox, `/messages/send`, {
           method: "POST",
@@ -299,6 +340,13 @@ Deno.serve(async (req) => {
       case "attachment": {
         const a = await gmail(mailbox, `/messages/${payload.messageId}/attachments/${payload.attachmentId}`);
         return json({ data: a.data, size: a.size });
+      }
+
+      case "unread": {
+        // Just the count of unread inbox threads, for the nav badge. Cheap:
+        // one list call, read resultSizeEstimate.
+        const r = await gmail(mailbox, `/threads?maxResults=25&q=${encodeURIComponent("in:inbox is:unread")}`);
+        return json({ count: (r.threads ?? []).length, more: !!r.nextPageToken });
       }
 
       default:
