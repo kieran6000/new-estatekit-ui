@@ -1,4 +1,5 @@
 import NoteBox from "../components/NoteBox";
+import AgencyDealSection from "../components/AgencyDealSection";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
@@ -130,6 +131,11 @@ export default function LeadDetailPage({ leadId, onClose, nav }: {
   const pipelineKind = matchedKind ?? leadPipeline?.kind ?? "seller";
   const stagesForPipeline = PIPELINE_STAGES[pipelineKind];
 
+  // Our own client-acquisition pipeline gets one extra section (the discovery
+  // scorecard + call). Everything else about the lead stays identical.
+  const pipelineName = pipelines.find((p) => p.id === lead.pipeline_id)?.name ?? leadPipeline?.name;
+  const isAgencyLead = pipelineName === "EstateKit Agents";
+
   function handleStagePick(stage: Stage) {
     const step = stepForStage(stage, pipelineKind);
     if (step) {
@@ -245,6 +251,8 @@ export default function LeadDetailPage({ leadId, onClose, nav }: {
           {lead.form_answers.map((r, i) => <Row key={i} k={r.q} v={prettyAnswer(r.a)} map={/address/i.test(r.q) && prettyAnswer(r.a).trim().length > 4} agentId={lead.agent_id} />)}
           {!lead.form_answers.length && <Row k="" v="No answers captured." />}
         </Section>
+
+        {isAgencyLead && <AgencyDealSection leadId={lead.id} />}
 
         <Section title="Notes">
           <NoteBox
