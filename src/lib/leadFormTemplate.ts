@@ -49,4 +49,17 @@ export const LEAD_FORM_TEMPLATE: Record<PipelineKind, LeadFormTemplate> = {
     defaultThankYouHeadline: "Thanks {name}, we've got your details",
     defaultThankYouSubtext: "We'll be in touch shortly for a quick chat.",
   },
+  // EstateKit's own sales pipeline doesn't capture leads through a public
+  // lead-page (prospects come from the main site), but a template is required
+  // per kind, so this mirrors the neutral "general" seed.
+  agency: {
+    addressLabel: "Which area do you work in?",
+    addressHelperText: "e.g. Centurion, Pretoria",
+    secondQuestionLabel: "How many deals do you do a month?",
+    secondOptions: ["0–1", "2–3", "4–6", "7+"],
+    defaultHeadline: "Get more seller leads — let's talk.",
+    defaultCta: "Send my details",
+    defaultThankYouHeadline: "Thanks {name}, we've got your details",
+    defaultThankYouSubtext: "We'll be in touch shortly for a quick chat.",
+  },
 };
