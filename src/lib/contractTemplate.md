@@ -67,7 +67,7 @@ For the whole 90 days (and the whole agreement on a monthly plan), you must:
 
 - give us admin access to your Facebook page, Instagram and ad account within 5 business days of signing;
 - keep ad spend at or above the minimum, with no more than 2 days of lapses in total (agreed pauses don't count);
-- call at least 90% of leads within 15 minutes when they arrive between 08:00 and 18:00, and by 09:00 the next day otherwise;
+- call at least 90% of leads within 1 hour when they arrive between 08:00 and 18:00, and by 09:00 the next day otherwise;
 - make at least 8 call or WhatsApp attempts over at least 7 days before giving up on a lead you can't reach;
 - attend, or reschedule in advance, every appointment booked with a lead;
 - mark each lead's outcome on the dashboard within 48 hours (a short note is enough);
