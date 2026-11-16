@@ -24,11 +24,15 @@ export function isWeekendSA(now = new Date()): boolean {
   return day === "Sat" || day === "Sun";
 }
 
-/** The next 7 days, without Saturday and Sunday if asked; today only while
- *  there's still a time left today. */
+/** How many days a lead can pick from. A call days away is one they forget
+ *  and don't pick up, so it's the next few days only. */
+export const CALL_DAYS = 4;
+
+/** The next CALL_DAYS days they can pick, without Saturday and Sunday if
+ *  asked; today only while there's still a time left today. */
 export function days(now = new Date(), noWeekends = false) {
   const out: { value: string; label: string; today: boolean }[] = [];
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; out.length < CALL_DAYS && i < 14; i++) {
     const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
     if (i === 0 && now.getHours() + 1 > LAST_HOUR) continue;
     if (noWeekends && (d.getDay() === 0 || d.getDay() === 6)) continue;
