@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { AppBar, Box, Button, Dialog, Drawer, IconButton, MenuItem, Popover, Select, Skeleton, Toolbar, Typography, useMediaQuery } from "@mui/material";
+import { AppBar, Box, Button, Dialog, Drawer, IconButton, MenuItem, Popover, Select, Skeleton, TextField, Toolbar, Typography, useMediaQuery } from "@mui/material";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import PhoneIcon from "@mui/icons-material/Phone";
@@ -8,13 +8,20 @@ import CloseIcon from "@mui/icons-material/Close";
 import ScheduleIcon from "@mui/icons-material/Schedule";
 import PersonIcon from "@mui/icons-material/Person";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
+import VideocamIcon from "@mui/icons-material/Videocam";
+import BlockIcon from "@mui/icons-material/Block";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlineOutlined";
 import { tokens } from "../theme";
 import { useLeads } from "../hooks/useLeads";
 import { useCanSeeFullPhone } from "../hooks/useTier";
 import { useConnectGoogleCalendar, useGoogleCalendarReturn, useGoogleCalendarStatus, useGoogleEvents } from "../hooks/useGoogleCalendar";
+import { useIsOperator } from "../hooks/useAutomations";
+import { useFunnelBlockActions, useFunnelCalendar } from "../hooks/useBookingAdmin";
+import { useSnack } from "../hooks/useSnack";
 import { maskPhone, telHref } from "../lib/format";
 import { logLeadCall } from "../api/leadEvents";
 import type { GoogleEvent } from "../api/googleCalendar";
+import type { FunnelBlock, FunnelBooking } from "../api/bookingAdmin";
 import GoogleCalendarIcon from "../components/GoogleCalendarIcon";
 import LeadDetailPage from "./LeadDetailPage";
 import { allDayCovers, calendarItems, DURATION, KIND_STYLE, layoutBlocks, overdue, spanOnDay, syncKind, weekStart, type CalItem } from "../lib/calendar";
@@ -38,6 +45,9 @@ import { prettyPhone } from "../lib/phone";
 // back arrow on a lead lands where they found it, with that lead highlighted.
 
 const KIND = KIND_STYLE;
+// The funnel's own discovery calls: a colour of their own, apart from the lead
+// kinds, so staff can tell an estatekit.co/pitch call from a client's at a glance.
+const FUNNEL_COLOR = "#3949ab";
 
 const clock = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 const hourLabel = (h: number) => (h === 0 ? "" : h < 12 ? `${h} AM` : h === 12 ? "12 PM" : `${h - 12} PM`);
@@ -55,8 +65,13 @@ type Memo = { key: string; top: number; lead?: string };
 const readMemo = (): Memo | null => { try { return JSON.parse(sessionStorage.getItem(MEMO) || "null"); } catch { return null; } };
 const writeMemo = (m: Memo) => { try { sessionStorage.setItem(MEMO, JSON.stringify(m)); } catch { /* private mode */ } };
 
-/** What a tap opened: one of ours, or one of their own Google events. */
-type Opened = { el: HTMLElement; it: CalItem; g?: undefined } | { el: HTMLElement; g: GoogleEvent; it?: undefined };
+/** What a tap opened: one of ours, one of their own Google events, a funnel
+ *  booking, or a blocked-off time (the last two: operators only). */
+type Opened =
+  | { el: HTMLElement; it: CalItem; g?: undefined; fb?: undefined; bl?: undefined }
+  | { el: HTMLElement; g: GoogleEvent; it?: undefined; fb?: undefined; bl?: undefined }
+  | { el: HTMLElement; fb: FunnelBooking; it?: undefined; g?: undefined; bl?: undefined }
+  | { el: HTMLElement; bl: FunnelBlock; it?: undefined; g?: undefined; fb?: undefined };
 
 export default function CalendarPage() {
   const navigate = useNavigate();
@@ -103,10 +118,39 @@ export default function CalendarPage() {
   );
   const offerGoogle = !managingOther && !!gStatus?.ready && (!gStatus.connected || gStatus.needsReconnect);
 
+  // The funnel's own diary (estatekit.co/pitch discovery calls + blocked
+  // times): staff only, and only on their own calendar — never mixed into a
+  // client's when switched in.
+  const { data: isOperator } = useIsOperator();
+  const showFunnel = isOperator === true && !managingOther;
+  const { data: funnel } = useFunnelCalendar(gFrom, addDays(gFrom, 7), showFunnel);
+  const { block: blockMut, unblock: unblockMut } = useFunnelBlockActions();
+  const showSnack = useSnack();
+  const bookings = useMemo(() => (showFunnel ? funnel?.bookings ?? [] : []), [showFunnel, funnel]);
+  const blocks = useMemo(() => (showFunnel ? funnel?.blocks ?? [] : []), [showFunnel, funnel]);
+  // A funnel booking already shows the lead's appointment; don't draw it twice.
+  const bookedLeadIds = useMemo(() => new Set(bookings.map((b) => b.lead_id).filter(Boolean) as string[]), [bookings]);
+  const [blockOff, setBlockOff] = useState(false);
+
   const HOUR = phone ? 60 : 48; // px per hour: taller on phones so short calls are easy to tap
   const week = !phone && weekView;
-  const items = useMemo(() => calendarItems(leads), [leads]);
+  const items = useMemo(
+    () => calendarItems(leads).filter((it) => !(it.kind === "appointment" && bookedLeadIds.has(it.lead.id))),
+    [leads, bookedLeadIds],
+  );
   const late = overdue(items, now);
+  const bookingsOn = (d: Date) => bookings.map((b) => ({ b, span: spanOnDay(b.starts_at, b.ends_at, d) })).filter((x) => x.span);
+  const blocksOn = (d: Date) => blocks.map((bl) => ({ bl, span: spanOnDay(bl.start, bl.end, d) })).filter((x) => x.span);
+  const removeBlock = (id: string) => {
+    setOpen(null);
+    unblockMut.mutate(id, { onError: () => showSnack("Couldn't remove that block. Try again.") });
+  };
+  const submitBlock = (startsAt: string, endsAt: string, note: string) => {
+    blockMut.mutate({ startsAt, endsAt, note: note || undefined }, {
+      onSuccess: () => { setBlockOff(false); showSnack("Time blocked off. The funnel won't offer it."); },
+      onError: (e) => showSnack((e as Error).message || "Couldn't block off that time."),
+    });
+  };
   const days = week ? Array.from({ length: 7 }, (_, i) => addDays(weekStart(anchor), i)) : [anchor];
   const step = week ? 7 : 1;
   const first = days[0];
@@ -121,10 +165,11 @@ export default function CalendarPage() {
   const timedOn = (d: Date) => gEvents.filter((e) => !e.allDay).map((e) => ({ e, span: spanOnDay(e.start, e.end, d) })).filter((x) => x.span);
   const shownAllDay = days.some((d) => allDayOn(d).length > 0);
   const gStarts = days.flatMap((d) => timedOn(d).map((x) => x.span!.start));
+  const bStarts = days.flatMap((d) => bookingsOn(d).map((x) => x.span!.start));
 
   // Open where the action is: an hour before the first thing shown, else an
   // hour before now (today), else 8 AM.
-  const starts = [...shownItems.map((it) => minutes(it.at)), ...gStarts];
+  const starts = [...shownItems.map((it) => minutes(it.at)), ...gStarts, ...bStarts];
   const firstAt = starts.length ? Math.min(...starts) : null;
   const scrollTo = firstAt != null ? firstAt - 60 : days.some((d) => sameDay(d, today)) ? minutes(now) - 60 : 8 * 60;
   const dayKey = days[0].toDateString() + days.length;
@@ -187,6 +232,11 @@ export default function CalendarPage() {
     />
   ) : open?.g ? (
     <GoogleEventCard ev={open.g} phone={phone} onClose={() => setOpen(null)} />
+  ) : open?.fb ? (
+    <FunnelBookingCard b={open.fb} phone={phone} canSeeFullPhone={canSeeFullPhone}
+      onOpen={open.fb.lead_id ? () => openLead(open.fb!.lead_id!) : undefined} onClose={() => setOpen(null)} />
+  ) : open?.bl ? (
+    <BlockedCard bl={open.bl} phone={phone} onRemove={() => removeBlock(open.bl!.id)} removing={unblockMut.isPending} onClose={() => setOpen(null)} />
   ) : null;
 
   const allDayChip = (e: GoogleEvent) => (
@@ -207,6 +257,9 @@ export default function CalendarPage() {
             <Typography sx={{ fontSize: 20, fontWeight: 500, flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</Typography>
             <IconButton aria-label="Previous week" onClick={() => setAnchor((a) => addDays(a, -7))} sx={{ color: "inherit", width: 48, height: 48 }}><ChevronLeftIcon /></IconButton>
             <IconButton aria-label="Next week" onClick={() => setAnchor((a) => addDays(a, 7))} sx={{ color: "inherit", width: 48, height: 48, mr: 0.5 }}><ChevronRightIcon /></IconButton>
+            {showFunnel && (
+              <IconButton aria-label="Block off time" onClick={() => setBlockOff(true)} sx={{ color: "inherit", width: 48, height: 48 }}><BlockIcon /></IconButton>
+            )}
             <TodayButton onClick={() => setAnchor(today)} />
           </Toolbar>
         ) : (
@@ -218,6 +271,12 @@ export default function CalendarPage() {
             {late.length > 0 && (
               <Button onClick={() => setShowLate(true)} sx={{ color: "inherit", textTransform: "none", whiteSpace: "nowrap" }}>
                 {late.length} overdue
+              </Button>
+            )}
+            {showFunnel && (
+              <Button variant="outlined" onClick={() => setBlockOff(true)} startIcon={<BlockIcon sx={{ fontSize: 18 }} />}
+                sx={{ borderRadius: "999px", px: 2, height: 40, color: "inherit", borderColor: "currentColor", textTransform: "none", fontWeight: 500, fontSize: 14, whiteSpace: "nowrap" }}>
+                Block off
               </Button>
             )}
             {offerGoogle && (
@@ -237,7 +296,7 @@ export default function CalendarPage() {
       </AppBar>
 
       {phone && (
-        <WeekStrip anchor={anchor} today={today} busy={(d) => items.some((it) => sameDay(it.at, d)) || allDayOn(d).length > 0 || timedOn(d).length > 0}
+        <WeekStrip anchor={anchor} today={today} busy={(d) => items.some((it) => sameDay(it.at, d)) || allDayOn(d).length > 0 || timedOn(d).length > 0 || bookingsOn(d).length > 0 || blocksOn(d).length > 0}
           onPick={setAnchor} onTouchStart={onTouchStart} onTouchEnd={swipe(7)} />
       )}
       {/* Phones: the day's all-day Google events, above the hours. */}
@@ -292,7 +351,7 @@ export default function CalendarPage() {
             </Box>
           )}
 
-          {phone && shownItems.length === 0 && timedOn(anchor).length === 0 && allDayOn(anchor).length === 0 && (
+          {phone && shownItems.length === 0 && timedOn(anchor).length === 0 && allDayOn(anchor).length === 0 && bookingsOn(anchor).length === 0 && blocksOn(anchor).length === 0 && (
             <Typography sx={{ position: "sticky", top: 0, zIndex: 3, textAlign: "center", py: 1, fontSize: 14, color: "text.secondary", bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider2}` }}>
               Nothing on {sameDay(anchor, today) ? "today" : anchor.toLocaleDateString("en-ZA", { weekday: "long" })}
             </Typography>
@@ -310,14 +369,34 @@ export default function CalendarPage() {
               const placed = layoutBlocks([
                 ...items.filter((it) => sameDay(it.at, d)).map((it) => {
                   const start = minutes(it.at);
-                  return { key: `${it.lead.id}-${it.kind}`, start, end: Math.min(24 * 60, start + DURATION[it.kind]), it, g: undefined as GoogleEvent | undefined };
+                  return { key: `${it.lead.id}-${it.kind}`, start, end: Math.min(24 * 60, start + DURATION[it.kind]), it, g: undefined as GoogleEvent | undefined, fb: undefined as FunnelBooking | undefined };
                 }),
-                ...timedOn(d).map(({ e, span }) => ({ key: `g-${e.id}`, start: span!.start, end: span!.end, it: undefined as CalItem | undefined, g: e })),
+                ...timedOn(d).map(({ e, span }) => ({ key: `g-${e.id}`, start: span!.start, end: span!.end, it: undefined as CalItem | undefined, g: e, fb: undefined as FunnelBooking | undefined })),
+                ...bookingsOn(d).map(({ b, span }) => ({ key: `b-${b.id}`, start: span!.start, end: span!.end, it: undefined as CalItem | undefined, g: undefined as GoogleEvent | undefined, fb: b })),
               ]);
+              const bands = blocksOn(d);
               const isToday = sameDay(d, today);
               return (
                 <Box key={d.toISOString()} sx={{ flex: 1, minWidth: 0, position: "relative", height: 24 * HOUR, borderLeft: `1px solid ${tokens.divider2}`,
                   backgroundImage: `repeating-linear-gradient(to bottom, ${tokens.divider2} 0, ${tokens.divider2} 1px, transparent 1px, transparent ${HOUR}px)` }}>
+                  {/* Blocked-off times: a faded hatched band the width of the day,
+                      behind everything. The funnel won't offer these. */}
+                  {bands.map(({ bl, span }) => {
+                    const height = Math.max(phone ? 32 : 18, ((span!.end - span!.start) / 60) * HOUR - 2);
+                    return (
+                      <Box key={`bl-${bl.id}`} component="button" type="button" aria-label="Blocked off"
+                        onClick={(e: React.MouseEvent<HTMLElement>) => setOpen({ el: e.currentTarget, bl })}
+                        sx={{ position: "absolute", top: (span!.start / 60) * HOUR + 1, height, left: 1, right: 1, zIndex: 0, border: 0, cursor: "pointer",
+                          borderRadius: "4px", textAlign: "left", font: "inherit", color: "text.secondary", overflow: "hidden", px: 0.75, py: 0.1,
+                          backgroundColor: tokens.surface2,
+                          backgroundImage: `repeating-linear-gradient(45deg, ${tokens.divider} 0, ${tokens.divider} 1px, transparent 1px, transparent 7px)`,
+                          "&:hover": { backgroundColor: tokens.hover } }}>
+                        <Box sx={{ fontSize: phone ? 12 : 11, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          Blocked{bl.note ? ` · ${bl.note}` : ""}
+                        </Box>
+                      </Box>
+                    );
+                  })}
                   {placed.map((p) => {
                     // Never smaller than a comfortable tap, even for a 15-minute call.
                     const height = Math.max(phone ? 40 : 22, ((p.end - p.start) / 60) * HOUR - 2);
@@ -336,6 +415,18 @@ export default function CalendarPage() {
                             "&:hover": { bgcolor: tokens.hover } }}>
                           <Box sx={{ fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{g.title}</Box>
                           {roomy && <Box sx={{ color: "text.secondary", whiteSpace: "nowrap" }}>{clock(p.start)} – {clock(p.end)}</Box>}
+                        </Box>
+                      );
+                    }
+                    if (p.fb) {
+                      const b = p.fb;
+                      return (
+                        <Box key={p.key} component="button" type="button" onClick={(e: React.MouseEvent<HTMLElement>) => setOpen({ el: e.currentTarget, fb: b })}
+                          sx={{ ...box, zIndex: 2, bgcolor: FUNNEL_COLOR, color: "#fff", border: 0, boxShadow: "0 0 0 1px rgba(255,255,255,.35)", "&:hover": { filter: "brightness(1.08)" } }}>
+                          <Box sx={{ fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                            Pitch call: {b.name || "new agent"}
+                          </Box>
+                          {roomy && <Box sx={{ opacity: 0.9, whiteSpace: "nowrap" }}>{clock(p.start)} – {clock(p.end)}</Box>}
                         </Box>
                       );
                     }
@@ -413,6 +504,11 @@ export default function CalendarPage() {
           </Box>
         ))}
       </Sheet>
+
+      {showFunnel && (
+        <BlockOffSheet open={blockOff} phone={phone} anchor={anchor} submitting={blockMut.isPending}
+          onClose={() => setBlockOff(false)} onSubmit={submitBlock} />
+      )}
 
       <Drawer
         anchor="right"
@@ -589,5 +685,134 @@ function GoogleEventCard({ ev, phone, onClose }: { ev: GoogleEvent; phone: boole
         </Box>
       )}
     </Box>
+  );
+}
+
+/** A funnel discovery call (estatekit.co/pitch): when, who, and the Google Meet
+ *  link staff join the call on. Operators only. */
+function FunnelBookingCard({ b, phone, canSeeFullPhone, onOpen, onClose }: { b: FunnelBooking; phone: boolean; canSeeFullPhone: boolean; onOpen?: () => void; onClose: () => void }) {
+  const s = new Date(b.starts_at);
+  const e = new Date(b.ends_at);
+  return (
+    <Box>
+      <Box sx={{ display: "flex", gap: 1.5, alignItems: "flex-start" }}>
+        <Box sx={{ width: 14, height: 14, borderRadius: "4px", bgcolor: FUNNEL_COLOR, mt: "8px", flex: "none" }} />
+        <Box sx={{ minWidth: 0, flex: 1 }}>
+          <Typography sx={{ fontSize: 20, lineHeight: 1.3 }}>Pitch call: {b.name || "new agent"}</Typography>
+          <Typography sx={{ fontSize: 14.5, color: "text.secondary", mt: 0.25 }}>
+            {s.toLocaleDateString("en-ZA", { weekday: "long", day: "numeric", month: "long" })} · {clock(minutes(s))} – {clock(minutes(e))}
+          </Typography>
+        </Box>
+        <IconButton aria-label="Close" onClick={onClose} sx={{ width: 44, height: 44, mt: -1, mr: -1 }}><CloseIcon /></IconButton>
+      </Box>
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 1, mt: 1.5, ml: 3.25, fontSize: 15 }}>
+        {b.phone && (
+          <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+            <PhoneIcon sx={{ fontSize: 18, color: "text.secondary" }} />{canSeeFullPhone ? prettyPhone(b.phone) : maskPhone(b.phone)}
+          </Box>
+        )}
+        <Box sx={{ display: "flex", gap: 1, alignItems: "center", color: "text.secondary" }}>
+          <ScheduleIcon sx={{ fontSize: 18 }} />Booked from estatekit.co/pitch
+        </Box>
+      </Box>
+      {phone ? (
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 1, mt: 2.5 }}>
+          {b.meet_url && (
+            <Button component="a" href={b.meet_url} target="_blank" rel="noopener noreferrer" variant="contained" fullWidth startIcon={<VideocamIcon />} sx={{ minHeight: 52, fontSize: 16 }}>Join Meet</Button>
+          )}
+          {onOpen && <Button variant="outlined" fullWidth startIcon={<PersonIcon />} onClick={onOpen} sx={{ minHeight: 52, fontSize: 16 }}>Open lead</Button>}
+        </Box>
+      ) : (
+        <Box sx={{ display: "flex", gap: 1, mt: 2, justifyContent: "flex-end" }}>
+          {onOpen && <Button startIcon={<PersonIcon />} onClick={onOpen}>Open lead</Button>}
+          {b.meet_url && (
+            <Button component="a" href={b.meet_url} target="_blank" rel="noopener noreferrer" variant="contained" startIcon={<VideocamIcon />}>Join Meet</Button>
+          )}
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+/** A time staff blocked off — the funnel won't offer it. Shows when, any note,
+ *  and a button to lift it. Operators only. */
+function BlockedCard({ bl, phone, onRemove, removing, onClose }: { bl: FunnelBlock; phone: boolean; onRemove: () => void; removing: boolean; onClose: () => void }) {
+  const s = new Date(bl.start);
+  const e = new Date(bl.end);
+  const sameD = sameDay(s, e);
+  return (
+    <Box>
+      <Box sx={{ display: "flex", gap: 1.5, alignItems: "flex-start" }}>
+        <BlockIcon sx={{ fontSize: 20, color: "text.secondary", mt: "4px", flex: "none" }} />
+        <Box sx={{ minWidth: 0, flex: 1 }}>
+          <Typography sx={{ fontSize: 20, lineHeight: 1.3 }}>Blocked off</Typography>
+          <Typography sx={{ fontSize: 14.5, color: "text.secondary", mt: 0.25 }}>
+            {s.toLocaleDateString("en-ZA", { weekday: "long", day: "numeric", month: "long" })} · {clock(minutes(s))} – {sameD ? clock(minutes(e)) : `${e.toLocaleDateString("en-ZA", { day: "numeric", month: "short" })} ${clock(minutes(e))}`}
+          </Typography>
+          {bl.note && <Typography sx={{ fontSize: 14.5, mt: 0.5 }}>{bl.note}</Typography>}
+        </Box>
+        <IconButton aria-label="Close" onClick={onClose} sx={{ width: 44, height: 44, mt: -1, mr: -1 }}><CloseIcon /></IconButton>
+      </Box>
+      <Typography sx={{ fontSize: 14, color: "text.secondary", mt: 1.5, ml: 3.25 }}>
+        estatekit.co/pitch won't offer this time for a discovery call.
+      </Typography>
+      <Box sx={{ display: "flex", mt: phone ? 2.5 : 2, justifyContent: phone ? "stretch" : "flex-end" }}>
+        <Button onClick={onRemove} disabled={removing} color="error" variant={phone ? "outlined" : "text"} fullWidth={phone} startIcon={<DeleteOutlineIcon />} sx={phone ? { minHeight: 52, fontSize: 16 } : undefined}>
+          {removing ? "Removing…" : "Remove block"}
+        </Button>
+      </Box>
+    </Box>
+  );
+}
+
+/** Block off a time so the funnel stops offering it: a day, a start and end,
+ *  an optional note. Operators only. */
+function BlockOffSheet({ open, onClose, phone, anchor, onSubmit, submitting }: { open: boolean; onClose: () => void; phone: boolean; anchor: Date; onSubmit: (startsAt: string, endsAt: string, note: string) => void; submitting: boolean }) {
+  const [date, setDate] = useState(ymd(anchor));
+  const [start, setStart] = useState("09:00");
+  const [end, setEnd] = useState("10:00");
+  const [note, setNote] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  // Start fresh each time it opens, on the day they're looking at. Reset during
+  // render (not in an effect) off the open → closed edge, as React advises.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) { setDate(ymd(anchor)); setStart("09:00"); setEnd("10:00"); setNote(""); setErr(null); }
+  }
+  const submit = () => {
+    if (!date || !start || !end) { setErr("Pick a day, a start and an end time."); return; }
+    const s = new Date(`${date}T${start}:00`);
+    const e = new Date(`${date}T${end}:00`);
+    if (isNaN(s.getTime()) || isNaN(e.getTime())) { setErr("That day or time doesn't look right."); return; }
+    if (e.getTime() <= s.getTime()) { setErr("The end time must be after the start time."); return; }
+    setErr(null);
+    onSubmit(s.toISOString(), e.toISOString(), note.trim());
+  };
+  return (
+    <Sheet open={open} onClose={onClose} phone={phone}>
+      <Box sx={{ display: "flex", alignItems: "center", mb: 1.5 }}>
+        <Typography sx={{ fontSize: 18, fontWeight: 600, flex: 1 }}>Block off time</Typography>
+        <IconButton aria-label="Close" onClick={onClose} sx={{ width: 44, height: 44, mr: -1 }}><CloseIcon /></IconButton>
+      </Box>
+      <Typography sx={{ fontSize: 14, color: "text.secondary", mb: 2 }}>
+        While a time is blocked, estatekit.co/pitch won't offer it for a discovery call.
+      </Typography>
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        <TextField label="Day" type="date" value={date} onChange={(e) => setDate(e.target.value)} fullWidth slotProps={{ inputLabel: { shrink: true } }} />
+        <Box sx={{ display: "flex", gap: 2 }}>
+          <TextField label="From" type="time" value={start} onChange={(e) => setStart(e.target.value)} fullWidth slotProps={{ inputLabel: { shrink: true } }} />
+          <TextField label="To" type="time" value={end} onChange={(e) => setEnd(e.target.value)} fullWidth slotProps={{ inputLabel: { shrink: true } }} />
+        </Box>
+        <TextField label="Note (optional)" value={note} onChange={(e) => setNote(e.target.value.slice(0, 140))} fullWidth placeholder="e.g. Leave, out of office" />
+        {err && <Typography sx={{ fontSize: 14, color: "error.main" }}>{err}</Typography>}
+      </Box>
+      <Box sx={{ display: "flex", gap: 1, mt: 3, justifyContent: phone ? "stretch" : "flex-end" }}>
+        {!phone && <Button onClick={onClose} disabled={submitting}>Cancel</Button>}
+        <Button onClick={submit} disabled={submitting} variant="contained" fullWidth={phone} startIcon={<BlockIcon />} sx={phone ? { minHeight: 52, fontSize: 16 } : undefined}>
+          {submitting ? "Blocking…" : "Block off"}
+        </Button>
+      </Box>
+    </Sheet>
   );
 }
