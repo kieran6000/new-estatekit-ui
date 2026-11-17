@@ -30,10 +30,16 @@ const SCANNER_WINDOW_MS = 10_000;
  *  opened, for "Opened the last email" checks, and notes the first open of
  *  each email in the lead's history. */
 async function workflowEmailOpened(emailId: string) {
-  const { data: em } = await supabase.from("workflow_emails").select("id, lead_id, agent_id, subject, sent_at, opened_at").eq("id", emailId).maybeSingle();
-  if (!em || em.opened_at) return;
+  const { data: em } = await supabase.from("workflow_emails").select("id, lead_id, agent_id, subject, sent_at, opened_at, open_count").eq("id", emailId).maybeSingle();
+  if (!em) return;
   if (Date.now() - new Date(em.sent_at).getTime() < SCANNER_WINDOW_MS) return;
-  const { data: claimed } = await supabase.from("workflow_emails").update({ opened_at: new Date().toISOString() }).eq("id", em.id).is("opened_at", null).select("id").maybeSingle();
+  // Every open is counted on the email itself; only the first one goes in the
+  // lead's history, so re-reads don't fill it up.
+  const now = new Date().toISOString();
+  const { error: countErr } = await supabase.from("workflow_emails").update({ last_opened_at: now, open_count: (em.open_count ?? 0) + 1 }).eq("id", em.id);
+  if (countErr) console.error("workflow open count failed", countErr);
+  if (em.opened_at) return;
+  const { data: claimed } = await supabase.from("workflow_emails").update({ opened_at: now }).eq("id", em.id).is("opened_at", null).select("id").maybeSingle();
   if (!claimed || !em.lead_id) return;
   const { error } = await supabase.from("lead_events").insert({
     lead_id: em.lead_id,

@@ -1313,8 +1313,8 @@ function AutomatedMail() {
       {rows.length > 0 && (
         <Typography sx={{ fontSize: 11.5, color: tokens.ink3, px: 2, py: 2, lineHeight: 1.6 }}>
           The ticks work like WhatsApp: one tick means it left our side, two means it reached their inbox, and they
-          change colour once the person opens it. "Tapped a link" only counts links that run through our own tracking
-          link, so it's the confirmation email today — not the nurture ones.
+          change colour once the person opens it. "Tapped a link" means they tapped a link inside that email. Some
+          people read mail with pictures switched off, so a row can stay on Delivered even when they have read it.
         </Typography>
       )}
     </Box>

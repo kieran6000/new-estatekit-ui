@@ -252,6 +252,44 @@ export async function unsubscribeUrl(leadId: string): Promise<string> {
   return `${APP}/unsubscribe/${leadId}/${sig}`;
 }
 
+/** Sends every web link in an automated email through our own redirect, so we
+ *  can tell whether the lead tapped one:
+ *    leads.estatekit.co/mc/<mail_links id>  ->  email-click  ->  the real link
+ *  The real address is kept in the row, never in the tracking link, so an
+ *  edited link can't be made to point anywhere else. The unsubscribe link is
+ *  left alone - that one must always work, tracking or no tracking. */
+const A_HREF = /(<a\b[^>]*?\shref=")([^"]+)(")/gi;
+const unentity = (v: string) =>
+  v.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#0?39;/g, "'").replace(/&apos;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+
+async function trackLinks(supabase: SupabaseClient, emailId: string, html: string, leaveAlone: string[]): Promise<string> {
+  try {
+    const skip = new Set(leaveAlone.map((u) => unentity(u)));
+    const found: string[] = [];
+    html.replace(A_HREF, (m, _a, href: string) => {
+      const real = unentity(href);
+      if (/^https?:\/\//i.test(real) && !skip.has(real) && !real.startsWith(`${APP}/mc/`)) found.push(real.slice(0, 2000));
+      return m;
+    });
+    const unique = [...new Set(found)];
+    if (unique.length === 0 || unique.length > 60) return html;
+    const { data: links, error } = await supabase
+      .from("mail_links")
+      .insert(unique.map((url) => ({ workflow_email_id: emailId, url })))
+      .select("id, url");
+    if (error || !links) throw error ?? new Error("no link rows");
+    const map = new Map((links as { id: string; url: string }[]).map((l) => [l.url, l.id]));
+    return html.replace(A_HREF, (m, a: string, href: string, c: string) => {
+      const id = map.get(unentity(href).slice(0, 2000));
+      return id ? `${a}${APP}/mc/${id}${c}` : m;
+    });
+  } catch (e) {
+    // Knowing about a tap is a nice-to-have: never hold up the email for it.
+    console.error("email link tracking failed", e);
+    return html;
+  }
+}
+
 // ── The engine ───────────────────────────────────────────────────────────
 
 export async function runWorkflows(supabase: SupabaseClient, deps: EngineDeps): Promise<number> {
@@ -942,6 +980,8 @@ You're getting this because you asked ${esc(agentName)} about your property. <a 
 </p>
 <img src="${APP}/oe/${rec.id}" width="1" height="1" alt="" style="display:block;width:1px;height:1px;border:0">
 </div></body></html>`;
+    // Each link gets its own redirect, so the ticks can say "tapped a link".
+    const trackedHtml = await trackLinks(this.supabase, rec.id, html, [unsub]);
     const text = `${body}\n\n--\nYou're getting this because you asked ${agentName} about your property. Unsubscribe: ${unsub}`;
     const replyTo = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(this.profile?.email || "") ? this.profile!.email! : undefined;
 
@@ -953,7 +993,7 @@ You're getting this because you asked ${esc(agentName)} about your property. <a 
         to: [to],
         ...(replyTo ? { reply_to: replyTo } : {}),
         subject,
-        html,
+        html: trackedHtml,
         text,
         headers: { "List-Unsubscribe": `<${unsub}>` },
       }),

@@ -6,11 +6,16 @@
 // leads.confirmation_email_id (old confirmation emails) or
 // workflow_emails.resend_id (workflow emails) and written to the lead's history.
 //
+// A report that belongs to a workflow email is also written onto that one
+// email (delivered_at / bounced_at / complained_at), so the ticks in the Mail
+// tab describe that email and not everything the lead was ever sent.
+//
 // Handled: delivered, delivery_delayed, bounced, complained, opened (first
 // open only). "sent" is already logged by send-lead-confirmation; "clicked"
-// is counted by our own /w/<lead> redirect (Resend click tracking stays off
-// so the WhatsApp link isn't rewritten). Everything else is acknowledged and
-// ignored.
+// is counted by our own redirects (/w/<lead> for the WhatsApp button,
+// /mc/<link> for the links inside the email), so Resend click tracking stays
+// off and nothing it sends gets rewritten. Everything else is acknowledged
+// and ignored.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
@@ -72,13 +77,15 @@ Deno.serve(async (req) => {
   if (!type || !emailId) return ok({ ok: true, ignored: evt.type });
 
   let { data: lead } = await supabase.from("leads").select("id, agent_id, email").eq("confirmation_email_id", emailId).maybeSingle();
+  let wfEmailId: string | null = null;
   if (!lead) {
     // A workflow email (the confirmation email is one now). Opens come from
     // its own pixel (workflow_email_opened), so only delivery reports here.
-    const { data: wfEmail } = await supabase.from("workflow_emails").select("lead_id").eq("resend_id", emailId).maybeSingle();
+    const { data: wfEmail } = await supabase.from("workflow_emails").select("id, lead_id").eq("resend_id", emailId).maybeSingle();
     // Not one of ours (e.g. a test send from the Resend dashboard): acknowledge.
     if (!wfEmail?.lead_id) return ok({ ok: true, ignored: "no matching lead" });
     if (type === "email_opened") return ok({ ok: true, ignored: "workflow email opens come from its pixel" });
+    wfEmailId = wfEmail.id;
     ({ data: lead } = await supabase.from("leads").select("id, agent_id, email").eq("id", wfEmail.lead_id).maybeSingle());
     if (!lead) return ok({ ok: true, ignored: "lead deleted" });
   }
@@ -95,6 +102,23 @@ Deno.serve(async (req) => {
       : type === "email_complained"
         ? `${lead.email} marked it as spam`
         : `To ${lead.email}`;
+
+  // The tick on this one email. Nothing to stamp for a delay - the service
+  // is still trying, so the email stays on "Sent".
+  if (wfEmailId) {
+    const stamp =
+      type === "email_delivered"
+        ? { delivered_at: new Date().toISOString() }
+        : type === "email_bounced"
+          ? { bounced_at: new Date().toISOString(), bounce_reason: lead.email }
+          : type === "email_complained"
+            ? { complained_at: new Date().toISOString() }
+            : null;
+    if (stamp) {
+      const { error: stampErr } = await supabase.from("workflow_emails").update(stamp).eq("id", wfEmailId);
+      if (stampErr) console.error("workflow email report failed", stampErr);
+    }
+  }
 
   const { error } = await supabase.from("lead_events").insert({
     lead_id: lead.id,
