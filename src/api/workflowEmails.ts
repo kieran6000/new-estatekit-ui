@@ -77,14 +77,29 @@ interface Row {
   leads: { name: string | null; email: string | null } | null;
 }
 
-/** Every workflow email sent in the window, newest first, with the lead it
- *  went to and how that email itself did. */
+/** EstateKit's own accounts. Mail is the staff's inbox: our own funnel and
+ *  what we send, never a client's mail to their sellers — that belongs on the
+ *  client's own page, not in here. */
+let oursReady: Promise<string[]> | undefined;
+function ourAgentIds(): Promise<string[]> {
+  oursReady ??= (async () => {
+    const { data } = await supabase.from("agent_profiles").select("agent_id").eq("is_operator", true);
+    return (data ?? []).map((r: { agent_id: string }) => r.agent_id);
+  })();
+  return oursReady;
+}
+
+/** Every workflow email we sent in the window, newest first, with who it went
+ *  to and how that email itself did. */
 export async function listWorkflowEmails(days = 30): Promise<SentEmail[]> {
   const since = sinceIso(days);
   const perEmail = await hasPerEmail();
+  const ours = await ourAgentIds();
+  if (ours.length === 0) return [];
   const { data, error } = await supabase
     .from("workflow_emails")
     .select(perEmail ? PER_EMAIL_COLS : PLAIN_COLS)
+    .in("agent_id", ours)
     .gte("sent_at", since)
     .order("sent_at", { ascending: false })
     .limit(2000);

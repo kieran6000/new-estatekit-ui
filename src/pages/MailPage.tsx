@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  AppBar, Avatar, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Divider,
+  AppBar, Avatar, Box, Button, Checkbox, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Divider,
   IconButton, InputBase, MenuItem, Select, Tab, Tabs, Toolbar, Tooltip, Typography, useMediaQuery, useTheme,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
@@ -99,6 +99,10 @@ function AttachmentChip({ mailbox, messageId, att }: { mailbox: string; messageI
   const snack = useSnack();
   const open = async () => {
     if (busy) return;
+    if (att.size > 18 * 1024 * 1024) {
+      snack("That file is too big to open here. Open this email in Gmail to get it.");
+      return;
+    }
     setBusy(true);
     try {
       const { data } = await getAttachment(mailbox, messageId, att.attachmentId);
@@ -256,6 +260,8 @@ export default function MailPage() {
   const [q, setQ] = useState("");
   const [search, setSearch] = useState("");
   const [sigOpen, setSigOpen] = useState(false);
+  // The emails ticked off in the list, for doing several at once.
+  const [picks, setPicks] = useState<string[]>([]);
 
   const mailboxes = useQuery({ queryKey: ["mailboxes"], queryFn: listMailboxes, staleTime: 5 * 60_000 });
   const mbList = mailboxes.data ?? [];
@@ -385,6 +391,28 @@ export default function MailPage() {
     onError: () => snack("That didn't go through. Try again."),
   });
 
+  /** The same thing, done to everything ticked. One after the other rather
+   *  than all at once — Gmail is happier, and a handful of emails is quick. */
+  const bulk = useMutation({
+    mutationFn: async ({ ids, change }: { ids: string[]; change: { archive?: boolean; unarchive?: boolean; read?: boolean } }) => {
+      for (const id of ids) await modifyThread(currentMb!.email, id, change);
+      return ids.length;
+    },
+    onSuccess: (n, v) => {
+      qc.invalidateQueries({ queryKey: ["mailThreads"] });
+      qc.invalidateQueries({ queryKey: ["mailUnread"] });
+      if (selected && v.ids.includes(selected)) setSelected(null);
+      setPicks([]);
+      const many = n === 1 ? "1 email" : `${n} emails`;
+      snack(v.change.unarchive ? `${many} back in the inbox.` : v.change.archive ? `${many} archived. Find them under Archive or All mail.` : `${many} marked as read.`);
+    },
+    onError: () => snack("That didn't go through. Try again."),
+  });
+
+  // Ticks belong to the list you're looking at, so clear them when it changes.
+  useEffect(() => { setPicks([]); }, [currentMb?.email, folder, search]);
+  const pick = (id: string, on: boolean) => setPicks((p) => (on ? [...p, id] : p.filter((x) => x !== id)));
+
   const openThread = (id: string) => {
     setSelected(id);
     qc.invalidateQueries({ queryKey: ["mailThreads"] });
@@ -501,6 +529,39 @@ export default function MailPage() {
               borderRight: { md: `1px solid ${tokens.divider}` }, overflowY: "auto", bgcolor: "background.paper",
             }}
           >
+            {picks.length > 0 && (
+              <Box
+                sx={{
+                  position: "sticky", top: 0, zIndex: 2, display: "flex", alignItems: "center", flexWrap: "wrap", gap: 0.75,
+                  px: 1.5, py: 1, bgcolor: tokens.hover, borderBottom: `1px solid ${tokens.divider}`,
+                }}
+              >
+                <Typography sx={{ fontSize: 13.5, fontWeight: 600 }}>
+                  {picks.length} picked
+                </Typography>
+                <Box sx={{ flex: 1 }} />
+                <Button
+                  size="small" color="inherit" disabled={bulk.isPending}
+                  onClick={() => bulk.mutate({ ids: picks, change: { read: true } })}
+                  sx={{ textTransform: "none", fontSize: 13 }}
+                >
+                  Mark read
+                </Button>
+                <Button
+                  size="small" variant="contained" disableElevation disabled={bulk.isPending}
+                  startIcon={archived ? <MoveToInboxOutlinedIcon sx={{ fontSize: 17 }} /> : <ArchiveOutlinedIcon sx={{ fontSize: 17 }} />}
+                  onClick={() => bulk.mutate({ ids: picks, change: archived ? { unarchive: true } : { archive: true } })}
+                  sx={{ textTransform: "none", fontSize: 13 }}
+                >
+                  {archived ? "Back to inbox" : "Archive"}
+                </Button>
+                <Tooltip title="Untick them all">
+                  <IconButton size="small" aria-label="Untick them all" onClick={() => setPicks([])}>
+                    <CloseIcon sx={{ fontSize: 17 }} />
+                  </IconButton>
+                </Tooltip>
+              </Box>
+            )}
             {notConnected && (
               <Box sx={{ p: 3 }}>
                 <Typography sx={{ fontSize: 14, fontWeight: 600, mb: 0.5 }}>Inbox not connected yet</Typography>
@@ -523,9 +584,9 @@ export default function MailPage() {
             {folder === "sent"
               ? sentItems.map((it) => (it.kind === "auto"
                 ? <AutoRow key={it.id} e={it.e} active={it.id === selected} onClick={() => setSelected(it.id)} />
-                : <ThreadRow key={it.id} t={it.t} active={it.id === selected} onClick={() => openThread(it.id)} tick={tickByThread.get(it.id)} />))
+                : <ThreadRow key={it.id} t={it.t} active={it.id === selected} onClick={() => openThread(it.id)} tick={tickByThread.get(it.id)} picked={picks.includes(it.id)} onPick={pick} />))
               : threads.data?.threads.map((t) => (
-                <ThreadRow key={t.id} t={t} active={t.id === selected} onClick={() => openThread(t.id)} />
+                <ThreadRow key={t.id} t={t} active={t.id === selected} onClick={() => openThread(t.id)} picked={picks.includes(t.id)} onPick={pick} />
               ))}
           </Box>
 
@@ -603,18 +664,31 @@ export default function MailPage() {
   );
 }
 
-function ThreadRow({ t, active, onClick, tick }: { t: ThreadSummary; active: boolean; onClick: () => void; tick?: SentStatus }) {
+function ThreadRow({ t, active, onClick, tick, picked, onPick }: {
+  t: ThreadSummary; active: boolean; onClick: () => void; tick?: SentStatus;
+  /** Ticked off for doing several at once. Left out where that isn't offered. */
+  picked?: boolean; onPick?: (id: string, on: boolean) => void;
+}) {
   return (
     <Box
       onClick={onClick}
       role="button"
       sx={{
-        display: "flex", gap: 1.25, px: 2, py: 1.25, cursor: "pointer", minHeight: 64,
+        display: "flex", alignItems: "flex-start", gap: 1.25, pl: onPick ? 0.5 : 2, pr: 2, py: 1.25, cursor: "pointer", minHeight: 64,
         borderBottom: `1px solid ${tokens.divider}`,
-        bgcolor: active ? tokens.hover : "transparent",
+        bgcolor: picked ? tokens.hover : active ? tokens.hover : "transparent",
         "&:hover": { bgcolor: tokens.hover },
       }}
     >
+      {onPick && (
+        <Checkbox
+          checked={!!picked}
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => onPick(t.id, e.target.checked)}
+          sx={{ p: 1, mt: -0.25 }}
+          slotProps={{ input: { "aria-label": `Pick the email from ${t.who.name}` } }}
+        />
+      )}
       <SenderAvatar name={t.who.name} email={t.who.email} size={36} />
       <Box sx={{ minWidth: 0, flex: 1 }}>
         <Box sx={{ display: "flex", alignItems: "baseline", gap: 1 }}>

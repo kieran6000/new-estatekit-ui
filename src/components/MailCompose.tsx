@@ -107,14 +107,19 @@ function extractInlineImages(html: string): { html: string; inline: Inline[] } {
 // in a little scroll box — which is exactly what we don't want.
 const BODY_CSS = `
   html{overflow:hidden}
-  body{margin:0;padding:0;overflow-x:auto;overflow-y:hidden;-webkit-text-size-adjust:100%;
-       font-family:Roboto,Arial,Helvetica,sans-serif;font-size:14px;line-height:1.55;color:#202124;background:#fff;
+  body{margin:0;padding:16px 20px 18px;overflow-x:auto;overflow-y:hidden;-webkit-text-size-adjust:100%;
+       font-family:Roboto,Arial,Helvetica,sans-serif;font-size:14.5px;line-height:1.6;color:#202124;background:#fff;
        overflow-wrap:anywhere}
+  @media (max-width:600px){body{padding:14px 14px 16px;font-size:14px}}
+  /* The first and last thing in the mail shouldn't add to our own padding. */
+  body>*:first-child{margin-top:0}
+  body>*:last-child{margin-bottom:0}
   img{max-width:100%;height:auto}
   a{color:#1a5fb4}
-  blockquote{margin:0 0 0 .8ex;border-left:2px solid #d4d4d4;padding-left:1ex;color:#5f6368}
+  blockquote{margin:12px 0 12px 2px;border-left:2px solid #dadce0;padding:2px 0 2px 12px;color:#5f6368}
   pre{white-space:pre-wrap;word-break:break-word}
   table{max-width:100%}
+  hr{border:0;border-top:1px solid #e8eaed;margin:16px 0}
 `;
 
 export function Body({ html }: { html: string }) {
@@ -185,10 +190,14 @@ export function MailEditor({ initial, placeholder, onChange, minHeight = 190, au
   initial: string; placeholder: string; onChange: (html: string) => void; minHeight?: number; autoFocus?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const [empty, setEmpty] = useState(!plainText(initial) && !/<img/i.test(initial));
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState("");
+  // The picture being resized, and where to draw the outline and the dot.
+  const [picked, setPicked] = useState<HTMLImageElement | null>(null);
+  const [box, setBox] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
   const snack = useSnack();
 
   useEffect(() => {
@@ -213,6 +222,53 @@ export function MailEditor({ initial, placeholder, onChange, minHeight = 190, au
     setEmpty(!plainText(html) && !/<img/i.test(html));
     onChange(html);
   }, [onChange]);
+
+  /** Put the outline and the dot where the picture currently is. */
+  const place = useCallback((img: HTMLImageElement | null) => {
+    const wrap = wrapRef.current;
+    const ed = ref.current;
+    if (!img || !wrap || !ed || !ed.contains(img)) { setBox(null); return; }
+    const r = img.getBoundingClientRect();
+    const w = wrap.getBoundingClientRect();
+    const e = ed.getBoundingClientRect();
+    // Scrolled out of sight — no dot floating over the rest of the message.
+    if (r.bottom < e.top + 4 || r.top > e.bottom - 4) { setBox(null); return; }
+    setBox({ left: r.left - w.left, top: r.top - w.top, width: r.width, height: r.height });
+  }, []);
+
+  useEffect(() => {
+    const onResize = () => place(picked);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [picked, place]);
+
+  /** Drag the dot: the picture follows your finger, and the size is written
+   *  onto it the way email programs understand. */
+  const startResize = (e: React.PointerEvent) => {
+    const img = picked;
+    if (!img) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startW = img.getBoundingClientRect().width;
+    const widest = (ref.current?.clientWidth ?? 600) - 24;
+    const move = (ev: PointerEvent) => {
+      const w = Math.round(Math.max(40, Math.min(widest, startW + (ev.clientX - startX))));
+      img.style.width = `${w}px`;
+      img.style.height = "auto";
+      img.style.maxWidth = "100%";
+      img.setAttribute("width", String(w));
+      img.removeAttribute("height");
+      place(img);
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      emit();
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
 
   const cmd = (c: string, v?: string) => {
     ref.current?.focus();
@@ -264,11 +320,16 @@ export function MailEditor({ initial, placeholder, onChange, minHeight = 190, au
         <ToolBtn title="Add a link" onClick={() => setLinkOpen(true)}><InsertLinkIcon sx={{ fontSize: 19 }} /></ToolBtn>
         <ToolBtn title="Put a picture in the message" onClick={() => fileRef.current?.click()}><ImageOutlinedIcon sx={{ fontSize: 19 }} /></ToolBtn>
         <ToolBtn title="Remove formatting" onClick={() => cmd("removeFormat")}><FormatClearIcon sx={{ fontSize: 19 }} /></ToolBtn>
+        {picked && (
+          <Typography sx={{ fontSize: 12, color: tokens.ink3, ml: 1 }}>
+            Drag the blue dot to make the picture bigger or smaller
+          </Typography>
+        )}
         <Box sx={{ flex: 1 }} />
         <ToolBtn title="Undo" onClick={() => cmd("undo")}><UndoIcon sx={{ fontSize: 19 }} /></ToolBtn>
         <ToolBtn title="Redo" onClick={() => cmd("redo")}><RedoIcon sx={{ fontSize: 19 }} /></ToolBtn>
       </Box>
-      <Box sx={{ position: "relative" }}>
+      <Box ref={wrapRef} sx={{ position: "relative" }}>
         {empty && (
           <Typography sx={{ position: "absolute", top: 12, left: 12, fontSize: 14, color: tokens.ink3, pointerEvents: "none" }}>{placeholder}</Typography>
         )}
@@ -279,8 +340,14 @@ export function MailEditor({ initial, placeholder, onChange, minHeight = 190, au
           role="textbox"
           aria-multiline="true"
           aria-label={placeholder}
-          onInput={emit}
+          onInput={() => { emit(); place(picked); }}
           onBlur={emit}
+          onScroll={() => place(picked)}
+          onClick={(e) => {
+            const t = e.target as HTMLElement;
+            if (t.tagName === "IMG") { setPicked(t as HTMLImageElement); place(t as HTMLImageElement); }
+            else { setPicked(null); setBox(null); }
+          }}
           onPaste={(e) => {
             const files = Array.from(e.clipboardData?.files ?? []).filter((f) => /^image\//i.test(f.type));
             if (files.length) { e.preventDefault(); void addPictures(files); }
@@ -294,6 +361,21 @@ export function MailEditor({ initial, placeholder, onChange, minHeight = 190, au
             "& blockquote": { m: 0, ml: 1, pl: 1.5, borderLeft: `2px solid ${tokens.divider}`, color: tokens.ink3 },
           }}
         />
+        {box && (
+          <>
+            <Box sx={{ position: "absolute", left: box.left, top: box.top, width: box.width, height: box.height, border: `2px solid ${tokens.primary}`, borderRadius: 0.5, pointerEvents: "none" }} />
+            <Box
+              role="button"
+              aria-label="Resize the picture"
+              onPointerDown={startResize}
+              sx={{
+                position: "absolute", left: box.left + box.width - 10, top: box.top + box.height - 10,
+                width: 20, height: 20, borderRadius: "50%", bgcolor: tokens.primary, border: "2px solid #fff",
+                boxShadow: "0 1px 4px rgba(0,0,0,.35)", cursor: "nwse-resize", touchAction: "none",
+              }}
+            />
+          </>
+        )}
       </Box>
       <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => void addPictures(e.target.files)} />
       <Dialog open={linkOpen} onClose={() => setLinkOpen(false)} fullWidth maxWidth="xs">
@@ -327,6 +409,12 @@ function useDirectory(): Person[] {
  *  "vanzyl@" both find Franko van Zyl. */
 const matchPeople = createFilterOptions<string>({ trim: true });
 
+/** Tidy up one typed address. Trailing commas and stray spaces go, and a
+ *  doubled @ becomes one — no address can hold two, so it's always a slip of
+ *  the finger, and it is the difference between the mail going and a red
+ *  "that doesn't look like an email address". */
+const tidyAddr = (raw: string) => raw.trim().replace(/^[,;\s]+|[,;\s]+$/g, "").replace(/@{2,}/g, "@");
+
 const addrOf = (p: Person) => `${p.name.replace(/[",<>]/g, " ").replace(/\s+/g, " ").trim()} <${p.email}>`;
 export const emailIn = (token: string) => (token.match(/<([^>]+)>/)?.[1] ?? token).trim();
 
@@ -341,6 +429,19 @@ function RecipientField({ label, value, onChange, onTyping, people, autoFocus }:
   const byAddr = useMemo(() => new Map(people.map((p) => [addrOf(p), p])), [people]);
   const options = useMemo(() => people.map(addrOf), [people]);
   const bad = chips.filter((t) => !looksLikeEmail(emailIn(t)));
+  // What's being typed, held here so clicking away can finish it off.
+  const [text, setText] = useState("");
+
+  const type = (v: string) => { setText(v); onTyping?.(v); };
+
+  /** Turn whatever is in the box into addresses. Called when they press enter,
+   *  type a comma — and, the point of all this, when they simply click away. */
+  const commit = (raw: string) => {
+    const parts = raw.split(/[,;]+/).map(tidyAddr).filter(Boolean);
+    type("");
+    if (parts.length) onChange([...chips, ...parts].join(", "));
+  };
+
   return (
     <Autocomplete
       multiple
@@ -351,8 +452,13 @@ function RecipientField({ label, value, onChange, onTyping, people, autoFocus }:
       filterOptions={matchPeople}
       noOptionsText={people.length ? "Nobody by that name." : "No addresses saved yet — type the whole address."}
       value={chips}
-      onChange={(_e, v) => { onTyping?.(""); onChange((v as string[]).join(", ")); }}
-      onInputChange={(_e, v, reason) => onTyping?.(reason === "reset" ? "" : v)}
+      inputValue={text}
+      onChange={(_e, v) => { type(""); onChange((v as string[]).map(tidyAddr).filter(Boolean).join(", ")); }}
+      onInputChange={(_e, v, reason) => {
+        if (reason === "reset") type("");
+        else if (/[,;]/.test(v)) commit(v);
+        else type(v);
+      }}
       filterSelectedOptions
       renderOption={(props, option) => {
         const p = byAddr.get(option);
@@ -387,6 +493,7 @@ function RecipientField({ label, value, onChange, onTyping, people, autoFocus }:
           autoFocus={autoFocus}
           size="small"
           label={label}
+          onBlur={() => commit(text)}
           placeholder={chips.length ? "" : "Name or email address"}
           error={bad.length > 0}
           helperText={bad.length > 0 ? `${bad[0]} doesn't look like an email address.` : undefined}
@@ -404,7 +511,7 @@ function RecipientField({ label, value, onChange, onTyping, people, autoFocus }:
 /** Glue everything typed into the "To" box together: the chips already made,
  *  plus anything still sitting in the box unfinished. */
 function allRecipients(to: string, typed: string): string {
-  return [to.trim(), typed.trim()].filter(Boolean).join(", ");
+  return [...to.split(","), ...typed.split(/[,;]/)].map(tidyAddr).filter(Boolean).join(", ");
 }
 
 function ComposeWindow({ mailbox, draft, onClose, onSend }: {

@@ -105,6 +105,15 @@ async function gmail(mailbox: string, path: string, init?: RequestInit): Promise
   return body;
 }
 
+/** The most of one email we will hold in memory and send to the browser. Far
+ *  bigger than any real message; it's there so one freak email can't take the
+ *  inbox down for everyone. */
+const MAX_BODY = 1_500_000;
+
+/** The biggest attachment we'll hand over. Base64 is a third bigger again, and
+ *  past this the worker runs out of memory and the whole page stops. */
+const MAX_ATTACHMENT = 18 * 1024 * 1024;
+
 // ── Message parsing helpers ─────────────────────────────────────────────────
 type Header = { name: string; value: string };
 const header = (hs: Header[], name: string) => hs.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value ?? "";
@@ -380,11 +389,19 @@ Deno.serve(async (req) => {
       }
 
       case "thread": {
-        const t = await gmail(mailbox, `/threads/${payload.id}?format=full`);
-        const messages = (t.messages ?? []).map((m: any) => {
+        // One message at a time, each one cut down to what the screen needs
+        // before the next is fetched. Asking for the whole conversation in one
+        // piece is what used to run the worker out of memory on a long
+        // back-and-forth, and a worker that dies takes the whole page with it.
+        const t = await gmail(mailbox, `/threads/${payload.id}?format=minimal`);
+        const refs = (t.messages ?? []) as { id: string; labelIds?: string[] }[];
+        const messages: any[] = [];
+        for (const ref of refs) {
+          const m = await gmail(mailbox, `/messages/${ref.id}?format=full`);
           const hs: Header[] = m.payload?.headers ?? [];
           const { html, text } = extractBody(m.payload);
-          return {
+          const body = html || (text ? `<pre style="white-space:pre-wrap;font:inherit;margin:0">${text.replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]!))}</pre>` : "");
+          messages.push({
             id: m.id,
             messageId: header(hs, "Message-ID"),
             from: parseFrom(header(hs, "From")),
@@ -393,12 +410,14 @@ Deno.serve(async (req) => {
             subject: header(hs, "Subject"),
             date: header(hs, "Date"),
             unread: (m.labelIds ?? []).includes("UNREAD"),
-            html: html || (text ? `<pre style="white-space:pre-wrap;font:inherit;margin:0">${text.replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]!))}</pre>` : ""),
+            html: body.length > MAX_BODY
+              ? body.slice(0, MAX_BODY) + `<p style="color:#5f6368">This email is too long to show all of it here. Open it in Gmail to read the rest.</p>`
+              : body,
             attachments: listAttachments(m.payload),
-          };
-        });
+          });
+        }
         // Opening a thread marks it read.
-        if ((t.messages ?? []).some((m: any) => (m.labelIds ?? []).includes("UNREAD"))) {
+        if (refs.some((m) => (m.labelIds ?? []).includes("UNREAD"))) {
           await gmail(mailbox, `/threads/${payload.id}/modify`, { method: "POST", body: JSON.stringify({ removeLabelIds: ["UNREAD"] }) });
         }
         return json({ messages, subject: messages[0]?.subject ?? "(no subject)" });
@@ -462,6 +481,9 @@ Deno.serve(async (req) => {
 
       case "attachment": {
         const a = await gmail(mailbox, `/messages/${payload.messageId}/attachments/${payload.attachmentId}`);
+        if ((a.size ?? 0) > MAX_ATTACHMENT) {
+          return json({ error: "That file is too big to open here. Open this email in Gmail to get it." }, 400);
+        }
         return json({ data: a.data, size: a.size });
       }
 
@@ -505,7 +527,7 @@ Deno.serve(async (req) => {
         const byMsgId = new Map<string, string>();
         for (const r of pending) if (r.message_id) byMsgId.set(String(r.message_id).toLowerCase().trim(), r.id);
 
-        const hits = await gmail(mailbox, `/messages?maxResults=15&q=${encodeURIComponent("(from:mailer-daemon OR from:postmaster) newer_than:14d")}`);
+        const hits = await gmail(mailbox, `/messages?maxResults=8&q=${encodeURIComponent("(from:mailer-daemon OR from:postmaster) newer_than:14d")}`);
         let found = 0;
         for (const ref of (hits.messages ?? []) as { id: string }[]) {
           if (byMsgId.size === 0) break;
