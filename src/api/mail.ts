@@ -43,6 +43,13 @@ export interface Upload {
   data: string;
 }
 
+/** A picture inside the body. It travels with the mail (referenced as
+ *  `cid:<cid>` in the html) so it still shows for the reader years later —
+ *  a linked image would break as soon as its link expired. */
+export interface Inline extends Upload {
+  cid: string;
+}
+
 /** Raised when the Gmail service account hasn't been connected yet. */
 export class MailNotConnected extends Error {}
 
@@ -73,19 +80,21 @@ async function call<T>(body: Record<string, unknown>): Promise<T> {
   return data as T;
 }
 
-export function listThreads(mailbox: string, folder: Folder, q?: string, pageToken?: string) {
-  return call<{ threads: ThreadSummary[]; nextPageToken: string | null }>({ action: "list", mailbox, folder, q, pageToken });
+export function listThreads(mailbox: string, folder: Folder, q?: string, pageToken?: string, hideNewsletters = true) {
+  return call<{ threads: ThreadSummary[]; nextPageToken: string | null }>({ action: "list", mailbox, folder, q, pageToken, hideNewsletters });
 }
 
 export function getThread(mailbox: string, id: string) {
   return call<{ messages: MessageFull[]; subject: string }>({ action: "thread", mailbox, id });
 }
 
-export function sendMail(mailbox: string, msg: { to: string; cc?: string; subject: string; html: string; threadId?: string; inReplyTo?: string; references?: string; attachments?: Upload[] }) {
+export function sendMail(mailbox: string, msg: { to: string; cc?: string; subject: string; html: string; threadId?: string; inReplyTo?: string; references?: string; attachments?: Upload[]; inline?: Inline[] }) {
   return call<{ ok: true; id: string; threadId: string }>({ action: "send", mailbox, ...msg });
 }
 
-export function modifyThread(mailbox: string, id: string, change: { read?: boolean; archive?: boolean; trash?: boolean }) {
+/** Mark read/unread, archive, or move back to the inbox. There is deliberately
+ *  no delete: archiving keeps every mail findable in "All mail". */
+export function modifyThread(mailbox: string, id: string, change: { read?: boolean; archive?: boolean; unarchive?: boolean }) {
   return call<{ ok: true }>({ action: "modify", mailbox, id, ...change });
 }
 

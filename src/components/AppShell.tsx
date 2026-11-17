@@ -58,6 +58,7 @@ import DevTierToggle from "./DevTierToggle";
 import estateKitLogoWhite from "../assets/whitelogofull.png";
 import { useAdminAccess } from "../hooks/useAdminAccess";
 import { TodoBadge } from "./NoteFor";
+import { MailBadge, MailDraftPill } from "./MailBits";
 import estateKitLogoBlue from "../assets/blue logo full.png";
 import ErrorBoundary from "./ErrorBoundary";
 import { preloadPages } from "../lib/lazyPage";
@@ -295,7 +296,7 @@ export default function AppShell() {
                     <ListItem key={item.key} disablePadding>
                       <ListItemButton selected={active} onClick={() => navigate(item.to)} sx={navButtonSx(active)}>
                         <ListItemIcon sx={{ minWidth: 32, color: "inherit" }}>{active ? item.activeIcon : item.icon}</ListItemIcon>
-                        <ListItemText primary={item.key === "clients" || (item.key === "overview" && isOperator) ? <TodoBadge>{item.label}</TodoBadge> : item.label} slotProps={{ primary: { sx: { fontSize: 13.5, fontWeight: active ? 600 : 500 } } }} />
+                        <ListItemText primary={item.key === "mail" ? <MailBadge>{item.label}</MailBadge> : item.key === "clients" || (item.key === "overview" && isOperator) ? <TodoBadge>{item.label}</TodoBadge> : item.label} slotProps={{ primary: { sx: { fontSize: 13.5, fontWeight: active ? 600 : 500 } } }} />
                       </ListItemButton>
                     </ListItem>
                   );
@@ -353,6 +354,8 @@ export default function AppShell() {
         </ErrorBoundary>
       </Box>
 
+      {isOperator && section !== "mail" && <MailDraftPill />}
+
       {!isDesktop && (
         // Phone bottom bar: 64px tall plus the iPhone home-indicator gap, big
         // icons and labels, and a pill behind the current section's icon.
@@ -375,7 +378,7 @@ export default function AppShell() {
                 key={item.key}
                 label={item.label}
                 value={item.key}
-                icon={<Box className="ek-nav-pill">{item.key === "clients" || (item.key === "overview" && isOperator) ? <TodoBadge>{section === item.key ? item.activeIcon : item.icon}</TodoBadge> : section === item.key ? item.activeIcon : item.icon}</Box>}
+                icon={<Box className="ek-nav-pill">{item.key === "mail" ? <MailBadge>{section === item.key ? item.activeIcon : item.icon}</MailBadge> : item.key === "clients" || (item.key === "overview" && isOperator) ? <TodoBadge>{section === item.key ? item.activeIcon : item.icon}</TodoBadge> : section === item.key ? item.activeIcon : item.icon}</Box>}
                 sx={{
                   minWidth: 0, px: 0.5, py: 0.75, gap: 0.25,
                   "& .ek-nav-pill": { width: 56, height: 30, borderRadius: "15px", display: "grid", placeItems: "center", transition: "background-color .15s" },

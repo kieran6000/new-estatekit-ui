@@ -152,15 +152,39 @@ function listAttachments(payload: any): { filename: string; mimeType: string; si
   return out;
 }
 
+/** Leaves out the mail Gmail itself filed as promotions/social/forums, so the
+ *  team inbox shows business and sales mail only. The "All mail" tab, and the
+ *  Newsletters toggle, still show everything. */
+const NO_BULK = " -category:promotions -category:social -category:forums";
+
 // ── MIME builder for sending ────────────────────────────────────────────────
 type Upload = { filename: string; mimeType: string; data: string }; // data = base64
+/** An image embedded in the body, referenced by <img src="cid:…">. Sending it
+ *  with the mail (instead of linking it) means it still shows years later. */
+type Inline = Upload & { cid: string };
+
+const normB64 = (d: string) => (d.replace(/-/g, "+").replace(/_/g, "/").replace(/\s+/g, "").match(/.{1,76}/g) ?? []).join("\r\n");
+const safe = (s: string) => s.replace(/[\r\n"]/g, "");
+
+function filePart(boundary: string, a: Upload, disposition: "attachment" | "inline", cid?: string): string[] {
+  const name = safe(a.filename || "file");
+  return [
+    `--${boundary}`,
+    `Content-Type: ${safe(a.mimeType || "application/octet-stream")}; name="${name}"`,
+    "Content-Transfer-Encoding: base64",
+    ...(cid ? [`Content-ID: <${safe(cid)}>`, `X-Attachment-Id: ${safe(cid)}`] : []),
+    `Content-Disposition: ${disposition}; filename="${name}"`,
+    "",
+    normB64(a.data),
+  ];
+}
 
 function buildMime(o: {
   fromName: string; from: string; to: string; cc?: string; subject: string; html: string;
-  inReplyTo?: string; references?: string; attachments?: Upload[];
+  inReplyTo?: string; references?: string; attachments?: Upload[]; inline?: Inline[];
 }): string {
   const head = [
-    `From: ${o.fromName ? `${o.fromName.replace(/[\r\n"]/g, "")} <${o.from}>` : o.from}`,
+    `From: ${o.fromName ? `${safe(o.fromName)} <${o.from}>` : o.from}`,
     `To: ${o.to}`,
     ...(o.cc ? [`Cc: ${o.cc}`] : []),
     `Subject: ${encodeHeader(o.subject)}`,
@@ -169,36 +193,37 @@ function buildMime(o: {
     "MIME-Version: 1.0",
   ];
   const atts = (o.attachments ?? []).filter((a) => a.data);
+  const inline = (o.inline ?? []).filter((a) => a.data && a.cid);
 
-  // No attachments → simple single-part html message.
-  if (atts.length === 0) {
-    return [...head, 'Content-Type: text/html; charset="UTF-8"', "Content-Transfer-Encoding: base64", "", b64Chunks(o.html)].join("\r\n");
+  const htmlPart = ['Content-Type: text/html; charset="UTF-8"', "Content-Transfer-Encoding: base64", "", b64Chunks(o.html)];
+
+  // Plain message.
+  if (atts.length === 0 && inline.length === 0) return [...head, ...htmlPart].join("\r\n");
+
+  // The body, with its embedded images wrapped around it when there are any.
+  let body: string[];
+  let bodyHeader: string[];
+  if (inline.length > 0) {
+    const rel = `ekrel_${crypto.randomUUID().replace(/-/g, "")}`;
+    const relParts = [`--${rel}`, ...htmlPart];
+    for (const img of inline) relParts.push(...filePart(rel, img, "inline", img.cid));
+    relParts.push(`--${rel}--`, "");
+    bodyHeader = [`Content-Type: multipart/related; boundary="${rel}"`];
+    body = ["", ...relParts];
+  } else {
+    bodyHeader = htmlPart.slice(0, 2);
+    body = ["", b64Chunks(o.html)];
   }
 
-  // With attachments → multipart/mixed: the html body, then each file.
-  const boundary = `ek_${crypto.randomUUID().replace(/-/g, "")}`;
-  const parts: string[] = [];
-  parts.push(
-    `--${boundary}`,
-    'Content-Type: text/html; charset="UTF-8"',
-    "Content-Transfer-Encoding: base64",
-    "",
-    b64Chunks(o.html),
-  );
-  for (const a of atts) {
-    const name = (a.filename || "attachment").replace(/[\r\n"]/g, "");
-    parts.push(
-      `--${boundary}`,
-      `Content-Type: ${(a.mimeType || "application/octet-stream").replace(/[\r\n]/g, "")}; name="${name}"`,
-      "Content-Transfer-Encoding: base64",
-      `Content-Disposition: attachment; filename="${name}"`,
-      "",
-      // Gmail attachment data is already base64 (possibly url-safe); normalise + rechunk.
-      (a.data.replace(/-/g, "+").replace(/_/g, "/").replace(/\s+/g, "").match(/.{1,76}/g) ?? []).join("\r\n"),
-    );
-  }
-  parts.push(`--${boundary}--`, "");
-  return [...head, `Content-Type: multipart/mixed; boundary="${boundary}"`, "", ...parts].join("\r\n");
+  // No files to attach → the body alone is the whole message.
+  if (atts.length === 0) return [...head, ...bodyHeader, ...body].join("\r\n");
+
+  // Otherwise multipart/mixed: [ body (with its images) ][ each file ].
+  const mix = `ekmix_${crypto.randomUUID().replace(/-/g, "")}`;
+  const parts = [`--${mix}`, ...bodyHeader, ...body];
+  for (const a of atts) parts.push(...filePart(mix, a, "attachment"));
+  parts.push(`--${mix}--`, "");
+  return [...head, `Content-Type: multipart/mixed; boundary="${mix}"`, "", ...parts].join("\r\n");
 }
 function b64Chunks(s: string): string {
   const b = btoa(unescape(encodeURIComponent(s)));
@@ -252,7 +277,7 @@ Deno.serve(async (req) => {
               ? "-in:inbox -in:sent -in:trash -in:spam -in:drafts in:anywhere"
               : folder === "all"
                 ? "in:all -in:trash -in:spam"
-                : "in:inbox";
+                : `in:inbox${payload.hideNewsletters === false ? "" : NO_BULK}`;
         const listed = await gmail(mailbox, `/threads?maxResults=25&q=${encodeURIComponent(q)}${payload.pageToken ? `&pageToken=${payload.pageToken}` : ""}`);
         const ids: string[] = (listed.threads ?? []).map((t: any) => t.id);
         const threads = await Promise.all(
@@ -314,6 +339,7 @@ Deno.serve(async (req) => {
           inReplyTo: payload.inReplyTo || undefined,
           references: payload.references || payload.inReplyTo || undefined,
           attachments: Array.isArray(payload.attachments) ? payload.attachments : undefined,
+          inline: Array.isArray(payload.inline) ? payload.inline : undefined,
         });
         const sent = await gmail(mailbox, `/messages/send`, {
           method: "POST",
@@ -323,16 +349,14 @@ Deno.serve(async (req) => {
       }
 
       case "modify": {
-        // mark read/unread, archive (remove INBOX), or trash a whole thread.
-        if (payload.trash) {
-          await gmail(mailbox, `/threads/${payload.id}/trash`, { method: "POST" });
-          return json({ ok: true });
-        }
+        // mark read/unread, archive (remove INBOX) or put a thread back in the
+        // inbox. Nothing here deletes mail: archiving is the only way out.
         const add: string[] = [];
         const remove: string[] = [];
         if (payload.read === true) remove.push("UNREAD");
         if (payload.read === false) add.push("UNREAD");
         if (payload.archive) remove.push("INBOX");
+        if (payload.unarchive) add.push("INBOX");
         await gmail(mailbox, `/threads/${payload.id}/modify`, { method: "POST", body: JSON.stringify({ addLabelIds: add, removeLabelIds: remove }) });
         return json({ ok: true });
       }
@@ -345,7 +369,7 @@ Deno.serve(async (req) => {
       case "unread": {
         // Just the count of unread inbox threads, for the nav badge. Cheap:
         // one list call, read resultSizeEstimate.
-        const r = await gmail(mailbox, `/threads?maxResults=25&q=${encodeURIComponent("in:inbox is:unread")}`);
+        const r = await gmail(mailbox, `/threads?maxResults=25&q=${encodeURIComponent(`in:inbox is:unread${payload.hideNewsletters === false ? "" : NO_BULK}`)}`);
         return json({ count: (r.threads ?? []).length, more: !!r.nextPageToken });
       }
 

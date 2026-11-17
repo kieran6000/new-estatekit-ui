@@ -14,6 +14,8 @@ export interface SentEmail {
   agent_id: string | null;
   lead_name: string | null;
   lead_email: string | null;
+  delivered: boolean;
+  clicked: boolean;
   bounced: boolean;
 }
 
@@ -23,6 +25,7 @@ export interface EmailMetrics {
   openRate: number; // 0..1
   bounced: number;
   complained: number;
+  clicked: number;
 }
 
 /** Thrown when the workflows tables aren't there yet. */
@@ -63,7 +66,7 @@ export async function listWorkflowEmails(days = 30): Promise<SentEmail[]> {
   // Which of these leads had a bounce/complaint in the window, so a row can be
   // flagged. (Reports are keyed to the lead, not the single email, so this is
   // "this lead's email bounced", good enough for the monitor.)
-  const bouncedLeads = await leadsWithBounce(since);
+  const marks = await deliveryMarks(since);
 
   return rows.map((r) => ({
     id: r.id,
@@ -74,19 +77,30 @@ export async function listWorkflowEmails(days = 30): Promise<SentEmail[]> {
     agent_id: r.agent_id,
     lead_name: r.leads?.name ?? null,
     lead_email: r.leads?.email ?? null,
-    bounced: bouncedLeads.has(r.lead_id),
+    delivered: marks.delivered.has(r.lead_id),
+    clicked: marks.clicked.has(r.lead_id),
+    bounced: marks.bounced.has(r.lead_id),
   }));
 }
 
-async function leadsWithBounce(sinceIso: string): Promise<Set<string>> {
+/** Which leads were reported delivered / clicked / bounced in the window, so
+ *  each row can show the right ticks. (Reports are keyed to the lead, not the
+ *  single email, so this reads as "this lead's email was delivered".) */
+async function deliveryMarks(sinceIso: string): Promise<{ delivered: Set<string>; clicked: Set<string>; bounced: Set<string> }> {
+  const out = { delivered: new Set<string>(), clicked: new Set<string>(), bounced: new Set<string>() };
   const { data, error } = await supabase
     .from("lead_events")
-    .select("lead_id")
-    .in("event_type", ["email_bounced", "email_complained"])
+    .select("lead_id, event_type")
+    .in("event_type", ["email_delivered", "email_clicked", "email_bounced", "email_complained"])
     .gte("created_at", sinceIso)
-    .limit(5000);
-  if (error) return new Set();
-  return new Set((data ?? []).map((r) => (r as { lead_id: string }).lead_id));
+    .limit(8000);
+  if (error) return out;
+  for (const r of (data ?? []) as Array<{ lead_id: string; event_type: string }>) {
+    if (r.event_type === "email_delivered") out.delivered.add(r.lead_id);
+    else if (r.event_type === "email_clicked") out.clicked.add(r.lead_id);
+    else out.bounced.add(r.lead_id);
+  }
+  return out;
 }
 
 /** Top-of-page totals for the window. */
@@ -108,8 +122,13 @@ export async function emailMetrics(days = 30): Promise<EmailMetrics> {
     .select("id", { count: "exact", head: true })
     .eq("event_type", "email_complained")
     .gte("created_at", since);
+  const clickedQ = supabase
+    .from("lead_events")
+    .select("id", { count: "exact", head: true })
+    .eq("event_type", "email_clicked")
+    .gte("created_at", since);
 
-  const [sentR, openedR, bouncedR, complainedR] = await Promise.all([sentQ, openedQ, bouncedQ, complainedQ]);
+  const [sentR, openedR, bouncedR, complainedR, clickedR] = await Promise.all([sentQ, openedQ, bouncedQ, complainedQ, clickedQ]);
   if (sentR.error && notSetUp(sentR.error)) throw new WorkflowEmailsNotSetUp(sentR.error.message);
 
   const sent = sentR.count ?? 0;
@@ -120,5 +139,6 @@ export async function emailMetrics(days = 30): Promise<EmailMetrics> {
     openRate: sent > 0 ? opened / sent : 0,
     bounced: bouncedR.count ?? 0,
     complained: complainedR.count ?? 0,
+    clicked: clickedR.count ?? 0,
   };
 }
