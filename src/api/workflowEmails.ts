@@ -132,6 +132,18 @@ export async function listWorkflowEmails(days = 30): Promise<SentEmail[]> {
   });
 }
 
+/** The wording of one automated email, kept with its record since 17 Nov
+ *  2026. Older ones were never kept, so this comes back empty for them and the
+ *  screen says so instead of showing a blank page. */
+export async function workflowEmailBody(id: string): Promise<string | null> {
+  const { data, error } = await supabase.from("workflow_emails").select("body_html").eq("id", id).maybeSingle();
+  if (error) {
+    if (notSetUp(error)) return null;
+    throw new Error(error.message);
+  }
+  return (data as { body_html: string | null } | null)?.body_html ?? null;
+}
+
 /** The old reading: which leads were reported delivered / clicked / bounced in
  *  the window. Kept for emails sent before each one carried its own report. */
 async function deliveryMarks(sinceIso: string): Promise<{ delivered: Set<string>; clicked: Set<string>; bounced: Set<string> }> {

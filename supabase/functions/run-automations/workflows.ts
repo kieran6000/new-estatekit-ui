@@ -972,16 +972,24 @@ ${magnet.text ? `<p style="margin:0 0 8px">${esc(magnet.text)}</p>` : ""}
     const last = paras.length - 1;
     const isSignOff = (p: string, i: number) => !!photo && i === last && p.split("\n")[0].trim() === agentName;
     const body = paras.map((p) => p.split(MAGNET_MARK).join(magnetText)).join("\n\n");
-    const html = `<!doctype html><html><body style="margin:0;padding:16px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.55;color:#222222">
-<div style="max-width:560px">
+    // The email itself, built once. The counting picture is added only to the
+    // copy that goes out: the copy we keep must never fire when somebody in
+    // the office looks at it, or it would read as the lead having opened it.
+    const inner = `<div style="max-width:560px">
 ${paras.map((p, i) => (isSignOff(p, i) ? signOff(p) : htmlPara(p))).join("\n")}
 <p style="margin:28px 0 0;font-size:11px;color:#999999;line-height:1.5">
 You're getting this because you asked ${esc(agentName)} about your property. <a href="${unsub}" style="color:#999999">Unsubscribe</a>
-</p>
-<img src="${APP}/oe/${rec.id}" width="1" height="1" alt="" style="display:block;width:1px;height:1px;border:0">
+</p>`;
+    const page = (middle: string) => `<!doctype html><html><body style="margin:0;padding:16px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.55;color:#222222">
+${middle}
 </div></body></html>`;
+    const html = page(`${inner}
+<img src="${APP}/oe/${rec.id}" width="1" height="1" alt="" style="display:block;width:1px;height:1px;border:0">`);
     // Each link gets its own redirect, so the ticks can say "tapped a link".
     const trackedHtml = await trackLinks(this.supabase, rec.id, html, [unsub]);
+    // Kept with the record so the Mail tab can show this email like any other.
+    const { error: bodyErr } = await this.supabase.from("workflow_emails").update({ body_html: page(inner) }).eq("id", rec.id);
+    if (bodyErr) console.error("keeping the email wording failed", bodyErr.message);
     const text = `${body}\n\n--\nYou're getting this because you asked ${agentName} about your property. Unsubscribe: ${unsub}`;
     const replyTo = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(this.profile?.email || "") ? this.profile!.email! : undefined;
 

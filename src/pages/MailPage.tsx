@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { createContext, lazy, Suspense, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  AppBar, Avatar, Box, Button, Checkbox, CircularProgress, Divider,
+  AppBar, Avatar, Box, Button, Checkbox, CircularProgress, Divider, Drawer,
   IconButton, InputBase, MenuItem, Select, Tab, Tabs, Toolbar, Tooltip, Typography, useMediaQuery, useTheme,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
@@ -21,6 +21,7 @@ import DoneAllIcon from "@mui/icons-material/DoneAll";
 import ReportProblemOutlinedIcon from "@mui/icons-material/ReportProblemOutlined";
 import TouchAppOutlinedIcon from "@mui/icons-material/TouchAppOutlined";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import PersonOutlineIcon from "@mui/icons-material/PersonOutlined";
 import { tokens } from "../theme";
 import { useSnack } from "../hooks/useSnack";
 import { getDraft } from "../lib/mailDraft";
@@ -29,7 +30,12 @@ import {
   attIcon, b64ToBytes, Body, emailIn, esc, fmtSize, plainText, SignatureDialog, LAST_MB,
 } from "../components/MailCompose";
 import { useMailUnreadByBox } from "../components/MailBits";
-import { listWorkflowEmails, type SentEmail } from "../api/workflowEmails";
+import { listWorkflowEmails, workflowEmailBody, type SentEmail } from "../api/workflowEmails";
+import { leadIdByEmail } from "../api/leads";
+
+/** Their card, side by side with the email. Loaded only when somebody asks
+ *  for it, so the inbox itself stays quick to open. */
+const LeadDetailPage = lazy(() => import("./LeadDetailPage"));
 import {
   getAttachment, getThread, listMailboxes, listThreads, MailNotConnected, modifyThread, runBounceCheck,
   sentStatus,
@@ -457,8 +463,21 @@ export default function MailPage() {
   const msgs = thread.data?.messages ?? [];
   const last = msgs[msgs.length - 1];
   const autoOpen = selected ? autoById.get(selected) : undefined;
+  /** Whoever is at the other end of the open conversation — them, not us. */
+  const theirEmail = useMemo(() => {
+    const mine = currentMb?.email.toLowerCase();
+    for (const m of msgs) {
+      if (m.from.email && m.from.email.toLowerCase() !== mine) return m.from.email;
+    }
+    const to = msgs[0] ? emailIn(msgs[0].to) : "";
+    return to && to.toLowerCase() !== mine ? to : "";
+  }, [msgs, currentMb?.email]);
+
+  /** Whose card is open beside the email, if any. */
+  const [leadPanel, setLeadPanel] = useState<string | null>(null);
 
   return (
+    <OpenLead.Provider value={setLeadPanel}>
     <Box sx={{ height: "100dvh", display: "flex", flexDirection: "column", bgcolor: "background.default" }}>
       <AppBar position="sticky">
         <Toolbar sx={{ height: 56, minHeight: "56px !important", gap: 1 }}>
@@ -632,6 +651,7 @@ export default function MailPage() {
                     {msgs.length > 1 && (
                       <Typography sx={{ fontSize: 12, color: tokens.ink3, mt: 0.25 }}>{msgs.length} emails in this conversation</Typography>
                     )}
+                    <Box sx={{ mt: 1 }}><LeadButton email={theirEmail} /></Box>
                   </Box>
                   <Tooltip title={junk ? "Not junk — put it in the inbox" : archived ? "Put it back in the inbox" : "Archive — takes it out of the inbox, keeps it in All mail"}>
                     <IconButton
@@ -682,7 +702,56 @@ export default function MailPage() {
       {sigOpen && currentMb && (
         <SignatureDialog mailbox={currentMb} onClose={() => setSigOpen(false)} onSaved={() => qc.invalidateQueries({ queryKey: ["mailboxes"] })} />
       )}
+
+      {/* Their card, sliding in beside the email. The same card as on the
+          Leads page, so a stage change or a note made here is the real thing. */}
+      <Drawer
+        anchor="right"
+        open={!!leadPanel}
+        onClose={() => setLeadPanel(null)}
+        slotProps={{ paper: { sx: { width: { xs: "100%", sm: 480 }, bgcolor: "background.default" } } }}
+      >
+        {leadPanel && (
+          <Suspense fallback={<Box sx={{ display: "flex", justifyContent: "center", py: 6 }}><CircularProgress size={24} /></Box>}>
+            <LeadDetailPage key={leadPanel} leadId={leadPanel} onClose={() => setLeadPanel(null)} />
+          </Suspense>
+        )}
+      </Drawer>
     </Box>
+    </OpenLead.Provider>
+  );
+}
+
+
+// ── Their card, beside the email ────────────────────────────────────────────
+// Everything already known about the person on the other end — what they
+// asked for, where they came from, when to ring them — without leaving the
+// email you're busy with.
+const OpenLead = createContext<(leadId: string) => void>(() => {});
+
+/** The button that opens it. It only turns up when the address belongs to
+ *  somebody in the system, so it never leads to an empty card. */
+function LeadButton({ email, leadId }: { email?: string | null; leadId?: string | null }) {
+  const open = useContext(OpenLead);
+  const found = useQuery({
+    queryKey: ["leadIdByEmail", email],
+    queryFn: () => leadIdByEmail(email!),
+    enabled: !leadId && !!email,
+    staleTime: 10 * 60_000,
+  });
+  const id = leadId || found.data;
+  if (!id) return null;
+  return (
+    <Button
+      size="small"
+      variant="outlined"
+      color="inherit"
+      startIcon={<PersonOutlineIcon sx={{ fontSize: 18 }} />}
+      onClick={() => open(id)}
+      sx={{ textTransform: "none", fontSize: 13, flexShrink: 0, borderColor: tokens.divider }}
+    >
+      Open their card
+    </Button>
   );
 }
 
@@ -850,10 +919,15 @@ function AutoRow({ e, active, onClick }: { e: SentEmail; active: boolean; onClic
   );
 }
 
-/** Opening one of those: who it went to and how it landed. The workflow keeps
- *  the record, not the words, so there's no body to show — we say so plainly
- *  instead of putting up an empty page. */
+/** Opening one of those: who it went to, how it landed, and the email itself.
+ *  Emails sent before 17 Nov 2026 were never kept word for word, so for those
+ *  we say so plainly instead of putting up an empty page. */
 function AutoDetail({ e }: { e: SentEmail }) {
+  const body = useQuery({
+    queryKey: ["workflowEmailBody", e.id],
+    queryFn: () => workflowEmailBody(e.id),
+    staleTime: Infinity,
+  });
   return (
     <Box sx={{ maxWidth: 860, mx: "auto", p: { xs: 1.25, md: 3 }, pb: { xs: 12, md: 10 } }}>
       <Typography sx={{ fontSize: { xs: 17, md: 20 }, fontWeight: 500, lineHeight: 1.3 }}>{e.subject || "(no subject)"}</Typography>
@@ -868,11 +942,18 @@ function AutoDetail({ e }: { e: SentEmail }) {
           <Typography sx={{ fontSize: 11.5, color: tokens.ink3 }}>{timeFull(e.sent_at)}</Typography>
         </Box>
       </Box>
-      <Box sx={{ mt: 2.5, p: 2, borderRadius: 1.5, bgcolor: tokens.surface2, border: `1px solid ${tokens.divider}` }}>
-        <Typography sx={{ fontSize: 13.5, color: tokens.ink2, lineHeight: 1.6 }}>
-          This one went out on its own, from the follow-up emails set up for this lead. The ticks above show how it
-          landed. The wording lives with the workflow that sent it, so it isn't kept here.
-        </Typography>
+      <Box sx={{ display: "flex", gap: 1, mt: 1.5 }}>
+        <LeadButton leadId={e.lead_id} />
+      </Box>
+      <Box sx={{ mt: 2, p: { xs: 1.25, md: 2 }, borderRadius: 1.5, bgcolor: "background.paper", border: `1px solid ${tokens.divider}` }}>
+        {body.isLoading && <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}><CircularProgress size={22} /></Box>}
+        {body.data && <Body html={body.data} />}
+        {!body.isLoading && !body.data && (
+          <Typography sx={{ fontSize: 13.5, color: tokens.ink2, lineHeight: 1.6 }}>
+            This one went out on its own, from the follow-up emails set up for this lead, before we started keeping a
+            copy of the wording. The ticks above show how it landed. Anything sent from now on is kept here in full.
+          </Typography>
+        )}
       </Box>
     </Box>
   );

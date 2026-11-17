@@ -23,6 +23,22 @@ export async function getLeadById(id: string): Promise<LeadRow | null> {
   return (data as LeadRow) ?? null;
 }
 
+/** The lead at an email address, newest first if the same person wrote in
+ *  twice. Used by the inbox to put a face and a history to whoever is on the
+ *  other end of a thread. */
+export async function leadIdByEmail(email: string): Promise<string | null> {
+  const e = email.trim();
+  if (!e || !e.includes("@")) return null;
+  const { data, error } = await supabase
+    .from("leads")
+    .select("id")
+    .ilike("email", e)
+    .order("created_at", { ascending: false })
+    .limit(1);
+  if (error) return null;
+  return (data?.[0] as { id: string } | undefined)?.id ?? null;
+}
+
 /** Archived leads are kept but stay out of the working list. */
 export async function listArchivedLeads(): Promise<LeadRow[]> {
   const agentId = await getActiveAgentId();
