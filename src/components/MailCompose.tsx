@@ -825,7 +825,7 @@ function MinimizedBar({ label, onOpen, onBin }: { label: string; onOpen: () => v
   return (
     <Box
       sx={{
-        position: "fixed", right: { xs: 12, md: 20 }, bottom: { xs: 76, md: 20 }, zIndex: 1250,
+        position: "fixed", right: { xs: 12, md: 20 }, bottom: { xs: "calc(var(--ek-nav-h) + 12px)", md: 20 }, zIndex: 1250,
         display: "flex", alignItems: "center", gap: 0.5, width: { xs: "calc(100vw - 24px)", sm: 320 },
         bgcolor: tokens.raised, border: `1px solid ${tokens.divider}`, borderBottom: "none",
         borderRadius: "10px 10px 0 0", boxShadow: 6, pl: 1.5, pr: 0.5, py: 0.75,

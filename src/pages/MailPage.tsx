@@ -713,7 +713,7 @@ export default function MailPage() {
         variant="contained" disableElevation startIcon={<EditOutlinedIcon />}
         onClick={() => currentMb && openCompose({ to: "", cc: "", subject: "", body: "" }, currentMb.email)}
         disabled={!currentMb}
-        sx={{ position: "fixed", right: { xs: 14, md: 24 }, bottom: { xs: 18, md: 24 }, borderRadius: 7, px: 2.5, py: 1.25, boxShadow: 3, zIndex: 1200 }}
+        sx={{ position: "fixed", right: { xs: 14, md: 24 }, bottom: { xs: "calc(var(--ek-nav-h) + 14px)", md: 24 }, borderRadius: 7, px: 2.5, py: 1.25, boxShadow: 3, zIndex: 1200 }}
       >
         {desktop ? "Write an email" : "Write"}
       </Button>
