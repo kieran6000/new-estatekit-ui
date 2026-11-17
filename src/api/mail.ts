@@ -107,3 +107,40 @@ export function getAttachment(mailbox: string, messageId: string, attachmentId: 
 export function unreadCount(mailbox: string) {
   return call<{ count: number; more: boolean }>({ action: "unread", mailbox });
 }
+
+/** The ticks on a mail we sent from here. Gmail reports nothing once a mail has
+ *  gone, so this comes from our own tracking: a hidden picture for opens, our
+ *  own redirect for taps, and the bounce sweep for mail that didn't arrive. */
+export interface SentStatus {
+  gmail_id: string | null;
+  thread_id: string | null;
+  sent_at: string;
+  opened_at: string | null;
+  open_count: number;
+  clicked_at: string | null;
+  click_count: number;
+  bounced_at: string | null;
+  bounce_reason: string | null;
+}
+
+/** Ticks for the threads on screen. `notReady` means the tracking tables
+ *  haven't been added yet — the inbox still works, there are just no ticks. */
+export async function sentStatus(mailbox: string, threadIds: string[]) {
+  if (threadIds.length === 0) return { rows: [] as SentStatus[] };
+  try {
+    return await call<{ rows: SentStatus[]; notReady?: boolean }>({ action: "sent-status", mailbox, threadIds });
+  } catch (e) {
+    if (e instanceof MailNotConnected) throw e;
+    return { rows: [] as SentStatus[], notReady: true };
+  }
+}
+
+/** Look for mail that came back undelivered. Cheap enough to run when the Sent
+ *  folder is opened; failures are silent because ticks are never essential. */
+export async function runBounceCheck(mailbox: string) {
+  try {
+    return await call<{ ok: true; found: number }>({ action: "bounces", mailbox });
+  } catch {
+    return { ok: true as const, found: 0 };
+  }
+}

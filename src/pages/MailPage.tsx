@@ -42,8 +42,9 @@ import { clearDraft, getDraft, isEmptyDraft, saveDraft } from "../lib/mailDraft"
 import { listClients } from "../api/clients";
 import { emailMetrics, listWorkflowEmails, WorkflowEmailsNotSetUp, type SentEmail } from "../api/workflowEmails";
 import {
-  getAttachment, getThread, listMailboxes, listThreads, MailNotConnected, modifyThread, saveSignature, sendMail,
-  type Folder, type Inline, type Mailbox, type MessageFull, type ThreadSummary, type Upload,
+  getAttachment, getThread, listMailboxes, listThreads, MailNotConnected, modifyThread, runBounceCheck,
+  saveSignature, sendMail, sentStatus,
+  type Folder, type Inline, type Mailbox, type MessageFull, type SentStatus, type ThreadSummary, type Upload,
 } from "../api/mail";
 
 const LAST_MB = "ek.mail.mailbox";
@@ -246,13 +247,54 @@ function Body({ html }: { html: string }) {
 }
 
 // ── Delivery ticks, read the same way as WhatsApp's ─────────────────────────
-function Ticks({ delivered, opened, clicked, bounced }: { delivered: boolean; opened: boolean; clicked: boolean; bounced: boolean }) {
+/** How long we wait before calling a mail delivered. Email has no "delivered"
+ *  receipt — what it has is a bounce coming back, usually within seconds. So
+ *  once a few minutes have passed with nothing bounced, it reached them. */
+const SETTLED_MS = 15 * 60_000;
+
+/** Reads one of our sent mails into the four tick states. */
+function tickState(st: SentStatus) {
+  return {
+    bounced: !!st.bounced_at,
+    opened: !!st.opened_at,
+    clicked: !!st.clicked_at,
+    delivered: !st.bounced_at && Date.now() - new Date(st.sent_at).getTime() > SETTLED_MS,
+  };
+}
+
+function Ticks({ delivered, opened, clicked, bounced, ours, who }: {
+  delivered: boolean; opened: boolean; clicked: boolean; bounced: boolean;
+  /** Mail we sent by hand from this inbox — the wording is a little different,
+   *  because the opens come from a picture the reader can switch off. */
+  ours?: boolean; who?: string | null;
+}) {
   if (bounced) {
+    const extra = ours && who ? ` It couldn't be delivered to ${who}.` : "";
     return (
-      <Tooltip title="It didn't arrive. The address bounced, or they marked it as spam.">
+      <Tooltip title={`It didn't arrive. The address bounced it back, or it was marked as spam.${extra}`}>
         <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.4, color: tokens.red }}>
           <ReportProblemOutlinedIcon sx={{ fontSize: 16 }} />
           <Typography sx={{ fontSize: 11.5, fontWeight: 600 }}>Didn't arrive</Typography>
+        </Box>
+      </Tooltip>
+    );
+  }
+  if (ours) {
+    const word = clicked ? "Tapped a link" : opened ? "Opened" : delivered ? "Delivered" : "Sent";
+    const help = clicked
+      ? "They opened it and tapped a link inside it."
+      : opened
+        ? "They opened it. Some people read mail with pictures switched off, so this can stay on Delivered even when they have read it."
+        : delivered
+          ? "Nothing came back undelivered, so it reached them. No sign yet that they've opened it."
+          : "It's on its way. If it can't be delivered, this turns red within a few minutes.";
+    const lit = opened || clicked;
+    return (
+      <Tooltip title={help}>
+        <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.4, color: lit ? tokens.primary : tokens.ink3 }}>
+          {delivered || lit ? <DoneAllIcon sx={{ fontSize: 16 }} /> : <DoneIcon sx={{ fontSize: 16 }} />}
+          {clicked && <TouchAppOutlinedIcon sx={{ fontSize: 14 }} />}
+          <Typography sx={{ fontSize: 11.5, fontWeight: lit ? 600 : 400 }}>{word}</Typography>
         </Box>
       </Tooltip>
     );
@@ -678,6 +720,12 @@ function Compose({ mailbox, draft, people, onClose, onSend }: {
             <Box sx={{ fontSize: 12.5, color: tokens.ink3 }} dangerouslySetInnerHTML={{ __html: sigHtml(mailbox.signature) }} />
           </Box>
         )}
+        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, color: tokens.ink3 }}>
+          <DoneAllIcon sx={{ fontSize: 15 }} />
+          <Typography sx={{ fontSize: 11.5 }}>
+            Once it's gone, the Sent list shows you whether it arrived, whether they opened it, and whether they tapped a link.
+          </Typography>
+        </Box>
         <input ref={fileRef} type="file" multiple hidden onChange={(e) => pick(e.target.files)} />
       </DialogContent>
       <DialogActions sx={{ px: 2, py: 1.5, gap: 0.5 }}>
@@ -804,6 +852,42 @@ export default function MailPage() {
     queryFn: () => getThread(currentMb!.email, selected!),
     enabled: !!currentMb && !!selected,
   });
+
+  // Ticks for the mail we sent. Gmail reports nothing once a mail has gone, so
+  // this is our own tracking: a hidden picture for opens, our own redirect for
+  // taps, and a sweep of the bounce reports for mail that didn't arrive.
+  const tickIds = useMemo(() => {
+    const ids = (threads.data?.threads ?? []).map((t) => t.id);
+    if (selected && !ids.includes(selected)) ids.push(selected);
+    return ids;
+  }, [threads.data, selected]);
+  const ticks = useQuery({
+    queryKey: ["mailTicks", currentMb?.email, tickIds.join(",")],
+    queryFn: async () => {
+      // Checking for bounces means reading the mailer-daemon mail, so only do
+      // it where it shows: the Sent list and an open conversation.
+      if (gmailFolder === "sent" || selected) await runBounceCheck(currentMb!.email);
+      return sentStatus(currentMb!.email, tickIds);
+    },
+    enabled: !!currentMb && folder !== "auto" && tickIds.length > 0,
+    staleTime: 60_000,
+    retry: false,
+  });
+  const tickByMsg = useMemo(() => {
+    const m = new Map<string, SentStatus>();
+    for (const r of ticks.data?.rows ?? []) if (r.gmail_id) m.set(r.gmail_id, r);
+    return m;
+  }, [ticks.data]);
+  const tickByThread = useMemo(() => {
+    // One line per thread in the list: the latest mail we sent in it.
+    const m = new Map<string, SentStatus>();
+    for (const r of ticks.data?.rows ?? []) {
+      if (!r.thread_id) continue;
+      const prev = m.get(r.thread_id);
+      if (!prev || r.sent_at > prev.sent_at) m.set(r.thread_id, r);
+    }
+    return m;
+  }, [ticks.data]);
 
   const notConnected = threads.error instanceof MailNotConnected;
 
@@ -992,7 +1076,7 @@ export default function MailPage() {
               </Box>
             )}
             {threads.data?.threads.map((t) => (
-              <ThreadRow key={t.id} t={t} active={t.id === selected} onClick={() => openThread(t.id)} />
+              <ThreadRow key={t.id} t={t} active={t.id === selected} onClick={() => openThread(t.id)} tick={gmailFolder === "sent" ? tickByThread.get(t.id) : undefined} />
             ))}
           </Box>
 
@@ -1036,6 +1120,7 @@ export default function MailPage() {
                     onReply={() => startReply(m)}
                     onReplyAll={() => startReply(m, true)}
                     onForward={() => startForward(m)}
+                    tick={tickByMsg.get(m.id)}
                   />
                 ))}
                 {last && (
@@ -1073,7 +1158,7 @@ export default function MailPage() {
   );
 }
 
-function ThreadRow({ t, active, onClick }: { t: ThreadSummary; active: boolean; onClick: () => void }) {
+function ThreadRow({ t, active, onClick, tick }: { t: ThreadSummary; active: boolean; onClick: () => void; tick?: SentStatus }) {
   return (
     <Box
       onClick={onClick}
@@ -1099,6 +1184,7 @@ function ThreadRow({ t, active, onClick }: { t: ThreadSummary; active: boolean; 
         </Box>
         <Typography noWrap sx={{ fontSize: 13.5, fontWeight: t.unread ? 600 : 400, color: tokens.ink }}>{t.subject}</Typography>
         <Typography noWrap sx={{ fontSize: 12.5, color: tokens.ink3 }}>{t.snippet}</Typography>
+        {tick && <Box sx={{ mt: 0.25 }}><Ticks {...tickState(tick)} ours who={tick.bounce_reason} /></Box>}
       </Box>
       {t.unread && <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: tokens.primary, mt: 1, flexShrink: 0 }} />}
     </Box>
@@ -1107,9 +1193,11 @@ function ThreadRow({ t, active, onClick }: { t: ThreadSummary; active: boolean; 
 
 /** One email in the conversation. Older ones come in folded up (same as Gmail)
  *  so a long back-and-forth isn't a wall of text; the newest one is open. */
-function MessageBlock({ m, mailbox, startOpen, canReplyAll, onReply, onReplyAll, onForward }: {
+function MessageBlock({ m, mailbox, startOpen, canReplyAll, onReply, onReplyAll, onForward, tick }: {
   m: MessageFull; mailbox: string; startOpen: boolean; canReplyAll: boolean;
   onReply: () => void; onReplyAll: () => void; onForward: () => void;
+  /** Present only on the mails we sent — it carries their ticks. */
+  tick?: SentStatus;
 }) {
   const [open, setOpen] = useState(startOpen);
   const preview = useMemo(() => plainText(m.html).slice(0, 120), [m.html]);
@@ -1129,6 +1217,7 @@ function MessageBlock({ m, mailbox, startOpen, canReplyAll, onReply, onReplyAll,
           </Typography>
           <Typography noWrap sx={{ fontSize: 12, color: tokens.ink3 }}>{open ? `to ${m.to}` : preview}</Typography>
         </Box>
+        {tick && <Box sx={{ flexShrink: 0, display: { xs: "none", sm: "block" } }}><Ticks {...tickState(tick)} ours who={tick.bounce_reason} /></Box>}
         <Tooltip title={timeFull(m.date)}>
           <Typography sx={{ fontSize: 12, color: tokens.ink3, whiteSpace: "nowrap" }}>{timeShort(m.date)}</Typography>
         </Tooltip>

@@ -1,7 +1,10 @@
+// Open pixels for every email we send.
 // The confirmation email's open pixel:
 //   leads.estatekit.co/o/<lead id>  (Vercel rewrite)  →  here  →  1x1 GIF
 // and each workflow email's:
 //   leads.estatekit.co/oe/<workflow email id>  →  here (?e=)  →  1x1 GIF
+// and each mail sent by hand from the team inbox:
+//   leads.estatekit.co/mo/<mail_sent id>       →  here (?m=)  →  1x1 GIF
 //
 // Records the first open in the lead's history (email_opened). Always answers
 // with the image, whatever happens, so the email never shows a broken image.
@@ -42,8 +45,28 @@ async function workflowEmailOpened(emailId: string) {
   if (error) console.error("workflow open log failed", error);
 }
 
+/** A mail a person sent from the team inbox (leads.estatekit.co/mo/<id>).
+ *  Gmail reports nothing about a sent mail, so this pixel is the only way the
+ *  Mail tab can show "Opened". A rough guide only, same as above. */
+async function teamMailOpened(id: string) {
+  const { data: row, error } = await supabase.from("mail_sent").select("id, sent_at, opened_at, open_count").eq("id", id).maybeSingle();
+  if (error || !row) return;
+  if (Date.now() - new Date(row.sent_at).getTime() < SCANNER_WINDOW_MS) return;
+  const now = new Date().toISOString();
+  const { error: upErr } = await supabase
+    .from("mail_sent")
+    .update({ opened_at: row.opened_at ?? now, last_opened_at: now, open_count: (row.open_count ?? 0) + 1 })
+    .eq("id", id);
+  if (upErr) console.error("team mail open log failed", upErr);
+}
+
 Deno.serve(async (req) => {
   const params = new URL(req.url).searchParams;
+  const teamMailId = params.get("m") || "";
+  if (/^[0-9a-f-]{36}$/i.test(teamMailId)) {
+    try { await teamMailOpened(teamMailId); } catch (e) { console.error("team mail open pixel failed", e); }
+    return pixel();
+  }
   const emailId = params.get("e") || "";
   if (/^[0-9a-f-]{36}$/i.test(emailId)) {
     try { await workflowEmailOpened(emailId); } catch (e) { console.error("workflow open pixel failed", e); }

@@ -6,6 +6,9 @@
 // The destination is always built here from the lead and agent on record,
 // never taken from the URL, so this can't be used to redirect anywhere else.
 // Lead ids are random UUIDs, so they can't be guessed.
+//
+// It also handles the links in mail staff send from the team inbox:
+//   leads.estatekit.co/mc/<mail_links id>  (?m=)  →  here  →  the stored link
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { waDigits } from "../_shared/phone.ts";
@@ -22,8 +25,48 @@ const digits = (s: string | null | undefined) => waDigits(s) || (s || "").replac
 const isMobile = (d: string) => (d.startsWith("27") ? /^27[6-8]\d{8}$/.test(d) : /^[1-9]\d{8,14}$/.test(d));
 const redirect = (to: string) => new Response(null, { status: 302, headers: { Location: to, "Cache-Control": "no-store" } });
 
+/** A link in a mail someone sent from the team inbox:
+ *    leads.estatekit.co/mc/<mail_links id>  →  here (?m=)  →  the real link
+ *  The destination is read from the row we wrote when the mail was sent, never
+ *  from the URL, so an edited link can't send anyone anywhere else. */
+async function teamMailClicked(linkId: string): Promise<string | null> {
+  const { data: link, error } = await supabase
+    .from("mail_links")
+    .select("id, url, click_count, first_clicked_at, mail_sent_id")
+    .eq("id", linkId)
+    .maybeSingle();
+  if (error || !link) return null;
+  if (!/^https?:\/\//i.test(link.url)) return null;
+
+  const now = new Date().toISOString();
+  const [{ error: linkErr }, { data: mail }] = await Promise.all([
+    supabase
+      .from("mail_links")
+      .update({ click_count: (link.click_count ?? 0) + 1, first_clicked_at: link.first_clicked_at ?? now, last_clicked_at: now })
+      .eq("id", link.id),
+    supabase.from("mail_sent").select("id, clicked_at, click_count").eq("id", link.mail_sent_id).maybeSingle(),
+  ]);
+  if (linkErr) console.error("mail link click log failed", linkErr);
+  if (mail) {
+    const { error: mailErr } = await supabase
+      .from("mail_sent")
+      .update({ clicked_at: mail.clicked_at ?? now, click_count: (mail.click_count ?? 0) + 1, last_click_url: link.url })
+      .eq("id", mail.id);
+    if (mailErr) console.error("mail click log failed", mailErr);
+  }
+  return link.url;
+}
+
 Deno.serve(async (req) => {
   const params = new URL(req.url).searchParams;
+
+  // A link from the team inbox.
+  const linkId = params.get("m") || "";
+  if (/^[0-9a-f-]{36}$/i.test(linkId)) {
+    let to: string | null = null;
+    try { to = await teamMailClicked(linkId); } catch (e) { console.error("mail link click failed", e); }
+    return redirect(to ?? FALLBACK);
+  }
   const id = params.get("l") || "";
   // Where the tap came from: the email (default) or the selling plan. Only a
   // known value changes the wording; nothing from the URL goes into the link.

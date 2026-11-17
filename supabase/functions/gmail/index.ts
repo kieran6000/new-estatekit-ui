@@ -152,6 +152,87 @@ function listAttachments(payload: any): { filename: string; mimeType: string; si
   return out;
 }
 
+// --- Our own delivery ticks -------------------------------------------------
+// Gmail tells us nothing about a mail once it has gone: no delivery, no opens,
+// no clicks. So we do here what the automated emails already do - keep a row
+// for every mail sent from this inbox, put a 1px picture at the bottom of it,
+// and send each link through our own redirect. The real web addresses live in
+// the database, never in the tracking link, so a tampered link cannot be made
+// to point somewhere else.
+const TRACK_BASE = "https://leads.estatekit.co";
+
+const unentity = (v: string) =>
+  v.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#0?39;/g, "'").replace(/&apos;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+
+/** Worth following: ordinary web links only. Not mailto:, tel:, cid: pictures,
+ *  in-page anchors, or a link we have already rewritten. */
+const trackable = (href: string) =>
+  /^https?:\/\//i.test(href) && !href.startsWith(TRACK_BASE + "/mc/") && !href.startsWith(TRACK_BASE + "/mo/");
+
+const A_HREF = /(<a\b[^>]*?\shref=")([^"]+)(")/gi;
+
+async function startTracking(o: { mailbox: string; to: string; cc?: string; subject: string; html: string; sentBy: string | null }): Promise<{ html: string; id: string | null }> {
+  try {
+    const { data: row, error } = await admin
+      .from("mail_sent")
+      .insert({
+        mailbox: o.mailbox,
+        to_emails: [o.to, o.cc].filter(Boolean).join(", ").slice(0, 2000),
+        subject: (o.subject || "").slice(0, 500),
+        sent_by: o.sentBy,
+      })
+      .select("id")
+      .single();
+    if (error || !row) throw error ?? new Error("no row");
+
+    let html = o.html;
+
+    // Each different link gets its own row, so we can say which one they tapped.
+    const found: string[] = [];
+    html.replace(A_HREF, (m, _a, href: string) => {
+      const real = unentity(href);
+      if (trackable(real)) found.push(real.slice(0, 2000));
+      return m;
+    });
+    const unique = [...new Set(found)];
+    if (unique.length > 0 && unique.length <= 60) {
+      const { data: links } = await admin
+        .from("mail_links")
+        .insert(unique.map((url) => ({ mail_sent_id: row.id, url })))
+        .select("id, url");
+      const map = new Map((links ?? []).map((l: { id: string; url: string }) => [l.url, l.id]));
+      html = html.replace(A_HREF, (m, a: string, href: string, c: string) => {
+        const id = map.get(unentity(href).slice(0, 2000));
+        return id ? a + TRACK_BASE + "/mc/" + id + c : m;
+      });
+    }
+
+    // The open picture goes last, hidden.
+    html += '<img src="' + TRACK_BASE + "/mo/" + row.id + '" width="1" height="1" alt="" style="display:none">';
+    return { html, id: row.id };
+  } catch (e) {
+    // Ticks are a nice-to-have: never let them stop the mail going out.
+    console.error("mail tracking setup failed", e);
+    return { html: o.html, id: null };
+  }
+}
+
+/** Every bit of text in a message, including the headers of any message tucked
+ *  inside it - which is where a bounce keeps the original Message-ID. */
+function collectText(payload: GPart | undefined): string {
+  const out: string[] = [];
+  const walk = (part: GPart | undefined) => {
+    if (!part) return;
+    for (const h of (part.headers ?? []) as Header[]) out.push(h.name + ": " + h.value);
+    if (/^text\//i.test(part.mimeType ?? "") && part.body?.data) out.push(decodeB64Url(part.body.data));
+    if (Array.isArray(part.parts)) part.parts.forEach(walk);
+  };
+  walk(payload);
+  return out.join("\n");
+}
+
+type GPart = { mimeType?: string; headers?: Header[]; body?: { data?: string }; parts?: GPart[] };
+
 /** Leaves out the mail Gmail itself filed as promotions/social/forums, so the
  *  team inbox shows business and sales mail only. The "All mail" tab, and the
  *  Newsletters toggle, still show everything. */
@@ -329,13 +410,22 @@ Deno.serve(async (req) => {
 
       case "send": {
         const { data: mbRow } = await admin.from("mail_mailboxes").select("display_name").eq("email", mailbox).maybeSingle();
+        const subject = payload.subject || "(no subject)";
+        const tracked = await startTracking({
+          mailbox,
+          to: String(payload.to ?? ""),
+          cc: payload.cc || undefined,
+          subject,
+          html: payload.html || "",
+          sentBy: callerId,
+        });
         const mime = buildMime({
           fromName: mbRow?.display_name || payload._display || "",
           from: mailbox,
           to: payload.to,
           cc: payload.cc || undefined,
-          subject: payload.subject || "(no subject)",
-          html: payload.html || "",
+          subject,
+          html: tracked.html,
           inReplyTo: payload.inReplyTo || undefined,
           references: payload.references || payload.inReplyTo || undefined,
           attachments: Array.isArray(payload.attachments) ? payload.attachments : undefined,
@@ -345,6 +435,19 @@ Deno.serve(async (req) => {
           method: "POST",
           body: JSON.stringify({ raw: b64url(new TextEncoder().encode(mime)), ...(payload.threadId ? { threadId: payload.threadId } : {}) }),
         });
+        // Note which mail this became, and its Message-ID, so the ticks sit on
+        // the right message and a bounce can be matched back to it.
+        if (tracked.id) {
+          try {
+            const meta = await gmail(mailbox, `/messages/${sent.id}?format=metadata&metadataHeaders=Message-ID`);
+            await admin
+              .from("mail_sent")
+              .update({ gmail_id: sent.id, thread_id: sent.threadId, message_id: header(meta.payload?.headers ?? [], "Message-ID") })
+              .eq("id", tracked.id);
+          } catch (e) {
+            console.error("mail tracking link-up failed", e);
+          }
+        }
         return json({ ok: true, id: sent.id, threadId: sent.threadId });
       }
 
@@ -371,6 +474,63 @@ Deno.serve(async (req) => {
         // one list call, read resultSizeEstimate.
         const r = await gmail(mailbox, `/threads?maxResults=25&q=${encodeURIComponent(`in:inbox is:unread${payload.hideNewsletters === false ? "" : NO_BULK}`)}`);
         return json({ count: (r.threads ?? []).length, more: !!r.nextPageToken });
+      }
+
+      case "sent-status": {
+        // The ticks for mail we sent from here. Opens and taps come from our
+        // own picture and links; "did not arrive" comes from the bounce sweep.
+        const ids: string[] = Array.isArray(payload.threadIds) ? payload.threadIds.slice(0, 60) : [];
+        if (ids.length === 0) return json({ rows: [] });
+        const { data, error } = await admin
+          .from("mail_sent")
+          .select("gmail_id, thread_id, sent_at, opened_at, open_count, clicked_at, click_count, bounced_at, bounce_reason")
+          .eq("mailbox", mailbox)
+          .in("thread_id", ids);
+        if (error) return json({ rows: [], notReady: true });
+        return json({ rows: data ?? [] });
+      }
+
+      case "bounces": {
+        // Email has no delivery receipt; what it has is a bounce coming back.
+        // So we read the mailer-daemon mail in this mailbox and match it to
+        // what we sent. Anything that has not bounced after a while is, as far
+        // as email can ever tell, delivered.
+        const since = new Date(Date.now() - 14 * 86_400_000).toISOString();
+        const { data: pending, error: pendErr } = await admin
+          .from("mail_sent")
+          .select("id, message_id")
+          .eq("mailbox", mailbox)
+          .is("bounced_at", null)
+          .not("message_id", "is", null)
+          .gte("sent_at", since)
+          .limit(500);
+        if (pendErr || !pending?.length) return json({ ok: true, found: 0 });
+
+        const byMsgId = new Map<string, string>();
+        for (const r of pending) if (r.message_id) byMsgId.set(String(r.message_id).toLowerCase().trim(), r.id);
+
+        const hits = await gmail(mailbox, `/messages?maxResults=15&q=${encodeURIComponent("(from:mailer-daemon OR from:postmaster) newer_than:14d")}`);
+        let found = 0;
+        for (const ref of (hits.messages ?? []) as { id: string }[]) {
+          if (byMsgId.size === 0) break;
+          const full = await gmail(mailbox, `/messages/${ref.id}?format=full`);
+          const blob = collectText(full.payload) + "\n" + (full.snippet ?? "");
+          const seen = new Set((blob.match(/<[^<>\s@]+@[^<>\s]+>/g) ?? []).map((x) => x.toLowerCase()));
+          // The address that failed is plain enough to show someone; the rest
+          // of a bounce report is technical, so it stays in the logs.
+          const failed = (header(full.payload?.headers ?? [], "X-Failed-Recipients") || "").split(",")[0].trim();
+          for (const candidate of seen) {
+            const mailId = byMsgId.get(candidate);
+            if (!mailId) continue;
+            await admin
+              .from("mail_sent")
+              .update({ bounced_at: new Date().toISOString(), bounce_reason: /^[^@\s]+@[^@\s]+$/.test(failed) ? failed : null })
+              .eq("id", mailId);
+            byMsgId.delete(candidate);
+            found++;
+          }
+        }
+        return json({ ok: true, found });
       }
 
       default:
