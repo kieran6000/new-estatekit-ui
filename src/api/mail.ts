@@ -54,7 +54,13 @@ export interface Inline extends Upload {
 export class MailNotConnected extends Error {}
 
 export async function listMailboxes(): Promise<Mailbox[]> {
-  const { data, error } = await supabase.from("mail_mailboxes").select("email, display_name, signature, sort").order("sort");
+  // Only the inboxes that are actually connected — the rest of the team's
+  // addresses are coming, and a box that can't open shouldn't be offered.
+  const { data, error } = await supabase
+    .from("mail_mailboxes")
+    .select("email, display_name, signature, sort")
+    .eq("ready", true)
+    .order("sort");
   if (error) throw new Error(error.message);
   return (data ?? []) as Mailbox[];
 }
@@ -80,8 +86,8 @@ async function call<T>(body: Record<string, unknown>): Promise<T> {
   return data as T;
 }
 
-export function listThreads(mailbox: string, folder: Folder, q?: string, pageToken?: string, hideNewsletters = true) {
-  return call<{ threads: ThreadSummary[]; nextPageToken: string | null }>({ action: "list", mailbox, folder, q, pageToken, hideNewsletters });
+export function listThreads(mailbox: string, folder: Folder, q?: string, pageToken?: string) {
+  return call<{ threads: ThreadSummary[]; nextPageToken: string | null }>({ action: "list", mailbox, folder, q, pageToken });
 }
 
 export function getThread(mailbox: string, id: string) {

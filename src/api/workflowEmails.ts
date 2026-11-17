@@ -54,13 +54,12 @@ function notSetUp(error: { message?: string; code?: string }): boolean {
 /** Whether each email carries its own report yet. Asked once per visit: an
  *  account that hasn't had the change applied falls back to the old reading
  *  instead of showing an error. */
-let perEmailReady: Promise<boolean> | null = null;
+let perEmailReady: Promise<boolean> | undefined;
 function hasPerEmail(): Promise<boolean> {
-  perEmailReady ??= supabase
-    .from("workflow_emails")
-    .select("delivered_at")
-    .limit(1)
-    .then(({ error }) => !error || !notSetUp(error));
+  perEmailReady ??= (async () => {
+    const { error } = await supabase.from("workflow_emails").select("delivered_at").limit(1);
+    return !error || !notSetUp(error);
+  })();
   return perEmailReady;
 }
 
