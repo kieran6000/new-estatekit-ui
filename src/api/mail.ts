@@ -34,7 +34,21 @@ export interface MessageFull {
   attachments: { filename: string; mimeType: string; size: number; attachmentId: string }[];
 }
 
-export type Folder = "inbox" | "sent" | "all";
+export type Folder = "inbox" | "sent" | "archive" | "all";
+
+/** A file the user is attaching to an outgoing message. `data` is base64. */
+export interface Upload {
+  filename: string;
+  mimeType: string;
+  data: string;
+}
+
+/** A picture inside the body. It travels with the mail (referenced as
+ *  `cid:<cid>` in the html) so it still shows for the reader years later —
+ *  a linked image would break as soon as its link expired. */
+export interface Inline extends Upload {
+  cid: string;
+}
 
 /** Raised when the Gmail service account hasn't been connected yet. */
 export class MailNotConnected extends Error {}
@@ -66,18 +80,67 @@ async function call<T>(body: Record<string, unknown>): Promise<T> {
   return data as T;
 }
 
-export function listThreads(mailbox: string, folder: Folder, q?: string, pageToken?: string) {
-  return call<{ threads: ThreadSummary[]; nextPageToken: string | null }>({ action: "list", mailbox, folder, q, pageToken });
+export function listThreads(mailbox: string, folder: Folder, q?: string, pageToken?: string, hideNewsletters = true) {
+  return call<{ threads: ThreadSummary[]; nextPageToken: string | null }>({ action: "list", mailbox, folder, q, pageToken, hideNewsletters });
 }
 
 export function getThread(mailbox: string, id: string) {
   return call<{ messages: MessageFull[]; subject: string }>({ action: "thread", mailbox, id });
 }
 
-export function sendMail(mailbox: string, msg: { to: string; cc?: string; subject: string; html: string; threadId?: string; inReplyTo?: string; references?: string }) {
+export function sendMail(mailbox: string, msg: { to: string; cc?: string; subject: string; html: string; threadId?: string; inReplyTo?: string; references?: string; attachments?: Upload[]; inline?: Inline[] }) {
   return call<{ ok: true; id: string; threadId: string }>({ action: "send", mailbox, ...msg });
 }
 
-export function modifyThread(mailbox: string, id: string, change: { read?: boolean; archive?: boolean; trash?: boolean }) {
+/** Mark read/unread, archive, or move back to the inbox. There is deliberately
+ *  no delete: archiving keeps every mail findable in "All mail". */
+export function modifyThread(mailbox: string, id: string, change: { read?: boolean; archive?: boolean; unarchive?: boolean }) {
   return call<{ ok: true }>({ action: "modify", mailbox, id, ...change });
+}
+
+/** Fetch one attachment's bytes (base64) so the browser can open or save it. */
+export function getAttachment(mailbox: string, messageId: string, attachmentId: string) {
+  return call<{ data: string; size: number }>({ action: "attachment", mailbox, messageId, attachmentId });
+}
+
+/** Count of unread inbox threads, for the nav badge (capped at the page size). */
+export function unreadCount(mailbox: string) {
+  return call<{ count: number; more: boolean }>({ action: "unread", mailbox });
+}
+
+/** The ticks on a mail we sent from here. Gmail reports nothing once a mail has
+ *  gone, so this comes from our own tracking: a hidden picture for opens, our
+ *  own redirect for taps, and the bounce sweep for mail that didn't arrive. */
+export interface SentStatus {
+  gmail_id: string | null;
+  thread_id: string | null;
+  sent_at: string;
+  opened_at: string | null;
+  open_count: number;
+  clicked_at: string | null;
+  click_count: number;
+  bounced_at: string | null;
+  bounce_reason: string | null;
+}
+
+/** Ticks for the threads on screen. `notReady` means the tracking tables
+ *  haven't been added yet — the inbox still works, there are just no ticks. */
+export async function sentStatus(mailbox: string, threadIds: string[]) {
+  if (threadIds.length === 0) return { rows: [] as SentStatus[] };
+  try {
+    return await call<{ rows: SentStatus[]; notReady?: boolean }>({ action: "sent-status", mailbox, threadIds });
+  } catch (e) {
+    if (e instanceof MailNotConnected) throw e;
+    return { rows: [] as SentStatus[], notReady: true };
+  }
+}
+
+/** Look for mail that came back undelivered. Cheap enough to run when the Sent
+ *  folder is opened; failures are silent because ticks are never essential. */
+export async function runBounceCheck(mailbox: string) {
+  try {
+    return await call<{ ok: true; found: number }>({ action: "bounces", mailbox });
+  } catch {
+    return { ok: true as const, found: 0 };
+  }
 }

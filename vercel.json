@@ -3,6 +3,8 @@
     { "source": "/w/:id/:from", "destination": "https://yfcnsvrhojpysrzqrkdi.supabase.co/functions/v1/email-click?l=:id&from=:from" },
     { "source": "/o/:id", "destination": "https://yfcnsvrhojpysrzqrkdi.supabase.co/functions/v1/email-open?l=:id" },
     { "source": "/oe/:id", "destination": "https://yfcnsvrhojpysrzqrkdi.supabase.co/functions/v1/email-open?e=:id" },
+    { "source": "/mo/:id", "destination": "https://yfcnsvrhojpysrzqrkdi.supabase.co/functions/v1/email-open?m=:id" },
+    { "source": "/mc/:id", "destination": "https://yfcnsvrhojpysrzqrkdi.supabase.co/functions/v1/email-click?m=:id" },
     { "source": "/w/:id","destination": "https://yfcnsvrhojpysrzqrkdi.supabase.co/functions/v1/email-click?l=:id" },
     { "source": "/c/:token", "destination": "/api/contract-page?token=:token" },
     { "source": "/l/:token", "has": [{ "type": "header", "key": "user-agent", "value": ".*(WhatsApp|facebookexternalhit|Facebot|Discordbot|Twitterbot|TelegramBot|Slackbot|LinkedInBot|Applebot|SkypeUriPreview|Iframely|redditbot).*" }], "destination": "/api/lead-page?token=:token" },
