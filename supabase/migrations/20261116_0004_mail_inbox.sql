@@ -31,7 +31,7 @@ create policy "Operators edit mailbox signatures" on public.mail_mailboxes
 -- centralised client comms. Edit display names / add mailboxes as the team grows.
 insert into public.mail_mailboxes (email, display_name, sort) values
   ('kieran@estatekit.co',   'Kieran',          10),
-  ('aldredt@estatekit.co',  'Aldred',          20),
+  ('aldredt@estatekit.co',  'Aldredt',         20),
   ('josephat@estatekit.co', 'Josephat',        30),
   ('khushil@estatekit.co',  'Khushil',         40),
   ('partner@estatekit.co',  'Partner (shared)', 5)

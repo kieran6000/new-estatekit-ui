@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   Avatar,
@@ -58,7 +58,12 @@ import DevTierToggle from "./DevTierToggle";
 import estateKitLogoWhite from "../assets/whitelogofull.png";
 import { useAdminAccess } from "../hooks/useAdminAccess";
 import { TodoBadge } from "./NoteFor";
-import { MailBadge, MailDraftPill } from "./MailBits";
+import { MailBadge } from "./MailBits";
+
+// The email you're busy writing follows you around the dashboard, so it lives
+// up here rather than on the Mail page. Loaded only when it's needed, so no
+// other page pays for it.
+const MailComposeHost = lazy(() => import("./MailCompose").then((m) => ({ default: m.MailComposeHost })));
 import estateKitLogoBlue from "../assets/blue logo full.png";
 import ErrorBoundary from "./ErrorBoundary";
 import { preloadPages } from "../lib/lazyPage";
@@ -354,7 +359,7 @@ export default function AppShell() {
         </ErrorBoundary>
       </Box>
 
-      {isOperator && section !== "mail" && <MailDraftPill />}
+      {isOperator && <Suspense fallback={null}><MailComposeHost /></Suspense>}
 
       {!isDesktop && (
         // Phone bottom bar: 64px tall plus the iPhone home-indicator gap, big

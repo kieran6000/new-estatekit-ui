@@ -1,9 +1,9 @@
 // The unfinished email.
 //
 // Compose saves what you've typed as you type, so switching tabs, opening a
-// client, or closing the browser never loses it. Anywhere in the app a small
-// "Unfinished email" pill shows up (see MailDraftPill) that takes you straight
-// back to it.
+// client, or closing the browser never loses it. The compose window shrinks
+// to a small bar in the bottom corner (see MailComposeHost) and follows you
+// from page to page, so a half-written email is never lost.
 //
 // Attachments are deliberately NOT stored: file bytes would blow past the
 // localStorage limit and silently drop the whole draft. The restore banner says

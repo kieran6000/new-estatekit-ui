@@ -336,8 +336,9 @@ Deno.serve(async (req) => {
 
   // Mailbox must be one we manage.
   if (action !== "ping") {
-    const { data: mb } = await admin.from("mail_mailboxes").select("email, display_name").eq("email", mailbox).maybeSingle();
+    const { data: mb } = await admin.from("mail_mailboxes").select("email, display_name, ready").eq("email", mailbox).maybeSingle();
     if (!mb) return json({ error: "Unknown mailbox." }, 400);
+    if (mb.ready === false) return json({ error: "That mailbox isn't set up yet." }, 400);
     payload._display = mb.display_name;
   }
 
@@ -467,7 +468,7 @@ Deno.serve(async (req) => {
       case "unread": {
         // Just the count of unread inbox threads, for the nav badge. Cheap:
         // one list call, read resultSizeEstimate.
-        const r = await gmail(mailbox, `/threads?maxResults=25&q=${encodeURIComponent("in:inbox is:unread")}`);
+        const r = await gmail(mailbox, `/threads?maxResults=100&q=${encodeURIComponent("in:inbox is:unread")}`);
         return json({ count: (r.threads ?? []).length, more: !!r.nextPageToken });
       }
 
