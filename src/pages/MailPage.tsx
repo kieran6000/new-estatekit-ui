@@ -950,8 +950,8 @@ function AutoDetail({ e }: { e: SentEmail }) {
         {body.data && <Body html={body.data} />}
         {!body.isLoading && !body.data && (
           <Typography sx={{ fontSize: 13.5, color: tokens.ink2, lineHeight: 1.6 }}>
-            This one went out on its own, from the follow-up emails set up for this lead, before we started keeping a
-            copy of the wording. The ticks above show how it landed. Anything sent from now on is kept here in full.
+            This one went out on its own, from the follow-up emails set up for this lead. It's old enough that nobody
+            still has the wording — not us, not the email service. The ticks above show how it landed.
           </Typography>
         )}
       </Box>

@@ -141,7 +141,17 @@ export async function workflowEmailBody(id: string): Promise<string | null> {
     if (notSetUp(error)) return null;
     throw new Error(error.message);
   }
-  return (data as { body_html: string | null } | null)?.body_html ?? null;
+  const kept = (data as { body_html: string | null } | null)?.body_html ?? null;
+  if (kept) return kept;
+  // Nothing kept: it went out before we started keeping copies. Ask the email
+  // service for the one it posted — it has them for a few weeks — and that
+  // copy is kept from then on.
+  try {
+    const { data: fetched } = await supabase.functions.invoke("workflow-email-body", { body: { id } });
+    return (fetched as { html?: string | null } | null)?.html ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /** The old reading: which leads were reported delivered / clicked / bounced in
