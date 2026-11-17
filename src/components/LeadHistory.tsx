@@ -86,7 +86,7 @@ function describe(e: LeadEvent): string {
     case "email_opened":
       return "Opened the confirmation email";
     case "email_clicked":
-      return "Tapped WhatsApp in the email";
+      return e.to_value ?? "Tapped a link in the email";
     case "call_time_set":
       return `Picked a call time: ${e.to_value ?? ""}`;
     case "video_watched":

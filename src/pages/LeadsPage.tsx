@@ -86,6 +86,7 @@ import { useLeads, useUpdateLeadStage } from "../hooks/useLeads";
 import { useAddPipeline, usePipelines, useSyncPipelineSheet, useTeamPipelines } from "../hooks/usePipelines";
 import { setPipelineShared } from "../api/pipelines";
 import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
+import ApartmentIcon from "@mui/icons-material/Apartment";
 import { deletePipeline, pipelineUsage, renamePipeline } from "../api/pipelines";
 import { useIsOperator } from "../hooks/useAutomations";
 import { useSnack } from "../hooks/useSnack";
@@ -262,7 +263,16 @@ export default function LeadsPage() {
 
   const pipelineLeads = useMemo(() => {
     const source = showArchived ? archivedLeads : leads;
-    return activePipeline ? source.filter((l) => l.pipeline_id === activePipeline.id) : [];
+    if (!activePipeline) return [];
+    const kind = activePipeline.kind;
+    const valid = new Set<string>(PIPELINE_STAGES[kind]);
+    // Safety net: a lead whose stored stage isn't one this pipeline kind uses
+    // (e.g. a /pitch booking saved as "Booked" on an agency board) would drop
+    // out of every stage group and vanish. Coerce it to the kind's equivalent
+    // so it always shows; the underlying row is untouched until someone moves it.
+    return source
+      .filter((l) => l.pipeline_id === activePipeline.id)
+      .map((l) => (valid.has(l.stage) ? l : { ...l, stage: stageForKind(l.stage as Stage, kind) }));
   }, [leads, archivedLeads, showArchived, activePipeline]);
 
 
@@ -514,7 +524,9 @@ export default function LeadsPage() {
           data-tour="pipeline"
           sx={{ display: "flex", alignItems: "center", gap: 0.25, border: `1px solid ${tokens.divider}`, borderRadius: "4px", bgcolor: tokens.surface, fontSize: 13, fontWeight: 500, p: "7px 6px 7px 12px", cursor: "pointer" }}
         >
-          {sharedIds.has(activePipeline.id) && <Tooltip title="Shared with the team"><GroupsRoundedIcon sx={{ fontSize: 18, color: tokens.primary, mr: 0.5 }} /></Tooltip>}
+          {activePipeline.kind === "agency"
+            ? <Tooltip title="Agency pipeline"><ApartmentIcon sx={{ fontSize: 18, color: tokens.primary, mr: 0.5 }} /></Tooltip>
+            : sharedIds.has(activePipeline.id) && <Tooltip title="Shared with the team"><GroupsRoundedIcon sx={{ fontSize: 18, color: tokens.primary, mr: 0.5 }} /></Tooltip>}
           {activePipeline.name} pipeline <ArrowDropDownIcon fontSize="small" />
         </Box>
         {isOperator && (
@@ -992,7 +1004,9 @@ function PipelineMenu({
       {pipelines.map((p) => (
         <MenuItem key={p.id} onClick={() => onSelect(p.id)} sx={{ gap: 1 }}>
           {p.name}
-          {sharedIds.has(p.id) && <GroupsRoundedIcon titleAccess="Shared with the team" sx={{ fontSize: 18, color: tokens.primary }} />}
+          {p.kind === "agency"
+            ? <ApartmentIcon titleAccess="Agency pipeline" sx={{ fontSize: 18, color: tokens.primary }} />
+            : sharedIds.has(p.id) && <GroupsRoundedIcon titleAccess="Shared with the team" sx={{ fontSize: 18, color: tokens.primary }} />}
         </MenuItem>
       ))}
       {elsewhere.length > 0 && (

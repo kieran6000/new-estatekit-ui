@@ -972,13 +972,21 @@ ${magnet.text ? `<p style="margin:0 0 8px">${esc(magnet.text)}</p>` : ""}
     const last = paras.length - 1;
     const isSignOff = (p: string, i: number) => !!photo && i === last && p.split("\n")[0].trim() === agentName;
     const body = paras.map((p) => p.split(MAGNET_MARK).join(magnetText)).join("\n\n");
+    // Why they got it, in the right words for the pipeline: a seller asked
+    // about their property, a buyer about a home; anyone else (e.g. EstateKit's
+    // own agent sign-ups on the agency pipeline) simply got in touch.
+    const fkind = await this.pipelineKind();
+    const footerAsked = (name: string) =>
+      fkind === "seller" ? `You're getting this because you asked ${name} about your property.`
+      : fkind === "buyer" ? `You're getting this because you asked ${name} about finding a home.`
+      : `You're getting this because you got in touch with ${name}.`;
     // The email itself, built once. The counting picture is added only to the
     // copy that goes out: the copy we keep must never fire when somebody in
     // the office looks at it, or it would read as the lead having opened it.
     const inner = `<div style="max-width:560px">
 ${paras.map((p, i) => (isSignOff(p, i) ? signOff(p) : htmlPara(p))).join("\n")}
 <p style="margin:28px 0 0;font-size:11px;color:#999999;line-height:1.5">
-You're getting this because you asked ${esc(agentName)} about your property. <a href="${unsub}" style="color:#999999">Unsubscribe</a>
+${footerAsked(esc(agentName))} <a href="${unsub}" style="color:#999999">Unsubscribe</a>
 </p>`;
     const wrap = (middle: string) => `<!doctype html><html><body style="margin:0;padding:16px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.55;color:#222222">
 ${middle}
@@ -990,7 +998,7 @@ ${middle}
     // Kept with the record so the Mail tab can show this email like any other.
     const { error: bodyErr } = await this.supabase.from("workflow_emails").update({ body_html: wrap(inner) }).eq("id", rec.id);
     if (bodyErr) console.error("keeping the email wording failed", bodyErr.message);
-    const text = `${body}\n\n--\nYou're getting this because you asked ${agentName} about your property. Unsubscribe: ${unsub}`;
+    const text = `${body}\n\n--\n${footerAsked(agentName)} Unsubscribe: ${unsub}`;
     const replyTo = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(this.profile?.email || "") ? this.profile!.email! : undefined;
 
     const res = await fetch("https://api.resend.com/emails", {
