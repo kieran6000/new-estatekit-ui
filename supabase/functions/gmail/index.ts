@@ -369,11 +369,13 @@ Deno.serve(async (req) => {
           ? String(payload.q)
           : folder === "sent"
             ? "in:sent"
-            : folder === "archive"
-              ? "-in:inbox -in:sent -in:trash -in:spam -in:drafts in:anywhere"
-              : folder === "all"
-                ? "in:all -in:trash -in:spam"
-                : "in:inbox";
+            : folder === "junk"
+              ? "in:spam"
+              : folder === "archive"
+                ? "-in:inbox -in:sent -in:trash -in:spam -in:drafts in:anywhere"
+                : folder === "all"
+                  ? "in:all -in:trash -in:spam"
+                  : "in:inbox";
         const listed = await gmail(mailbox, `/threads?maxResults=25&q=${encodeURIComponent(q)}${payload.pageToken ? `&pageToken=${payload.pageToken}` : ""}`);
         const ids: string[] = (listed.threads ?? []).map((t: any) => t.id);
         const threads = await Promise.all(
@@ -485,6 +487,9 @@ Deno.serve(async (req) => {
         if (payload.read === false) add.push("UNREAD");
         if (payload.archive) remove.push("INBOX");
         if (payload.unarchive) add.push("INBOX");
+        // Rescuing something Google held back, or sending it there.
+        if (payload.notJunk) { remove.push("SPAM"); add.push("INBOX"); }
+        if (payload.junk) { add.push("SPAM"); remove.push("INBOX"); }
         await gmail(mailbox, `/threads/${payload.id}/modify`, { method: "POST", body: JSON.stringify({ addLabelIds: add, removeLabelIds: remove }) });
         return json({ ok: true });
       }

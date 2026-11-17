@@ -272,6 +272,10 @@ export default function MailPage() {
     queryFn: () => listThreads(currentMb!.email, folder, search || undefined),
     enabled: !!currentMb,
     staleTime: 30_000,
+    // A reply that comes in while the page is open should just appear, the way
+    // it does in Gmail — nobody should have to press refresh to see it.
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
   });
   const isAuto = !!selected?.startsWith(AUTO);
   const thread = useQuery({
@@ -339,13 +343,18 @@ export default function MailPage() {
   const notConnected = threads.error instanceof MailNotConnected;
 
   const act = useMutation({
-    mutationFn: ({ id, change }: { id: string; change: { archive?: boolean; unarchive?: boolean; read?: boolean } }) =>
+    mutationFn: ({ id, change }: { id: string; change: { archive?: boolean; unarchive?: boolean; read?: boolean; notJunk?: boolean } }) =>
       modifyThread(currentMb!.email, id, change),
     onSuccess: (_r, v) => {
       qc.invalidateQueries({ queryKey: ["mailThreads"] });
       qc.invalidateQueries({ queryKey: ["mailUnread"] });
       setSelected(null);
-      snack(v.change.unarchive ? "Back in the inbox." : v.change.archive ? "Archived. Find it under Archive or All mail." : "Done.");
+      snack(
+        v.change.notJunk ? "Moved to the inbox. Google will learn from that."
+          : v.change.unarchive ? "Back in the inbox."
+            : v.change.archive ? "Archived. Find it under Archive or All mail."
+              : "Done.",
+      );
     },
     onError: () => snack("That didn't go through. Try again."),
   });
@@ -353,7 +362,7 @@ export default function MailPage() {
   /** The same thing, done to everything ticked. One after the other rather
    *  than all at once — Gmail is happier, and a handful of emails is quick. */
   const bulk = useMutation({
-    mutationFn: async ({ ids, change }: { ids: string[]; change: { archive?: boolean; unarchive?: boolean; read?: boolean } }) => {
+    mutationFn: async ({ ids, change }: { ids: string[]; change: { archive?: boolean; unarchive?: boolean; read?: boolean; notJunk?: boolean } }) => {
       for (const id of ids) await modifyThread(currentMb!.email, id, change);
       return ids.length;
     },
@@ -363,7 +372,12 @@ export default function MailPage() {
       if (selected && v.ids.includes(selected)) setSelected(null);
       setPicks([]);
       const many = n === 1 ? "1 email" : `${n} emails`;
-      snack(v.change.unarchive ? `${many} back in the inbox.` : v.change.archive ? `${many} archived. Find them under Archive or All mail.` : `${many} marked as read.`);
+      snack(
+        v.change.notJunk ? `${many} moved to the inbox.`
+          : v.change.unarchive ? `${many} back in the inbox.`
+            : v.change.archive ? `${many} archived. Find them under Archive or All mail.`
+              : `${many} marked as read.`,
+      );
     },
     onError: () => snack("That didn't go through. Try again."),
   });
@@ -437,6 +451,9 @@ export default function MailPage() {
 
   const showList = !selected;
   const archived = folder === "archive";
+  // What Google decided was junk. Worth a look: a real reply lands here now
+  // and again, and from here it can be put straight back.
+  const junk = folder === "junk";
   const msgs = thread.data?.messages ?? [];
   const last = msgs[msgs.length - 1];
   const autoOpen = selected ? autoById.get(selected) : undefined;
@@ -490,6 +507,7 @@ export default function MailPage() {
         >
           <Tab value="inbox" label="Inbox" />
           <Tab value="sent" label="Sent" />
+          <Tab value="junk" label="Junk" />
           <Tab value="archive" label="Archive" />
           <Tab value="all" label="All mail" />
         </Tabs>
@@ -550,11 +568,11 @@ export default function MailPage() {
                 </Button>
                 <Button
                   size="small" variant="contained" disableElevation disabled={bulk.isPending}
-                  startIcon={archived ? <MoveToInboxOutlinedIcon sx={{ fontSize: 17 }} /> : <ArchiveOutlinedIcon sx={{ fontSize: 17 }} />}
-                  onClick={() => bulk.mutate({ ids: picks, change: archived ? { unarchive: true } : { archive: true } })}
+                  startIcon={archived || junk ? <MoveToInboxOutlinedIcon sx={{ fontSize: 17 }} /> : <ArchiveOutlinedIcon sx={{ fontSize: 17 }} />}
+                  onClick={() => bulk.mutate({ ids: picks, change: junk ? { notJunk: true } : archived ? { unarchive: true } : { archive: true } })}
                   sx={{ textTransform: "none", fontSize: 13 }}
                 >
-                  {archived ? "Back to inbox" : "Archive"}
+                  {junk ? "Not junk" : archived ? "Back to inbox" : "Archive"}
                 </Button>
                 <Tooltip title="Untick them all">
                   <IconButton size="small" aria-label="Untick them all" onClick={() => setPicks([])}>
@@ -578,7 +596,10 @@ export default function MailPage() {
             {threads.data && (folder === "sent" ? sentItems.length === 0 : threads.data.threads.length === 0) && (
               <Box sx={{ p: 4, textAlign: "center" }}>
                 <Typography sx={{ fontSize: 14, color: tokens.ink3 }}>
-                  {search ? `Nothing matches "${search}".` : folder === "inbox" ? "Inbox empty. Nicely done." : "Nothing here."}
+                  {search ? `Nothing matches "${search}".`
+                    : folder === "inbox" ? "Inbox empty. Nicely done."
+                      : junk ? "Nothing in junk. Google hasn't held anything back."
+                        : "Nothing here."}
                 </Typography>
               </Box>
             )}
@@ -612,13 +633,13 @@ export default function MailPage() {
                       <Typography sx={{ fontSize: 12, color: tokens.ink3, mt: 0.25 }}>{msgs.length} emails in this conversation</Typography>
                     )}
                   </Box>
-                  <Tooltip title={archived ? "Put it back in the inbox" : "Archive — takes it out of the inbox, keeps it in All mail"}>
+                  <Tooltip title={junk ? "Not junk — put it in the inbox" : archived ? "Put it back in the inbox" : "Archive — takes it out of the inbox, keeps it in All mail"}>
                     <IconButton
-                      aria-label={archived ? "Put it back in the inbox" : "Archive"}
-                      onClick={() => act.mutate({ id: selected, change: archived ? { unarchive: true } : { archive: true } })}
+                      aria-label={junk ? "Not junk" : archived ? "Put it back in the inbox" : "Archive"}
+                      onClick={() => act.mutate({ id: selected, change: junk ? { notJunk: true } : archived ? { unarchive: true } : { archive: true } })}
                       sx={{ width: 44, height: 44 }}
                     >
-                      {archived ? <MoveToInboxOutlinedIcon fontSize="small" /> : <ArchiveOutlinedIcon fontSize="small" />}
+                      {archived || junk ? <MoveToInboxOutlinedIcon fontSize="small" /> : <ArchiveOutlinedIcon fontSize="small" />}
                     </IconButton>
                   </Tooltip>
                 </Box>

@@ -34,7 +34,7 @@ export interface MessageFull {
   attachments: { filename: string; mimeType: string; size: number; attachmentId: string }[];
 }
 
-export type Folder = "inbox" | "sent" | "archive" | "all";
+export type Folder = "inbox" | "sent" | "junk" | "archive" | "all";
 
 /** A file the user is attaching to an outgoing message. `data` is base64. */
 export interface Upload {
@@ -100,7 +100,7 @@ export function sendMail(mailbox: string, msg: { to: string; cc?: string; subjec
 
 /** Mark read/unread, archive, or move back to the inbox. There is deliberately
  *  no delete: archiving keeps every mail findable in "All mail". */
-export function modifyThread(mailbox: string, id: string, change: { read?: boolean; archive?: boolean; unarchive?: boolean }) {
+export function modifyThread(mailbox: string, id: string, change: { read?: boolean; archive?: boolean; unarchive?: boolean; notJunk?: boolean }) {
   return call<{ ok: true }>({ action: "modify", mailbox, id, ...change });
 }
 
