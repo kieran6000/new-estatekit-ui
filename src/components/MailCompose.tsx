@@ -25,6 +25,7 @@ import { tokens } from "../theme";
 import { useSnack } from "../hooks/useSnack";
 import { listMailContacts } from "../api/clients";
 import { listMailboxes, saveSignature, sendMail, type Inline, type Mailbox, type Upload } from "../api/mail";
+import { MAX_IMAGE_BYTES, shrinkImage } from "../lib/image";
 import { clearDraft, draftLabel, getDraft, isEmptyDraft, saveDraft, subscribeDraft } from "../lib/mailDraft";
 import {
   closeCompose, getCompose, minimizeCompose, openCompose, subscribeCompose, updateCompose, type Draft,
@@ -68,24 +69,38 @@ export function attIcon(mime: string) {
   return <InsertDriveFileOutlinedIcon sx={{ fontSize: 18, color: tokens.ink2 }} />;
 }
 
-function readFile(file: File): Promise<Upload & { size: number }> {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onerror = () => reject(new Error("read failed"));
-    r.onload = () => {
-      const res = String(r.result);
-      resolve({ filename: file.name, mimeType: file.type || "application/octet-stream", data: res.slice(res.indexOf(",") + 1), size: file.size });
-    };
-    r.readAsDataURL(file);
-  });
-}
-function dataUrl(file: File): Promise<string> {
+function dataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const r = new FileReader();
     r.onerror = () => reject(new Error("read failed"));
     r.onload = () => resolve(String(r.result));
-    r.readAsDataURL(file);
+    r.readAsDataURL(blob);
   });
+}
+
+/** Reads a file ready to send. A PHOTO is made smaller first: a phone takes
+ *  six megabytes of detail no screen will ever show, and the person at the
+ *  other end has to download every byte of it. Everything else — a PDF, a
+ *  spreadsheet, a signed document — goes exactly as it is. */
+async function readFile(file: File): Promise<Upload & { size: number }> {
+  let body: Blob = file;
+  let filename = file.name;
+  if (/^image\//i.test(file.type) && file.size <= MAX_IMAGE_BYTES) {
+    const small = await shrinkImage(file, "attach");
+    if (small.size < file.size) {
+      body = small;
+      if (small.type === "image/jpeg" && !/\.jpe?g$/i.test(filename)) {
+        filename = `${filename.replace(/\.[^.]+$/, "")}.jpg`;
+      }
+    }
+  }
+  const res = await dataUrl(body);
+  return {
+    filename,
+    mimeType: body.type || file.type || "application/octet-stream",
+    data: res.slice(res.indexOf(",") + 1),
+    size: body.size,
+  };
 }
 
 /** Pictures in the body travel with the mail as `cid:` parts, so they still
@@ -293,8 +308,11 @@ export function MailEditor({ initial, placeholder, onChange, minHeight = 190, au
     if (!list.length) return;
     try {
       for (const f of list) {
-        if (f.size > 8 * 1024 * 1024) { snack("That picture is too big to put in the email. Attach it as a file instead."); continue; }
-        insert(`<img src="${await dataUrl(f)}" style="max-width:100%;height:auto" alt="">`);
+        if (f.size > MAX_IMAGE_BYTES) { snack("That picture is too big to read. Attach it as a file instead."); continue; }
+        const small = await shrinkImage(f, "inline");
+        const use = small.size < f.size ? small : f;
+        if (use.size > 4 * 1024 * 1024) { snack("That picture is too big to put in the email. Attach it as a file instead."); continue; }
+        insert(`<img src="${await dataUrl(use)}" style="max-width:100%;height:auto" alt="">`);
       }
     } catch {
       snack("Couldn't add that picture.");

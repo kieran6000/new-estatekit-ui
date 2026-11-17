@@ -82,6 +82,7 @@ import InsertEmoticonIcon from "@mui/icons-material/InsertEmoticon";
 import ImageOutlinedIcon from "@mui/icons-material/ImageOutlined";
 import PictureAsPdfOutlinedIcon from "@mui/icons-material/PictureAsPdfOutlined";
 import { MAX_WA_FILE_MB, uploadWhatsAppFile } from "../api/workflowFiles";
+import { MAX_IMAGE_BYTES } from "../lib/image";
 import type { Attachment } from "../lib/workflow";
 import { PillEditor, type PillEditorHandle } from "./PillEditor";
 import { getAccountVocab } from "../api/accountVocab";
@@ -1810,7 +1811,10 @@ function AttachmentPicker({ value, onChange }: { value: Attachment | null | unde
     if (!file) return;
     const pdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
     if (want === "pdf" ? !pdf : !file.type.startsWith("image/")) return setErr(want === "pdf" ? "That isn't a PDF." : "That isn't a picture.");
-    if (file.size > MAX_WA_FILE_MB * 1024 * 1024) return setErr(`That's over ${MAX_WA_FILE_MB} MB. Choose a smaller file.`);
+    // A picture is made smaller on the way up, so a big one off a phone is
+    // fine. A PDF goes exactly as it is, so that one has to be under the limit.
+    if (pdf && file.size > MAX_WA_FILE_MB * 1024 * 1024) return setErr(`That's over ${MAX_WA_FILE_MB} MB. Choose a smaller file.`);
+    if (!pdf && file.size > MAX_IMAGE_BYTES) return setErr("That picture is too big to read. Choose a smaller one.");
     setBusy(true);
     try {
       onChange(await uploadWhatsAppFile(file));

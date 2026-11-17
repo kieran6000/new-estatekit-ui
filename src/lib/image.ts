@@ -7,14 +7,34 @@ import { findLogoBounds } from "./logo";
 // Before this, photos went up at full size and landing-page images were kept
 // as text inside the database rows, which was most of the Supabase egress.
 
-export type ImageKind = "logo" | "photo" | "sale" | "screenshot";
+export type ImageKind = "logo" | "photo" | "sale" | "screenshot" | "attach" | "inline";
 
-const BOX: Record<ImageKind, { w: number; h: number; q: number }> = {
-  logo: { w: 480, h: 160, q: 0.85 }, // shown about 50px tall
-  photo: { w: 400, h: 400, q: 0.82 }, // round photos, up to ~120px
-  screenshot: { w: 1600, h: 1600, q: 0.85 }, // pasted into a note: big enough to read
-  sale: { w: 1000, h: 1000, q: 0.8 }, // recent-sales cards and pages
+// How small each kind gets, and in what format. Staying inside the app we use
+// WebP, which is the smallest. Anything LEAVING the app is JPEG instead:
+// WhatsApp turns a WebP into a sticker, and a few older email programs show
+// nothing at all, so the small saving isn't worth the risk.
+const BOX: Record<ImageKind, { w: number; h: number; q: number; type: string }> = {
+  logo: { w: 480, h: 160, q: 0.85, type: "image/webp" }, // shown about 50px tall
+  photo: { w: 400, h: 400, q: 0.82, type: "image/webp" }, // round photos, up to ~120px
+  screenshot: { w: 1600, h: 1600, q: 0.85, type: "image/webp" }, // pasted into a note: big enough to read
+  sale: { w: 1000, h: 1000, q: 0.8, type: "image/webp" }, // recent-sales cards and pages
+  // Attached to an email or sent on WhatsApp. 2000px across still fills any
+  // screen and prints fine, and a phone photo comes down from ~6 MB to a few
+  // hundred KB — the person receiving it stops waiting, and nothing visible
+  // is lost.
+  attach: { w: 2000, h: 2000, q: 0.82, type: "image/jpeg" },
+  // Put INTO the words of an email, where it only ever shows at the width of
+  // the email itself, so the extra detail is weight for nothing.
+  inline: { w: 1600, h: 1600, q: 0.8, type: "image/jpeg" },
 };
+
+/** The file ending that matches what the shrinker handed back. */
+export function extFor(blob: Blob, fallback = "jpg"): string {
+  if (blob.type === "image/webp") return "webp";
+  if (blob.type === "image/jpeg") return "jpg";
+  if (blob.type === "image/png") return "png";
+  return fallback;
+}
 
 /** Largest file we'll even try to read (phones can take 10 MB+ photos). */
 export const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
@@ -55,7 +75,7 @@ function logoCrop(img: ImageBitmap | HTMLImageElement, iw: number, ih: number) {
 /** Shrinks a picture to fit `kind`'s box (never enlarges) and returns WebP,
  *  or the original file if the browser can't process it. */
 export async function shrinkImage(file: File, kind: ImageKind): Promise<Blob> {
-  const { w, h, q } = BOX[kind];
+  const { w, h, q, type } = BOX[kind];
   try {
     const img = await decode(file);
     const iw = "naturalWidth" in img ? img.naturalWidth : img.width;
@@ -68,8 +88,9 @@ export async function shrinkImage(file: File, kind: ImageKind): Promise<Blob> {
     const ctx = canvas.getContext("2d");
     if (!ctx) return file;
     ctx.drawImage(img, crop.x, crop.y, crop.w, crop.h, 0, 0, canvas.width, canvas.height);
-    const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, "image/webp", q));
-    // Some older browsers ignore WebP and return PNG; only use it if smaller.
+    const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, type, q));
+    // Some older browsers ignore the format asked for and return PNG, which can
+    // come out bigger than the original — then the original is the better file.
     return blob && blob.size < file.size ? blob : file;
   } catch {
     return file;

@@ -84,19 +84,38 @@ function SenderAvatar({ name, email, size = 36 }: { name: string; email: string;
 // ── Attachments ─────────────────────────────────────────────────────────────
 const isViewable = (mime: string) => /^(application\/pdf|image\/(png|jpe?g|gif|webp|bmp))/i.test(mime);
 
+/** A file already fetched once. Somebody looks at an attachment and then
+ *  saves it, which is two taps on the same file; the second one shouldn't pull
+ *  it down the line again. Only small files are worth holding on to, and it's
+ *  all forgotten the moment the tab closes. */
+const fetched = new Map<string, string>();
+const FETCHED_KEEP = 8;
+const FETCHED_MAX_BYTES = 2 * 1024 * 1024;
+
 /** A received attachment: tap to open (PDF/image in a tab) or download. */
 function AttachmentChip({ mailbox, messageId, att }: { mailbox: string; messageId: string; att: MessageFull["attachments"][number] }) {
   const [busy, setBusy] = useState(false);
   const snack = useSnack();
   const open = async () => {
     if (busy) return;
-    if (att.size > 18 * 1024 * 1024) {
+    if (att.size > 10 * 1024 * 1024) {
       snack("That file is too big to open here. Open this email in Gmail to get it.");
       return;
     }
     setBusy(true);
     try {
-      const { data } = await getAttachment(mailbox, messageId, att.attachmentId);
+      const key = `${messageId}:${att.attachmentId}`;
+      let data = fetched.get(key);
+      if (data === undefined) {
+        data = (await getAttachment(mailbox, messageId, att.attachmentId)).data;
+        if (att.size <= FETCHED_MAX_BYTES) {
+          if (fetched.size >= FETCHED_KEEP) {
+            const oldest = fetched.keys().next();
+            if (!oldest.done) fetched.delete(oldest.value);
+          }
+          fetched.set(key, data);
+        }
+      }
       const blob = new Blob([b64ToBytes(data) as BlobPart], { type: att.mimeType || "application/octet-stream" });
       const url = URL.createObjectURL(blob);
       if (isViewable(att.mimeType)) {
