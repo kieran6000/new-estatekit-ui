@@ -985,7 +985,10 @@ describe("confirmation-style emails", () => {
     const token = leadOf(l).plan_token as string;
     expect(token).toMatch(/^[a-f0-9]{32}$/);
     expect(mail.html).toContain("Your marketing plan is ready");
-    expect(mail.html).toContain(`https://leads.estatekit.co/plan/${token}`);
+    // The HTML link is click-tracked (/mc/<id>); the real plan URL lives in a
+    // mail_links row. The plain-text link below stays the real one.
+    expect(db.rows("mail_links").map((r) => r.url)).toContain(`https://leads.estatekit.co/plan/${token}`);
+    expect(mail.html).toContain("https://leads.estatekit.co/mc/");
     expect(mail.html).toContain("<table role=\"presentation\"");
     expect(mail.text).toContain(`YOUR MARKETING PLAN IS READY`);
     expect(mail.text).toContain(`Open my marketing plan: https://leads.estatekit.co/plan/${token}`);
