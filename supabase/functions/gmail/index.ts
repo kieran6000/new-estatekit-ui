@@ -93,16 +93,57 @@ async function accessTokenFor(mailbox: string): Promise<string> {
   return data.access_token;
 }
 
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 async function gmail(mailbox: string, path: string, init?: RequestInit): Promise<any> {
-  const token = await accessTokenFor(mailbox);
-  const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/${encodeURIComponent(mailbox)}${path}`, {
-    ...init,
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...(init?.headers ?? {}) },
-  });
-  const text = await res.text();
-  const body = text ? JSON.parse(text) : {};
-  if (!res.ok) throw new Error(`gmail ${res.status}: ${body?.error?.message ?? text.slice(0, 200)}`);
-  return body;
+  // Google only lets a mailbox take so many calls at once. Asking harder when
+  // it says "too busy" just gets another refusal, so we wait and ask again.
+  for (let go = 0; ; go++) {
+    const token = await accessTokenFor(mailbox);
+    const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/${encodeURIComponent(mailbox)}${path}`, {
+      ...init,
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    });
+    const text = await res.text();
+    const body = text ? JSON.parse(text) : {};
+    if (res.ok) return body;
+    const busy = res.status === 429 || res.status === 403 || res.status >= 500;
+    if (busy && go < 3) {
+      await wait(400 * (go + 1) * (go + 1));
+      continue;
+    }
+    throw new Error(`gmail ${res.status}: ${body?.error?.message ?? text.slice(0, 200)}`);
+  }
+}
+
+/** The same piece of work for each of a list, a few at a time. Twenty-five at
+ *  once is what Google turns away with "too many at once". */
+async function inBatches<T, R>(items: T[], size: number, each: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = [];
+  for (let i = 0; i < items.length; i += size) {
+    out.push(...(await Promise.all(items.slice(i, i + size).map(each))));
+  }
+  return out;
+}
+
+/** What to say on screen when something goes wrong. Google's own wording is
+ *  no use to anybody in the office, so each one it actually sends us gets an
+ *  answer that says what to do about it. */
+function inPlainWords(msg: string): string {
+  if (/invalid_grant|Invalid email or User ID/i.test(msg)) {
+    return "This mailbox doesn't exist in Google Workspace yet. Once it's been created there, it will open here.";
+  }
+  if (/unauthorized_client|not authorized/i.test(msg)) {
+    return "Google hasn't given EstateKit permission to open this mailbox yet.";
+  }
+  if (/\b429\b|Too many concurrent|rateLimit|quota/i.test(msg)) {
+    return "Google is busy with this mailbox. Give it a moment and try again.";
+  }
+  if (/\b(401|403)\b|insufficient|forbidden/i.test(msg)) {
+    return "This mailbox won't let us in. It may have been closed or its permission taken away.";
+  }
+  if (/\b404\b|notFound/i.test(msg)) return "That email isn't there any more. It may have been deleted in Gmail.";
+  return "We couldn't reach this mailbox just now. Please try again in a moment.";
 }
 
 /** The most of one email we will hold in memory and send to the browser. Far
@@ -110,9 +151,14 @@ async function gmail(mailbox: string, path: string, init?: RequestInit): Promise
  *  inbox down for everyone. */
 const MAX_BODY = 1_500_000;
 
+/** Everything one conversation may send to the browser, however many emails
+ *  are in it. */
+const MAX_THREAD = 6_000_000;
+
 /** The biggest attachment we'll hand over. Base64 is a third bigger again, and
- *  past this the worker runs out of memory and the whole page stops. */
-const MAX_ATTACHMENT = 18 * 1024 * 1024;
+ *  past this the worker runs out of memory and the whole page stops — so the
+ *  size is looked at before the file is pulled in, not after. */
+const MAX_ATTACHMENT = 10 * 1024 * 1024;
 
 /** Gmail writes its one-line preview as it would appear inside a web page
  *  ("How&#39;s 12pm"), so it has to be turned back into ordinary words before
@@ -378,25 +424,23 @@ Deno.serve(async (req) => {
                   : "in:inbox";
         const listed = await gmail(mailbox, `/threads?maxResults=25&q=${encodeURIComponent(q)}${payload.pageToken ? `&pageToken=${payload.pageToken}` : ""}`);
         const ids: string[] = (listed.threads ?? []).map((t: any) => t.id);
-        const threads = await Promise.all(
-          ids.map(async (id) => {
-            const t = await gmail(mailbox, `/threads/${id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date`);
-            const msgs = t.messages ?? [];
-            const last = msgs[msgs.length - 1];
-            const hs: Header[] = last?.payload?.headers ?? [];
-            const unread = msgs.some((m: any) => (m.labelIds ?? []).includes("UNREAD"));
-            const who = folder === "sent" ? parseFrom(header(hs, "To")) : parseFrom(header(hs, "From"));
-            return {
-              id,
-              subject: header(hs, "Subject") || "(no subject)",
-              who,
-              snippet: plainSnippet(last?.snippet ?? ""),
-              date: header(hs, "Date"),
-              unread,
-              count: msgs.length,
-            };
-          }),
-        );
+        const threads = await inBatches(ids, 5, async (id) => {
+          const t = await gmail(mailbox, `/threads/${id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date`);
+          const msgs = t.messages ?? [];
+          const last = msgs[msgs.length - 1];
+          const hs: Header[] = last?.payload?.headers ?? [];
+          const unread = msgs.some((m: any) => (m.labelIds ?? []).includes("UNREAD"));
+          const who = folder === "sent" ? parseFrom(header(hs, "To")) : parseFrom(header(hs, "From"));
+          return {
+            id,
+            subject: header(hs, "Subject") || "(no subject)",
+            who,
+            snippet: plainSnippet(last?.snippet ?? ""),
+            date: header(hs, "Date"),
+            unread,
+            count: msgs.length,
+          };
+        });
         return json({ threads, nextPageToken: listed.nextPageToken ?? null });
       }
 
@@ -408,10 +452,14 @@ Deno.serve(async (req) => {
         const t = await gmail(mailbox, `/threads/${payload.id}?format=minimal`);
         const refs = (t.messages ?? []) as { id: string; labelIds?: string[] }[];
         const messages: any[] = [];
+        // A conversation of thirty long emails adds up even when each one is
+        // under the single-email limit, so the whole lot is capped as well.
+        let spent = 0;
         for (const ref of refs) {
           const m = await gmail(mailbox, `/messages/${ref.id}?format=full`);
           const hs: Header[] = m.payload?.headers ?? [];
           const { html, text } = extractBody(m.payload);
+          const room = Math.max(0, Math.min(MAX_BODY, MAX_THREAD - spent));
           const body = html || (text ? `<pre style="white-space:pre-wrap;font:inherit;margin:0">${text.replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]!))}</pre>` : "");
           messages.push({
             id: m.id,
@@ -422,11 +470,12 @@ Deno.serve(async (req) => {
             subject: header(hs, "Subject"),
             date: header(hs, "Date"),
             unread: (m.labelIds ?? []).includes("UNREAD"),
-            html: body.length > MAX_BODY
-              ? body.slice(0, MAX_BODY) + `<p style="color:#5f6368">This email is too long to show all of it here. Open it in Gmail to read the rest.</p>`
+            html: body.length > room
+              ? body.slice(0, room) + `<p style="color:#5f6368">This email is too long to show all of it here. Open it in Gmail to read the rest.</p>`
               : body,
             attachments: listAttachments(m.payload),
           });
+          spent += Math.min(body.length, room);
         }
         // Opening a thread marks it read.
         if (refs.some((m) => (m.labelIds ?? []).includes("UNREAD"))) {
@@ -495,6 +544,13 @@ Deno.serve(async (req) => {
       }
 
       case "attachment": {
+        // How big it is comes from the email itself, so an outsized file is
+        // turned away without ever being held in memory.
+        const info = await gmail(mailbox, `/messages/${payload.messageId}?format=full`);
+        const att = listAttachments(info.payload).find((a) => a.attachmentId === payload.attachmentId);
+        if (att && att.size > MAX_ATTACHMENT) {
+          return json({ error: "That file is too big to open here. Open this email in Gmail to get it." }, 400);
+        }
         const a = await gmail(mailbox, `/messages/${payload.messageId}/attachments/${payload.attachmentId}`);
         if ((a.size ?? 0) > MAX_ATTACHMENT) {
           return json({ error: "That file is too big to open here. Open this email in Gmail to get it." }, 400);
@@ -573,7 +629,8 @@ Deno.serve(async (req) => {
     const msg = String(e instanceof Error ? e.message : e);
     if (msg === "not-configured") return json({ error: "not-configured", detail: "The Gmail service account key (GOOGLE_SA_KEY) isn't set yet." }, 503);
     if (msg === "bad-sa-key") return json({ error: "The GOOGLE_SA_KEY secret isn't valid JSON." }, 500);
+    // The whole story goes to the log; the screen gets plain words.
     console.error("gmail fn error", msg);
-    return json({ error: msg }, 500);
+    return json({ error: inPlainWords(msg) }, 500);
   }
 });
