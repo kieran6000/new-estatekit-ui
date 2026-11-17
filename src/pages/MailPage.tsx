@@ -48,7 +48,6 @@ import {
 } from "../api/mail";
 
 const LAST_MB = "ek.mail.mailbox";
-const HIDE_NEWS = "ek.mail.hideNewsletters";
 const UNDO_MS = 4000; // window to cancel a send before it actually goes
 const MAX_ATTACH = 22 * 1024 * 1024; // keep total raw size under Gmail's limit
 
@@ -792,7 +791,6 @@ export default function MailPage() {
   const [search, setSearch] = useState("");
   const [compose, setCompose] = useState<Draft | null>(null);
   const [sigOpen, setSigOpen] = useState(false);
-  const [hideNews, setHideNews] = useState<boolean>(() => localStorage.getItem(HIDE_NEWS) !== "0");
   const sendTimer = useRef<number | null>(null);
   const people = useDirectory();
 
@@ -802,7 +800,6 @@ export default function MailPage() {
 
   useEffect(() => { if (!mailbox && mbList.length) setMailbox(mbList[0].email); }, [mbList, mailbox]);
   useEffect(() => { if (currentMb) localStorage.setItem(LAST_MB, currentMb.email); }, [currentMb]);
-  useEffect(() => { localStorage.setItem(HIDE_NEWS, hideNews ? "1" : "0"); }, [hideNews]);
 
   // Deep links: ?box=…&folder=…&thread=…, plus ?to=…&subject=…&body=… to open
   // a part-written email, and ?draft=1 to pick the saved one back up.
@@ -842,8 +839,8 @@ export default function MailPage() {
 
   const gmailFolder: Folder = folder === "auto" ? "inbox" : folder;
   const threads = useQuery({
-    queryKey: ["mailThreads", currentMb?.email, gmailFolder, search, hideNews],
-    queryFn: () => listThreads(currentMb!.email, gmailFolder, search || undefined, undefined, hideNews),
+    queryKey: ["mailThreads", currentMb?.email, gmailFolder, search],
+    queryFn: () => listThreads(currentMb!.email, gmailFolder, search || undefined),
     enabled: !!currentMb && folder !== "auto",
     staleTime: 30_000,
   });
@@ -1030,17 +1027,6 @@ export default function MailPage() {
         )}
       </Box>
 
-      {folder === "inbox" && !search && (
-        <Box sx={{ px: { xs: 1.5, md: 2 }, py: 0.75, bgcolor: "background.paper", borderBottom: `1px solid ${tokens.divider}` }}>
-          <Chip
-            size="small"
-            onClick={() => setHideNews((v) => !v)}
-            label={hideNews ? "Newsletters and social mail hidden — show them" : "Showing everything — hide newsletters"}
-            sx={{ fontSize: 11.5, height: 26, bgcolor: hideNews ? tokens.hover : tokens.amberTint, cursor: "pointer" }}
-          />
-        </Box>
-      )}
-
       {folder === "auto" ? (
         <Box sx={{ flex: 1, overflowY: "auto" }}><AutomatedMail /></Box>
       ) : (
@@ -1070,9 +1056,6 @@ export default function MailPage() {
                 <Typography sx={{ fontSize: 14, color: tokens.ink3 }}>
                   {search ? `Nothing matches "${search}".` : folder === "inbox" ? "Inbox empty. Nicely done." : "Nothing here."}
                 </Typography>
-                {!search && folder === "inbox" && hideNews && (
-                  <Button size="small" sx={{ mt: 1, textTransform: "none" }} onClick={() => setHideNews(false)}>Show newsletters too</Button>
-                )}
               </Box>
             )}
             {threads.data?.threads.map((t) => (

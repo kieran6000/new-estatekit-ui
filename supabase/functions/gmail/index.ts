@@ -233,11 +233,6 @@ function collectText(payload: GPart | undefined): string {
 
 type GPart = { mimeType?: string; headers?: Header[]; body?: { data?: string }; parts?: GPart[] };
 
-/** Leaves out the mail Gmail itself filed as promotions/social/forums, so the
- *  team inbox shows business and sales mail only. The "All mail" tab, and the
- *  Newsletters toggle, still show everything. */
-const NO_BULK = " -category:promotions -category:social -category:forums";
-
 // ── MIME builder for sending ────────────────────────────────────────────────
 type Upload = { filename: string; mimeType: string; data: string }; // data = base64
 /** An image embedded in the body, referenced by <img src="cid:…">. Sending it
@@ -358,7 +353,7 @@ Deno.serve(async (req) => {
               ? "-in:inbox -in:sent -in:trash -in:spam -in:drafts in:anywhere"
               : folder === "all"
                 ? "in:all -in:trash -in:spam"
-                : `in:inbox${payload.hideNewsletters === false ? "" : NO_BULK}`;
+                : "in:inbox";
         const listed = await gmail(mailbox, `/threads?maxResults=25&q=${encodeURIComponent(q)}${payload.pageToken ? `&pageToken=${payload.pageToken}` : ""}`);
         const ids: string[] = (listed.threads ?? []).map((t: any) => t.id);
         const threads = await Promise.all(
@@ -472,7 +467,7 @@ Deno.serve(async (req) => {
       case "unread": {
         // Just the count of unread inbox threads, for the nav badge. Cheap:
         // one list call, read resultSizeEstimate.
-        const r = await gmail(mailbox, `/threads?maxResults=25&q=${encodeURIComponent(`in:inbox is:unread${payload.hideNewsletters === false ? "" : NO_BULK}`)}`);
+        const r = await gmail(mailbox, `/threads?maxResults=25&q=${encodeURIComponent("in:inbox is:unread")}`);
         return json({ count: (r.threads ?? []).length, more: !!r.nextPageToken });
       }
 

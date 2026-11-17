@@ -80,8 +80,8 @@ async function call<T>(body: Record<string, unknown>): Promise<T> {
   return data as T;
 }
 
-export function listThreads(mailbox: string, folder: Folder, q?: string, pageToken?: string, hideNewsletters = true) {
-  return call<{ threads: ThreadSummary[]; nextPageToken: string | null }>({ action: "list", mailbox, folder, q, pageToken, hideNewsletters });
+export function listThreads(mailbox: string, folder: Folder, q?: string, pageToken?: string) {
+  return call<{ threads: ThreadSummary[]; nextPageToken: string | null }>({ action: "list", mailbox, folder, q, pageToken });
 }
 
 export function getThread(mailbox: string, id: string) {
