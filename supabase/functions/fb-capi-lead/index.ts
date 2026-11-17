@@ -200,17 +200,36 @@ Deno.serve(async (req) => {
 
 // ── Outcomes ─────────────────────────────────────────────────────────────
 
-type Outcome = "lead" | "booked" | "signed" | "won";
+type Outcome = "lead" | "booked" | "attended" | "signed" | "won";
 
+// Seller / buyer / general pipelines.
 const BOOKED = ["Booked", "Viewing Booked"];
 const SIGNED = ["Mandate Signed", "Bought"];
 
+// EstateKit's own "agency" pipeline (prospective agents, from /pitch). Each
+// outcome counts as reached once the lead is at that stage OR any later one,
+// so a lead that skips ahead (Applied → Signed in one move) still backfills
+// the earlier signals. "No-show" means they booked but didn't attend — it
+// counts for "booked" but not "attended".
+const AGENCY_BOOKED = ["Call booked", "Showed", "No-show", "Proposal sent", "Signed", "Paid", "Live", "Renewal due", "Churned"];
+const AGENCY_ATTENDED = ["Showed", "Proposal sent", "Signed", "Paid", "Live", "Renewal due", "Churned"];
+const AGENCY_SIGNED = ["Signed", "Paid", "Live", "Renewal due", "Churned"];
+const AGENCY_WON = ["Paid", "Live", "Renewal due", "Churned"];
+
 /** Did this really happen to the lead? (Never report on a caller's say-so.) */
-function happened(outcome: Outcome, lead: { stage: string; fb_lead_id: string | null; commission_received_at: string | null }): boolean {
+function happened(outcome: Outcome, lead: { stage: string; fb_lead_id: string | null; commission_received_at: string | null }, kind: string | null): boolean {
   if (outcome === "lead") return !!lead.fb_lead_id;
+  if (kind === "agency") {
+    if (outcome === "booked") return AGENCY_BOOKED.includes(lead.stage);
+    if (outcome === "attended") return AGENCY_ATTENDED.includes(lead.stage);
+    if (outcome === "signed") return AGENCY_SIGNED.includes(lead.stage);
+    if (outcome === "won") return AGENCY_WON.includes(lead.stage);
+    return false;
+  }
   if (outcome === "booked") return BOOKED.includes(lead.stage) || SIGNED.includes(lead.stage);
   if (outcome === "signed") return SIGNED.includes(lead.stage);
-  return !!lead.commission_received_at;
+  if (outcome === "attended") return false; // only the agency pipeline tracks "showed"
+  return !!lead.commission_received_at; // won
 }
 
 /** Website leads: Meta's standard names where one fits, so they can be
@@ -220,21 +239,29 @@ function eventNameFor(outcome: Outcome, instantForm: boolean, kind: string | nul
   if (instantForm) {
     if (outcome === "lead") return "Lead";
     if (outcome === "booked") return kind === "buyer" ? "Viewing Booked" : "Booked";
+    if (outcome === "attended") return "Showed";
     if (outcome === "signed") return kind === "buyer" ? "Bought" : kind === "general" ? "Signed Up" : "Mandate Signed";
     return "Commission Received";
   }
-  return outcome === "booked" ? "Schedule" : outcome === "signed" ? "MandateSigned" : outcome === "won" ? "Purchase" : "Lead";
+  if (outcome === "booked") return "Schedule";
+  if (outcome === "attended") return "Showed";
+  if (outcome === "signed") return "MandateSigned";
+  if (outcome === "won") return "Purchase";
+  return "Lead";
 }
 
 async function reportOutcome(supabase: SupabaseClient, leadId: string, outcome: Outcome): Promise<Response> {
-  if (!["lead", "booked", "signed", "won"].includes(outcome)) return json({ error: "unknown outcome" }, 400);
+  if (!["lead", "booked", "attended", "signed", "won"].includes(outcome)) return json({ error: "unknown outcome" }, 400);
   const { data: lead } = await supabase
     .from("leads")
     .select("id, agent_id, name, phone, email, stage, fb_lead_id, commission, commission_received_at, attribution, source_page_id, pipeline_id, created_at")
     .eq("id", leadId)
     .maybeSingle();
   if (!lead) return json({ error: "lead not found" }, 404);
-  if (!happened(outcome, lead)) return json({ skipped: "that hasn't happened to this lead" });
+  const { data: pipeline } = lead.pipeline_id
+    ? await supabase.from("pipelines").select("kind").eq("id", lead.pipeline_id).maybeSingle()
+    : { data: null };
+  if (!happened(outcome, lead, pipeline?.kind ?? null)) return json({ skipped: "that hasn't happened to this lead" });
 
   const { data: page } = lead.source_page_id
     ? await supabase.from("lead_pages").select("fb_pixel_id").eq("id", lead.source_page_id).maybeSingle()
@@ -248,9 +275,6 @@ async function reportOutcome(supabase: SupabaseClient, leadId: string, outcome: 
   const { data: existing } = await supabase.from("fb_capi_events").select("id").eq("event_id", eventId).maybeSingle();
   if (existing) return json({ skipped: "already reported" });
 
-  const { data: pipeline } = lead.pipeline_id
-    ? await supabase.from("pipelines").select("kind").eq("id", lead.pipeline_id).maybeSingle()
-    : { data: null };
   const instantForm = !!lead.fb_lead_id;
   const eventName = eventNameFor(outcome, instantForm, pipeline?.kind ?? null);
   const attribution = (lead.attribution ?? {}) as Record<string, string>;
