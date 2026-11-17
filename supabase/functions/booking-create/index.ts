@@ -172,16 +172,12 @@ Deno.serve(async (req) => {
     console.error("booking-create row insert", insErr.message);
   }
 
-  // Hand the booking to the workflow engine. Stamping the lead's appointment is
-  // what the published "EK Booked — …" reminder workflows count down from, so
-  // the prospect's call reminders are built and edited in Automations like any
-  // client's — not hard-coded here. (The funnel already set the Booked stage.)
-  if (leadId) {
-    const { error: apptErr } = await admin.from("leads")
-      .update({ appointment_at: start.toISOString() })
-      .eq("id", leadId);
-    if (apptErr) console.error("booking-create set appointment_at", apptErr.message);
-  }
+  // Note: the prospect's call reminders are NOT wired here. funnel-lead sets the
+  // Booked stage + call time, and the leads_track_appointment DB trigger derives
+  // appointment_at from that — which is what the published "EK Booked — …"
+  // workflows count down from. So the reminders are built and edited in
+  // Automations like any client's, with no hard-coding. This function owns only
+  // the Google Calendar event + Meet link.
 
   return json({ ok: true, booking_id: bookingId, meet_url: meetUrl, event_link: ev.htmlLink ?? null, starts_at: start.toISOString() });
 });
