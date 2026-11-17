@@ -24,7 +24,7 @@ import RedoIcon from "@mui/icons-material/Redo";
 import { tokens } from "../theme";
 import { useSnack } from "../hooks/useSnack";
 import { listMailContacts } from "../api/clients";
-import { listMailboxes, sendMail, type Inline, type Mailbox, type Upload } from "../api/mail";
+import { listMailboxes, saveSignature, sendMail, type Inline, type Mailbox, type Upload } from "../api/mail";
 import { clearDraft, draftLabel, getDraft, isEmptyDraft, saveDraft, subscribeDraft } from "../lib/mailDraft";
 import {
   closeCompose, getCompose, minimizeCompose, openCompose, subscribeCompose, updateCompose, type Draft,
@@ -35,6 +35,10 @@ export { openCompose, type Draft };
 export const LAST_MB = "ek.mail.mailbox";
 const UNDO_MS = 4000; // window to cancel a send before it actually goes
 const MAX_ATTACH = 22 * 1024 * 1024; // keep total raw size under Gmail's limit
+/** The EstateKit mark for signatures. A plain address that stays the same from
+ *  one release to the next, so the picture still loads in an email somebody
+ *  opens months from now. */
+export const LOGO_URL = "https://leads.estatekit.co/signature-logo.png";
 
 // ── Small shared helpers (the Mail page uses these too) ─────────────────────
 export const esc = (s: string) => s.replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]!));
@@ -44,7 +48,7 @@ export const sigHtml = (sig: string) => {
   if (!t) return "";
   // A signature saved with the rich editor is already html; an older plain-text
   // one keeps its line breaks.
-  return `<br><br><div>${isHtml(t) ? t : esc(t).replace(/\n/g, "<br>")}</div>`;
+  return `<br><div>${isHtml(t) ? t : esc(t).replace(/\n/g, "<br>")}</div>`;
 };
 export const fmtSize = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / 1048576).toFixed(1)} MB`);
 export const plainText = (html: string) =>
@@ -186,8 +190,10 @@ function ToolBtn({ title, onClick, children }: { title: string; onClick: () => v
   );
 }
 
-export function MailEditor({ initial, placeholder, onChange, minHeight = 190, autoFocus }: {
+export function MailEditor({ initial, placeholder, onChange, minHeight = 190, autoFocus, logo }: {
   initial: string; placeholder: string; onChange: (html: string) => void; minHeight?: number; autoFocus?: boolean;
+  /** Offer a one-tap EstateKit logo. On for signatures, off for ordinary mail. */
+  logo?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -320,6 +326,15 @@ export function MailEditor({ initial, placeholder, onChange, minHeight = 190, au
         <ToolBtn title="Add a link" onClick={() => setLinkOpen(true)}><InsertLinkIcon sx={{ fontSize: 19 }} /></ToolBtn>
         <ToolBtn title="Put a picture in the message" onClick={() => fileRef.current?.click()}><ImageOutlinedIcon sx={{ fontSize: 19 }} /></ToolBtn>
         <ToolBtn title="Remove formatting" onClick={() => cmd("removeFormat")}><FormatClearIcon sx={{ fontSize: 19 }} /></ToolBtn>
+        {logo && (
+          <Button
+            size="small"
+            onClick={() => insert(`<img src="${LOGO_URL}" alt="EstateKit" width="150" style="width:150px;height:auto;max-width:100%">`)}
+            sx={{ ml: 0.5, textTransform: "none", fontSize: 12.5 }}
+          >
+            EstateKit logo
+          </Button>
+        )}
         {picked && (
           <Typography sx={{ fontSize: 12, color: tokens.ink3, ml: 1 }}>
             Drag the blue dot to make the picture bigger or smaller
@@ -507,6 +522,71 @@ function RecipientField({ label, value, onChange, onTyping, people, autoFocus }:
   );
 }
 
+// ── The signature editor ────────────────────────────────────────────────────
+/** What goes on the bottom of everything sent from this mailbox. Lives here so
+ *  it can be opened straight from the email you're writing, as well as from the
+ *  pencil at the top of the Mail page. */
+export function SignatureDialog({ mailbox, onClose, onSaved }: { mailbox: Mailbox; onClose: () => void; onSaved: () => void }) {
+  const [sig, setSig] = useState(() => (isHtml(mailbox.signature) ? mailbox.signature : esc(mailbox.signature).replace(/\n/g, "<br>")));
+  const [state, setState] = useState<"" | "saving" | "saved">("");
+  const untouched = useRef(true);
+  const snack = useSnack();
+  // Held in a ref so saving doesn't restart the timer every time the mailbox
+  // list refreshes underneath us.
+  const savedCb = useRef(onSaved);
+  savedCb.current = onSaved;
+
+  const put = async (html: string) => {
+    setState("saving");
+    try {
+      await saveSignature(mailbox.email, html);
+      setState("saved");
+      savedCb.current();
+      return true;
+    } catch {
+      setState("");
+      snack("Couldn't save the signature. Try again.");
+      return false;
+    }
+  };
+
+  // Saves itself a moment after you stop typing, the way an unfinished email
+  // does. There's no Save button to forget, and because it belongs to the
+  // mailbox rather than to you, it never turns up as a draft in the corner.
+  useEffect(() => {
+    if (untouched.current) { untouched.current = false; return; }
+    setState("saving");
+    const t = window.setTimeout(() => { void put(sig); }, 800);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sig, mailbox.email]);
+
+  const done = async () => {
+    // Anything typed in the last second hasn't been saved yet.
+    if (state === "saving") { if (!(await put(sig))) return; }
+    onClose();
+  };
+
+  return (
+    <Dialog open onClose={done} fullWidth maxWidth="sm" slotProps={{ paper: { sx: { borderRadius: 1.5 } } }}>
+      <DialogTitle sx={{ fontSize: 16, fontWeight: 600 }}>Signature · {mailbox.email}</DialogTitle>
+      <DialogContent dividers>
+        <Typography sx={{ fontSize: 12.5, color: tokens.ink3, mb: 1 }}>
+          Goes on the bottom of every email sent from this mailbox. Make text bold, add a link, or drop the EstateKit
+          logo in. It saves itself as you go.
+        </Typography>
+        <MailEditor initial={sig} placeholder="Your name, EstateKit, your number" onChange={setSig} minHeight={140} logo />
+      </DialogContent>
+      <DialogActions sx={{ px: 2, py: 1.5 }}>
+        <Typography sx={{ flex: 1, fontSize: 12, color: tokens.ink3 }}>
+          {state === "saving" ? "Saving…" : state === "saved" ? "Saved" : ""}
+        </Typography>
+        <Button variant="contained" disableElevation onClick={done}>Done</Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
 // ── The compose window ──────────────────────────────────────────────────────
 /** Glue everything typed into the "To" box together: the chips already made,
  *  plus anything still sitting in the box unfinished. */
@@ -527,7 +607,9 @@ function ComposeWindow({ mailbox, draft, onClose, onSend }: {
   const [atts, setAtts] = useState<(Upload & { size: number })[]>(() => (draft.attachments ?? []).map((a) => ({ ...a, size: b64ToBytes(a.data).length })));
   const [attErr, setAttErr] = useState("");
   const [confirmBin, setConfirmBin] = useState(false);
+  const [sigOpen, setSigOpen] = useState(false);
   const [saved, setSaved] = useState(false);
+  const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
   const people = useDirectory();
   const snack = useSnack();
@@ -560,18 +642,28 @@ function ComposeWindow({ mailbox, draft, onClose, onSend }: {
       const next = [...atts, ...read];
       if (next.reduce((n, a) => n + a.size, 0) > MAX_ATTACH) {
         setAttErr("That's over the 22 MB limit. Take a file off, or send a link instead.");
-        return;
+      } else {
+        setAtts(next);
       }
-      setAtts(next);
     } catch {
       snack("Couldn't attach that file.");
     }
+    // Always cleared, even after a file was turned away, so the same file can
+    // be picked again without closing and reopening the email.
     if (fileRef.current) fileRef.current.value = "";
   };
 
   const submit = () => {
-    const { html: bodyHtml, inline } = extractInlineImages(d.body);
-    const html = `<div>${bodyHtml}</div>${sigHtml(mailbox.signature)}${d.quoted ? `<br>${d.quoted}` : ""}`;
+    // Blank lines left at the end of what was typed would otherwise push the
+    // signature halfway down the email.
+    const body = d.body.replace(/(?:\s|&nbsp;|<br\s*\/?>|<div>(?:\s|&nbsp;|<br\s*\/?>)*<\/div>)+$/gi, "");
+    // Pictures are pulled out of the WHOLE email, signature and quoted reply
+    // included — not just the part that was typed. A picture left sitting in
+    // the html as raw data is thrown away by most email programs, which is how
+    // a logo ends up as a mystery attachment instead of in the signature.
+    const { html, inline } = extractInlineImages(
+      `<div>${body}</div>${sigHtml(mailbox.signature)}${d.quoted ? `<br>${d.quoted}` : ""}`,
+    );
     onSend({
       ...d,
       to: toAll,
@@ -655,12 +747,21 @@ function ComposeWindow({ mailbox, draft, onClose, onSend }: {
           </Typography>
         )}
         {attErr && <Typography sx={{ fontSize: 12.5, color: tokens.red }}>{attErr}</Typography>}
-        {mailbox.signature.trim() && (
-          <Box sx={{ borderTop: `1px solid ${tokens.divider}`, pt: 1 }}>
-            <Typography sx={{ fontSize: 11, color: tokens.ink3, mb: 0.25 }}>Your signature goes on the bottom</Typography>
-            <Box sx={{ fontSize: 12.5, color: tokens.ink3 }} dangerouslySetInnerHTML={{ __html: sigHtml(mailbox.signature) }} />
+        {/* Always shown, set or not: the only signature that goes on this email
+            is the one made here, so an empty one is worth seeing. */}
+        <Box sx={{ borderTop: `1px solid ${tokens.divider}`, pt: 1 }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            <Typography sx={{ fontSize: 11, color: tokens.ink3, flex: 1 }}>
+              {mailbox.signature.trim() ? "Your signature goes on the bottom" : "No signature on this mailbox yet"}
+            </Typography>
+            <Button size="small" onClick={() => setSigOpen(true)} sx={{ textTransform: "none", fontSize: 12 }}>
+              {mailbox.signature.trim() ? "Change it" : "Add one"}
+            </Button>
           </Box>
-        )}
+          {mailbox.signature.trim() && (
+            <Box sx={{ fontSize: 12.5, color: tokens.ink3 }} dangerouslySetInnerHTML={{ __html: sigHtml(mailbox.signature) }} />
+          )}
+        </Box>
         <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, color: tokens.ink3 }}>
           <DoneAllIcon sx={{ fontSize: 15 }} />
           <Typography sx={{ fontSize: 11.5 }}>
@@ -680,6 +781,13 @@ function ComposeWindow({ mailbox, draft, onClose, onSend }: {
           </span>
         </Tooltip>
       </DialogActions>
+      {sigOpen && (
+        <SignatureDialog
+          mailbox={mailbox}
+          onClose={() => setSigOpen(false)}
+          onSaved={() => qc.invalidateQueries({ queryKey: ["mailboxes"] })}
+        />
+      )}
       <Dialog open={confirmBin} onClose={() => setConfirmBin(false)} maxWidth="xs" fullWidth>
         <DialogTitle sx={{ fontSize: 16, fontWeight: 600 }}>Throw this email away?</DialogTitle>
         <DialogContent><Typography sx={{ fontSize: 13.5, color: tokens.ink2 }}>What you've written will be gone. Nothing is sent.</Typography></DialogContent>

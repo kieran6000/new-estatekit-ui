@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  AppBar, Avatar, Box, Button, Checkbox, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Divider,
+  AppBar, Avatar, Box, Button, Checkbox, CircularProgress, Divider,
   IconButton, InputBase, MenuItem, Select, Tab, Tabs, Toolbar, Tooltip, Typography, useMediaQuery, useTheme,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
@@ -26,14 +26,14 @@ import { useSnack } from "../hooks/useSnack";
 import { getDraft } from "../lib/mailDraft";
 import { openCompose } from "../lib/composeWindow";
 import {
-  attIcon, b64ToBytes, Body, emailIn, esc, fmtSize, isHtml, MailEditor, plainText, LAST_MB,
+  attIcon, b64ToBytes, Body, emailIn, esc, fmtSize, plainText, SignatureDialog, LAST_MB,
 } from "../components/MailCompose";
 import { useMailUnreadByBox } from "../components/MailBits";
 import { listWorkflowEmails, type SentEmail } from "../api/workflowEmails";
 import {
   getAttachment, getThread, listMailboxes, listThreads, MailNotConnected, modifyThread, runBounceCheck,
-  saveSignature, sentStatus,
-  type Folder, type Mailbox, type MessageFull, type SentStatus, type ThreadSummary,
+  sentStatus,
+  type Folder, type MessageFull, type SentStatus, type ThreadSummary,
 } from "../api/mail";
 
 /** How many days of EstateKit's own automated mail show up in Sent alongside
@@ -59,32 +59,17 @@ function timeFull(iso: string): string {
 }
 const initials = (s: string) => (s.trim()[0] || "?").toUpperCase();
 
-// ── Sender avatar: real Gravatar photo when the person has one, else a tidy
-// coloured monogram (same idea as WhatsApp/Gmail). No blue, per house style. ──
+// ── Sender avatar: a tidy coloured monogram, the same colour for the same
+// person every time (same idea as WhatsApp). No blue, per house style. ──────
 const AV_COLORS = ["#5b6b5a", "#7a5c48", "#6b5b7a", "#4f6d6a", "#7a6b4f", "#6a5151", "#4f6a52", "#605a6e"];
 function avatarColor(seed: string): string {
   let h = 0;
   for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
   return AV_COLORS[h % AV_COLORS.length];
 }
-async function sha256hex(s: string): Promise<string> {
-  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s.trim().toLowerCase()));
-  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
 function SenderAvatar({ name, email, size = 36 }: { name: string; email: string; size?: number }) {
-  const [src, setSrc] = useState<string | undefined>(undefined);
-  useEffect(() => {
-    let live = true;
-    if (!email) { setSrc(undefined); return; }
-    sha256hex(email).then((h) => { if (live) setSrc(`https://www.gravatar.com/avatar/${h}?s=${size * 2}&d=404`); });
-    return () => { live = false; };
-  }, [email, size]);
   return (
-    <Avatar
-      src={src}
-      slotProps={{ img: { onError: () => setSrc(undefined), referrerPolicy: "no-referrer" } }}
-      sx={{ width: size, height: size, fontSize: size * 0.42, bgcolor: avatarColor(email || name), color: "#fff", flexShrink: 0 }}
-    >
+    <Avatar sx={{ width: size, height: size, fontSize: size * 0.42, bgcolor: avatarColor(email || name), color: "#fff", flexShrink: 0 }}>
       {initials(name)}
     </Avatar>
   );
@@ -212,32 +197,6 @@ function Ticks({ delivered, opened, clicked, bounced, ours, who }: {
         <Typography sx={{ fontSize: 11.5, fontWeight: lit ? 600 : 400 }}>{word}</Typography>
       </Box>
     </Tooltip>
-  );
-}
-
-// ── Signature editor ────────────────────────────────────────────────────────
-function SignatureDialog({ mailbox, onClose, onSaved }: { mailbox: Mailbox; onClose: () => void; onSaved: () => void }) {
-  const [sig, setSig] = useState(() => (isHtml(mailbox.signature) ? mailbox.signature : esc(mailbox.signature).replace(/\n/g, "<br>")));
-  const snack = useSnack();
-  const save = useMutation({
-    mutationFn: () => saveSignature(mailbox.email, sig),
-    onSuccess: () => { snack("Signature saved."); onSaved(); },
-    onError: () => snack("Couldn't save the signature. Try again."),
-  });
-  return (
-    <Dialog open onClose={onClose} fullWidth maxWidth="sm" slotProps={{ paper: { sx: { borderRadius: 1.5 } } }}>
-      <DialogTitle sx={{ fontSize: 16, fontWeight: 600 }}>Signature · {mailbox.email}</DialogTitle>
-      <DialogContent dividers>
-        <Typography sx={{ fontSize: 12.5, color: tokens.ink3, mb: 1 }}>
-          Goes on the bottom of every email sent from this mailbox. You can make text bold, add a link, or drop in a logo.
-        </Typography>
-        <MailEditor initial={sig} placeholder="Your name, EstateKit, your number" onChange={setSig} minHeight={140} />
-      </DialogContent>
-      <DialogActions sx={{ px: 2, py: 1.5 }}>
-        <Button onClick={onClose} color="inherit">Cancel</Button>
-        <Button variant="contained" disableElevation disabled={save.isPending} onClick={() => save.mutate()}>Save</Button>
-      </DialogActions>
-    </Dialog>
   );
 }
 
@@ -411,7 +370,35 @@ export default function MailPage() {
 
   // Ticks belong to the list you're looking at, so clear them when it changes.
   useEffect(() => { setPicks([]); }, [currentMb?.email, folder, search]);
-  const pick = (id: string, on: boolean) => setPicks((p) => (on ? [...p, id] : p.filter((x) => x !== id)));
+
+  /** Every row you can tick, in the order they're on the screen — what "tick
+   *  them all" means, and what a Shift-click runs between. */
+  const rowIds = useMemo(
+    () => (folder === "sent"
+      ? sentItems.filter((it) => it.kind !== "auto").map((it) => it.id)
+      : (threads.data?.threads ?? []).map((t) => t.id)),
+    [folder, sentItems, threads.data],
+  );
+
+  /** The last row you ticked. Holding Shift and ticking another one picks
+   *  everything between the two, the way a file list does. */
+  const anchor = useRef<string | null>(null);
+  const pick = (id: string, on: boolean, shift = false) => {
+    setPicks((p) => {
+      const from = anchor.current;
+      if (shift && from && from !== id) {
+        const a = rowIds.indexOf(from);
+        const b = rowIds.indexOf(id);
+        if (a >= 0 && b >= 0) {
+          const run = rowIds.slice(Math.min(a, b), Math.max(a, b) + 1);
+          return on ? [...new Set([...p, ...run])] : p.filter((x) => !run.includes(x));
+        }
+      }
+      return on ? [...p, id] : p.filter((x) => x !== id);
+    });
+    anchor.current = id;
+  };
+  const allPicked = rowIds.length > 0 && picks.length >= rowIds.length;
 
   const openThread = (id: string) => {
     setSelected(id);
@@ -536,9 +523,23 @@ export default function MailPage() {
                   px: 1.5, py: 1, bgcolor: tokens.hover, borderBottom: `1px solid ${tokens.divider}`,
                 }}
               >
+                <Tooltip title={allPicked ? "Untick them all" : "Tick every email in this list"}>
+                  <Checkbox
+                    checked={allPicked}
+                    indeterminate={!allPicked}
+                    onChange={(e) => { anchor.current = null; setPicks(e.target.checked ? rowIds : []); }}
+                    sx={{ p: 0.5 }}
+                    slotProps={{ input: { "aria-label": "Tick every email in this list" } }}
+                  />
+                </Tooltip>
                 <Typography sx={{ fontSize: 13.5, fontWeight: 600 }}>
-                  {picks.length} picked
+                  {allPicked ? `All ${picks.length} picked` : `${picks.length} picked`}
                 </Typography>
+                {picks.length === 1 && desktop && (
+                  <Typography sx={{ fontSize: 12, color: tokens.ink3 }}>
+                    — hold Shift and tick another to take the whole run
+                  </Typography>
+                )}
                 <Box sx={{ flex: 1 }} />
                 <Button
                   size="small" color="inherit" disabled={bulk.isPending}
@@ -584,9 +585,9 @@ export default function MailPage() {
             {folder === "sent"
               ? sentItems.map((it) => (it.kind === "auto"
                 ? <AutoRow key={it.id} e={it.e} active={it.id === selected} onClick={() => setSelected(it.id)} />
-                : <ThreadRow key={it.id} t={it.t} active={it.id === selected} onClick={() => openThread(it.id)} tick={tickByThread.get(it.id)} picked={picks.includes(it.id)} onPick={pick} />))
+                : <ThreadRow key={it.id} t={it.t} active={it.id === selected} onClick={() => openThread(it.id)} tick={tickByThread.get(it.id)} picked={picks.includes(it.id)} anyPicked={picks.length > 0} onPick={pick} />))
               : threads.data?.threads.map((t) => (
-                <ThreadRow key={t.id} t={t} active={t.id === selected} onClick={() => openThread(t.id)} picked={picks.includes(t.id)} onPick={pick} />
+                <ThreadRow key={t.id} t={t} active={t.id === selected} onClick={() => openThread(t.id)} picked={picks.includes(t.id)} anyPicked={picks.length > 0} onPick={pick} />
               ))}
           </Box>
 
@@ -658,38 +659,59 @@ export default function MailPage() {
       </Button>
 
       {sigOpen && currentMb && (
-        <SignatureDialog mailbox={currentMb} onClose={() => setSigOpen(false)} onSaved={() => { setSigOpen(false); qc.invalidateQueries({ queryKey: ["mailboxes"] }); }} />
+        <SignatureDialog mailbox={currentMb} onClose={() => setSigOpen(false)} onSaved={() => qc.invalidateQueries({ queryKey: ["mailboxes"] })} />
       )}
     </Box>
   );
 }
 
-function ThreadRow({ t, active, onClick, tick, picked, onPick }: {
+/** The round photo doubles as the tick box. Point at it (or tap it on a phone)
+ *  and it turns into one — so the list stays clean until you actually want to
+ *  do something to several emails at once. */
+function RowPicker({ name, email, picked, anyPicked, onPick }: {
+  name: string; email: string; picked: boolean; anyPicked: boolean;
+  onPick: (on: boolean, shift: boolean) => void;
+}) {
+  const [hover, setHover] = useState(false);
+  const show = picked || anyPicked || hover;
+  return (
+    <Box
+      role="checkbox"
+      aria-checked={picked}
+      aria-label={`Pick the email from ${name}`}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      // Shift-clicking otherwise highlights the text of half the list.
+      onMouseDown={(e) => { if (e.shiftKey) e.preventDefault(); }}
+      onClick={(e) => { e.stopPropagation(); onPick(!picked, e.shiftKey); }}
+      sx={{ width: 36, height: 36, flexShrink: 0, display: "grid", placeItems: "center", cursor: "pointer", borderRadius: "50%" }}
+    >
+      {show
+        ? <Checkbox checked={picked} tabIndex={-1} sx={{ p: 0, pointerEvents: "none" }} slotProps={{ input: { tabIndex: -1 } }} />
+        : <SenderAvatar name={name} email={email} size={36} />}
+    </Box>
+  );
+}
+
+function ThreadRow({ t, active, onClick, tick, picked, anyPicked, onPick }: {
   t: ThreadSummary; active: boolean; onClick: () => void; tick?: SentStatus;
   /** Ticked off for doing several at once. Left out where that isn't offered. */
-  picked?: boolean; onPick?: (id: string, on: boolean) => void;
+  picked?: boolean; anyPicked?: boolean; onPick?: (id: string, on: boolean, shift: boolean) => void;
 }) {
   return (
     <Box
       onClick={onClick}
       role="button"
       sx={{
-        display: "flex", alignItems: "flex-start", gap: 1.25, pl: onPick ? 0.5 : 2, pr: 2, py: 1.25, cursor: "pointer", minHeight: 64,
+        display: "flex", gap: 1.25, px: 2, py: 1.25, cursor: "pointer", minHeight: 64,
         borderBottom: `1px solid ${tokens.divider}`,
-        bgcolor: picked ? tokens.hover : active ? tokens.hover : "transparent",
+        bgcolor: picked || active ? tokens.hover : "transparent",
         "&:hover": { bgcolor: tokens.hover },
       }}
     >
-      {onPick && (
-        <Checkbox
-          checked={!!picked}
-          onClick={(e) => e.stopPropagation()}
-          onChange={(e) => onPick(t.id, e.target.checked)}
-          sx={{ p: 1, mt: -0.25 }}
-          slotProps={{ input: { "aria-label": `Pick the email from ${t.who.name}` } }}
-        />
-      )}
-      <SenderAvatar name={t.who.name} email={t.who.email} size={36} />
+      {onPick
+        ? <RowPicker name={t.who.name} email={t.who.email} picked={!!picked} anyPicked={!!anyPicked} onPick={(on, shift) => onPick(t.id, on, shift)} />
+        : <SenderAvatar name={t.who.name} email={t.who.email} size={36} />}
       <Box sx={{ minWidth: 0, flex: 1 }}>
         <Box sx={{ display: "flex", alignItems: "baseline", gap: 1 }}>
           <Typography noWrap sx={{ fontSize: 14, fontWeight: t.unread ? 700 : 500, color: tokens.ink, flex: 1 }}>

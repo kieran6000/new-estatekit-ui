@@ -114,6 +114,16 @@ const MAX_BODY = 1_500_000;
  *  past this the worker runs out of memory and the whole page stops. */
 const MAX_ATTACHMENT = 18 * 1024 * 1024;
 
+/** Gmail writes its one-line preview as it would appear inside a web page
+ *  ("How&#39;s 12pm"), so it has to be turned back into ordinary words before
+ *  anyone reads it. */
+const ENT: Record<string, string> = { quot: '"', apos: "'", lt: "<", gt: ">", nbsp: " ", amp: "&" };
+const plainSnippet = (s: string) =>
+  s.replace(/&#(\d+);/g, (_, d) => String.fromCharCode(Number(d)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))
+    .replace(/&(quot|apos|lt|gt|nbsp|amp);/g, (m, n) => ENT[n] ?? m)
+    .trim();
+
 // ── Message parsing helpers ─────────────────────────────────────────────────
 type Header = { name: string; value: string };
 const header = (hs: Header[], name: string) => hs.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value ?? "";
@@ -378,7 +388,7 @@ Deno.serve(async (req) => {
               id,
               subject: header(hs, "Subject") || "(no subject)",
               who,
-              snippet: last?.snippet ?? "",
+              snippet: plainSnippet(last?.snippet ?? ""),
               date: header(hs, "Date"),
               unread,
               count: msgs.length,
