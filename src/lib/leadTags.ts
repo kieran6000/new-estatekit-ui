@@ -29,8 +29,13 @@ export function notSentReason(
   return null;
 }
 
-export function leadTags(l: { quality?: string | null; source_page_id?: string | null; fb_lead_id?: string | null }, datasetByPage?: Map<string, string>): string[] {
-  return notSentReason(l, datasetByPage) ? [NOT_SENT] : [];
+export function leadTags(_l: { quality?: string | null; source_page_id?: string | null; fb_lead_id?: string | null }, _datasetByPage?: Map<string, string>): string[] {
+  // Kieran asked for the "Not tracked" tags to come off the leads — they added
+  // clutter while he's testing CAPI and weren't actionable on the lead itself
+  // (whether Facebook heard about a lead is a lead-page setting, not something
+  // you fix per lead). The reasoning stays in notSentReason()/REASON_HELP for
+  // the lead-page/Facebook-tracking screens if we want to surface it there.
+  return [];
 }
 
 export const REASON_HELP: Record<NotSentReason, string> = {

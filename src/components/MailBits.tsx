@@ -1,6 +1,5 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Badge } from "@mui/material";
 import { listMailboxes, unreadCount } from "../api/mail";
 
 /** What's waiting in each inbox, counted one by one.
@@ -29,22 +28,10 @@ export function useMailUnreadByBox(): Record<string, number> {
   return data ?? {};
 }
 
-function useMailUnread(): number {
-  const byBox = useMailUnreadByBox();
-  return Object.values(byBox).reduce((a, b) => a + b, 0);
-}
-
-/** Red count on the Mail nav item, same as the Clients / Overview to-do count. */
+/** The Mail nav item. The unread count used to show here as a red badge, but
+ *  with a busy shared inbox it was always high and drowned out the counts that
+ *  mean "something needs you now" (Clients / Overview to-dos). Kieran asked for
+ *  it gone — the per-box counts still live in useMailUnreadByBox if ever wanted. */
 export function MailBadge({ children }: { children: React.ReactNode }) {
-  const count = useMailUnread();
-  return (
-    <Badge
-      badgeContent={count}
-      color="error"
-      max={99}
-      sx={{ "& .MuiBadge-badge": { fontSize: 11, height: 17, minWidth: 17, px: 0.5, right: -10, top: 2 } }}
-    >
-      {children}
-    </Badge>
-  );
+  return <>{children}</>;
 }

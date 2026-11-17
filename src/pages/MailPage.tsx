@@ -29,7 +29,6 @@ import { openCompose } from "../lib/composeWindow";
 import {
   attIcon, b64ToBytes, Body, emailIn, esc, fmtSize, plainText, SignatureDialog, LAST_MB,
 } from "../components/MailCompose";
-import { useMailUnreadByBox } from "../components/MailBits";
 import { listWorkflowEmails, workflowEmailBody, type SentEmail } from "../api/workflowEmails";
 import { leadIdByEmail } from "../api/leads";
 
@@ -250,7 +249,6 @@ export default function MailPage() {
   const mailboxes = useQuery({ queryKey: ["mailboxes"], queryFn: listMailboxes, staleTime: 5 * 60_000 });
   const mbList = mailboxes.data ?? [];
   // So the picker says which inbox the waiting mail is in, not just that some exists.
-  const unreadByBox = useMailUnreadByBox();
   const currentMb = useMemo(() => mbList.find((m) => m.email === mailbox) ?? mbList[0], [mbList, mailbox]);
 
   useEffect(() => { if (!mailbox && mbList.length) setMailbox(mbList[0].email); }, [mbList, mailbox]);
@@ -514,11 +512,6 @@ export default function MailPage() {
               {mbList.map((m) => (
                 <MenuItem key={m.email} value={m.email} sx={{ fontSize: 14 }}>
                   {m.display_name} · {m.email}
-                  {!!unreadByBox[m.email] && (
-                    <Box component="span" sx={{ ml: 1, px: 0.75, borderRadius: 5, fontSize: 12, fontWeight: 600, bgcolor: tokens.redTint, color: tokens.red }}>
-                      {unreadByBox[m.email]}
-                    </Box>
-                  )}
                 </MenuItem>
               ))}
             </Select>
