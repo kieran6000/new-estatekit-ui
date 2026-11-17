@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  AppBar, Autocomplete, Avatar, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
+  AppBar, Autocomplete, Avatar, Box, Button, Chip, createFilterOptions, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
   Divider, IconButton, InputBase, MenuItem, Select, Tab, Tabs, TextField, Toolbar, Tooltip, Typography, useMediaQuery, useTheme,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
@@ -39,7 +39,7 @@ import { tokens } from "../theme";
 import { useSnack } from "../hooks/useSnack";
 import { MailDraftPill } from "../components/MailBits";
 import { clearDraft, getDraft, isEmptyDraft, saveDraft } from "../lib/mailDraft";
-import { listClients } from "../api/clients";
+import { listMailContacts } from "../api/clients";
 import { emailMetrics, listWorkflowEmails, WorkflowEmailsNotSetUp, type SentEmail } from "../api/workflowEmails";
 import {
   getAttachment, getThread, listMailboxes, listThreads, MailNotConnected, modifyThread, runBounceCheck,
@@ -502,14 +502,13 @@ function MailEditor({ initial, placeholder, onChange, minHeight = 190, autoFocus
 interface Person { name: string; email: string; inactive: boolean }
 
 function useDirectory(): Person[] {
-  const { data } = useQuery({ queryKey: ["clients"], queryFn: listClients, staleTime: 5 * 60_000, retry: false });
-  return useMemo(
-    () => (data ?? [])
-      .filter((c) => !!c.email)
-      .map((c) => ({ name: (c.display_name || c.email || "").trim(), email: c.email as string, inactive: !!c.deactivated_at })),
-    [data],
-  );
+  const { data } = useQuery({ queryKey: ["mailContacts"], queryFn: listMailContacts, staleTime: 5 * 60_000 });
+  return data ?? [];
 }
+
+/** Matches on the name or the address, a word at a time, so "franko v" and
+ *  "vanzyl@" both find Franko van Zyl. */
+const matchPeople = createFilterOptions<string>({ trim: true });
 
 const addrOf = (p: Person) => `${p.name.replace(/[",<>]/g, " ").replace(/\s+/g, " ").trim()} <${p.email}>`;
 const emailIn = (token: string) => (token.match(/<([^>]+)>/)?.[1] ?? token).trim();
@@ -526,7 +525,10 @@ function RecipientField({ label, value, onChange, people, autoFocus }: {
       multiple
       freeSolo
       autoHighlight
+      openOnFocus
       options={options}
+      filterOptions={matchPeople}
+      noOptionsText={people.length ? "Nobody by that name." : "No addresses saved yet — type the whole address."}
       value={chips}
       onChange={(_e, v) => onChange((v as string[]).join(", "))}
       filterSelectedOptions

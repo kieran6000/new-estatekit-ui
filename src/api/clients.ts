@@ -309,3 +309,22 @@ export async function setAccountStatus(agentId: string, action: "deactivate" | "
     throw new Error(msg);
   }
 }
+
+/** Just the names and addresses the Mail tab suggests when you write to
+ *  someone. The Clients grid's own read pulls live Meta numbers and sold
+ *  listings with it; this is one small query, so a slow or missing extra
+ *  never leaves the address book empty. */
+export interface MailContact { name: string; email: string; inactive: boolean }
+
+export async function listMailContacts(): Promise<MailContact[]> {
+  const { data, error } = await supabase
+    .from("agent_profiles")
+    .select("display_name, email, deactivated_at")
+    .eq("is_operator", false)
+    .not("email", "is", null)
+    .order("display_name");
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as { display_name: string | null; email: string | null; deactivated_at: string | null }[])
+    .filter((r) => !!r.email?.trim())
+    .map((r) => ({ name: (r.display_name || r.email || "").trim(), email: r.email!.trim(), inactive: !!r.deactivated_at }));
+}
