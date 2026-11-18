@@ -1,6 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { needsAttention } from "../_shared/attention.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const supabase = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
@@ -254,15 +253,9 @@ Deno.serve(async (req) => {
       for (const t of tryTokens) { leads = await fetchFormLeads(formId, t, sinceFilter); if (leads) break; }
       if (!leads) {
         summary.push({ form: page.fb_form_name || formId, error: "fetch failed" });
-        // This runs every 5 minutes: three misses in an hour is a real problem, not a blip.
-        await needsAttention({
-          key: `fb_form:${formId}`,
-          agentId: page.agent_id,
-          title: "New Facebook leads can't be read",
-          detail: `Facebook isn't letting EstateKit read the form "${page.fb_form_name || formId}", so new leads from it won't come in.`,
-          fix: "Check EstateKit still has access to their Facebook page, and that the form wasn't deleted. Forms → lead source shows the problem.",
-          minTimes: 3, withinMinutes: 60, quietHours: 12,
-        });
+        // No Discord "needs attention" post for this: Kieran asked to stop the
+        // Facebook-page health alerts. Still recorded in the run summary (and
+        // the audit log), and the problem is visible in Forms → lead source.
         continue;
       }
 
@@ -316,14 +309,9 @@ Deno.serve(async (req) => {
         }
         if (!forms) {
           summary.push({ agent: a.display_name, error: "forms fetch failed" });
-          await needsAttention({
-            key: `fb_page:${a.agent_id}`,
-            agentId: a.agent_id,
-            title: "Their Facebook page can't be read",
-            detail: "EstateKit can't see the lead forms on their Facebook page, so new leads from forms without their own lead source won't come in.",
-            fix: "Check their Facebook page is still shared with EstateKit, and that the page number in Settings → Ads & Facebook is right.",
-            minTimes: 3, withinMinutes: 60, quietHours: 12,
-          });
+          // No Discord "needs attention" post for this: Kieran asked to stop the
+          // Facebook-page health alerts. Still in the run summary / audit log,
+          // and visible in Settings → Ads & Facebook.
           continue;
         }
 
