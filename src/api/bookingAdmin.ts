@@ -18,6 +18,7 @@ export interface FunnelBooking {
   phone: string | null;
   meet_url: string | null;
   event_link: string | null;
+  reschedule_count?: number | null;
 }
 
 /** A time staff have blocked off. `id` is the Google event id (to lift it). */
@@ -48,4 +49,30 @@ export async function unblockFunnelTime(eventId: string): Promise<void> {
     body: { action: "unblock", eventId },
   });
   if (error || !data?.ok) throw new Error(data?.error || error?.message || "unblock");
+}
+
+/** Move or resize a block (drag/resize on the calendar). Returns the moved block. */
+export async function updateFunnelBlock(eventId: string, startsAt: string, endsAt: string, note?: string): Promise<FunnelBlock> {
+  const { data, error } = await supabase.functions.invoke("booking-admin", {
+    body: { action: "update_block", eventId, startsAt, endsAt, note },
+  });
+  if (error || !data?.ok) throw new Error(data?.error || error?.message || "update_block");
+  return data.block as FunnelBlock;
+}
+
+/** Reschedule a discovery call to a new time (drag-drop). Moves the Google
+ *  event, the booking and the lead's call reminder in one go. */
+export async function rescheduleFunnelBooking(bookingId: string, startsAt: string): Promise<void> {
+  const { data, error } = await supabase.functions.invoke("booking-admin", {
+    body: { action: "reschedule", bookingId, startsAt },
+  });
+  if (error || !data?.ok) throw new Error(data?.error || error?.message || "reschedule");
+}
+
+/** Cancel a discovery call: pull it from the diary and stop its reminders. */
+export async function cancelFunnelBooking(bookingId: string): Promise<void> {
+  const { data, error } = await supabase.functions.invoke("booking-admin", {
+    body: { action: "cancel", bookingId },
+  });
+  if (error || !data?.ok) throw new Error(data?.error || error?.message || "cancel");
 }

@@ -83,7 +83,7 @@ beforeEach(() => {
   db.tables = {
     workflows: [], workflow_runs: [], workflow_log: [], workflow_emails: [], lead_events: [], leads: [],
     agent_profiles: [{ agent_id: AGENT, display_name: "Megan Agent", whatsapp_number: "+27820000000", email: "megan@realty.co.za", company: "Realty", automations_paused: false, deactivated_at: null }],
-    pipelines: [{ id: "pS", kind: "seller" }, { id: "pB", kind: "buyer" }],
+    pipelines: [{ id: "pS", kind: "seller" }, { id: "pB", kind: "buyer" }, { id: "pA", kind: "agency", name: "EstateKit Agents" }],
     lead_pages: [{ id: "pg1", suburb: "Bryanston, Sandton", fb_pixel_id: "123", phone: "0825550000", magnet_kind: null }, { id: "pg2", suburb: "Fourways", fb_pixel_id: null, phone: null, magnet_kind: "none" }],
   };
   sent = []; emails = []; discord = []; sendResults = []; emailOk = true; quiet = null;
@@ -279,6 +279,20 @@ describe("emails to the lead", () => {
     expect(leadOf(l).plan_token).toMatch(/^[a-f0-9]{32}$/);
     expect(runOf(r).last_email_id).toBe(db.rows("workflow_emails")[0].id);
     expect(db.rows("lead_events").map((x) => x.event_type)).toEqual(["workflow_email"]);
+  });
+
+  it("sends agency (EstateKit) emails from kieran@ and fills the rebook link", async () => {
+    const wf = workflow([email("Missed you {{first_name}}", "Book again: {{rebook_link}}\n\n{{agent_name}}")]);
+    const l = lead({ pipeline_id: "pA" });
+    enroll(wf, l);
+    await tick();
+    expect(emails).toHaveLength(1);
+    const e = emails[0] as { text: string; from: string };
+    expect(e.from).toBe("Megan Agent <kieran@estatekit.co>");
+    expect(e.text).toContain("https://www.estatekit.co/rebook?");
+    expect(e.text).toContain("name=Thandi+Mokoena");
+    expect(e.text).toContain("email=thandi%40example.com");
+    expect(e.text).toContain("phone=0825550199");
   });
 
   it("skips leads with no email, or who unsubscribed, and carries on", async () => {

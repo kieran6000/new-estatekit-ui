@@ -72,17 +72,36 @@ Deno.serve(async (req) => {
     return json({ ok: false, error: "That time has passed. Please pick another.", retry: true }, 409);
   }
 
-  // Don't make two cards for a double-tap: if this lead already has a live
-  // booking at this time, hand the same one back.
-  if (leadId) {
-    const { data: dupe } = await admin.from("bookings")
-      .select("id, meet_url, event_link, starts_at")
-      .eq("lead_id", leadId).eq("starts_at", start.toISOString())
-      .neq("status", "cancelled").maybeSingle();
+  // Don't make two cards for a double-tap: if this person already has a live
+  // booking at this exact time, hand the same one back. Match on the lead when
+  // we know it, otherwise on the email (self-reschedule from the website may
+  // not carry the lead id).
+  const sameFilter = (q: ReturnType<typeof admin.from>) =>
+    leadId ? q.eq("lead_id", leadId) : email ? q.eq("email", email) : q;
+  if (leadId || email) {
+    const { data: dupe } = await sameFilter(
+      admin.from("bookings").select("id, meet_url, event_link, starts_at") as never,
+    ).eq("starts_at", start.toISOString()).eq("status", "booked").maybeSingle();
     if (dupe) {
       return json({ ok: true, booking_id: dupe.id, meet_url: dupe.meet_url, event_link: dupe.event_link, starts_at: dupe.starts_at, already: true });
     }
   }
+
+  // A real reschedule: the same person has a live booking at a DIFFERENT time.
+  // We create the new one below, then retire the old event + row, so the diary
+  // never shows two calls and the prospect's old Google invite is withdrawn.
+  // (The lead's call time + stage are moved by the website's funnel step and
+  // the leads_track_appointment trigger; this function owns only the calendar.)
+  let priorLive: { id: string; google_event_id: string | null; reschedule_count: number | null }[] = [];
+  if (leadId || email) {
+    const { data: prior } = await sameFilter(
+      admin.from("bookings").select("id, google_event_id, reschedule_count") as never,
+    ).neq("starts_at", start.toISOString()).eq("status", "booked");
+    priorLive = (prior as typeof priorLive) ?? [];
+  }
+  const rescheduleCount = priorLive.length
+    ? Math.max(...priorLive.map((b) => b.reschedule_count ?? 0)) + 1
+    : 0;
 
   // partner@ token + a last-moment free/busy check, so the time can't be
   // double-booked between loading the page and pressing Book.
@@ -165,11 +184,37 @@ Deno.serve(async (req) => {
     google_event_id: ev.id ?? null,
     meet_url: meetUrl,
     event_link: ev.htmlLink ?? null,
+    reschedule_count: rescheduleCount,
   });
   if (insErr) {
     // The calendar event is the source of truth and it's in; a failed row is a
     // dashboard gap, not a lost booking. Log and still return success.
     console.error("booking-create row insert", insErr.message);
+  }
+
+  // Retire any earlier live booking for this person (a reschedule): pull the old
+  // call out of the diary and withdraw its Google invite, then mark the row so
+  // the dashboard shows only the new time. Best-effort — the new booking is
+  // already saved, so a hiccup here is a tidy-up gap, never a lost call.
+  for (const old of priorLive) {
+    if (old.google_event_id) {
+      try {
+        const del = await fetch(
+          `${CAL_API}/calendars/${encodeURIComponent(c.calendar_email)}/events/${encodeURIComponent(old.google_event_id)}?sendUpdates=all`,
+          { method: "DELETE", headers: { Authorization: `Bearer ${token}` } },
+        );
+        // 404/410 = already gone; anything else we just log.
+        if (!del.ok && del.status !== 404 && del.status !== 410) {
+          console.error("booking-create retire event", old.id, del.status);
+        }
+      } catch (err) {
+        console.error("booking-create retire event", old.id, String(err));
+      }
+    }
+    const { error: updErr } = await admin.from("bookings")
+      .update({ status: "rescheduled", cancelled_at: new Date().toISOString() })
+      .eq("id", old.id);
+    if (updErr) console.error("booking-create retire row", old.id, updErr.message);
   }
 
   // Note: the prospect's call reminders are NOT wired here. funnel-lead sets the

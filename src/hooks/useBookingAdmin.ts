@@ -1,5 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { blockFunnelTime, listFunnelCalendar, unblockFunnelTime, type FunnelCalendar } from "../api/bookingAdmin";
+import {
+  blockFunnelTime, cancelFunnelBooking, listFunnelCalendar, rescheduleFunnelBooking,
+  unblockFunnelTime, updateFunnelBlock, type FunnelCalendar,
+} from "../api/bookingAdmin";
 
 export const FUNNEL_CAL_KEY = "funnelCalendar";
 
@@ -28,5 +31,25 @@ export function useFunnelBlockActions() {
     mutationFn: (eventId: string) => unblockFunnelTime(eventId),
     onSuccess: invalidate,
   });
-  return { block, unblock };
+  const moveBlock = useMutation({
+    mutationFn: (v: { eventId: string; startsAt: string; endsAt: string; note?: string }) =>
+      updateFunnelBlock(v.eventId, v.startsAt, v.endsAt, v.note),
+    onSuccess: invalidate,
+  });
+  return { block, unblock, moveBlock };
+}
+
+/** Reschedule (drag-drop) or cancel a discovery call. Both refresh the calendar. */
+export function useFunnelBookingActions() {
+  const qc = useQueryClient();
+  const invalidate = () => void qc.invalidateQueries({ queryKey: [FUNNEL_CAL_KEY] });
+  const reschedule = useMutation({
+    mutationFn: (v: { bookingId: string; startsAt: string }) => rescheduleFunnelBooking(v.bookingId, v.startsAt),
+    onSuccess: invalidate,
+  });
+  const cancel = useMutation({
+    mutationFn: (bookingId: string) => cancelFunnelBooking(bookingId),
+    onSuccess: invalidate,
+  });
+  return { reschedule, cancel };
 }

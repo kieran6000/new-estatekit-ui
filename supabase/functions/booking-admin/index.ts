@@ -39,6 +39,18 @@ const isoOrNull = (v: unknown) => {
   return isNaN(d.getTime()) ? null : d.toISOString();
 };
 
+// "appt - Wed 18 Nov, 10:00am" in the funnel's time zone — the next_label shape
+// the /pitch funnel already uses, so the lead card and calendar read the same.
+const apptLabel = (iso: string, tz: string) => {
+  const d = new Date(iso);
+  const day = new Intl.DateTimeFormat("en-GB", { timeZone: tz, weekday: "short", day: "numeric", month: "short" }).format(d);
+  const time = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit", hour12: true })
+    .format(d).replace(/\s?([AP])M$/i, (_m, p) => `${p.toLowerCase()}m`);
+  return `appt - ${day}, ${time}`;
+};
+// Stages past the call — we don't yank one of these back to "Booked" on a move.
+const PAST_CALL = ["Showed", "Proposal sent", "Signed", "Paid", "Lost", "Invalid Number", "Live"];
+
 interface Cfg { slug: string; time_zone: string; calendar_email: string }
 
 Deno.serve(async (req) => {
@@ -78,9 +90,9 @@ Deno.serve(async (req) => {
     if (!from || !to) return json({ ok: false, error: "Bad request" }, 400);
 
     const { data: rows, error: bErr } = await admin.from("bookings")
-      .select("id, lead_id, starts_at, ends_at, time_zone, status, name, email, phone, meet_url, event_link")
+      .select("id, lead_id, starts_at, ends_at, time_zone, status, name, email, phone, meet_url, event_link, reschedule_count")
       .eq("slug", slug)
-      .neq("status", "cancelled")
+      .eq("status", "booked")
       .gte("starts_at", from)
       .lt("starts_at", to)
       .order("starts_at", { ascending: true });
@@ -178,6 +190,133 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: "Couldn't remove that block. Please try again." }, 502);
     }
     return json({ ok: true });
+  }
+
+  // ── Cancel a booking (take the call out of the diary) ───────────────────
+  if (action === "cancel") {
+    const bookingId = String(body?.bookingId ?? "").trim();
+    if (!bookingId) return json({ ok: false, error: "Bad request" }, 400);
+    const { data: bk } = await admin.from("bookings")
+      .select("id, lead_id, starts_at, status, google_event_id")
+      .eq("id", bookingId).eq("slug", slug).maybeSingle();
+    if (!bk) return json({ ok: false, error: "That booking isn't here anymore." }, 404);
+    if (bk.status === "cancelled") return json({ ok: true, already: true });
+
+    if (bk.google_event_id) {
+      try {
+        const del = await fetch(
+          `${CAL_API}/calendars/${encodeURIComponent(calendar)}/events/${encodeURIComponent(bk.google_event_id)}?sendUpdates=all`,
+          { method: "DELETE", headers: { Authorization: `Bearer ${token}` } },
+        );
+        if (!del.ok && del.status !== 404 && del.status !== 410) console.error("booking-admin cancel event", del.status);
+      } catch (err) {
+        console.error("booking-admin cancel event", String(err));
+      }
+    }
+    const { error: updErr } = await admin.from("bookings")
+      .update({ status: "cancelled", cancelled_at: new Date().toISOString() }).eq("id", bookingId);
+    if (updErr) {
+      console.error("booking-admin cancel row", updErr.message);
+      return json({ ok: false, error: "Couldn't cancel that booking. Please try again." }, 502);
+    }
+    // Stop the lead's call reminders if they're still pointed at this call. We
+    // clear the reminder only (keep the stage) — track_appointment then nulls
+    // appointment_at, and enqueue_workflows stops the countdown. We don't touch
+    // the stage; the operator moves that in the pipeline as usual.
+    if (bk.lead_id) {
+      const { data: lead } = await admin.from("leads")
+        .select("stage, appointment_at").eq("id", bk.lead_id).maybeSingle();
+      const near = lead?.appointment_at && Math.abs(Date.parse(lead.appointment_at) - Date.parse(bk.starts_at)) < 60_000;
+      if (lead && near && !PAST_CALL.includes(lead.stage)) {
+        const { error: lErr } = await admin.from("leads")
+          .update({ reminder_at: null, next_label: "Call back", due: false }).eq("id", bk.lead_id);
+        if (lErr) console.error("booking-admin cancel lead", lErr.message);
+      }
+    }
+    return json({ ok: true });
+  }
+
+  // ── Reschedule a booking (operator drag-drop to a new time) ─────────────
+  if (action === "reschedule") {
+    const bookingId = String(body?.bookingId ?? "").trim();
+    const startsAt = isoOrNull(body?.startsAt);
+    if (!bookingId || !startsAt) return json({ ok: false, error: "Bad request" }, 400);
+    const { data: bk } = await admin.from("bookings")
+      .select("id, lead_id, starts_at, ends_at, status, google_event_id, reschedule_count")
+      .eq("id", bookingId).eq("slug", slug).maybeSingle();
+    if (!bk || bk.status !== "booked") return json({ ok: false, error: "That booking isn't here anymore." }, 404);
+
+    const durMs = Math.max(5 * 60_000, Date.parse(bk.ends_at) - Date.parse(bk.starts_at) || 45 * 60_000);
+    const endsAt = new Date(Date.parse(startsAt) + durMs).toISOString();
+
+    if (bk.google_event_id) {
+      const res = await fetch(
+        `${CAL_API}/calendars/${encodeURIComponent(calendar)}/events/${encodeURIComponent(bk.google_event_id)}?conferenceDataVersion=1&sendUpdates=all`,
+        { method: "PATCH", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ start: { dateTime: startsAt, timeZone: tz }, end: { dateTime: endsAt, timeZone: tz } }) },
+      );
+      if (!res.ok && res.status !== 404 && res.status !== 410) {
+        const e = await res.json().catch(() => ({}));
+        console.error("booking-admin reschedule event", res.status, JSON.stringify(e?.error ?? e).slice(0, 300));
+        return json({ ok: false, error: "Couldn't move that call in the diary. Please try again." }, 502);
+      }
+    }
+    const { error: updErr } = await admin.from("bookings")
+      .update({ starts_at: startsAt, ends_at: endsAt, reschedule_count: (bk.reschedule_count ?? 0) + 1, updated_at: new Date().toISOString() })
+      .eq("id", bookingId);
+    if (updErr) {
+      console.error("booking-admin reschedule row", updErr.message);
+      return json({ ok: false, error: "Couldn't save the new time. Please try again." }, 502);
+    }
+    // Move the lead's call: new reminder time + appt label. track_appointment
+    // re-derives appointment_at, enqueue_workflows stops the old countdown and
+    // (reEnter off) never re-sends, queue_calendar_sync re-syncs the item.
+    if (bk.lead_id) {
+      const { data: lead } = await admin.from("leads").select("stage").eq("id", bk.lead_id).maybeSingle();
+      const patch: Record<string, unknown> = { reminder_at: startsAt, next_label: apptLabel(startsAt, tz), due: false };
+      if (lead && !PAST_CALL.includes(lead.stage)) patch.stage = "Booked";
+      const { error: lErr } = await admin.from("leads").update(patch).eq("id", bk.lead_id);
+      if (lErr) console.error("booking-admin reschedule lead", lErr.message);
+    }
+    return json({ ok: true, booking: { id: bookingId, starts_at: startsAt, ends_at: endsAt } });
+  }
+
+  // ── Move or resize a block ──────────────────────────────────────────────
+  if (action === "update_block") {
+    const eventId = String(body?.eventId ?? "").trim();
+    const startsAt = isoOrNull(body?.startsAt);
+    const endsAt = isoOrNull(body?.endsAt);
+    if (!eventId || !startsAt || !endsAt) return json({ ok: false, error: "Bad request" }, 400);
+    if (Date.parse(endsAt) <= Date.parse(startsAt)) return json({ ok: false, error: "The end time must be after the start time." }, 400);
+
+    // Only ever touch an event we marked as a block.
+    const getRes = await fetch(
+      `${CAL_API}/calendars/${encodeURIComponent(calendar)}/events/${encodeURIComponent(eventId)}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    const got = await getRes.json().catch(() => ({}));
+    if (getRes.status === 404 || got?.status === "cancelled") return json({ ok: false, error: "That block isn't here anymore." }, 404);
+    if (!getRes.ok) return json({ ok: false, error: "Couldn't move that block. Please try again." }, 502);
+    if (got?.extendedProperties?.private?.[BLOCK_MARK] !== "1") return json({ ok: false, error: "That isn't a blocked time." }, 400);
+
+    const patch: Record<string, unknown> = { start: { dateTime: startsAt, timeZone: tz }, end: { dateTime: endsAt, timeZone: tz } };
+    if (typeof body?.note === "string") {
+      const note = body.note.trim().slice(0, 140);
+      patch.summary = note ? `Blocked — ${note}` : "Blocked";
+    }
+    const res = await fetch(
+      `${CAL_API}/calendars/${encodeURIComponent(calendar)}/events/${encodeURIComponent(eventId)}`,
+      { method: "PATCH", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify(patch) },
+    );
+    const ev = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      console.error("booking-admin update_block", res.status, JSON.stringify(ev?.error ?? ev).slice(0, 300));
+      return json({ ok: false, error: "Couldn't move that block. Please try again." }, 502);
+    }
+    return json({ ok: true, block: {
+      id: ev.id, start: ev.start?.dateTime ?? startsAt, end: ev.end?.dateTime ?? endsAt,
+      note: (ev.summary ?? "").replace(/^Blocked\s*[—-]\s*/i, "").replace(/^Blocked$/i, "").trim(),
+    } });
   }
 
   return json({ ok: false, error: "Unknown action" }, 400);

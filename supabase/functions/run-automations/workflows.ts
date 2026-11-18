@@ -119,6 +119,15 @@ export interface EngineDeps {
 
 const APP = "https://leads.estatekit.co";
 const FROM_ADDRESS = "hello@mail.estatekit.co";
+// EstateKit's OWN workflows (the agency pipeline — prospective agents) send as
+// Kieran from the main domain; client-lead workflows keep hello@. Needs
+// estatekit.co verified as a sending domain in Resend, or agency sends bounce.
+const AGENCY_FROM = "kieran@estatekit.co";
+// The website's booking pages. {{book_link}} starts a fresh booking,
+// {{rebook_link}} re-books; both carry the lead's details so the page can
+// pre-fill them (and booking-create can match the person server-side).
+const BOOK_PAGE = "https://www.estatekit.co/book";
+const REBOOK_PAGE = "https://www.estatekit.co/rebook";
 const BOOKED = ["Booked", "Viewing Booked", "Offer Made", "Mandate Signed", "Bought"];
 const LOST = ["Lost", "Invalid Number"];
 const SETTLED = [...LOST, ...BOOKED];
@@ -928,6 +937,16 @@ class Context {
     if (uses("plan_link")) fields.plan_link = await this.planLink(l);
     if (uses("call_link")) fields.call_link = await this.callLink(l);
     if (uses("recent_sales")) fields.recent_sales = await this.recentSales(l);
+    if (uses("rebook_link") || uses("book_link")) {
+      const q = new URLSearchParams();
+      if (l.name) q.set("name", l.name);
+      const em = l.email || to;
+      if (em) q.set("email", em);
+      if (l.phone) q.set("phone", l.phone);
+      const qs = q.toString() ? `?${q.toString()}` : "";
+      fields.rebook_link = `${REBOOK_PAGE}${qs}`;
+      fields.book_link = `${BOOK_PAGE}${qs}`;
+    }
     // The form's lead magnet, drawn as a box below. None for this form: nothing.
     let magnet: (Magnet & { url: string }) | null = null;
     if (uses("lead_magnet")) {
@@ -1005,7 +1024,7 @@ ${middle}
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        from: `${agentName.replace(/["<>]/g, "")} <${FROM_ADDRESS}>`,
+        from: `${agentName.replace(/["<>]/g, "")} <${fkind === "agency" ? AGENCY_FROM : FROM_ADDRESS}>`,
         to: [to],
         ...(replyTo ? { reply_to: replyTo } : {}),
         subject,

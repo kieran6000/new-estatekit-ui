@@ -11,12 +11,14 @@ import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import VideocamIcon from "@mui/icons-material/Videocam";
 import BlockIcon from "@mui/icons-material/Block";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlineOutlined";
+import EventBusyIcon from "@mui/icons-material/EventBusy";
+import ScheduleSendIcon from "@mui/icons-material/ScheduleSend";
 import { tokens } from "../theme";
 import { useLeads } from "../hooks/useLeads";
 import { useCanSeeFullPhone } from "../hooks/useTier";
 import { useConnectGoogleCalendar, useGoogleCalendarReturn, useGoogleCalendarStatus, useGoogleEvents } from "../hooks/useGoogleCalendar";
 import { useIsOperator } from "../hooks/useAutomations";
-import { useFunnelBlockActions, useFunnelCalendar } from "../hooks/useBookingAdmin";
+import { useFunnelBlockActions, useFunnelBookingActions, useFunnelCalendar } from "../hooks/useBookingAdmin";
 import { useSnack } from "../hooks/useSnack";
 import { maskPhone, telHref } from "../lib/format";
 import { logLeadCall } from "../api/leadEvents";
@@ -50,6 +52,13 @@ const KIND = KIND_STYLE;
 const FUNNEL_COLOR = "#3949ab";
 
 const clock = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+const SNAP = 15; // minutes a drag snaps to, like Google Calendar
+const clampMin = (m: number) => Math.max(0, Math.min(24 * 60, m));
+const snapMin = (m: number) => Math.round(m / SNAP) * SNAP;
+// The UTC instant for a wall-clock minute-of-day on a given date (local = the
+// dashboard's time zone, which for staff is the funnel's Africa/Johannesburg).
+const isoDayMin = (day: Date, m: number) =>
+  new Date(day.getFullYear(), day.getMonth(), day.getDate(), Math.floor(m / 60), m % 60).toISOString();
 const hourLabel = (h: number) => (h === 0 ? "" : h < 12 ? `${h} AM` : h === 12 ? "12 PM" : `${h - 12} PM`);
 const sameDay = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 const addDays = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
@@ -72,6 +81,19 @@ type Opened =
   | { el: HTMLElement; g: GoogleEvent; it?: undefined; fb?: undefined; bl?: undefined }
   | { el: HTMLElement; fb: FunnelBooking; it?: undefined; g?: undefined; bl?: undefined }
   | { el: HTMLElement; bl: FunnelBlock; it?: undefined; g?: undefined; fb?: undefined };
+
+// A drag in progress on the grid (desktop, operators only): dragging on empty
+// space makes a block, dragging a block moves it, its edges resize it, and
+// dragging a funnel booking reschedules it. `init` is what we grabbed; the
+// preview band follows the pointer; on release we commit.
+type DragInit =
+  | { mode: "create"; dayIdx: number }
+  | { mode: "move-booking"; id: string; dayIdx: number; dur: number; startMin: number }
+  | { mode: "move-block"; id: string; dayIdx: number; dur: number; startMin: number; note: string }
+  | { mode: "resize-block"; id: string; dayIdx: number; fixed: number; edge: "top" | "bottom"; note: string };
+type Preview =
+  | { kind: "range"; dayIdx: number; a: number; b: number; label: string }
+  | { kind: "move"; dayIdx: number; top: number; dur: number; booking: boolean };
 
 export default function CalendarPage() {
   const navigate = useNavigate();
@@ -102,7 +124,11 @@ export default function CalendarPage() {
   // Used once: opening Calendar from the menu later starts fresh.
   useEffect(() => { try { sessionStorage.removeItem(MEMO); } catch { /* private mode */ } }, []);
   const body = useRef<HTMLDivElement>(null);
+  const grid = useRef<HTMLDivElement>(null);
   const touch = useRef<{ x: number; y: number } | null>(null);
+  const [drag, setDrag] = useState<Preview | null>(null);
+  const justDragged = useRef(false); // a drag ended — swallow the click that follows
+  const [rebook, setRebook] = useState<FunnelBooking | null>(null); // phone "change time" sheet
 
   // Google Calendar: back from connecting, the connection, and their own events.
   useGoogleCalendarReturn();
@@ -124,7 +150,8 @@ export default function CalendarPage() {
   const { data: isOperator } = useIsOperator();
   const showFunnel = isOperator === true && !managingOther;
   const { data: funnel } = useFunnelCalendar(gFrom, addDays(gFrom, 7), showFunnel);
-  const { block: blockMut, unblock: unblockMut } = useFunnelBlockActions();
+  const { block: blockMut, unblock: unblockMut, moveBlock: moveBlockMut } = useFunnelBlockActions();
+  const { reschedule: rescheduleMut, cancel: cancelMut } = useFunnelBookingActions();
   const showSnack = useSnack();
   const bookings = useMemo(() => (showFunnel ? funnel?.bookings ?? [] : []), [showFunnel, funnel]);
   const blocks = useMemo(() => (showFunnel ? funnel?.blocks ?? [] : []), [showFunnel, funnel]);
@@ -155,6 +182,89 @@ export default function CalendarPage() {
   const step = week ? 7 : 1;
   const first = days[0];
   const last = days[days.length - 1];
+
+  // ── Google-Calendar-style dragging (desktop, operators only) ────────────
+  // Drag empty space → block it off; drag a block → move it; its top/bottom
+  // edges → resize; drag a funnel booking → reschedule. Snaps to 15 minutes.
+  const startDrag = (e: React.PointerEvent, init: DragInit) => {
+    if (phone || e.button !== 0 || !showFunnel || !grid.current) return;
+    e.preventDefault();
+    const cols = days.map((_, i) => {
+      const el = grid.current!.querySelector(`[data-daycol="${i}"]`) as HTMLElement | null;
+      return { idx: i, r: el?.getBoundingClientRect() };
+    }).filter((c): c is { idx: number; r: DOMRect } => !!c.r);
+    const top0 = cols[0]?.r.top ?? 0;
+    const minAt = (cy: number) => clampMin(snapMin(((cy - top0) / HOUR) * 60));
+    const dayAt = (cx: number) => cols.find((c) => cx >= c.r.left && cx < c.r.right)?.idx ?? init.dayIdx;
+    const downMin = minAt(e.clientY);
+    const grab = "startMin" in init ? downMin - init.startMin : 0;
+    let moved = false;
+    let cur: Preview | null = null;
+    const update = (cy: number, cx: number) => {
+      const m = minAt(cy);
+      if (init.mode === "create") {
+        const a = Math.min(downMin, m), b = Math.max(downMin + SNAP, m);
+        cur = { kind: "range", dayIdx: dayAt(cx), a, b, label: `${clock(a)} – ${clock(b)}` };
+      } else if (init.mode === "resize-block") {
+        const a = init.edge === "top" ? Math.min(init.fixed - SNAP, m) : init.fixed;
+        const b = init.edge === "top" ? init.fixed : Math.max(init.fixed + SNAP, m);
+        cur = { kind: "range", dayIdx: init.dayIdx, a: clampMin(a), b: clampMin(b), label: `${clock(a)} – ${clock(b)}` };
+      } else {
+        const top = Math.max(0, Math.min(24 * 60 - init.dur, m - grab));
+        cur = { kind: "move", dayIdx: dayAt(cx), top, dur: init.dur, booking: init.mode === "move-booking" };
+      }
+      setDrag(cur);
+    };
+    const onMove = (ev: PointerEvent) => {
+      if (!moved && Math.hypot(ev.clientX - e.clientX, ev.clientY - e.clientY) < 4) return;
+      moved = true;
+      justDragged.current = true;
+      document.body.style.userSelect = "none";
+      update(ev.clientY, ev.clientX);
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      document.body.style.userSelect = "";
+      setDrag(null);
+      if (!moved || !cur) return;
+      const c = cur, day = days[c.dayIdx];
+      if (c.kind === "range") {
+        if (c.b - c.a < SNAP) return;
+        if (init.mode === "create") {
+          submitBlock(isoDayMin(day, c.a), isoDayMin(day, c.b), "");
+        } else {
+          moveBlockMut.mutate({ eventId: init.id, startsAt: isoDayMin(day, c.a), endsAt: isoDayMin(day, c.b), note: (init as { note: string }).note },
+            { onError: () => showSnack("Couldn't move that block. Try again.") });
+        }
+      } else if (init.mode === "move-block") {
+        moveBlockMut.mutate({ eventId: init.id, startsAt: isoDayMin(day, c.top), endsAt: isoDayMin(day, c.top + c.dur), note: init.note },
+          { onError: () => showSnack("Couldn't move that block. Try again.") });
+      } else if (init.mode === "move-booking") {
+        const startsAt = isoDayMin(day, c.top);
+        rescheduleMut.mutate({ bookingId: init.id, startsAt }, {
+          onSuccess: () => showSnack("Call moved. The new time is in their diary."),
+          onError: (err) => showSnack((err as Error).message || "Couldn't move that call."),
+        });
+      }
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
+  const cancelBooking = (b: FunnelBooking) => {
+    setOpen(null); setRebook(null);
+    cancelMut.mutate(b.id, {
+      onSuccess: () => showSnack("Call cancelled and taken out of the diary."),
+      onError: (e) => showSnack((e as Error).message || "Couldn't cancel that call."),
+    });
+  };
+  const submitRebook = (b: FunnelBooking, startsAt: string) => {
+    rescheduleMut.mutate({ bookingId: b.id, startsAt }, {
+      onSuccess: () => { setRebook(null); showSnack("Call moved. The new time is in their diary."); },
+      onError: (e) => showSnack((e as Error).message || "Couldn't move that call."),
+    });
+  };
   const title = phone
     ? anchor.toLocaleDateString("en-ZA", { month: "long", year: anchor.getFullYear() === today.getFullYear() ? undefined : "numeric" })
     : first.getMonth() === last.getMonth()
@@ -234,7 +344,11 @@ export default function CalendarPage() {
     <GoogleEventCard ev={open.g} phone={phone} onClose={() => setOpen(null)} />
   ) : open?.fb ? (
     <FunnelBookingCard b={open.fb} phone={phone} canSeeFullPhone={canSeeFullPhone}
-      onOpen={open.fb.lead_id ? () => openLead(open.fb!.lead_id!) : undefined} onClose={() => setOpen(null)} />
+      onOpen={open.fb.lead_id ? () => openLead(open.fb!.lead_id!) : undefined}
+      onReschedule={showFunnel && phone ? () => { const fb = open.fb!; setOpen(null); setRebook(fb); } : undefined}
+      onCancel={showFunnel ? () => cancelBooking(open.fb!) : undefined}
+      canceling={cancelMut.isPending}
+      onClose={() => setOpen(null)} />
   ) : open?.bl ? (
     <BlockedCard bl={open.bl} phone={phone} onRemove={() => removeBlock(open.bl!.id)} removing={unblockMut.isPending} onClose={() => setOpen(null)} />
   ) : null;
@@ -358,13 +472,13 @@ export default function CalendarPage() {
           )}
 
           {/* Hours down, days across. */}
-          <Box sx={{ display: "flex", pb: phone && late.length ? 9 : 0 }}>
+          <Box ref={grid} sx={{ display: "flex", pb: phone && late.length ? 9 : 0 }}>
             <Box sx={{ width: phone ? 48 : 56, flex: "none", position: "relative", height: 24 * HOUR }}>
               {Array.from({ length: 24 }, (_, h) => (
                 <Typography key={h} sx={{ position: "absolute", top: h * HOUR - 7, right: 8, fontSize: 10.5, color: "text.secondary", whiteSpace: "nowrap" }}>{hourLabel(h)}</Typography>
               ))}
             </Box>
-            {days.map((d) => {
+            {days.map((d, dayIndex) => {
               // Ours and theirs share the width where they overlap, as in Google.
               const placed = layoutBlocks([
                 ...items.filter((it) => sameDay(it.at, d)).map((it) => {
@@ -376,24 +490,36 @@ export default function CalendarPage() {
               ]);
               const bands = blocksOn(d);
               const isToday = sameDay(d, today);
+              const canDrag = showFunnel && !phone;
               return (
-                <Box key={d.toISOString()} sx={{ flex: 1, minWidth: 0, position: "relative", height: 24 * HOUR, borderLeft: `1px solid ${tokens.divider2}`,
+                <Box key={d.toISOString()} data-daycol={dayIndex}
+                  onPointerDown={canDrag ? (e: React.PointerEvent) => { if (e.target === e.currentTarget) startDrag(e, { mode: "create", dayIdx: dayIndex }); } : undefined}
+                  sx={{ flex: 1, minWidth: 0, position: "relative", height: 24 * HOUR, borderLeft: `1px solid ${tokens.divider2}`,
+                  cursor: canDrag ? "cell" : "default",
                   backgroundImage: `repeating-linear-gradient(to bottom, ${tokens.divider2} 0, ${tokens.divider2} 1px, transparent 1px, transparent ${HOUR}px)` }}>
                   {/* Blocked-off times: a faded hatched band the width of the day,
-                      behind everything. The funnel won't offer these. */}
+                      behind everything. The funnel won't offer these. Drag it to
+                      move it, its edges to resize (desktop, operators). */}
                   {bands.map(({ bl, span }) => {
                     const height = Math.max(phone ? 32 : 18, ((span!.end - span!.start) / 60) * HOUR - 2);
+                    const whole = span!.start === minutes(new Date(bl.start)); // block starts this day (not spilling over)
+                    const dur = Math.round((new Date(bl.end).getTime() - new Date(bl.start).getTime()) / 60000);
                     return (
                       <Box key={`bl-${bl.id}`} component="button" type="button" aria-label="Blocked off"
-                        onClick={(e: React.MouseEvent<HTMLElement>) => setOpen({ el: e.currentTarget, bl })}
-                        sx={{ position: "absolute", top: (span!.start / 60) * HOUR + 1, height, left: 1, right: 1, zIndex: 0, border: 0, cursor: "pointer",
+                        onPointerDown={canDrag && whole ? (e: React.PointerEvent) => { e.stopPropagation(); startDrag(e, { mode: "move-block", id: bl.id, dayIdx: dayIndex, dur, startMin: span!.start, note: bl.note }); } : undefined}
+                        onClick={(e: React.MouseEvent<HTMLElement>) => { if (justDragged.current) { justDragged.current = false; return; } setOpen({ el: e.currentTarget, bl }); }}
+                        sx={{ position: "absolute", top: (span!.start / 60) * HOUR + 1, height, left: 1, right: 1, zIndex: 0, border: 0, cursor: canDrag ? "move" : "pointer",
                           borderRadius: "4px", textAlign: "left", font: "inherit", color: "text.secondary", overflow: "hidden", px: 0.75, py: 0.1,
                           backgroundColor: tokens.surface2,
                           backgroundImage: `repeating-linear-gradient(45deg, ${tokens.divider} 0, ${tokens.divider} 1px, transparent 1px, transparent 7px)`,
-                          "&:hover": { backgroundColor: tokens.hover } }}>
+                          "&:hover": { backgroundColor: tokens.hover }, touchAction: "none" }}>
                         <Box sx={{ fontSize: phone ? 12 : 11, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                           Blocked{bl.note ? ` · ${bl.note}` : ""}
                         </Box>
+                        {canDrag && whole && height > 22 && (["top", "bottom"] as const).map((edge) => (
+                          <Box key={edge} onPointerDown={(e: React.PointerEvent) => { e.stopPropagation(); startDrag(e, { mode: "resize-block", id: bl.id, dayIdx: dayIndex, fixed: edge === "top" ? span!.end : span!.start, edge, note: bl.note }); }}
+                            sx={{ position: "absolute", left: 0, right: 0, [edge]: -2, height: 8, cursor: "ns-resize", touchAction: "none" }} />
+                        ))}
                       </Box>
                     );
                   })}
@@ -420,9 +546,13 @@ export default function CalendarPage() {
                     }
                     if (p.fb) {
                       const b = p.fb;
+                      const startsThisDay = p.start === minutes(new Date(b.starts_at));
+                      const dur = Math.round((new Date(b.ends_at).getTime() - new Date(b.starts_at).getTime()) / 60000);
                       return (
-                        <Box key={p.key} component="button" type="button" onClick={(e: React.MouseEvent<HTMLElement>) => setOpen({ el: e.currentTarget, fb: b })}
-                          sx={{ ...box, zIndex: 2, bgcolor: FUNNEL_COLOR, color: "#fff", border: 0, boxShadow: "0 0 0 1px rgba(255,255,255,.35)", "&:hover": { filter: "brightness(1.08)" } }}>
+                        <Box key={p.key} component="button" type="button"
+                          onPointerDown={canDrag && startsThisDay ? (e: React.PointerEvent) => { e.stopPropagation(); startDrag(e, { mode: "move-booking", id: b.id, dayIdx: dayIndex, dur, startMin: p.start }); } : undefined}
+                          onClick={(e: React.MouseEvent<HTMLElement>) => { if (justDragged.current) { justDragged.current = false; return; } setOpen({ el: e.currentTarget, fb: b }); }}
+                          sx={{ ...box, zIndex: 2, bgcolor: FUNNEL_COLOR, color: "#fff", border: 0, cursor: canDrag && startsThisDay ? "grab" : "pointer", touchAction: "none", boxShadow: "0 0 0 1px rgba(255,255,255,.35)", "&:hover": { filter: "brightness(1.08)" } }}>
                           <Box sx={{ fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                             Pitch call: {b.name || "new agent"}
                           </Box>
@@ -453,6 +583,20 @@ export default function CalendarPage() {
                       </Box>
                     );
                   })}
+                  {/* The live drag preview: a dashed band where it'll land. */}
+                  {drag && drag.dayIdx === dayIndex && (() => {
+                    const topMin = drag.kind === "range" ? drag.a : drag.top;
+                    const botMin = drag.kind === "range" ? drag.b : drag.top + drag.dur;
+                    const booking = drag.kind === "move" && drag.booking;
+                    return (
+                      <Box sx={{ position: "absolute", top: (topMin / 60) * HOUR + 1, height: Math.max(16, ((botMin - topMin) / 60) * HOUR - 2), left: 1, right: 1, zIndex: 5, pointerEvents: "none",
+                        borderRadius: "6px", border: `2px dashed ${booking ? FUNNEL_COLOR : tokens.primary}`,
+                        bgcolor: booking ? "rgba(57,73,171,.18)" : "rgba(0,0,0,.06)", color: booking ? FUNNEL_COLOR : "text.primary",
+                        fontSize: 11, fontWeight: 600, px: 0.75, py: 0.25, overflow: "hidden", whiteSpace: "nowrap" }}>
+                        {clock(topMin)} – {clock(botMin)}
+                      </Box>
+                    );
+                  })()}
                   {/* Now: Google's red line with a dot. */}
                   {isToday && (
                     <Box sx={{ position: "absolute", left: 0, right: 0, top: (minutes(now) / 60) * HOUR, height: 2, bgcolor: "#ea4335", zIndex: 3, pointerEvents: "none",
@@ -508,6 +652,11 @@ export default function CalendarPage() {
       {showFunnel && (
         <BlockOffSheet open={blockOff} phone={phone} anchor={anchor} submitting={blockMut.isPending}
           onClose={() => setBlockOff(false)} onSubmit={submitBlock} />
+      )}
+
+      {showFunnel && (
+        <RescheduleSheet booking={rebook} phone={phone} submitting={rescheduleMut.isPending}
+          onClose={() => setRebook(null)} onSubmit={(iso) => rebook && submitRebook(rebook, iso)} />
       )}
 
       <Drawer
@@ -690,9 +839,10 @@ function GoogleEventCard({ ev, phone, onClose }: { ev: GoogleEvent; phone: boole
 
 /** A funnel discovery call (estatekit.co/pitch): when, who, and the Google Meet
  *  link staff join the call on. Operators only. */
-function FunnelBookingCard({ b, phone, canSeeFullPhone, onOpen, onClose }: { b: FunnelBooking; phone: boolean; canSeeFullPhone: boolean; onOpen?: () => void; onClose: () => void }) {
+function FunnelBookingCard({ b, phone, canSeeFullPhone, onOpen, onReschedule, onCancel, canceling, onClose }: { b: FunnelBooking; phone: boolean; canSeeFullPhone: boolean; onOpen?: () => void; onReschedule?: () => void; onCancel?: () => void; canceling?: boolean; onClose: () => void }) {
   const s = new Date(b.starts_at);
   const e = new Date(b.ends_at);
+  const moved = (b.reschedule_count ?? 0) > 0;
   return (
     <Box>
       <Box sx={{ display: "flex", gap: 1.5, alignItems: "flex-start" }}>
@@ -712,7 +862,7 @@ function FunnelBookingCard({ b, phone, canSeeFullPhone, onOpen, onClose }: { b: 
           </Box>
         )}
         <Box sx={{ display: "flex", gap: 1, alignItems: "center", color: "text.secondary" }}>
-          <ScheduleIcon sx={{ fontSize: 18 }} />Booked from estatekit.co/pitch
+          <ScheduleIcon sx={{ fontSize: 18 }} />Booked from estatekit.co/pitch{moved ? " · moved once" : ""}
         </Box>
       </Box>
       {phone ? (
@@ -721,14 +871,26 @@ function FunnelBookingCard({ b, phone, canSeeFullPhone, onOpen, onClose }: { b: 
             <Button component="a" href={b.meet_url} target="_blank" rel="noopener noreferrer" variant="contained" fullWidth startIcon={<VideocamIcon />} sx={{ minHeight: 52, fontSize: 16 }}>Join Meet</Button>
           )}
           {onOpen && <Button variant="outlined" fullWidth startIcon={<PersonIcon />} onClick={onOpen} sx={{ minHeight: 52, fontSize: 16 }}>Open lead</Button>}
+          {onReschedule && <Button variant="outlined" fullWidth startIcon={<ScheduleSendIcon />} onClick={onReschedule} sx={{ minHeight: 52, fontSize: 16 }}>Change time</Button>}
+          {onCancel && <Button color="error" variant="outlined" fullWidth disabled={canceling} startIcon={<EventBusyIcon />} onClick={onCancel} sx={{ minHeight: 52, fontSize: 16 }}>{canceling ? "Cancelling…" : "Cancel call"}</Button>}
         </Box>
       ) : (
-        <Box sx={{ display: "flex", gap: 1, mt: 2, justifyContent: "flex-end" }}>
-          {onOpen && <Button startIcon={<PersonIcon />} onClick={onOpen}>Open lead</Button>}
-          {b.meet_url && (
-            <Button component="a" href={b.meet_url} target="_blank" rel="noopener noreferrer" variant="contained" startIcon={<VideocamIcon />}>Join Meet</Button>
+        <>
+          <Box sx={{ display: "flex", gap: 1, mt: 2, justifyContent: "flex-end" }}>
+            {onOpen && <Button startIcon={<PersonIcon />} onClick={onOpen}>Open lead</Button>}
+            {b.meet_url && (
+              <Button component="a" href={b.meet_url} target="_blank" rel="noopener noreferrer" variant="contained" startIcon={<VideocamIcon />}>Join Meet</Button>
+            )}
+          </Box>
+          {onCancel && (
+            <Box sx={{ display: "flex", mt: 1, justifyContent: "flex-end" }}>
+              <Button size="small" color="error" disabled={canceling} startIcon={<EventBusyIcon />} onClick={onCancel}>{canceling ? "Cancelling…" : "Cancel call"}</Button>
+            </Box>
           )}
-        </Box>
+        </>
+      )}
+      {!phone && (
+        <Typography sx={{ fontSize: 12.5, color: "text.secondary", mt: 1, textAlign: "right" }}>Drag the block to a new time to reschedule.</Typography>
       )}
     </Box>
   );
@@ -811,6 +973,56 @@ function BlockOffSheet({ open, onClose, phone, anchor, onSubmit, submitting }: {
         {!phone && <Button onClick={onClose} disabled={submitting}>Cancel</Button>}
         <Button onClick={submit} disabled={submitting} variant="contained" fullWidth={phone} startIcon={<BlockIcon />} sx={phone ? { minHeight: 52, fontSize: 16 } : undefined}>
           {submitting ? "Blocking…" : "Block off"}
+        </Button>
+      </Box>
+    </Sheet>
+  );
+}
+
+/** Move a discovery call to a new time: pick a day and start time. Keeps the
+ *  call's length. Used on phones (desktop drags the block instead). */
+function RescheduleSheet({ booking, phone, onClose, onSubmit, submitting }: { booking: FunnelBooking | null; phone: boolean; onClose: () => void; onSubmit: (startsAt: string) => void; submitting: boolean }) {
+  const open = !!booking;
+  const [date, setDate] = useState("");
+  const [start, setStart] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  // Prefill with the call's current time each time it opens, off the edge.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open && booking) {
+      const s = new Date(booking.starts_at);
+      setDate(ymd(s));
+      setStart(`${String(s.getHours()).padStart(2, "0")}:${String(s.getMinutes()).padStart(2, "0")}`);
+      setErr(null);
+    }
+  }
+  const mins = booking ? Math.round((new Date(booking.ends_at).getTime() - new Date(booking.starts_at).getTime()) / 60000) : 30;
+  const submit = () => {
+    if (!date || !start) { setErr("Pick a day and a time."); return; }
+    const s = new Date(`${date}T${start}:00`);
+    if (isNaN(s.getTime())) { setErr("That day or time doesn't look right."); return; }
+    setErr(null);
+    onSubmit(s.toISOString());
+  };
+  return (
+    <Sheet open={open} onClose={onClose} phone={phone}>
+      <Box sx={{ display: "flex", alignItems: "center", mb: 1.5 }}>
+        <Typography sx={{ fontSize: 18, fontWeight: 600, flex: 1 }}>Change the call time</Typography>
+        <IconButton aria-label="Close" onClick={onClose} sx={{ width: 44, height: 44, mr: -1 }}><CloseIcon /></IconButton>
+      </Box>
+      <Typography sx={{ fontSize: 14, color: "text.secondary", mb: 2 }}>
+        {booking?.name ? `${booking.name}'s ` : "This "}call moves to the new time. Their diary invite updates and the reminder follows.
+      </Typography>
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        <TextField label="Day" type="date" value={date} onChange={(e) => setDate(e.target.value)} fullWidth slotProps={{ inputLabel: { shrink: true } }} />
+        <TextField label="Start time" type="time" value={start} onChange={(e) => setStart(e.target.value)} fullWidth slotProps={{ inputLabel: { shrink: true } }} helperText={`Keeps the ${mins}-minute length`} />
+        {err && <Typography sx={{ fontSize: 14, color: "error.main" }}>{err}</Typography>}
+      </Box>
+      <Box sx={{ display: "flex", gap: 1, mt: 3, justifyContent: phone ? "stretch" : "flex-end" }}>
+        {!phone && <Button onClick={onClose} disabled={submitting}>Cancel</Button>}
+        <Button onClick={submit} disabled={submitting} variant="contained" fullWidth={phone} startIcon={<ScheduleSendIcon />} sx={phone ? { minHeight: 52, fontSize: 16 } : undefined}>
+          {submitting ? "Moving…" : "Move call"}
         </Button>
       </Box>
     </Sheet>
