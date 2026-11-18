@@ -13,21 +13,20 @@ export interface CapiConfig {
 
 export async function getCapiConfig(pixelId: string): Promise<CapiConfig | null> {
   if (!pixelId) return null;
+  // A SECURITY DEFINER read: it returns whether a token is stored (has_token)
+  // without ever exposing the token itself. An enabled config with no stored
+  // token is running on EstateKit's own connection (system-token mode).
   const { data, error } = await supabase
-    .from("fb_capi_config")
-    // Deliberately not selecting access_token: nothing in the browser needs it,
-    // and not fetching it means it can't leak through the dashboard.
-    .select("pixel_id, enabled, test_event_code, label")
-    .eq("pixel_id", pixelId)
+    .rpc("get_capi_config", { p_pixel_id: pixelId })
     .maybeSingle();
   if (error || !data) return null;
+  const row = data as { pixel_id: string; enabled: boolean; test_event_code: string | null; label: string | null; has_token: boolean };
   return {
-    pixelId: data.pixel_id,
-    enabled: data.enabled,
-    testEventCode: data.test_event_code,
-    label: data.label ?? "",
-    // access_token is NOT NULL, so a saved config always has one.
-    hasToken: true,
+    pixelId: row.pixel_id,
+    enabled: row.enabled,
+    testEventCode: row.test_event_code,
+    label: row.label ?? "",
+    hasToken: !!row.has_token,
   };
 }
 
@@ -37,6 +36,9 @@ export async function saveCapiConfig(args: {
   accessToken?: string;
   enabled: boolean;
   testEventCode: string | null;
+  /** Run on EstateKit's own connection — no token needed, and clears any
+   *  stored one. The zero-paste path for an EstateKit-owned dataset. */
+  system?: boolean;
 }): Promise<void> {
   // A server-side save: browsers can't read the token column, and an upsert
   // that overwrites a column needs to read it.
@@ -45,8 +47,24 @@ export async function saveCapiConfig(args: {
     p_enabled: args.enabled,
     p_test_event_code: args.testEventCode || null,
     p_access_token: args.accessToken?.trim() || null,
+    p_system: args.system ?? false,
   });
   if (error) throw new Error(error.message);
+}
+
+/** The one-click check: can EstateKit's own connection already send to this
+ *  dataset, with nothing pasted? True for datasets an EstateKit business owns,
+ *  which is most clients. If false, the client's own Facebook owns it and a
+ *  one-time key is needed. No token ever crosses to the browser. */
+export async function probeSystemReach(pixelId: string): Promise<{ reachable: boolean; reason?: string }> {
+  const clean = (pixelId || "").replace(/\D/g, "");
+  if (!clean) return { reachable: false, reason: "Add the Dataset ID first." };
+  const { data, error } = await supabase.functions.invoke("fb-capi-lead", {
+    body: { probe: true, pixelId: clean },
+  });
+  if (error) return { reachable: false, reason: "Couldn't check just now. Try again in a moment." };
+  const d = (data ?? {}) as { reachable?: boolean; reason?: string };
+  return { reachable: !!d.reachable, reason: d.reason };
 }
 
 /** Fire one test lead at Facebook and report, in plain English, whether it was

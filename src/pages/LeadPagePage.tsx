@@ -65,7 +65,7 @@ import { useIsOperator } from "../hooks/useAutomations";
 import { useSnack } from "../hooks/useSnack";
 import LeadCaptureForm from "../components/LeadCaptureForm";
 import LeadPageFunnelStats from "../components/LeadPageFunnelStats";
-import { getCapiConfig, saveCapiConfig, listCapiEvents, checkCapiConnection } from "../api/capi";
+import { getCapiConfig, saveCapiConfig, listCapiEvents, checkCapiConnection, probeSystemReach } from "../api/capi";
 import { timeAgo } from "../lib/timeAgo";
 import FormPresetPicker from "../components/FormPresetPicker";
 import InfoTip from "../components/InfoTip";
@@ -1748,25 +1748,14 @@ function CapiSettings({ pixelId }: { pixelId: string }) {
   });
 
   const [token, setToken] = useState("");
-  const [testCode, setTestCode] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [checking, setChecking] = useState(false);
+  const [busy, setBusy] = useState<null | "on" | "off" | "check">(null);
+  // Revealed only when EstateKit's own connection can't reach this dataset —
+  // i.e. it's on the client's own Facebook and we need a one-time key. Until
+  // then the whole token business stays hidden: most datasets never see it.
+  const [needKey, setNeedKey] = useState(false);
   // The green/red light. Cleared whenever they change the token, so a stale
   // "Working" can't linger over a token they've just edited.
   const [check, setCheck] = useState<{ ok: boolean; reason: string } | null>(null);
-
-  useEffect(() => { setTestCode(config?.testEventCode ?? ""); }, [config?.testEventCode]);
-
-  async function runCheck(): Promise<{ ok: boolean; reason: string }> {
-    setChecking(true);
-    try {
-      const result = await checkCapiConnection(cleanPixel, token);
-      setCheck(result);
-      return result;
-    } finally {
-      setChecking(false);
-    }
-  }
 
   if (!cleanPixel) {
     return (
@@ -1776,86 +1765,132 @@ function CapiSettings({ pixelId }: { pixelId: string }) {
     );
   }
 
-  async function save(enabled: boolean) {
-    setSaving(true);
+  // The one-click path. Ask Facebook whether EstateKit's own connection can
+  // already send to this dataset; if it can, turn it on with nothing pasted.
+  // Only when Facebook refuses do we reveal the key field.
+  async function turnOn() {
+    setBusy("on");
+    setCheck(null);
     try {
-      await saveCapiConfig({
-        pixelId: cleanPixel,
-        accessToken: token,
-        enabled,
-        testEventCode: testCode.trim() || null,
-      });
-      await qc.invalidateQueries({ queryKey: ["capiConfig", cleanPixel] });
-      if (enabled) {
-        // Turning it on should mean it actually works — prove it, don't assume.
-        const result = await runCheck();
+      if (needKey || token.trim()) {
+        // Client's own Facebook: save with the pasted key, then prove it works.
+        await saveCapiConfig({ pixelId: cleanPixel, accessToken: token, enabled: true, testEventCode: config?.testEventCode ?? null });
+        await qc.invalidateQueries({ queryKey: ["capiConfig", cleanPixel] });
+        const result = await checkCapiConnection(cleanPixel, token);
+        setCheck(result);
         setToken("");
         showSnack(result.ok ? "Backup tracking is on and working" : "Saved — but the test didn't pass. See the message below.");
+        return;
+      }
+      // Try EstateKit's own connection first — no paste needed for our datasets.
+      const probe = await probeSystemReach(cleanPixel);
+      if (probe.reachable) {
+        await saveCapiConfig({ pixelId: cleanPixel, enabled: true, system: true, testEventCode: config?.testEventCode ?? null });
+        await qc.invalidateQueries({ queryKey: ["capiConfig", cleanPixel] });
+        showSnack("Backup tracking is on — using EstateKit's connection");
       } else {
-        setToken("");
-        setCheck(null);
-        showSnack("Backup tracking is off");
+        // On the client's own Facebook: ask for the one-time key.
+        setNeedKey(true);
       }
     } catch (e) {
       console.error(e);
-      showSnack("Couldn't save that. Try again.");
+      showSnack("Couldn't turn that on. Try again.");
     } finally {
-      setSaving(false);
+      setBusy(null);
     }
   }
 
+  async function turnOff() {
+    setBusy("off");
+    try {
+      await saveCapiConfig({ pixelId: cleanPixel, enabled: false, testEventCode: config?.testEventCode ?? null });
+      await qc.invalidateQueries({ queryKey: ["capiConfig", cleanPixel] });
+      setToken(""); setNeedKey(false); setCheck(null);
+      showSnack("Backup tracking is off");
+    } catch (e) {
+      console.error(e);
+      showSnack("Couldn't turn that off. Try again.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function runCheck() {
+    setBusy("check");
+    try {
+      setCheck(await checkCapiConnection(cleanPixel));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const on = !!config?.enabled;
+  const systemMode = on && !config?.hasToken;
+
   return (
     <Box sx={{ bgcolor: tokens.surface2, border: `1px solid ${tokens.divider2}`, borderRadius: "6px", p: "12px", display: "flex", flexDirection: "column", gap: 1.25 }}>
-      <Typography sx={{ fontSize: 12.5, color: "text.secondary", lineHeight: 1.5 }}>
-        Phones often block the normal tracking, so Facebook misses leads. With this on,
-        we also tell Facebook about each lead ourselves. Facebook counts each lead once,
-        so nothing is doubled.
-      </Typography>
+      {on ? (
+        // Already on: say in one line how, and let them switch it off. Nothing
+        // to copy, nothing to maintain.
+        <Box sx={{ display: "flex", alignItems: "flex-start", gap: 0.75 }}>
+          <CheckCircleIcon sx={{ fontSize: 18, color: "success.main", mt: "1px", flexShrink: 0 }} />
+          <Box sx={{ flex: 1 }}>
+            <Typography sx={{ fontSize: 12.5, fontWeight: 600, color: "success.main", lineHeight: 1.45 }}>
+              {systemMode ? "On — using EstateKit's connection" : "On — using this client's own Facebook key"}
+            </Typography>
+            <Typography sx={{ fontSize: 12, color: "text.secondary", lineHeight: 1.45 }}>
+              Facebook is told about every lead and what happens next, even when a phone blocks tracking. Nothing else to do.
+            </Typography>
+          </Box>
+        </Box>
+      ) : (
+        <Typography sx={{ fontSize: 12.5, color: "text.secondary", lineHeight: 1.5 }}>
+          Phones often block the normal tracking, so Facebook misses leads. Turn this on and
+          we tell Facebook about each lead ourselves. Facebook counts each lead once, so
+          nothing is doubled.
+        </Typography>
+      )}
 
-      <TextField
-        label={config?.hasToken ? "New access token" : "Access token"}
-        placeholder={config?.hasToken ? "Leave empty to keep the saved one" : "Paste the token from Facebook"}
-        value={token}
-        onChange={(e) => { setToken(e.target.value); setCheck(null); }}
-        type="password"
-        size="small"
-        fullWidth
-        helperText={config?.hasToken
-          ? "One is saved. Only paste a new one if you made a new token in Facebook."
-          : "Events Manager → your dataset → Settings → Conversions API → Generate access token."}
-      />
-
-      <TextField
-        label="Test code (only while testing)"
-        placeholder="e.g. TEST12345"
-        value={testCode}
-        onChange={(e) => setTestCode(e.target.value)}
-        helperText="From Events Manager → Test events. While it's filled in, leads only show up in Test events and don't help your ads. Delete it when you're done."
-        size="small"
-        fullWidth
-      />
+      {/* The key field only appears when EstateKit's own connection can't reach
+          this dataset — never up front. */}
+      {!on && needKey && (
+        <>
+          <Typography sx={{ fontSize: 12.5, color: "text.secondary", lineHeight: 1.5 }}>
+            This dataset is on the client's own Facebook, so it needs a one-time key from them.
+            In Events Manager → the dataset → Settings → Conversions API → Generate access token, then paste it here. You only do this once.
+          </Typography>
+          <TextField
+            label="Access token"
+            placeholder="Paste the token from Facebook"
+            value={token}
+            onChange={(e) => { setToken(e.target.value); setCheck(null); }}
+            type="password"
+            size="small"
+            fullWidth
+            autoFocus
+          />
+        </>
+      )}
 
       <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
-        {config?.testEventCode && <Chip size="small" label="Testing: delete the test code when you're done" color="warning" variant="outlined" />}
         <Box sx={{ flex: 1 }} />
-        <Button
-          size="small"
-          disabled={checking || saving || (!config?.hasToken && !token.trim())}
-          onClick={() => void runCheck()}
-        >
-          {checking ? "Checking…" : "Check it's working"}
-        </Button>
-        <Button
-          size="small"
-          disabled={saving || (!config?.hasToken && !token.trim())}
-          onClick={() => save(!config?.enabled)}
-          variant={config?.enabled ? "outlined" : "contained"}
-        >
-          {config?.enabled ? "Turn off" : "Turn on"}
-        </Button>
-        {config?.enabled && (
-          <Button size="small" disabled={saving} onClick={() => save(true)}>
-            Save changes
+        {on ? (
+          <>
+            <Button size="small" disabled={busy !== null} onClick={() => void runCheck()}>
+              {busy === "check" ? "Checking…" : "Check it's working"}
+            </Button>
+            <Button size="small" variant="outlined" disabled={busy !== null} onClick={() => void turnOff()}>
+              {busy === "off" ? "Turning off…" : "Turn off"}
+            </Button>
+          </>
+        ) : (
+          <Button
+            variant="contained"
+            disabled={busy !== null || (needKey && !token.trim())}
+            onClick={() => void turnOn()}
+            sx={{ minHeight: 44 }}
+          >
+            {busy === "on" ? "Turning on…" : needKey ? "Turn on with this key" : "Turn on"}
           </Button>
         )}
       </Box>

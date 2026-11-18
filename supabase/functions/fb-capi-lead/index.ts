@@ -26,6 +26,57 @@ import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 
 const GRAPH = "https://graph.facebook.com/v21.0";
 
+// EstateKit's own Meta system-user tokens — the same ones sync-fb-leads uses to
+// pull leads from these Pages. For a dataset an EstateKit business owns, they
+// can also SEND Conversions API events, with no per-client token. That is what
+// lets "backup tracking" be a single switch for most clients: a config with no
+// stored access_token runs on these instead.
+const SYSTEM_TOKENS = ["FB_ACCESS_TOKEN", "FB_ACCESS_TOKEN_2"]
+  .map((n) => Deno.env.get(n))
+  .filter((t): t is string => !!t && t.trim().length > 0)
+  .map((t) => t.trim());
+
+// Graph error codes that mean "this token can't, try another": expired/invalid
+// token, or no permission on this dataset. Anything else (bad dataset id, bad
+// payload) won't be fixed by a different token, so we stop.
+const TOKEN_RETRYABLE = new Set([190, 200, 10, 294, 2635]);
+
+/** POST events to a dataset, trying each token until one is accepted. Returns
+ *  the first success, or the last response if all fail. The token itself is
+ *  never returned — only the outcome. */
+async function sendEvents(
+  pixelId: string,
+  payload: unknown,
+  tokens: string[],
+): Promise<{ ok: boolean; status: number; text: string }> {
+  let last = { ok: false, status: 0, text: "no token available" };
+  for (const token of tokens) {
+    try {
+      const res = await fetch(`${GRAPH}/${pixelId}/events?access_token=${token}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const text = (await res.text()).slice(0, 1000);
+      last = { ok: res.ok, status: res.status, text };
+      if (res.ok) return last;
+      let code: number | undefined;
+      try { code = JSON.parse(text)?.error?.code; } catch { /* keep raw */ }
+      if (code === undefined || !TOKEN_RETRYABLE.has(code)) return last;
+    } catch (err) {
+      last = { ok: false, status: 0, text: String(err).slice(0, 1000) };
+    }
+  }
+  return last;
+}
+
+/** The tokens to send a given config's events with: the client's own pasted
+ *  token when there is one, otherwise EstateKit's system tokens. */
+function tokensFor(config: CapiConfig): string[] {
+  const own = (config.access_token || "").trim();
+  return own ? [own] : SYSTEM_TOKENS;
+}
+
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -61,7 +112,8 @@ function buildFbc(fbclid: string | undefined, createdAtMs: number): string | und
 
 interface CapiConfig {
   pixel_id: string;
-  access_token: string;
+  // Null = run on EstateKit's own connection (system-token mode).
+  access_token: string | null;
   enabled: boolean;
   test_event_code: string | null;
 }
@@ -103,55 +155,73 @@ async function runConnectionTest(
   const pixelId = (rawPixel || "").replace(/\D/g, "");
   if (!pixelId) return json({ ok: false, reason: "Add the Dataset ID first, then check." });
 
-  // Prefer the token the agent just typed; otherwise re-use the saved one so an
-  // already-set-up pixel can be re-checked without pasting it again.
-  let token = (typedToken || "").trim();
+  // Which tokens to try: the one the agent just typed, else the saved one, else
+  // EstateKit's own connection (for a config running in system-token mode).
+  const typed = (typedToken || "").trim();
+  let tokens: string[] = typed ? [typed] : [];
   let savedTestCode: string | null = null;
-  if (!token) {
+  if (!typed) {
     const { data } = await supabase
       .from("fb_capi_config")
       .select("access_token, test_event_code")
       .eq("pixel_id", pixelId)
       .maybeSingle();
-    token = (data?.access_token as string | undefined)?.trim() || "";
+    const saved = (data?.access_token as string | undefined)?.trim() || "";
+    tokens = saved ? [saved] : SYSTEM_TOKENS;
     savedTestCode = (data?.test_event_code as string | null) ?? null;
   }
-  if (!token) return json({ ok: false, reason: "Add the access token first, then check." });
+  if (tokens.length === 0) return json({ ok: false, reason: "Add the access token first, then check." });
 
   // Always send with a test_event_code: that routes the event to Events Manager
   // → Test events only, so a check never counts as a real lead or trains the ads.
   const testCode = savedTestCode || "ESTATEKIT_CHECK";
-  const payload = {
+  const result = await sendEvents(pixelId, await testPayload(testCode), tokens);
+  let parsed: { events_received?: number; error?: { code?: number; message?: string } } = {};
+  try { parsed = JSON.parse(result.text); } catch { /* keep raw for the log */ }
+
+  if (result.ok && (parsed.events_received ?? 0) >= 1) {
+    return json({ ok: true, reason: "Working — Facebook received a test lead. You're all set." });
+  }
+  console.error("CAPI check rejected", result.status, result.text);
+  return json({ ok: false, reason: plainCapiError(parsed.error?.code, parsed.error?.message || "") });
+}
+
+/** One test-event payload, routed to Test events by the test_event_code. The
+ *  user data is hashed, as Meta requires, so the event is accepted and matched. */
+async function testPayload(testCode: string) {
+  return {
     data: [{
       event_name: "Lead",
       event_time: Math.floor(Date.now() / 1000),
       event_id: `capicheck_${Date.now()}`,
-      action_source: "website",
+      action_source: "website" as const,
       event_source_url: "https://leads.estatekit.co",
       user_data: { em: [await sha256("capi-check@estatekit.co")], country: [await sha256("za")] },
     }],
     test_event_code: testCode,
   };
+}
 
-  try {
-    const res = await fetch(`${GRAPH}/${pixelId}/events?access_token=${token}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const text = (await res.text()).slice(0, 1000);
-    let parsed: { events_received?: number; error?: { code?: number; message?: string } } = {};
-    try { parsed = JSON.parse(text); } catch { /* keep raw for the log */ }
+/** The one-click path: can EstateKit's own connection send to this dataset,
+ *  with nothing pasted? True for datasets an EstateKit business owns. Sends a
+ *  single test event (Test-events only) and reports reachable / not. Restricted
+ *  to datasets that are actually on one of our forms, so it can't be pointed at
+ *  arbitrary datasets. */
+async function runReachProbe(supabase: SupabaseClient, rawPixel: string | undefined): Promise<Response> {
+  const pixelId = (rawPixel || "").replace(/\D/g, "");
+  if (!pixelId) return json({ reachable: false, reason: "Add the Dataset ID first." });
+  if (SYSTEM_TOKENS.length === 0) return json({ reachable: false, reason: "EstateKit's own connection isn't available right now." });
 
-    if (res.ok && (parsed.events_received ?? 0) >= 1) {
-      return json({ ok: true, reason: "Working — Facebook received a test lead. You're all set." });
-    }
-    console.error("CAPI check rejected", res.status, text);
-    return json({ ok: false, reason: plainCapiError(parsed.error?.code, parsed.error?.message || "") });
-  } catch (err) {
-    console.error("CAPI check threw", err);
-    return json({ ok: false, reason: "Couldn't reach Facebook just now. Try the check again in a moment." });
-  }
+  const { data: onForm } = await supabase
+    .from("lead_pages").select("id").ilike("fb_pixel_id", `%${pixelId}%`).limit(1).maybeSingle();
+  if (!onForm) return json({ reachable: false, reason: "That dataset isn't on any of your forms yet." });
+
+  const result = await sendEvents(pixelId, await testPayload("ESTATEKIT_CHECK"), SYSTEM_TOKENS);
+  let received = 0;
+  try { received = JSON.parse(result.text)?.events_received ?? 0; } catch { /* keep */ }
+  if (result.ok && received >= 1) return json({ reachable: true });
+  console.error("CAPI reach probe: not reachable", pixelId, result.status, result.text);
+  return json({ reachable: false, reason: "needs the client's own key" });
 }
 
 Deno.serve(async (req) => {
@@ -175,6 +245,9 @@ Deno.serve(async (req) => {
     // it's absent we fall back to the saved one.
     test?: boolean;
     accessToken?: string;
+    // One-click setup: can EstateKit's own connection reach this dataset? If so
+    // the dashboard turns backup tracking on with nothing pasted.
+    probe?: boolean;
   };
   try {
     body = await req.json();
@@ -182,6 +255,7 @@ Deno.serve(async (req) => {
     return json({ error: "invalid json" }, 400);
   }
 
+  if (body.probe) return await runReachProbe(supabase, body.pixelId);
   if (body.test) return await runConnectionTest(supabase, body.pixelId, body.accessToken);
   if (body.leadId && body.outcome) return await reportOutcome(supabase, body.leadId, body.outcome);
   if (!body.leadId || !body.pixelId) return json({ error: "leadId and pixelId required" }, 400);
@@ -252,24 +326,9 @@ Deno.serve(async (req) => {
     ...(config.test_event_code ? { test_event_code: config.test_event_code } : {}),
   };
 
-  let status = "sent";
-  let responseText = "";
-  try {
-    const res = await fetch(`${GRAPH}/${config.pixel_id}/events?access_token=${config.access_token}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    responseText = (await res.text()).slice(0, 1000);
-    if (!res.ok) {
-      status = "failed";
-      console.error("CAPI send failed", res.status, responseText);
-    }
-  } catch (err) {
-    status = "failed";
-    responseText = String(err).slice(0, 1000);
-    console.error("CAPI send threw", err);
-  }
+  const result = await sendEvents(config.pixel_id, payload, tokensFor(config));
+  const status = result.ok ? "sent" : "failed";
+  if (!result.ok) console.error("CAPI send failed", result.status, result.text);
 
   await supabase.from("fb_capi_events").insert({
     lead_id: lead.id,
@@ -277,7 +336,7 @@ Deno.serve(async (req) => {
     event_id: eventId,
     event_name: body.eventName || "Lead",
     status,
-    response: responseText,
+    response: result.text,
   });
 
   return json({ status, eventId, test: !!config.test_event_code });
@@ -397,23 +456,9 @@ async function reportOutcome(supabase: SupabaseClient, leadId: string, outcome: 
     ...(config.test_event_code ? { test_event_code: config.test_event_code } : {}),
   };
 
-  let status = "sent";
-  let responseText = "";
-  try {
-    const res = await fetch(`${GRAPH}/${config.pixel_id}/events?access_token=${config.access_token}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    responseText = (await res.text()).slice(0, 1000);
-    if (!res.ok) {
-      status = "failed";
-      console.error("CAPI outcome failed", res.status, responseText);
-    }
-  } catch (err) {
-    status = "failed";
-    responseText = String(err).slice(0, 1000);
-  }
+  const result = await sendEvents(config.pixel_id, payload, tokensFor(config));
+  const status = result.ok ? "sent" : "failed";
+  if (!result.ok) console.error("CAPI outcome failed", result.status, result.text);
 
   await supabase.from("fb_capi_events").insert({
     lead_id: lead.id,
@@ -421,7 +466,7 @@ async function reportOutcome(supabase: SupabaseClient, leadId: string, outcome: 
     event_id: eventId,
     event_name: eventName,
     status,
-    response: responseText,
+    response: result.text,
   });
   // On the lead's history, so the agent can see Facebook was told.
   if (status === "sent" && outcome !== "lead") {
