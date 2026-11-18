@@ -49,6 +49,24 @@ export async function saveCapiConfig(args: {
   if (error) throw new Error(error.message);
 }
 
+/** Fire one test lead at Facebook and report, in plain English, whether it was
+ *  accepted — the honest green/red light for setup. Pass the token the agent
+ *  just typed; leave it out to re-check an already-saved pixel. The test event
+ *  only ever lands in Facebook's "Test events", never in live numbers. */
+export async function checkCapiConnection(
+  pixelId: string,
+  accessToken?: string,
+): Promise<{ ok: boolean; reason: string }> {
+  const clean = (pixelId || "").replace(/\D/g, "");
+  if (!clean) return { ok: false, reason: "Add the Dataset ID first, then check." };
+  const { data, error } = await supabase.functions.invoke("fb-capi-lead", {
+    body: { test: true, pixelId: clean, accessToken: accessToken?.trim() || undefined },
+  });
+  if (error) return { ok: false, reason: "Couldn't run the check just now. Try again in a moment." };
+  const d = (data ?? {}) as { ok?: boolean; reason?: string };
+  return { ok: !!d.ok, reason: d.reason ?? (d.ok ? "Working." : "Facebook didn't accept the test.") };
+}
+
 export interface CapiEventRow {
   id: string;
   event_name: string;

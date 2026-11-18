@@ -65,7 +65,7 @@ import { useIsOperator } from "../hooks/useAutomations";
 import { useSnack } from "../hooks/useSnack";
 import LeadCaptureForm from "../components/LeadCaptureForm";
 import LeadPageFunnelStats from "../components/LeadPageFunnelStats";
-import { getCapiConfig, saveCapiConfig, listCapiEvents } from "../api/capi";
+import { getCapiConfig, saveCapiConfig, listCapiEvents, checkCapiConnection } from "../api/capi";
 import { timeAgo } from "../lib/timeAgo";
 import FormPresetPicker from "../components/FormPresetPicker";
 import InfoTip from "../components/InfoTip";
@@ -73,6 +73,8 @@ import LeadMagnetCard from "../components/LeadMagnetCard";
 import ThankYouPageCard from "../components/ThankYouPageCard";
 import { useFormSaving } from "../hooks/useAutosave";
 import CheckIcon from "@mui/icons-material/Check";
+import CheckCircleIcon from "@mui/icons-material/CheckCircle";
+import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import OptionsEditor from "../components/OptionsEditor";
 import { cleanOptions } from "../lib/options";
 import { applyFormPreset, FORM_PRESET_VERSION, presetByKey } from "../lib/formPresets";
@@ -1748,8 +1750,23 @@ function CapiSettings({ pixelId }: { pixelId: string }) {
   const [token, setToken] = useState("");
   const [testCode, setTestCode] = useState("");
   const [saving, setSaving] = useState(false);
+  const [checking, setChecking] = useState(false);
+  // The green/red light. Cleared whenever they change the token, so a stale
+  // "Working" can't linger over a token they've just edited.
+  const [check, setCheck] = useState<{ ok: boolean; reason: string } | null>(null);
 
   useEffect(() => { setTestCode(config?.testEventCode ?? ""); }, [config?.testEventCode]);
+
+  async function runCheck(): Promise<{ ok: boolean; reason: string }> {
+    setChecking(true);
+    try {
+      const result = await checkCapiConnection(cleanPixel, token);
+      setCheck(result);
+      return result;
+    } finally {
+      setChecking(false);
+    }
+  }
 
   if (!cleanPixel) {
     return (
@@ -1768,9 +1785,17 @@ function CapiSettings({ pixelId }: { pixelId: string }) {
         enabled,
         testEventCode: testCode.trim() || null,
       });
-      setToken("");
       await qc.invalidateQueries({ queryKey: ["capiConfig", cleanPixel] });
-      showSnack(enabled ? "Backup tracking is on" : "Backup tracking is off");
+      if (enabled) {
+        // Turning it on should mean it actually works — prove it, don't assume.
+        const result = await runCheck();
+        setToken("");
+        showSnack(result.ok ? "Backup tracking is on and working" : "Saved — but the test didn't pass. See the message below.");
+      } else {
+        setToken("");
+        setCheck(null);
+        showSnack("Backup tracking is off");
+      }
     } catch (e) {
       console.error(e);
       showSnack("Couldn't save that. Try again.");
@@ -1791,7 +1816,7 @@ function CapiSettings({ pixelId }: { pixelId: string }) {
         label={config?.hasToken ? "New access token" : "Access token"}
         placeholder={config?.hasToken ? "Leave empty to keep the saved one" : "Paste the token from Facebook"}
         value={token}
-        onChange={(e) => setToken(e.target.value)}
+        onChange={(e) => { setToken(e.target.value); setCheck(null); }}
         type="password"
         size="small"
         fullWidth
@@ -1815,6 +1840,13 @@ function CapiSettings({ pixelId }: { pixelId: string }) {
         <Box sx={{ flex: 1 }} />
         <Button
           size="small"
+          disabled={checking || saving || (!config?.hasToken && !token.trim())}
+          onClick={() => void runCheck()}
+        >
+          {checking ? "Checking…" : "Check it's working"}
+        </Button>
+        <Button
+          size="small"
           disabled={saving || (!config?.hasToken && !token.trim())}
           onClick={() => save(!config?.enabled)}
           variant={config?.enabled ? "outlined" : "contained"}
@@ -1827,6 +1859,18 @@ function CapiSettings({ pixelId }: { pixelId: string }) {
           </Button>
         )}
       </Box>
+
+      {/* The green/red light. The one thing that turns "hit or miss" into certainty. */}
+      {check && (
+        <Box sx={{ display: "flex", alignItems: "flex-start", gap: 0.75 }}>
+          {check.ok
+            ? <CheckCircleIcon sx={{ fontSize: 18, color: "success.main", mt: "1px", flexShrink: 0 }} />
+            : <WarningAmberIcon sx={{ fontSize: 18, color: "error.main", mt: "1px", flexShrink: 0 }} />}
+          <Typography sx={{ fontSize: 12.5, lineHeight: 1.45, color: check.ok ? "success.main" : "error.main" }}>
+            {check.reason}
+          </Typography>
+        </Box>
+      )}
 
       {/* Proof it's working, rather than asking them to trust the toggle. */}
       {events.length > 0 && (

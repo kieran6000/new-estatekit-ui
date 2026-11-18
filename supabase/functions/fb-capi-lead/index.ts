@@ -76,6 +76,84 @@ async function loadConfig(supabase: SupabaseClient, pixelId: string): Promise<Ca
   return data as CapiConfig;
 }
 
+/** Turns a Facebook Graph error into one plain sentence a non-technical agent
+ *  can act on. The raw text still goes to the logs. */
+function plainCapiError(code: number | undefined, message: string): string {
+  const m = (message || "").toLowerCase();
+  if (code === 190 || m.includes("access token")) {
+    return "That access token is wrong or has expired. In Events Manager, open your dataset → Settings → Conversions API → Generate access token, then paste the new one here.";
+  }
+  if (code === 200 || code === 10 || code === 294 || m.includes("permission")) {
+    return "This token can't send to this dataset. Make the token from the same dataset whose number you entered above, then paste it here.";
+  }
+  if (m.includes("unknown path") || m.includes("does not exist") || m.includes("nonexisting") || m.includes("unsupported") || m.includes("cannot be loaded")) {
+    return "That Dataset ID doesn't look right. Copy it from Events Manager → Data sources (it's the long number under your dataset's name).";
+  }
+  return "Facebook didn't accept the test. Double-check the Dataset ID and the access token, then try again.";
+}
+
+/** "Check it's working": send one test event (routed to Facebook's Test events,
+ *  so it never touches live numbers or the ads) and say, in plain words, whether
+ *  Facebook accepted it. Never returns or logs the token back to the browser. */
+async function runConnectionTest(
+  supabase: SupabaseClient,
+  rawPixel: string | undefined,
+  typedToken: string | undefined,
+): Promise<Response> {
+  const pixelId = (rawPixel || "").replace(/\D/g, "");
+  if (!pixelId) return json({ ok: false, reason: "Add the Dataset ID first, then check." });
+
+  // Prefer the token the agent just typed; otherwise re-use the saved one so an
+  // already-set-up pixel can be re-checked without pasting it again.
+  let token = (typedToken || "").trim();
+  let savedTestCode: string | null = null;
+  if (!token) {
+    const { data } = await supabase
+      .from("fb_capi_config")
+      .select("access_token, test_event_code")
+      .eq("pixel_id", pixelId)
+      .maybeSingle();
+    token = (data?.access_token as string | undefined)?.trim() || "";
+    savedTestCode = (data?.test_event_code as string | null) ?? null;
+  }
+  if (!token) return json({ ok: false, reason: "Add the access token first, then check." });
+
+  // Always send with a test_event_code: that routes the event to Events Manager
+  // → Test events only, so a check never counts as a real lead or trains the ads.
+  const testCode = savedTestCode || "ESTATEKIT_CHECK";
+  const payload = {
+    data: [{
+      event_name: "Lead",
+      event_time: Math.floor(Date.now() / 1000),
+      event_id: `capicheck_${Date.now()}`,
+      action_source: "website",
+      event_source_url: "https://leads.estatekit.co",
+      user_data: { em: [await sha256("capi-check@estatekit.co")], country: [await sha256("za")] },
+    }],
+    test_event_code: testCode,
+  };
+
+  try {
+    const res = await fetch(`${GRAPH}/${pixelId}/events?access_token=${token}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const text = (await res.text()).slice(0, 1000);
+    let parsed: { events_received?: number; error?: { code?: number; message?: string } } = {};
+    try { parsed = JSON.parse(text); } catch { /* keep raw for the log */ }
+
+    if (res.ok && (parsed.events_received ?? 0) >= 1) {
+      return json({ ok: true, reason: "Working — Facebook received a test lead. You're all set." });
+    }
+    console.error("CAPI check rejected", res.status, text);
+    return json({ ok: false, reason: plainCapiError(parsed.error?.code, parsed.error?.message || "") });
+  } catch (err) {
+    console.error("CAPI check threw", err);
+    return json({ ok: false, reason: "Couldn't reach Facebook just now. Try the check again in a moment." });
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
 
@@ -91,6 +169,12 @@ Deno.serve(async (req) => {
     eventName?: string;
     sourceUrl?: string;
     outcome?: Outcome;
+    // Setup check: "Check it's working" in the dashboard. Fires one test event
+    // and reports back in plain English, so turning backup tracking on is never
+    // a guess. accessToken is the one just typed (may not be saved yet); when
+    // it's absent we fall back to the saved one.
+    test?: boolean;
+    accessToken?: string;
   };
   try {
     body = await req.json();
@@ -98,6 +182,7 @@ Deno.serve(async (req) => {
     return json({ error: "invalid json" }, 400);
   }
 
+  if (body.test) return await runConnectionTest(supabase, body.pixelId, body.accessToken);
   if (body.leadId && body.outcome) return await reportOutcome(supabase, body.leadId, body.outcome);
   if (!body.leadId || !body.pixelId) return json({ error: "leadId and pixelId required" }, 400);
 
