@@ -48,6 +48,16 @@ export async function getLeadByToken(token: string): Promise<SharedLead | null> 
   return null;
 }
 
+/** The share link for this lead — the same leads.estatekit.co/l/<token> an
+ *  automation sends. Reuses a live token or mints one (90 days). Works for the
+ *  lead's own agent and for an operator viewing a client's lead. */
+export async function ensureLeadLink(leadId: string): Promise<string> {
+  const { data, error } = await supabase.rpc("ensure_lead_link", { p_lead_id: leadId });
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("no link");
+  return `https://leads.estatekit.co/l/${data as string}`;
+}
+
 /** The lead an expired link was for (only its id), so the page can open it
  *  in EstateKit instead of a dead end. null if the link never existed. */
 export async function leadIdForLink(token: string): Promise<string | null> {

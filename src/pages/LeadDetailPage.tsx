@@ -14,6 +14,7 @@ import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import OpenInFullIcon from "@mui/icons-material/OpenInFull";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
+import LinkIcon from "@mui/icons-material/Link";
 import EditLeadContactDialog from "../components/EditLeadContactDialog";
 import LeadFormDialog from "../components/LeadFormDialog";
 import AddressMapDialog from "../components/AddressMapDialog";
@@ -22,6 +23,7 @@ import { LeadTags } from "../components/LeadTag";
 import { leadTags } from "../lib/leadTags";
 import { useDatasetByPage } from "../hooks/useLeadPages";
 import { getLeadSourceAd, moveLeadToPipeline, setLeadArchived, setCommissionReceived } from "../api/leads";
+import { ensureLeadLink } from "../api/leadActions";
 import { useLeadWithStatus, useUpdateLeadNote, useUpdateLeadStage } from "../hooks/useLeads";
 import { useFollowLeadAccount } from "../hooks/useFollowLeadAccount";
 import { usePipelines } from "../hooks/usePipelines";
@@ -72,6 +74,7 @@ export default function LeadDetailPage({ leadId, onClose, nav }: {
   const [outcomeOpen, setOutcomeOpen] = useState(false);
   const [stageStep, setStageStep] = useState<{ step: OutcomeStep; stage: Stage } | null>(null);
   const [editOpen, setEditOpen] = useState(false);
+  const [linking, setLinking] = useState(false);
   // ?form=1 opens their form straight away (the link on a Discord new-lead card).
   const [search] = useSearchParams();
   const [formOpen, setFormOpen] = useState(() => search.get("form") === "1");
@@ -116,6 +119,22 @@ export default function LeadDetailPage({ leadId, onClose, nav }: {
         onError: () => setSaveState("Save failed"),
       },
     );
+  }
+
+  // The same leads.estatekit.co/l/<token> link the automations send — so an
+  // agent can grab it and paste it into WhatsApp themselves.
+  async function copyLink() {
+    setLinking(true);
+    try {
+      const url = await ensureLeadLink(lead!.id);
+      await navigator.clipboard.writeText(url);
+      showSnack("Link copied — paste it into WhatsApp or anywhere");
+    } catch (e) {
+      console.error(e);
+      showSnack("Couldn't copy the link. Try again.");
+    } finally {
+      setLinking(false);
+    }
   }
 
   function onNoteChange(value: string) {
@@ -228,7 +247,15 @@ export default function LeadDetailPage({ leadId, onClose, nav }: {
           </Box>
         </Box>
 
-        <Section title="Contact" action={<Button size="small" startIcon={<EditOutlinedIcon />} onClick={() => setEditOpen(true)}>Edit</Button>}>
+        <Section
+          title="Contact"
+          action={
+            <Box sx={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-end" }}>
+              <Button size="small" startIcon={<LinkIcon />} onClick={copyLink} disabled={linking}>Copy link</Button>
+              <Button size="small" startIcon={<EditOutlinedIcon />} onClick={() => setEditOpen(true)}>Edit</Button>
+            </Box>
+          }
+        >
           <Row k="Full name" v={lead.name} />
           <Row k="Phone" v={canSeeFullPhone ? prettyPhone(lead.phone) : maskPhone(lead.phone)} />
           <Row k="Email" v={lead.email || ""} />
