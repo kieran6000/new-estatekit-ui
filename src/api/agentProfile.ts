@@ -85,6 +85,10 @@ export interface AdNumbers {
   /** EstateKit: of this row's leads in these dates, how many were booked / signed a mandate. */
   booked?: number;
   mandates?: number;
+  /** EstateKit's own /call funnel (agency account): showed / signed / paid. */
+  showed?: number;
+  signed?: number;
+  paid?: number;
 }
 
 /** One campaign, ad set or ad in the client page's ads table. */
@@ -113,13 +117,15 @@ export interface AdsRow extends AdNumbers {
 export async function getAdsTable(
   adAccountId: string, since: string, until: string,
   view: { level: AdsLevel; campaignIds?: string[]; adsetIds?: string[] },
-): Promise<{ rows: AdsRow[]; account: AdNumbers | null; note?: string }> {
+): Promise<{ rows: AdsRow[]; account: AdNumbers | null; note?: string; funnel?: boolean }> {
   const { data, error } = await supabase.functions.invoke("fb-adset-table", {
     body: { adAccountId, since, until, level: view.level, campaignIds: view.campaignIds ?? [], adsetIds: view.adsetIds ?? [] },
   });
   if (error) throw new Error(data?.error || error.message);
   if (data?.error) throw new Error(data.error);
-  return { rows: (data?.rows ?? []) as AdsRow[], account: (data?.account ?? null) as AdNumbers | null, note: data?.note };
+  // funnel = this is EstateKit's own /call account, so the results columns show
+  // the agency steps (Booked → Showed → Signed → Paid), not seller stages.
+  return { rows: (data?.rows ?? []) as AdsRow[], account: (data?.account ?? null) as AdNumbers | null, note: data?.note, funnel: !!data?.funnel };
 }
 
 /** One change on the ad account, from Facebook's activity log. */

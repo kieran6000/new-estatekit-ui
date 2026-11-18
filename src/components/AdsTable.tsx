@@ -26,7 +26,7 @@ import RestartAltIcon from "@mui/icons-material/RestartAlt";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import { getAdsTable, setAdBudget, setAdStatus, type AdsLevel, type AdsRow } from "../api/agentProfile";
-import { METRICS, adsMoney, formatMetric, metricValues, sumRows, toneOf, type MetricKey, type Tone } from "../lib/adTargets";
+import { AGENCY_LABEL, METRICS, adsMoney, formatMetric, metricValues, sumRows, toneOf, type MetricKey, type Tone } from "../lib/adTargets";
 import { ALL_COLUMNS, COLUMN_LABEL, PRESETS, choiceLabel, loadPrefs, savePrefs, visibleColumns, type ColId, type ColumnPrefs, type PresetKey } from "../lib/adColumns";
 import { useSnack } from "../hooks/useSnack";
 import { listLeadIdsForAds, unlinkedResults, type AdLeadMetric } from "../api/leads";
@@ -217,7 +217,10 @@ export default function AdsTable({ agentId, adAccountId, since, until, view, onV
   // Reach and frequency can't be added up (people repeat across rows); only
   // the account totals have them right.
   const summed = sumRows(rows.map((x) => x.r));
-  const totals = view.level === "campaign" && data?.account ? { ...data.account, booked: summed.booked, mandates: summed.mandates } : summed;
+  // EstateKit's own /call account: the results columns show the agency funnel
+  // (Booked → Showed → Signed → Paid), not the seller stages.
+  const funnel = !!data?.funnel;
+  const totals = view.level === "campaign" && data?.account ? { ...data.account, booked: summed.booked, mandates: summed.mandates, showed: summed.showed, signed: summed.signed, paid: summed.paid } : summed;
   const totalV = metricValues(totals);
   const word = LEVEL_WORD[view.level];
   const onSortRaw = (k: SortKey) => setSort((s) => (s.k === k ? { k, dir: (s.dir * -1) as 1 | -1 } : { k, dir: k === "name" || k === "delivery" ? 1 : -1 }));
@@ -268,7 +271,7 @@ export default function AdsTable({ agentId, adAccountId, since, until, view, onV
       const adIds = view.level === "ad"
         ? [row.id]
         : (await getAdsTable(adAccountId, since, until, view.level === "campaign" ? { level: "ad", campaignIds: [row.id] } : { level: "ad", adsetIds: [row.id] })).rows.map((a) => a.id);
-      const ids = await listLeadIdsForAds(agentId, adIds, since, until, metric);
+      const ids = await listLeadIdsForAds(agentId, adIds, since, until, metric, funnel);
       if (ids.length) setAdLeads({ ids, i: 0 });
       else showSnack(metric === "leads" ? "These leads aren't in EstateKit yet. Facebook can take a few minutes to send them." : "Couldn't find these leads. Their ad may have been deleted.");
     } catch (e) {
@@ -316,9 +319,10 @@ export default function AdsTable({ agentId, adAccountId, since, until, view, onV
   const pickTab = (l: AdsLevel) => onView({ level: l, campaignIds: view.campaignIds, adsetIds: view.adsetIds });
 
   // ── Columns ──
-  const colIds = visibleColumns(prefs, view.level);
+  const colIds = visibleColumns(prefs, view.level, funnel);
   // Booked and signed leads no ad is recorded for: in the leads bar, not here. Said under the table so the two add up.
-  const showsEk = colIds.includes("booked") || colIds.includes("mandates");
+  // The agency /call account doesn't have a seller leads bar, so no footnote there.
+  const showsEk = !funnel && (colIds.includes("booked") || colIds.includes("mandates"));
   const { data: unlinked } = useQuery({
     queryKey: ["unlinkedResults", agentId, since, until],
     queryFn: () => unlinkedResults(agentId, since, until),
@@ -387,7 +391,7 @@ export default function AdsTable({ agentId, adAccountId, since, until, view, onV
     }
     if (id === "ends") return <Box sx={{ color: FB.text }}>{r.ends ? fbDate(r.ends) : "Ongoing"}</Box>;
     const sub = id === "leads" ? (r.leads ? r.resultType || "Leads" : "") : id === "cpl" ? (r.leads ? perResult(r.resultType || "Leads") : "") : undefined;
-    if ((id === "leads" || id === "booked" || id === "mandates") && v[id]) {
+    if ((id === "leads" || id === "booked" || id === "mandates" || id === "showed" || id === "signed" || id === "paid") && v[id]) {
       const metric = id as AdLeadMetric;
       return (
         <Tooltip title="See these leads">
@@ -541,9 +545,13 @@ export default function AdsTable({ agentId, adAccountId, since, until, view, onV
       {colIds.map((id) => {
         const m = metricOf(id);
         const w = width(id);
+        // On the agency /call account, a couple of columns are re-worded.
+        const ag = funnel ? AGENCY_LABEL[id as MetricKey] : undefined;
+        const label = ag ? ag.label : headLabel(id);
+        const help = ag ? ag.help : m ? (m.target ? `${m.help} Target: ${m.target}.` : m.help) : COL_HELP[id];
         return (
           <TableCell key={id} sx={{ ...headCell, width: w, minWidth: w, maxWidth: w }}>
-            {head(headLabel(id), m ? m.key : id, id, m ? (m.target ? `${m.help} Target: ${m.target}.` : m.help) : COL_HELP[id])}
+            {head(label, m ? m.key : id, id, help)}
             {resizer(id)}
           </TableCell>
         );

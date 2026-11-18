@@ -178,12 +178,28 @@ export interface SourceAd {
 
 const BOOKED_STAGES = ["Booked", "Viewing Booked", "Mandate Signed"];
 const MANDATE_STAGE = "Mandate Signed";
-export type AdLeadMetric = "leads" | "booked" | "mandates";
+// EstateKit's OWN /call funnel (agency pipeline): the same cumulative
+// "reached-ever" sets fb-adset-table uses, so a clicked column lists exactly
+// the leads it counted.
+const AG_BOOKED = ["Call booked", "Showed", "No-show", "Proposal sent", "Signed", "Paid", "Live", "Renewal due", "Churned"];
+const AG_SHOWED = ["Showed", "Proposal sent", "Signed", "Paid", "Live", "Renewal due", "Churned"];
+const AG_SIGNED = ["Signed", "Paid", "Live", "Renewal due", "Churned"];
+const AG_PAID = ["Paid", "Live", "Renewal due", "Churned"];
+export type AdLeadMetric = "leads" | "booked" | "mandates" | "showed" | "signed" | "paid";
+
+/** The stages that count as having reached a metric. On EstateKit's own /call
+ *  account (funnel), these are the agency funnel's cumulative sets. */
+function stagesFor(metric: AdLeadMetric, funnel: boolean): string[] {
+  if (funnel) {
+    return metric === "showed" ? AG_SHOWED : metric === "signed" ? AG_SIGNED : metric === "paid" ? AG_PAID : AG_BOOKED;
+  }
+  return metric === "booked" ? BOOKED_STAGES : [MANDATE_STAGE];
+}
 
 /** The leads some Facebook ads brought in between two days, newest first: all
- *  of them, or those booked or signed, by the stage they're in now or any move
- *  into one. Counts them the way the ads table's Booked and Mandates columns do. */
-export async function listLeadIdsForAds(agentId: string, adIds: string[], since: string, until: string, metric: AdLeadMetric = "leads"): Promise<string[]> {
+ *  of them, or those that reached a step, by the stage they're in now or any
+ *  move into one. Counts them the way the ads table's result columns do. */
+export async function listLeadIdsForAds(agentId: string, adIds: string[], since: string, until: string, metric: AdLeadMetric = "leads", funnel = false): Promise<string[]> {
   if (!adIds.length) return [];
   const leads: { id: string; stage: string; created_at: string }[] = [];
   const end = new Date(`${until}T00:00:00Z`);
@@ -199,7 +215,7 @@ export async function listLeadIdsForAds(agentId: string, adIds: string[], since:
   }
   leads.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
   if (metric === "leads") return leads.map((l) => l.id);
-  const wanted = metric === "booked" ? BOOKED_STAGES : [MANDATE_STAGE];
+  const wanted = stagesFor(metric, funnel);
   const hit = new Set(leads.filter((l) => wanted.includes(l.stage)).map((l) => l.id));
   const ids = leads.map((l) => l.id);
   for (let i = 0; i < ids.length; i += 300) {

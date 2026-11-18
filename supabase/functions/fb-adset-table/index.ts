@@ -66,63 +66,114 @@ async function mayReadAccount(req: Request, adAccountId: string): Promise<boolea
 
 const INSIGHT_FIELDS = "spend,impressions,reach,frequency,inline_link_clicks,actions";
 
+// Seller pipeline: a lead counts as booked once it's reached Booked (or later),
+// and as a mandate once it's reached Mandate Signed.
 const BOOKED = ["Booked", "Viewing Booked", "Mandate Signed"];
 const MANDATE = "Mandate Signed";
 
+// EstateKit's OWN /call funnel (the agency pipeline): the steps an agent moves
+// through. Each set is cumulative — "reached this step ever", so a later step
+// still counts the earlier ones (a signed agent did book and show; a churned
+// one went all the way through). No-show counts as booked-not-shown.
+const AG_BOOKED = ["Call booked", "Showed", "No-show", "Proposal sent", "Signed", "Paid", "Live", "Renewal due", "Churned"];
+const AG_SHOWED = ["Showed", "Proposal sent", "Signed", "Paid", "Live", "Renewal due", "Churned"];
+const AG_SIGNED = ["Signed", "Paid", "Live", "Renewal due", "Churned"];
+const AG_PAID = ["Paid", "Live", "Renewal due", "Churned"];
+
+type EkRow = { booked: number; mandates: number; showed: number; signed: number; paid: number };
+
+/** Which campaign / ad set / ad each lead's ad belongs to. Leads are tied to an
+ *  ad by fb_ad_id; ads to their ad set and campaign by asking Facebook. */
+async function rowsForAds(leads: { fb_ad_id: string }[], lvl: "campaign" | "adset" | "ad", token: string) {
+  const adIds = [...new Set(leads.map((l) => String(l.fb_ad_id)))].filter((x) => /^\d+$/.test(x));
+  const rowOf: Record<string, string> = {};
+  if (lvl === "ad") { for (const a of adIds) rowOf[a] = a; return rowOf; }
+  for (let i = 0; i < adIds.length; i += 50) {
+    const r = await (await fetch(`${GRAPH}/?ids=${adIds.slice(i, i + 50).join(",")}&fields=adset_id,campaign_id&access_token=${token}`)).json();
+    if (r.error) continue;
+    for (const [id, v] of Object.entries(r as Record<string, { adset_id?: string; campaign_id?: string }>)) {
+      const row = lvl === "adset" ? v.adset_id : v.campaign_id;
+      if (row) rowOf[id] = String(row);
+    }
+  }
+  return rowOf;
+}
+
 /** EstateKit's own results per campaign, ad set or ad: of the leads that came
- *  from its ads in these dates, how many were booked and how many signed a
- *  mandate (ever, so a lead from March booked in April still counts for
- *  March's ad). Leads are tied to an ad by fb_ad_id; ads to their ad set and
- *  campaign by asking Facebook. */
-async function ekResults(actId: string, since: string, until: string, lvl: "campaign" | "adset" | "ad", token: string) {
-  const out: Record<string, { booked: number; mandates: number }> = {};
+ *  from its ads in these dates, how far they got (ever, so a lead from March
+ *  booked in April still counts for March's ad). For a normal client that's
+ *  the seller pipeline (Booked / Mandate). For EstateKit's OWN /call account —
+ *  detected by the owning agent having an agency pipeline — it's the agency
+ *  funnel (Booked a call → Showed → Signed → Paid), and `funnel` is true. */
+async function ekResults(actId: string, since: string, until: string, lvl: "campaign" | "adset" | "ad", token: string): Promise<{ out: Record<string, EkRow>; funnel: boolean }> {
+  const out: Record<string, EkRow> = {};
   const bare = actId.replace(/^act_/, "");
   const { data: owners } = await supabase.from("agent_profiles").select("agent_id").in("fb_ad_account_id", [bare, actId]);
   const agentIds = (owners ?? []).map((o: { agent_id: string }) => o.agent_id);
-  if (!agentIds.length) return out;
+  if (!agentIds.length) return { out, funnel: false };
+
+  // EstateKit's own account? Its leads live on an agency-kind pipeline.
+  const { data: ap } = await supabase.from("pipelines").select("id").in("agent_id", agentIds).eq("kind", "agency").limit(1);
+  const funnel = !!ap?.length;
+
   const end = new Date(`${until}T00:00:00Z`);
   end.setUTCDate(end.getUTCDate() + 1);
   const { data: leads } = await supabase.from("leads").select("id, fb_ad_id, stage")
     .in("agent_id", agentIds).not("fb_ad_id", "is", null)
     .gte("created_at", `${since}T00:00:00Z`).lt("created_at", end.toISOString())
     .range(0, 9999);
-  if (!leads?.length) return out;
+  if (!leads?.length) return { out, funnel };
+  const ids = leads.map((l: { id: string }) => l.id);
 
-  // Booked or signed: by the stage it's in now, or any move into one.
+  if (funnel) {
+    // The agency funnel: each step is "reached ever", by current stage or any
+    // move into it. AG_BOOKED is the widest set, so it covers every to_value.
+    const got = { booked: new Set<string>(), showed: new Set<string>(), signed: new Set<string>(), paid: new Set<string>() };
+    const reach = (id: string, stage: string) => {
+      if (AG_BOOKED.includes(stage)) got.booked.add(id);
+      if (AG_SHOWED.includes(stage)) got.showed.add(id);
+      if (AG_SIGNED.includes(stage)) got.signed.add(id);
+      if (AG_PAID.includes(stage)) got.paid.add(id);
+    };
+    for (const l of leads) reach(l.id, l.stage);
+    for (let i = 0; i < ids.length; i += 300) {
+      const { data: ev } = await supabase.from("lead_events").select("lead_id, to_value")
+        .in("lead_id", ids.slice(i, i + 300)).eq("event_type", "stage_changed").in("to_value", AG_BOOKED);
+      for (const e of ev ?? []) reach(e.lead_id, e.to_value);
+    }
+    const rowOf = await rowsForAds(leads, lvl, token);
+    for (const l of leads) {
+      const row = rowOf[String(l.fb_ad_id)];
+      if (!row) continue;
+      const o = (out[row] ??= { booked: 0, mandates: 0, showed: 0, signed: 0, paid: 0 });
+      if (got.booked.has(l.id)) o.booked++;
+      if (got.showed.has(l.id)) o.showed++;
+      if (got.signed.has(l.id)) o.signed++;
+      if (got.paid.has(l.id)) o.paid++;
+    }
+    return { out, funnel };
+  }
+
+  // Seller pipeline: booked or signed, by the stage it's in now or any move in.
   const booked = new Set<string>(), signed = new Set<string>();
   for (const l of leads) {
     if (BOOKED.includes(l.stage)) booked.add(l.id);
     if (l.stage === MANDATE) signed.add(l.id);
   }
-  const ids = leads.map((l: { id: string }) => l.id);
   for (let i = 0; i < ids.length; i += 300) {
     const { data: ev } = await supabase.from("lead_events").select("lead_id, to_value")
       .in("lead_id", ids.slice(i, i + 300)).eq("event_type", "stage_changed").in("to_value", BOOKED);
     for (const e of ev ?? []) { booked.add(e.lead_id); if (e.to_value === MANDATE) signed.add(e.lead_id); }
   }
-
-  // Which row each ad belongs to.
-  const adIds = [...new Set(leads.map((l: { fb_ad_id: string }) => String(l.fb_ad_id)))].filter((x) => /^\d+$/.test(x));
-  const rowOf: Record<string, string> = {};
-  if (lvl === "ad") for (const a of adIds) rowOf[a] = a;
-  else {
-    for (let i = 0; i < adIds.length; i += 50) {
-      const r = await (await fetch(`${GRAPH}/?ids=${adIds.slice(i, i + 50).join(",")}&fields=adset_id,campaign_id&access_token=${token}`)).json();
-      if (r.error) continue;
-      for (const [id, v] of Object.entries(r as Record<string, { adset_id?: string; campaign_id?: string }>)) {
-        const row = lvl === "adset" ? v.adset_id : v.campaign_id;
-        if (row) rowOf[id] = String(row);
-      }
-    }
-  }
+  const rowOf = await rowsForAds(leads, lvl, token);
   for (const l of leads) {
     const row = rowOf[String(l.fb_ad_id)];
     if (!row) continue;
-    const o = (out[row] ??= { booked: 0, mandates: 0 });
+    const o = (out[row] ??= { booked: 0, mandates: 0, showed: 0, signed: 0, paid: 0 });
     if (booked.has(l.id)) o.booked++;
     if (signed.has(l.id)) o.mandates++;
   }
-  return out;
+  return { out, funnel };
 }
 // deno-lint-ignore no-explicit-any
 function numbers(i: any) {
@@ -217,10 +268,16 @@ Deno.serve(async (req) => {
         // deno-lint-ignore no-explicit-any
         .filter((r: any) => r.delivery === "ACTIVE" || r.spend > 0);
 
+      let funnel = false;
       try {
         const ek = await ekResults(actId, since, until, lvl, token);
+        funnel = ek.funnel;
         // deno-lint-ignore no-explicit-any
-        for (const r of rows as any[]) { r.booked = ek[r.id]?.booked ?? 0; r.mandates = ek[r.id]?.mandates ?? 0; }
+        for (const r of rows as any[]) {
+          const v = ek.out[r.id];
+          r.booked = v?.booked ?? 0; r.mandates = v?.mandates ?? 0;
+          r.showed = v?.showed ?? 0; r.signed = v?.signed ?? 0; r.paid = v?.paid ?? 0;
+        }
       } catch (e) {
         console.error("fb-adset-table: EstateKit results", e);
       }
@@ -231,7 +288,7 @@ Deno.serve(async (req) => {
         const a = await (await fetch(`${GRAPH}/${actId}/insights?fields=${INSIGHT_FIELDS}&time_range=${encodeURIComponent(range)}&access_token=${token}`)).json();
         if (!a.error) account = numbers(a.data?.[0]);
       }
-      return json({ rows, account });
+      return json({ rows, account, funnel });
     }
     console.warn("fb-adset-table: all tokens failed:", lastErr);
     return json({ rows: [], note: lastErr });

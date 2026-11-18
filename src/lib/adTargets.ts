@@ -9,7 +9,7 @@ import type { AdNumbers } from "../api/agentProfile";
 export type Tone = "good" | "near" | "bad" | "none";
 export type AdRowNumbers = AdNumbers;
 
-export type MetricKey = "spend" | "leads" | "cpl" | "impressions" | "reach" | "freq" | "cpm" | "clicks" | "cpc" | "ctr" | "lpv" | "booked" | "cpb" | "mandates" | "cpmand";
+export type MetricKey = "spend" | "leads" | "cpl" | "impressions" | "reach" | "freq" | "cpm" | "clicks" | "cpc" | "ctr" | "lpv" | "booked" | "cpb" | "mandates" | "cpmand" | "showed" | "signed" | "paid";
 
 export interface MetricDef {
   key: MetricKey;
@@ -40,7 +40,19 @@ export const METRICS: MetricDef[] = [
   { key: "cpb", label: "Cost per booking (EstateKit)", help: "From EstateKit: what one booking cost. Amount spent ÷ Booked." },
   { key: "mandates", label: "Mandates (EstateKit)", help: "From EstateKit, not Facebook: of the leads these ads brought in during these dates, how many reached Mandate Signed in the pipeline." },
   { key: "cpmand", label: "Cost per mandate (EstateKit)", help: "From EstateKit: what one signed mandate cost. Amount spent ÷ Mandates." },
+  // EstateKit's own /call funnel (the agency pipeline). These replace the four
+  // seller columns above when the account is EstateKit's own, so its results
+  // read as the agency's own steps, not an agent's.
+  { key: "showed", label: "Showed", help: "From EstateKit: of the agents these ads brought in during these dates, how many showed up for the call they booked." },
+  { key: "signed", label: "Signed", help: "From EstateKit: of the agents these ads brought in during these dates, how many signed up with EstateKit." },
+  { key: "paid", label: "Paid", help: "From EstateKit: of the agents these ads brought in during these dates, how many paid and came on board." },
 ];
+
+/** When the account is EstateKit's own /call funnel, a few columns are
+ *  re-worded so they read as the agency's steps, not an agent's. */
+export const AGENCY_LABEL: Partial<Record<MetricKey, { label: string; help: string }>> = {
+  booked: { label: "Booked (call)", help: "From EstateKit, not Facebook: of the agents these ads brought in during these dates, how many booked a call in the pipeline." },
+};
 
 export function metricValues(r: AdRowNumbers): Record<MetricKey, number | null> {
   return {
@@ -60,6 +72,9 @@ export function metricValues(r: AdRowNumbers): Record<MetricKey, number | null> 
     cpb: r.booked ? r.spend / r.booked : null,
     mandates: r.mandates ?? null,
     cpmand: r.mandates ? r.spend / r.mandates : null,
+    showed: r.showed ?? null,
+    signed: r.signed ?? null,
+    paid: r.paid ?? null,
   };
 }
 
@@ -75,8 +90,8 @@ export function toneOf(def: MetricDef, value: number | null, r: Pick<AdRowNumber
  *  totals carry the real ones. */
 export function sumRows(rows: AdRowNumbers[]): AdRowNumbers {
   return rows.reduce(
-    (a, r) => ({ spend: a.spend + r.spend, impressions: a.impressions + r.impressions, reach: 0, clicks: a.clicks + r.clicks, frequency: 0, leads: a.leads + r.leads, lpv: a.lpv + r.lpv, booked: (a.booked ?? 0) + (r.booked ?? 0), mandates: (a.mandates ?? 0) + (r.mandates ?? 0) }),
-    { spend: 0, impressions: 0, reach: 0, clicks: 0, frequency: 0, leads: 0, lpv: 0, booked: 0, mandates: 0 } as AdRowNumbers,
+    (a, r) => ({ spend: a.spend + r.spend, impressions: a.impressions + r.impressions, reach: 0, clicks: a.clicks + r.clicks, frequency: 0, leads: a.leads + r.leads, lpv: a.lpv + r.lpv, booked: (a.booked ?? 0) + (r.booked ?? 0), mandates: (a.mandates ?? 0) + (r.mandates ?? 0), showed: (a.showed ?? 0) + (r.showed ?? 0), signed: (a.signed ?? 0) + (r.signed ?? 0), paid: (a.paid ?? 0) + (r.paid ?? 0) }),
+    { spend: 0, impressions: 0, reach: 0, clicks: 0, frequency: 0, leads: 0, lpv: 0, booked: 0, mandates: 0, showed: 0, signed: 0, paid: 0 } as AdRowNumbers,
   );
 }
 

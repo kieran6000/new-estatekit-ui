@@ -14,4 +14,14 @@ describe("ads table columns", () => {
     expect(visibleColumns(DEFAULT_PREFS, "ad")).not.toContain("ends");
     expect(visibleColumns({ ...DEFAULT_PREFS, choice: "custom", custom: ["spend", "leads"] }, "campaign")).toEqual(["spend", "leads"]);
   });
+
+  it("the EstateKit preset swaps the seller block for the agency funnel on the /call account", () => {
+    const ek = { ...DEFAULT_PREFS, choice: "estatekit" as const, custom: PRESETS.estatekit.cols };
+    // Normal client: seller results.
+    expect(visibleColumns(ek, "campaign")).toEqual(["delivery", "leads", "cpl", "booked", "cpb", "mandates", "cpmand", "budget", "spend"]);
+    // EstateKit's own /call account: Booked → Showed → Signed → Paid, no cost columns.
+    expect(visibleColumns(ek, "campaign", true)).toEqual(["delivery", "leads", "cpl", "booked", "showed", "signed", "paid", "budget", "spend"]);
+    // Per ad, the result columns drop away either way.
+    expect(visibleColumns(ek, "ad", true)).toEqual(["delivery", "leads", "cpl", "spend"]);
+  });
 });

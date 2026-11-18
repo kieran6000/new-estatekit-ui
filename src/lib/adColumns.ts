@@ -13,7 +13,9 @@ export const COLUMN_LABEL: Record<ColId, string> = {
   ...(Object.fromEntries(METRICS.map((m) => [m.key, m.label])) as Record<MetricKey, string>),
 };
 
-/** Every column, in Ads Manager's order. */
+/** Every column, in Ads Manager's order. The agency funnel columns (showed,
+ *  signed, paid) aren't offered in Customize — they only appear, in place of
+ *  the seller block, on EstateKit's own /call account. */
 export const ALL_COLUMNS: ColId[] = ["delivery", "leads", "reach", "freq", "cpl", "budget", "spend", "ends", "impressions", "cpm", "clicks", "cpc", "ctr", "lpv", "booked", "cpb", "mandates", "cpmand"];
 
 export type PresetKey = "performance" | "performance_clicks" | "estatekit";
@@ -24,8 +26,12 @@ export const PRESETS: Record<PresetKey, { label: string; cols: ColId[] }> = {
   estatekit: { label: "EstateKit results", cols: ["delivery", "leads", "cpl", "booked", "cpb", "mandates", "cpmand", "budget", "spend"] },
 };
 
-/** EstateKit's columns: per campaign and ad set only (per ad, it's mostly 0 or 1). */
-export const EK_COLUMNS: ColId[] = ["booked", "cpb", "mandates", "cpmand"];
+/** EstateKit's result columns: per campaign and ad set only (per ad, it's
+ *  mostly 0 or 1) — both the seller block and the agency funnel block. */
+export const EK_COLUMNS: ColId[] = ["booked", "cpb", "mandates", "cpmand", "showed", "signed", "paid"];
+/** On EstateKit's own /call account, the four seller columns are replaced by
+ *  the agency's own funnel steps. */
+export const EK_AGENCY_COLUMNS: ColId[] = ["booked", "showed", "signed", "paid"];
 
 export interface ColumnPrefs {
   /** A preset, or "custom" for your own set. */
@@ -55,9 +61,15 @@ export function savePrefs(p: ColumnPrefs) {
   try { localStorage.setItem(KEY, JSON.stringify(p)); } catch { /* fine */ }
 }
 
-/** The columns to show. Ads have no budget or end date of their own. */
-export function visibleColumns(p: ColumnPrefs, level: "campaign" | "adset" | "ad"): ColId[] {
-  const cols = p.choice === "custom" ? p.custom : PRESETS[p.choice].cols;
+/** The columns to show. Ads have no budget or end date of their own. On
+ *  EstateKit's own /call account (funnel), the seller result block is swapped
+ *  for the agency's own funnel steps (Booked → Showed → Signed → Paid). */
+export function visibleColumns(p: ColumnPrefs, level: "campaign" | "adset" | "ad", funnel = false): ColId[] {
+  let cols = p.choice === "custom" ? p.custom : PRESETS[p.choice].cols;
+  if (funnel) {
+    const seller = new Set<ColId>(["cpb", "mandates", "cpmand"]);
+    cols = [...new Set(cols.flatMap((c) => (c === "booked" ? EK_AGENCY_COLUMNS : seller.has(c) ? [] : [c])))];
+  }
   return cols.filter((c) => level !== "ad" || (c !== "budget" && c !== "ends" && !EK_COLUMNS.includes(c)));
 }
 
