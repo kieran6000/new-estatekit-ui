@@ -4,7 +4,7 @@ import CloseIcon from "@mui/icons-material/Close";
 import { useQuery } from "@tanstack/react-query";
 import { listSoldListingsForAgent } from "../api/soldListings";
 import { nearby } from "../lib/geo";
-import { cachedGeocode, drawMap, geocodeAddress, hasMapsKey, HOUSE_PIN, metresToPixels, onMapsKeyRefused, staticMapUrl, streetPhotoUrl, UNSURE_METRES, warmUpMaps } from "../lib/googleMaps";
+import { agentAreaBias, cachedGeocode, drawMap, geocodeAddress, hasMapsKey, HOUSE_PIN, metresToPixels, onMapsKeyRefused, staticMapUrl, streetPhotoUrl, UNSURE_METRES, warmUpMaps } from "../lib/googleMaps";
 import { tokens } from "../theme";
 
 const NEARBY_KM = 5;
@@ -63,6 +63,15 @@ export default function AddressMapDialog({ address, agentId, open, onClose }: { 
   const [mapFailed, setMapFailed] = useState(false);
   // Never leave them on the loader: if Google says no, use the plain embed.
   useEffect(() => onMapsKeyRefused(() => setMapFailed(true)), []);
+  // Roughly where this agent's leads sit, to pull a vague address to the right
+  // area. Free (reads only addresses we've already placed); null if we can't yet.
+  const { data: bias } = useQuery({
+    queryKey: ["agentAreaBias", agentId],
+    queryFn: () => agentAreaBias(agentId!),
+    enabled: hasMapsKey() && !!agentId,
+    staleTime: 10 * 60_000,
+    retry: false,
+  });
   const { data: saved, isLoading: checking } = useQuery({
     queryKey: ["geocodeSaved", address],
     queryFn: () => cachedGeocode(address),
@@ -70,14 +79,24 @@ export default function AddressMapDialog({ address, agentId, open, onClose }: { 
     staleTime: Infinity,
     retry: false,
   });
+  // Re-look-up with the bias when the plain cache is empty, or only an
+  // approximate spot (which is exactly the vague address that lands in the
+  // wrong city). A rooftop-exact hit is a real address — trust it, don't nudge.
+  const haveSaved = saved !== undefined && saved !== "unknown";
+  const savedExact = haveSaved && saved !== null && saved.exact;
+  const wantBiased = !!bias && !savedExact;
   const { data: looked, isLoading: looking } = useQuery({
-    queryKey: ["geocode", address],
-    queryFn: () => geocodeAddress(address),
-    enabled: hasMapsKey() && saved === "unknown",
+    queryKey: ["geocode", address, wantBiased ? bias : null],
+    queryFn: () => geocodeAddress(address, wantBiased ? bias : undefined),
+    enabled: hasMapsKey() && saved !== undefined && (saved === "unknown" || wantBiased),
     staleTime: Infinity,
     retry: false,
   });
-  const geo = saved === "unknown" || saved === undefined ? looked : saved;
+  // Prefer the biased spot; fall back to the plain cached one if the nudge found
+  // nothing, so we still show something.
+  const geo = wantBiased
+    ? (looked ?? (haveSaved ? saved : null))
+    : saved === "unknown" || saved === undefined ? looked : saved;
 
   const [mapEl, setMapEl] = useState<HTMLElement | null>(null);
   // Google can go quiet without saying no, so the wait for the address has a

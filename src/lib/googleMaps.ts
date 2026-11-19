@@ -1,5 +1,6 @@
 import { supabase } from "../api/_client";
-import { addressKey, CLOSE_BY_KM, type LatLng, type Zone } from "./geo";
+import { prettyAnswer } from "./format";
+import { addressKey, CLOSE_BY_KM, middleOf, type LatLng, type Zone } from "./geo";
 
 // Google's map, geocoder and Street View photo, with the key that's locked to
 // our own site. Each address is only looked up once (geocode_cache). Anything
@@ -82,18 +83,41 @@ export async function cachedGeocode(address: string): Promise<Geocoded | null | 
   return hit.lat != null && hit.lng != null ? { lat: hit.lat, lng: hit.lng, exact: hit.exact } : null;
 }
 
+/** A vague address ("35 Viking Road", no suburb) exists in a dozen SA towns, and
+ *  Google returns the most famous one — often the wrong city. When we know
+ *  roughly where this agent's leads sit, we nudge the lookup toward there, so an
+ *  ambiguous address lands in the right area. A fully-specified address still
+ *  resolves where it says: bounds only breaks ties, it doesn't override. */
+const BIAS_DEG = 0.4; // ~44 km box around the agent's area
+
+/** The cache key for a lookup. A biased lookup is stored apart from the plain
+ *  one, so one agent's nudge can't poison another agent's view of the same
+ *  street name. */
+const lookupKey = (address: string, bias?: LatLng | null) =>
+  bias ? `${addressKey(address)}@${bias.lat.toFixed(2)},${bias.lng.toFixed(2)}` : addressKey(address);
+
+async function cachedByKey(key: string): Promise<Geocoded | null | "unknown"> {
+  const { data } = await supabase.from("geocode_cache").select("lat, lng, exact").eq("address_key", key).maybeSingle();
+  const hit = data as CacheRow | null;
+  if (!hit) return "unknown";
+  return hit.lat != null && hit.lng != null ? { lat: hit.lat, lng: hit.lng, exact: hit.exact } : null;
+}
+
 /** Where an address is, or null if Google can't find it. Throws if Google
- *  can't be asked at all, so that isn't remembered as "not found". */
-export async function geocodeAddress(address: string): Promise<Geocoded | null> {
-  const key = addressKey(address);
-  const saved = await cachedGeocode(address);
+ *  can't be asked at all, so that isn't remembered as "not found". With a bias
+ *  point, an ambiguous address is pulled toward the agent's area. */
+export async function geocodeAddress(address: string, bias?: LatLng | null): Promise<Geocoded | null> {
+  const key = lookupKey(address, bias);
+  const saved = await cachedByKey(key);
   if (saved !== "unknown") return saved;
 
   const maps = await loadGoogleMaps();
   const { Geocoder } = await maps.importLibrary("geocoding");
   let found: Geocoded | null = null;
   try {
-    const { results } = await new Geocoder().geocode({ address, componentRestrictions: { country: "ZA" } });
+    const request: Record<string, unknown> = { address, componentRestrictions: { country: "ZA" } };
+    if (bias) request.bounds = { south: bias.lat - BIAS_DEG, west: bias.lng - BIAS_DEG, north: bias.lat + BIAS_DEG, east: bias.lng + BIAS_DEG };
+    const { results } = await new Geocoder().geocode(request);
     const r = results?.[0];
     if (r) {
       const type = r.geometry.location_type;
@@ -109,6 +133,40 @@ export async function geocodeAddress(address: string): Promise<Geocoded | null> 
   // Best effort: if saving fails it's only asked again next time.
   await supabase.from("geocode_cache").insert({ address_key: key, lat: found?.lat ?? null, lng: found?.lng ?? null, exact: found?.exact ?? false }).then(() => {}, () => {});
   return found;
+}
+
+/** The address an agent's lead gave, from their form answers (the property
+ *  address, not an email). Mirrors the lead-area map's reading of a form. */
+function leadFormAddress(answers: { q: string; a: string }[] | null): string | null {
+  const hit = (answers ?? []).find((x) => /address/i.test(x.q) && !/mail/i.test(x.q) && prettyAnswer(x.a).trim().length > 4);
+  return hit ? prettyAnswer(hit.a).trim() : null;
+}
+
+const MIN_BIAS_POINTS = 3;
+
+/** Roughly where this agent's leads sit — the middle of the lead addresses we've
+ *  already placed (no new Google calls, so it's free and instant). Used only to
+ *  nudge a vague new address toward the right city. null until we've placed a
+ *  few of their leads, in which case a lookup just runs unbiased, as before. */
+export async function agentAreaBias(agentId: string): Promise<LatLng | null> {
+  const { data } = await supabase
+    .from("leads").select("form_answers").eq("agent_id", agentId).order("created_at", { ascending: false }).limit(200);
+  const keys = [...new Set(
+    (data ?? [])
+      .map((l) => leadFormAddress(l.form_answers as { q: string; a: string }[] | null))
+      .filter((a): a is string => !!a)
+      .map((a) => addressKey(a)),
+  )];
+  if (keys.length === 0) return null;
+  const points: LatLng[] = [];
+  for (let i = 0; i < keys.length; i += 100) {
+    const { data: rows } = await supabase
+      .from("geocode_cache").select("lat, lng").in("address_key", keys.slice(i, i + 100));
+    for (const row of (rows ?? []) as { lat: number | null; lng: number | null }[]) {
+      if (row.lat != null && row.lng != null) points.push({ lat: row.lat, lng: row.lng });
+    }
+  }
+  return points.length >= MIN_BIAS_POINTS ? middleOf(points) : null;
 }
 
 const LOOKUP_LIMIT_MS = 4000;
