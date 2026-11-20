@@ -281,14 +281,15 @@ describe("emails to the lead", () => {
     expect(db.rows("lead_events").map((x) => x.event_type)).toEqual(["workflow_email"]);
   });
 
-  it("sends agency (EstateKit) emails from kieran@ and fills the rebook link", async () => {
+  it("sends agency (EstateKit) emails from the verified subdomain, replies to Kieran, and fills the rebook link", async () => {
     const wf = workflow([email("Missed you {{first_name}}", "Book again: {{rebook_link}}\n\n{{agent_name}}")]);
     const l = lead({ pipeline_id: "pA" });
     enroll(wf, l);
     await tick();
     expect(emails).toHaveLength(1);
-    const e = emails[0] as { text: string; from: string };
-    expect(e.from).toBe("Megan Agent <kieran@estatekit.co>");
+    const e = emails[0] as { text: string; from: string; reply_to: string };
+    expect(e.from).toBe("Megan Agent <kieran@mail.estatekit.co>");
+    expect(e.reply_to).toBe("kieran@estatekit.co");
     expect(e.text).toContain("https://www.estatekit.co/rebook?");
     expect(e.text).toContain("name=Thandi+Mokoena");
     expect(e.text).toContain("email=thandi%40example.com");

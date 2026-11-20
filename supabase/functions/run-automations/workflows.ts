@@ -120,9 +120,11 @@ export interface EngineDeps {
 const APP = "https://leads.estatekit.co";
 const FROM_ADDRESS = "hello@mail.estatekit.co";
 // EstateKit's OWN workflows (the agency pipeline — prospective agents) send as
-// Kieran from the main domain; client-lead workflows keep hello@. Needs
-// estatekit.co verified as a sending domain in Resend, or agency sends bounce.
-const AGENCY_FROM = "kieran@estatekit.co";
+// Kieran. From the verified subdomain (mail.estatekit.co) so Resend accepts
+// them — the apex estatekit.co isn't a verified sending domain, which 403'd
+// every agency email. Replies still go to Kieran's real inbox (AGENCY_REPLY).
+const AGENCY_FROM = "kieran@mail.estatekit.co";
+const AGENCY_REPLY = "kieran@estatekit.co";
 // The website's booking pages. {{book_link}} starts a fresh booking,
 // {{rebook_link}} re-books; both carry the lead's details so the page can
 // pre-fill them (and booking-create can match the person server-side).
@@ -1018,7 +1020,11 @@ ${middle}
     const { error: bodyErr } = await this.supabase.from("workflow_emails").update({ body_html: wrap(inner) }).eq("id", rec.id);
     if (bodyErr) console.error("keeping the email wording failed", bodyErr.message);
     const text = `${body}\n\n--\n${footerAsked(agentName)} Unsubscribe: ${unsub}`;
-    const replyTo = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(this.profile?.email || "") ? this.profile!.email! : undefined;
+    // Agency emails always reply to Kieran's real inbox; client emails reply to
+    // the agent when we have a valid address for them.
+    const replyTo = fkind === "agency"
+      ? AGENCY_REPLY
+      : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(this.profile?.email || "") ? this.profile!.email! : undefined;
 
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",

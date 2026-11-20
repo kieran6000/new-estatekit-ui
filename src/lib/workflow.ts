@@ -247,7 +247,7 @@ export const FIELDS = {
   // Never the call-and-log link: that's the agent's.
   whatsapp_lead: ["first_name", "area", "address", "form_answers", "note", "appointment", "call_time", "whatsapp_link", "call_link", "agent_name", "agent_phone"],
   daily: ["first_name", "count", "leads_word", "follow_ups", "today", "pipeline", "not_called"],
-  email_lead: ["first_name", "area", "address", "form_answers", "note", "appointment", "call_time", "lead_magnet", "recent_sales", "whatsapp_link", "call_link", "agent_name", "agent_phone", "plan_link"],
+  email_lead: ["first_name", "area", "address", "form_answers", "note", "appointment", "call_time", "lead_magnet", "recent_sales", "whatsapp_link", "call_link", "agent_name", "agent_phone", "plan_link", "book_link", "rebook_link"],
 } as const;
 export type FieldSet = keyof typeof FIELDS;
 
@@ -294,6 +294,8 @@ const INFO: Record<string, FieldInfo> = {
   whatsapp_link: { label: "WhatsApp-the-agent link", example: "leads.estatekit.co/w/…", group: "Links" },
   call_link: { label: "Book-a-call link", example: "leads.estatekit.co/call/…", group: "Links" },
   plan_link: { label: "Marketing plan link", example: "leads.estatekit.co/plan/…", group: "Links" },
+  book_link: { label: "Book-a-call page", example: "estatekit.co/book", group: "Links" },
+  rebook_link: { label: "Re-book-a-call page", example: "estatekit.co/rebook", group: "Links" },
   count: { label: "Leads to call today", example: "7 leads", group: "Their day" },
   leads_word: { label: "\"lead\" or \"leads\"", example: "leads", group: "Their day" },
   follow_ups: { label: "Follow-up list", example: "• 2 new leads waiting for you\n• 3 follow-ups due\n• 1 to try again (no answer last time)", group: "Their day" },
