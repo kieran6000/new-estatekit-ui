@@ -15,6 +15,7 @@ export const INVOICE_EMAIL = "partner@estatekit.co";
 export const INVOICE_PLANS = {
   monthly: { label: "Monthly plan: R3,000 per 30 days", item: "Monthly Plan", period: "30 days", amount: 3000, days: 30 },
   quarter: { label: "3-month package: R7,500", item: "3-Month Package", period: "90 days", amount: 7500, days: 90 },
+  adspend: { label: "Ad spend only: no fee, we pay Meta for them", item: "Ad spend", period: "", amount: 0, days: 30 },
 } as const;
 export type InvoicePlan = keyof typeof INVOICE_PLANS;
 /** The 3-month package can be paid in 2 equal payments (as the agreement allows):
@@ -33,14 +34,21 @@ export const DEFAULT_AMOUNT = INVOICE_PLANS.monthly.amount;
 
 /** What the invoice's terms say: how the plan is billed, and whether ad spend is on it. */
 export function invoiceTerms(plan: InvoicePlan, adSpend: number, instalment?: Instalment): string[] {
+  const adSpendTerm = adSpend > 0
+    ? `Ad spend of ${money(adSpend)} is included in this invoice. EstateKit pays it to Meta (Facebook) at cost, with no markup, and refunds any unspent balance when the agreement ends.`
+    : "Ad spend is not included in this invoice. It is paid directly to Meta (Facebook).";
+  if (plan === "adspend") {
+    return [
+      "Ad spend only. There is no management fee on this invoice. EstateKit pays this amount to Meta (Facebook) at cost, with no markup, to run your campaign.",
+      adSpendTerm,
+    ];
+  }
   const quarter = instalment
     ? `3-month package of ${money(INVOICE_PLANS.quarter.amount)}, paid in 2 equal payments of ${money(QUARTER_HALF)}: the first before campaign management begins, the second 30 days after launch. This invoice is payment ${instalment} of 2.`
     : "3-month package, paid in advance. Payment is due before campaign management begins.";
   return [
     plan === "quarter" ? quarter : "Billed monthly. Payment is due before each 30-day cycle of campaign management begins.",
-    adSpend > 0
-      ? `Ad spend of ${money(adSpend)} is included in this invoice. EstateKit pays it to Meta (Facebook) at cost, with no markup, and refunds any unspent balance when the agreement ends.`
-      : "Ad spend is not included in this invoice. It is paid directly to Meta (Facebook).",
+    adSpendTerm,
   ];
 }
 const DEFAULT_DAYS_TO_PAY = 7;

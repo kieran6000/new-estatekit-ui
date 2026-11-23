@@ -59,13 +59,15 @@ export default function InvoiceSheet({ doc, reference, paid }: { doc: InvoiceDoc
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <th scope="row">{doc.item}</th>
-              <td>{doc.description}{doc.period && <span>{doc.period}</span>}</td>
-              <td className="inv-num">1</td>
-              <td className="inv-num">{money(doc.amount)}</td>
-              <td className="inv-num"><b>{money(doc.amount)}</b></td>
-            </tr>
+            {doc.amount > 0 && (
+              <tr>
+                <th scope="row">{doc.item}</th>
+                <td>{doc.description}{doc.period && <span>{doc.period}</span>}</td>
+                <td className="inv-num">1</td>
+                <td className="inv-num">{money(doc.amount)}</td>
+                <td className="inv-num"><b>{money(doc.amount)}</b></td>
+              </tr>
+            )}
             {adSpend > 0 && (
               <tr>
                 <th scope="row">Ad spend</th>

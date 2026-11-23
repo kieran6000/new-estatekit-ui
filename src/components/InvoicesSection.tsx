@@ -152,18 +152,19 @@ function NewInvoiceDialog({ onClose, client }: { onClose: () => void; client: Co
   /** Picking a plan fills in its item, period, price and a starting ad spend. */
   const pickPlan = (plan: InvoicePlan) => {
     const p = INVOICE_PLANS[plan];
-    setForm((f) => ({ ...f, plan, pay: "full", item: p.item, period: p.period, amount: String(p.amount), adSpend: startAdSpend(plan, false) }));
+    setForm((f) => ({ ...f, plan, pay: "full", item: p.item, period: p.period, amount: String(p.amount), adSpend: startAdSpend(plan, false), adSpendOn: plan === "adspend" ? "yes" : f.adSpendOn }));
   };
   const [previewing, setPreviewing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm((f) => ({ ...f, [key]: e.target.value }));
 
-  const amount = toNumber(form.amount);
+  const adOnly = form.plan === "adspend";
+  const amount = adOnly ? 0 : toNumber(form.amount);
   const adSpend = form.adSpendOn === "yes" ? toNumber(form.adSpend) : 0;
   const today = todaySA();
   const phoneOk = !!whatsappDigits(form.phone);
-  const complete = !!form.name.trim() && phoneOk && !!form.item.trim() && amount > 0 && (form.adSpendOn === "no" || adSpend > 0) && form.dueDate >= today;
+  const complete = !!form.name.trim() && phoneOk && !!form.item.trim() && (adOnly ? adSpend > 0 : amount > 0 && (form.adSpendOn === "no" || adSpend > 0)) && form.dueDate >= today;
   const doc = useMemo(
     () => (previewing ? buildInvoice({ ...form, amount, adSpend, issueDate: today, instalment: form.plan === "quarter" && form.pay !== "full" ? (Number(form.pay) as Instalment) : undefined }) : null),
     [previewing], // eslint-disable-line react-hooks/exhaustive-deps
@@ -208,12 +209,14 @@ function NewInvoiceDialog({ onClose, client }: { onClose: () => void; client: Co
                 <MenuItem value="2">2 payments: this is payment 2 of 2 (30 days after launch)</MenuItem>
               </TextField>
             )}
-            <TextField label="Fee" required value={form.amount} onChange={set("amount")} slotProps={{ htmlInput: { inputMode: "decimal" }, input: { startAdornment: <InputAdornment position="start">R</InputAdornment> } }} />
-            <TextField select label="Ad spend" required value={form.adSpendOn} onChange={set("adSpendOn")}>
-              <MenuItem value="no">Not on this invoice: they pay Meta directly</MenuItem>
-              <MenuItem value="yes">On this invoice: we pay Meta for them</MenuItem>
-            </TextField>
-            {form.adSpendOn === "yes" && (
+            {!adOnly && <TextField label="Fee" required value={form.amount} onChange={set("amount")} slotProps={{ htmlInput: { inputMode: "decimal" }, input: { startAdornment: <InputAdornment position="start">R</InputAdornment> } }} />}
+            {!adOnly && (
+              <TextField select label="Ad spend" required value={form.adSpendOn} onChange={set("adSpendOn")}>
+                <MenuItem value="no">Not on this invoice: they pay Meta directly</MenuItem>
+                <MenuItem value="yes">On this invoice: we pay Meta for them</MenuItem>
+              </TextField>
+            )}
+            {(adOnly || form.adSpendOn === "yes") && (
               <TextField label="Ad spend amount" required value={form.adSpend} onChange={set("adSpend")}
                 helperText={(() => { const days = INVOICE_PLANS[form.plan].days / (form.plan === "quarter" && form.pay !== "full" ? 2 : 1); return `R${MIN_DAILY_AD_SPEND} a day × ${days} days = ${money(MIN_DAILY_AD_SPEND * days)} at the minimum. Paid to Meta at cost.`; })()}
                 slotProps={{ htmlInput: { inputMode: "decimal" }, input: { startAdornment: <InputAdornment position="start">R</InputAdornment> } }} />
