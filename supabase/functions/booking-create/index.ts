@@ -25,7 +25,7 @@ const json = (body: unknown, status = 200) =>
 // the invite, it lands on their calendar, and Google Meet lets them straight in
 // (invited guests never have to "ask to join"). Co-host controls themselves can
 // only be granted in Meet/Workspace, not via the Calendar API.
-const HOST_GUESTS = ["ousebk@gmail.com"];
+const HOST_GUESTS = ["ousebk@gmail.com", "khushil@estatekit.co"];
 
 interface Config {
   slug: string;
