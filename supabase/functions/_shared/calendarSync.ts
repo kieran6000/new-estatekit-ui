@@ -38,6 +38,7 @@ export class CalendarSync {
   private conns = new Map<string, Conn | null>();
   private tokens = new Map<string, TokenResult>();
   private pipelineKinds = new Map<string, string | null>();
+  private bookedLeads = new Map<string, boolean>();
   private synced = new Set<string>();
 
   constructor(private admin: SupabaseClient) {}
@@ -103,6 +104,13 @@ export class CalendarSync {
     }
     // Never put something in the past.
     if (wantAt && Date.parse(wantAt) <= now) want = null;
+
+    // A /pitch lead already has booking-create's own Google event (the discovery
+    // call + Meet link, with the EstateKit hosts invited). Don't also sync our
+    // appointment/call/followup copies for it — that put three entries on one
+    // slot per booking. Forcing want=null here also clears any copies we made
+    // before this gate existed, on the next time the lead syncs.
+    if (want && lead && await this.hasLiveBooking(lead.id)) want = null;
 
     if (!want) {
       if (!existing) return out("none");
@@ -273,6 +281,16 @@ export class CalendarSync {
   }
 
   private touched(agentId: string) { this.synced.add(agentId); }
+
+  /** True if this lead has a live /pitch booking (booking-create owns its event). */
+  private async hasLiveBooking(leadId: string): Promise<boolean> {
+    if (!this.bookedLeads.has(leadId)) {
+      const { data } = await this.admin.from("bookings")
+        .select("id").eq("lead_id", leadId).eq("status", "booked").limit(1).maybeSingle();
+      this.bookedLeads.set(leadId, !!data);
+    }
+    return this.bookedLeads.get(leadId) ?? false;
+  }
 
   private async pipelineKind(id: string | null): Promise<string | null> {
     if (!id) return null;

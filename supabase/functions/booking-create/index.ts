@@ -64,6 +64,9 @@ Deno.serve(async (req) => {
   const email = String(body?.email ?? "").trim() || null;
   const phone = String(body?.phone ?? "").trim() || null;
   const answers = body?.answers ?? null;
+  // Set by the widget only when booking-availability offered this as an overflow
+  // slot (the whole window was full). Lets the claim take the 2nd seat (rank 2).
+  const overflowReq = body?.overflow === true;
 
   const start = new Date(startsAt);
   if (!startsAt || isNaN(start.getTime())) return json({ ok: false, error: "Pick a time to book." }, 400);
@@ -112,13 +115,14 @@ Deno.serve(async (req) => {
   const bookingId = crypto.randomUUID();
   const tz = c.time_zone || "Africa/Johannesburg";
 
-  // Claim the slot in the database BEFORE touching Google Calendar. The partial
-  // unique index on (slug, starts_at) WHERE status = 'booked' makes this the
-  // atomic lock: if two people race for the same time, exactly one INSERT wins
-  // and the loser gets 23505 — so no calendar event is ever created for a slot
-  // that's already taken. (Google free/busy lags event creation by seconds, so
-  // it could never be the real guard.)
-  const { error: claimErr } = await admin.from("bookings").insert({
+  // Claim the slot in the database BEFORE touching Google Calendar. The unique
+  // index on (slug, starts_at, slot_rank) WHERE status='booked' makes this the
+  // atomic lock and hard-caps each slot at two: rank 1 is the primary seat, rank
+  // 2 is the overflow seat. We always try rank 1 first; only an overflow booking
+  // (the widget offered this slot because the whole window was full) falls back
+  // to rank 2 when rank 1 is already taken. A normal same-slot race 23505s on
+  // rank 1 and is rejected, so single-booking still holds on non-full days.
+  const claimRow = (rank: number, isOverflow: boolean) => admin.from("bookings").insert({
     id: bookingId,
     slug,
     lead_id: leadId,
@@ -131,11 +135,25 @@ Deno.serve(async (req) => {
     phone,
     answers: answers ?? null,
     reschedule_count: rescheduleCount,
+    slot_rank: rank,
+    overflow: isOverflow,
   });
-  if (claimErr) {
-    if (claimErr.code === "23505") {
+
+  let overflow = false;
+  let { error: claimErr } = await claimRow(1, false);
+  if (claimErr?.code === "23505") {
+    if (overflowReq) {
+      // Primary seat taken — take the overflow seat (Khushil covers it).
+      overflow = true;
+      ({ error: claimErr } = await claimRow(2, true));
+      if (claimErr?.code === "23505") {
+        return json({ ok: false, error: "Someone just took that time. Please pick another.", retry: true }, 409);
+      }
+    } else {
       return json({ ok: false, error: "Someone just took that time. Please pick another.", retry: true }, 409);
     }
+  }
+  if (claimErr) {
     console.error("booking-create claim row", claimErr.message);
     return json({ ok: false, error: "Couldn't book that time just now. Please try again.", retry: true }, 502);
   }
@@ -159,18 +177,22 @@ Deno.serve(async (req) => {
   }
 
   // A last-moment free/busy check still guards against times taken on partner@'s
-  // calendar outside our bookings table (manual events, staff blocks).
-  try {
-    const clash = await busyIntervals(token, c.calendar_email, start.toISOString(), new Date(endMs).toISOString());
-    const buf = c.buffer_minutes * 60_000;
-    if (clash.some(([bs, be]) => startMs - buf < be && endMs + buf > bs)) {
+  // calendar outside our bookings table (manual events, staff blocks). Skipped
+  // for an overflow booking: that slot is already busy on purpose (its primary
+  // call), so the clash check would always reject it.
+  if (!overflow) {
+    try {
+      const clash = await busyIntervals(token, c.calendar_email, start.toISOString(), new Date(endMs).toISOString());
+      const buf = c.buffer_minutes * 60_000;
+      if (clash.some(([bs, be]) => startMs - buf < be && endMs + buf > bs)) {
+        await release();
+        return json({ ok: false, error: "Someone just took that time. Please pick another.", retry: true }, 409);
+      }
+    } catch (err) {
+      console.error("booking-create freebusy", String(err));
       await release();
-      return json({ ok: false, error: "Someone just took that time. Please pick another.", retry: true }, 409);
+      return json({ ok: false, error: "Couldn't check the diary just now. Please try again.", retry: true }, 502);
     }
-  } catch (err) {
-    console.error("booking-create freebusy", String(err));
-    await release();
-    return json({ ok: false, error: "Couldn't check the diary just now. Please try again.", retry: true }, 502);
   }
 
   const lines = [
@@ -195,8 +217,8 @@ Deno.serve(async (req) => {
   ];
 
   const event = {
-    summary: `EstateKit discovery call — ${name || "new agent"}`,
-    description: lines.filter(Boolean).join("\n"),
+    summary: `${overflow ? "OVERFLOW (Khushil) — " : ""}EstateKit discovery call — ${name || "new agent"}`,
+    description: (overflow ? "Overflow booking — Khushil covers this call (the primary slot was already booked).\n\n" : "") + lines.filter(Boolean).join("\n"),
     start: { dateTime: start.toISOString(), timeZone: tz },
     end: { dateTime: new Date(endMs).toISOString(), timeZone: tz },
     attendees,

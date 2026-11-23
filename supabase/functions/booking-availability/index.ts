@@ -97,9 +97,35 @@ Deno.serve(async (req) => {
     return json({ ok: true, time_zone: tz, slot_minutes: c.slot_minutes, days: [] });
   }
   const buf = c.buffer_minutes * 60_000;
-  const free = candidates.filter((s) =>
+  let free = candidates.filter((s) =>
     !busy.some(([bs, be]) => s.startMs - buf < be && s.endMs + buf > bs)
   );
+
+  // Overflow: when the WHOLE window is full, re-offer already-booked slots that
+  // still have room (cap 2) so a second lead can book — a closer (Khushil) covers
+  // these. Only slots taken by a real booking (not a staff block or manual event)
+  // are re-offered: we count booked rows per slot and open the ones with exactly
+  // one. As soon as any normal slot frees, free is non-empty and overflow is off.
+  let overflow = false;
+  if (free.length === 0) {
+    const { data: booked } = await admin.from("bookings")
+      .select("starts_at").eq("slug", slug).eq("status", "booked")
+      .gte("starts_at", new Date(candidates[0].startMs).toISOString())
+      .lte("starts_at", new Date(candidates[candidates.length - 1].endMs).toISOString());
+    const countBy = new Map<number, number>();
+    for (const b of (booked ?? []) as { starts_at: string }[]) {
+      const ms = Date.parse(b.starts_at);
+      countBy.set(ms, (countBy.get(ms) ?? 0) + 1);
+    }
+    const overflowSlots = candidates.filter((s) => {
+      const n = countBy.get(s.startMs) ?? 0;
+      return n >= 1 && n < 2;
+    });
+    if (overflowSlots.length > 0) {
+      free = overflowSlots;
+      overflow = true;
+    }
+  }
 
   // Group by local day for the widget, with a display label and the exact UTC
   // instant (what booking-create books against).
@@ -113,5 +139,7 @@ Deno.serve(async (req) => {
     byDay.get(date)!.slots.push({ start: new Date(s.startMs).toISOString(), label: fmtTime.format(new Date(s.startMs)) });
   }
 
-  return json({ ok: true, time_zone: tz, slot_minutes: c.slot_minutes, days: [...byDay.values()] });
+  // `overflow` tells the widget these are full-window overflow slots; it passes
+  // overflow:true back to booking-create, which then takes the 2nd seat (rank 2).
+  return json({ ok: true, time_zone: tz, slot_minutes: c.slot_minutes, overflow, days: [...byDay.values()] });
 });
