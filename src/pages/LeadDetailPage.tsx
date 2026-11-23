@@ -15,6 +15,7 @@ import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import OpenInFullIcon from "@mui/icons-material/OpenInFull";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import LinkIcon from "@mui/icons-material/Link";
+import EventAvailableOutlinedIcon from "@mui/icons-material/EventAvailableOutlined";
 import EditLeadContactDialog from "../components/EditLeadContactDialog";
 import LeadFormDialog from "../components/LeadFormDialog";
 import AddressMapDialog from "../components/AddressMapDialog";
@@ -42,7 +43,7 @@ import LeadHistory from "../components/LeadHistory";
 import { logLeadCall } from "../api/leadEvents";
 import type { LeadRow, OutcomeStep, Stage } from "../types";
 import { usePageTitle } from "../lib/pageTitle";
-import { prettyPhone } from "../lib/phone";
+import { prettyPhone, waDigits } from "../lib/phone";
 
 /** The lead, as its own page (/leads/:id) or in the Leads list's side panel
  *  (leadId + onClose), so agents can go down the list without losing it. */
@@ -134,6 +135,31 @@ export default function LeadDetailPage({ leadId, onClose, nav }: {
       showSnack("Couldn't copy the link. Try again.");
     } finally {
       setLinking(false);
+    }
+  }
+
+  // A ready-made /rebook link with the lead's details already in it, so they
+  // land straight on the calendar — no re-typing, no re-answering the form.
+  // Only for the EstateKit pitch (agency) pipeline, where /rebook exists.
+  function rebookLink() {
+    const q = new URLSearchParams();
+    if (lead!.name) q.set("name", lead!.name);
+    if (lead!.email) q.set("email", lead!.email);
+    const wa = waDigits(lead!.phone);
+    if (wa) q.set("phone", `+${wa}`);
+    return `https://www.estatekit.co/rebook?${q.toString()}`;
+  }
+  function sendRebook() {
+    const wa = waDigits(lead!.phone);
+    const first = lead!.name.split(/\s+/)[0] || "there";
+    const msg = `Hi ${first}, here's a link to pick a new time for our call — your details are already filled in, so it only takes a few seconds:\n${rebookLink()}`;
+    if (wa) {
+      window.open(`https://wa.me/${wa}?text=${encodeURIComponent(msg)}`, "_blank", "noopener");
+    } else {
+      navigator.clipboard.writeText(rebookLink()).then(
+        () => showSnack("No WhatsApp number — rebook link copied instead"),
+        () => showSnack("Couldn't open WhatsApp or copy the link"),
+      );
     }
   }
 
@@ -251,6 +277,7 @@ export default function LeadDetailPage({ leadId, onClose, nav }: {
           title="Contact"
           action={
             <Box sx={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-end" }}>
+              {pipelineKind === "agency" && <Button size="small" startIcon={<EventAvailableOutlinedIcon />} onClick={sendRebook}>Rebook link</Button>}
               <Button size="small" startIcon={<LinkIcon />} onClick={copyLink} disabled={linking}>Copy link</Button>
               <Button size="small" startIcon={<EditOutlinedIcon />} onClick={() => setEditOpen(true)}>Edit</Button>
             </Box>
