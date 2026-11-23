@@ -21,6 +21,12 @@ const CORS = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 
+// EstateKit's own people are added to every pitch call as guests, so they're on
+// the invite, it lands on their calendar, and Google Meet lets them straight in
+// (invited guests never have to "ask to join"). Co-host controls themselves can
+// only be granted in Meet/Workspace, not via the Calendar API.
+const HOST_GUESTS = ["ousebk@gmail.com"];
+
 interface Config {
   slug: string;
   time_zone: string;
@@ -103,31 +109,70 @@ Deno.serve(async (req) => {
     ? Math.max(...priorLive.map((b) => b.reschedule_count ?? 0)) + 1
     : 0;
 
-  // partner@ token + a last-moment free/busy check, so the time can't be
-  // double-booked between loading the page and pressing Book.
+  const bookingId = crypto.randomUUID();
+  const tz = c.time_zone || "Africa/Johannesburg";
+
+  // Claim the slot in the database BEFORE touching Google Calendar. The partial
+  // unique index on (slug, starts_at) WHERE status = 'booked' makes this the
+  // atomic lock: if two people race for the same time, exactly one INSERT wins
+  // and the loser gets 23505 — so no calendar event is ever created for a slot
+  // that's already taken. (Google free/busy lags event creation by seconds, so
+  // it could never be the real guard.)
+  const { error: claimErr } = await admin.from("bookings").insert({
+    id: bookingId,
+    slug,
+    lead_id: leadId,
+    starts_at: start.toISOString(),
+    ends_at: new Date(endMs).toISOString(),
+    time_zone: tz,
+    status: "booked",
+    name: name || null,
+    email,
+    phone,
+    answers: answers ?? null,
+    reschedule_count: rescheduleCount,
+  });
+  if (claimErr) {
+    if (claimErr.code === "23505") {
+      return json({ ok: false, error: "Someone just took that time. Please pick another.", retry: true }, 409);
+    }
+    console.error("booking-create claim row", claimErr.message);
+    return json({ ok: false, error: "Couldn't book that time just now. Please try again.", retry: true }, 502);
+  }
+
+  // The slot is ours now. Any early return from here must release it (delete the
+  // holding row), so a failure never leaves the time stuck as booked with no call.
+  const release = async () => {
+    const { error } = await admin.from("bookings").delete().eq("id", bookingId);
+    if (error) console.error("booking-create release row", bookingId, error.message);
+  };
+
   let token: string;
   try {
     token = await saToken(c.calendar_email);
   } catch (err) {
     const msg = String((err as Error)?.message ?? err);
     console.error("booking-create token", msg);
+    await release();
     // not-configured / bad-sa-key / scope not granted yet — never shown raw.
-    return json({ ok: false, error: "Booking isn't switched on yet. Please try again shortly." }, 503);
+    return json({ ok: false, error: "Booking isn't switched on yet. Please try again shortly.", retry: true }, 503);
   }
 
+  // A last-moment free/busy check still guards against times taken on partner@'s
+  // calendar outside our bookings table (manual events, staff blocks).
   try {
     const clash = await busyIntervals(token, c.calendar_email, start.toISOString(), new Date(endMs).toISOString());
     const buf = c.buffer_minutes * 60_000;
     if (clash.some(([bs, be]) => startMs - buf < be && endMs + buf > bs)) {
+      await release();
       return json({ ok: false, error: "Someone just took that time. Please pick another.", retry: true }, 409);
     }
   } catch (err) {
     console.error("booking-create freebusy", String(err));
+    await release();
     return json({ ok: false, error: "Couldn't check the diary just now. Please try again.", retry: true }, 502);
   }
 
-  const bookingId = crypto.randomUUID();
-  const tz = c.time_zone || "Africa/Johannesburg";
   const lines = [
     `Booked from estatekit.co/pitch.`,
     ``,
@@ -141,12 +186,21 @@ Deno.serve(async (req) => {
     }
   }
 
+  // Prospect + EstateKit's own hosts on the invite. Hosts are added as guests so
+  // the call lands on their calendar and Meet admits them without "ask to join".
+  const emailLower = (email ?? "").toLowerCase();
+  const attendees = [
+    ...(email ? [{ email, displayName: name || undefined }] : []),
+    ...HOST_GUESTS.filter((g) => g.toLowerCase() !== emailLower).map((g) => ({ email: g })),
+  ];
+
   const event = {
     summary: `EstateKit discovery call — ${name || "new agent"}`,
     description: lines.filter(Boolean).join("\n"),
     start: { dateTime: start.toISOString(), timeZone: tz },
     end: { dateTime: new Date(endMs).toISOString(), timeZone: tz },
-    attendees: email ? [{ email, displayName: name || undefined }] : [],
+    attendees,
+    guestsCanInviteOthers: false,
     conferenceData: {
       createRequest: { requestId: bookingId, conferenceSolutionKey: { type: "hangoutsMeet" } },
     },
@@ -161,6 +215,7 @@ Deno.serve(async (req) => {
   const ev = await evRes.json().catch(() => ({}));
   if (!evRes.ok) {
     console.error("booking-create event insert", evRes.status, JSON.stringify(ev?.error ?? ev).slice(0, 500));
+    await release();
     return json({ ok: false, error: "Couldn't put the call in the diary. Please try again.", retry: true }, 502);
   }
 
@@ -169,27 +224,16 @@ Deno.serve(async (req) => {
     ev.conferenceData?.entryPoints?.find((e: { entryPointType?: string; uri?: string }) => e.entryPointType === "video")?.uri ??
     null;
 
-  const { error: insErr } = await admin.from("bookings").insert({
-    id: bookingId,
-    slug,
-    lead_id: leadId,
-    starts_at: start.toISOString(),
-    ends_at: new Date(endMs).toISOString(),
-    time_zone: tz,
-    status: "booked",
-    name: name || null,
-    email,
-    phone,
-    answers: answers ?? null,
+  // Fill the calendar details onto the row we already claimed.
+  const { error: updErr } = await admin.from("bookings").update({
     google_event_id: ev.id ?? null,
     meet_url: meetUrl,
     event_link: ev.htmlLink ?? null,
-    reschedule_count: rescheduleCount,
-  });
-  if (insErr) {
-    // The calendar event is the source of truth and it's in; a failed row is a
-    // dashboard gap, not a lost booking. Log and still return success.
-    console.error("booking-create row insert", insErr.message);
+  }).eq("id", bookingId);
+  if (updErr) {
+    // The calendar event is in; a failed update is a dashboard gap, not a lost
+    // booking. Log and still return success.
+    console.error("booking-create row update", updErr.message);
   }
 
   // Retire any earlier live booking for this person (a reschedule): pull the old
