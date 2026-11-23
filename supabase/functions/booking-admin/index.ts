@@ -219,17 +219,21 @@ Deno.serve(async (req) => {
       console.error("booking-admin cancel row", updErr.message);
       return json({ ok: false, error: "Couldn't cancel that booking. Please try again." }, 502);
     }
-    // Stop the lead's call reminders if they're still pointed at this call. We
-    // clear the reminder only (keep the stage) — track_appointment then nulls
-    // appointment_at, and enqueue_workflows stops the countdown. We don't touch
-    // the stage; the operator moves that in the pipeline as usual.
+    // Cancelling the call means the prospect isn't coming: take it out of the
+    // diary and move the lead to Lost. We null every calendar time (the booked
+    // appointment, the picked-call time, and any reminder) so nothing lingers on
+    // the calendar, and set the stage to Lost — unless the lead is already
+    // further along (showed/signed/paid/live), where we just clear the times.
     if (bk.lead_id) {
       const { data: lead } = await admin.from("leads")
-        .select("stage, appointment_at").eq("id", bk.lead_id).maybeSingle();
-      const near = lead?.appointment_at && Math.abs(Date.parse(lead.appointment_at) - Date.parse(bk.starts_at)) < 60_000;
-      if (lead && near && !PAST_CALL.includes(lead.stage)) {
-        const { error: lErr } = await admin.from("leads")
-          .update({ reminder_at: null, next_label: "Call back", due: false }).eq("id", bk.lead_id);
+        .select("stage").eq("id", bk.lead_id).maybeSingle();
+      if (lead) {
+        const DONE = ["Showed", "Proposal sent", "Signed", "Paid", "Live"];
+        const patch: Record<string, unknown> = {
+          appointment_at: null, call_at: null, reminder_at: null, due: false, next_label: null,
+        };
+        if (!DONE.includes(lead.stage)) patch.stage = "Lost";
+        const { error: lErr } = await admin.from("leads").update(patch).eq("id", bk.lead_id);
         if (lErr) console.error("booking-admin cancel lead", lErr.message);
       }
     }
