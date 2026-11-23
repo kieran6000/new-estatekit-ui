@@ -35,7 +35,7 @@ export const DEFAULT_AMOUNT = INVOICE_PLANS.monthly.amount;
 /** What the invoice's terms say: how the plan is billed, and whether ad spend is on it. */
 export function invoiceTerms(plan: InvoicePlan, adSpend: number, instalment?: Instalment): string[] {
   const adSpendTerm = adSpend > 0
-    ? `Ad spend of ${money(adSpend)} is included in this invoice. EstateKit pays it to Meta (Facebook) at cost, with no markup, and refunds any unspent balance when the agreement ends.`
+    ? `Ad spend of ${money(adSpend)} is included in this invoice. EstateKit pays it to Meta (Facebook) at cost, with no markup.`
     : "Ad spend is not included in this invoice. It is paid directly to Meta (Facebook).";
   if (plan === "adspend") {
     return [

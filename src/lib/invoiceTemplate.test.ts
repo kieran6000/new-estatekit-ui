@@ -19,7 +19,7 @@ describe("invoice wording", () => {
     expect(invoiceTerms("monthly", 0)[0]).toMatch(/^Billed monthly/);
     expect(invoiceTerms("quarter", 0)[0]).toMatch(/^3-month package, paid in advance/);
     expect(invoiceTerms("monthly", 0)[1]).toMatch(/not included/);
-    expect(invoiceTerms("quarter", 6300)[1]).toBe("Ad spend of R6 300.00 is included in this invoice. EstateKit pays it to Meta (Facebook) at cost, with no markup, and refunds any unspent balance when the agreement ends.");
+    expect(invoiceTerms("quarter", 6300)[1]).toBe("Ad spend of R6 300.00 is included in this invoice. EstateKit pays it to Meta (Facebook) at cost, with no markup.");
   });
 
   it("adds ad spend to the total when it is on the invoice", () => {
