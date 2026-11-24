@@ -5,7 +5,6 @@ import { Box, Button, ButtonBase, Checkbox, Dialog, DialogActions, DialogContent
 import AddIcon from "@mui/icons-material/Add";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
-import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import CheckIcon from "@mui/icons-material/Check";
 import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
 import { listAgentProfiles } from "../api/_client";
@@ -24,9 +23,6 @@ import AddTaskRoundedIcon from "@mui/icons-material/AddTaskRounded";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import ChecklistRoundedIcon from "@mui/icons-material/ChecklistRounded";
 import ChatBubbleOutlineRoundedIcon from "@mui/icons-material/ChatBubbleOutlineRounded";
-import TrendingUpRoundedIcon from "@mui/icons-material/TrendingUpRounded";
-import TrendingDownRoundedIcon from "@mui/icons-material/TrendingDownRounded";
-import TrendingFlatRoundedIcon from "@mui/icons-material/TrendingFlatRounded";
 
 // Check-ins and to-dos are usually about the same thing, so they point at each
 // other: "Reply" on a check-in puts a little quote of it in the to-do box; the
@@ -124,7 +120,7 @@ function CheckinLinks({ r, agentId }: { r: CheckinRow; agentId: string }) {
   const words = [todos ? `${todos} to-do${todos === 1 ? "" : "s"}` : "", other ? `${other} ${todos ? "more" : `note${other === 1 ? "" : "s"}`}` : ""].filter(Boolean).join(" · ");
   return (
     <Box sx={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 1, mt: 1.25 }}>
-      <Button size="small" startIcon={<AddTaskRoundedIcon />} onClick={() => link.reply(r)} sx={{ ml: -0.75 }}>Make a to-do about this</Button>
+      <Button size="small" startIcon={<AddTaskRoundedIcon />} onClick={() => link.reply(r)} sx={{ ml: -0.75 }}>Make a to-do</Button>
       {about.length > 0 && (
         <Button size="small" startIcon={<ChecklistRoundedIcon />} onClick={() => link.showNotes(r.id)} sx={{ color: tokens.ink2 }}>{words}</Button>
       )}
@@ -347,100 +343,30 @@ function Breakdown({ r }: { r: CheckinRow }) {
   );
 }
 
-/** Their latest answer, in full: the one that matters. */
-function LatestCheckin({ r, agentId }: { r: CheckinRow; agentId: string }) {
+/** One check-in, as its own card: their face and score, when it was, what they
+ *  said in full, the per-question breakdown, and the to-dos tied to it. Every
+ *  answer gets one — the latest is marked, none are collapsed. */
+function CheckinCard({ r, agentId, latest }: { r: CheckinRow; agentId: string; latest?: boolean }) {
   const qs = questionsOf(r);
   const t = scoreCheckin(r.answers!, qs);
   const said = whatTheySaid(r.answers, qs, r.comment);
   const lit = useLinking()?.spotCheckin === r.id;
   return (
-    <Box id={`checkin-${r.id}`} sx={{ pt: 1, pb: 2, px: 1, mx: -1, borderRadius: "8px", ...flashSx(lit) }}>
-      <Box sx={{ display: "flex", alignItems: "center", flexWrap: "wrap", columnGap: 1.25, rowGap: 0.25 }}>
+    <Box id={`checkin-${r.id}`} sx={{ p: { xs: 1.5, sm: 2 }, borderRadius: "12px", border: `1px solid ${lit ? tokens.primary : tokens.divider}`, transition: "background-color 700ms ease, border-color 700ms ease", bgcolor: lit ? tokens.primaryBg : "background.paper" }}>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
         <Face n={t.average} size={34} />
-        <Typography sx={{ fontSize: 22, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{t.average}</Typography>
-        <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>{day(r.answered_at!)} · {daysAgo(r.answered_at!)}</Typography>
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, flexWrap: "wrap" }}>
+            <Typography sx={{ fontSize: 21, fontWeight: 700, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{t.average}</Typography>
+            <Typography sx={{ fontSize: 13, color: tokens.ink3 }}>of 5</Typography>
+            {latest && <Box component="span" sx={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase", color: tokens.primary, bgcolor: tokens.primaryBg, px: 0.75, py: "1px", borderRadius: 999 }}>Latest</Box>}
+          </Box>
+          <Typography sx={{ fontSize: 12.5, color: tokens.ink2, mt: 0.25 }}>{day(r.answered_at!)} · {daysAgo(r.answered_at!)}</Typography>
+        </Box>
       </Box>
-      {said && <Typography sx={{ fontSize: 16.5, lineHeight: 1.55, mt: 1.25, whiteSpace: "pre-wrap" }}>“{said}”</Typography>}
+      {said && <Typography sx={{ fontSize: 15.5, lineHeight: 1.55, mt: 1.25, whiteSpace: "pre-wrap" }}>“{said}”</Typography>}
       <Box sx={{ mt: 1.25 }}><Breakdown r={r} /></Box>
       <CheckinLinks r={r} agentId={agentId} />
-    </Box>
-  );
-}
-
-/** An older answer as one line: when, a face, the start of what they said. Tap for the rest. */
-function EarlierCheckin({ r, agentId }: { r: CheckinRow; agentId: string }) {
-  const [open, setOpen] = useState(false);
-  const qs = questionsOf(r);
-  const t = scoreCheckin(r.answers!, qs);
-  const said = whatTheySaid(r.answers, qs, r.comment);
-  const lit = useLinking()?.spotCheckin === r.id;
-  useEffect(() => { if (lit) setOpen(true); }, [lit]);
-  return (
-    <Box id={`checkin-${r.id}`} sx={{ borderTop: `1px solid ${tokens.divider2}`, borderRadius: "6px", ...flashSx(lit) }}>
-      <ButtonBase onClick={() => setOpen(!open)} aria-expanded={open}
-        sx={{ width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 1.5, py: 1.1, px: 0.75, borderRadius: "6px", cursor: "pointer", bgcolor: open ? tokens.surface2 : "transparent", "&:hover": { bgcolor: tokens.surface2 }, "&:hover .ek-open": { bgcolor: tokens.primaryBg } }}>
-        <Box sx={{ width: 96, flex: "none" }}>
-          <Typography sx={{ fontSize: 13.5, fontWeight: 500, lineHeight: 1.2 }}>{day(r.answered_at!)}</Typography>
-          <Typography sx={{ fontSize: 11, color: tokens.ink3, lineHeight: 1.2 }}>{daysAgo(r.answered_at!)}</Typography>
-        </Box>
-        <Face n={t.average} size={18} />
-        <Typography sx={{ fontSize: 13.5, fontWeight: 600, width: 26, flex: "none", fontVariantNumeric: "tabular-nums" }}>{t.average}</Typography>
-        <Typography noWrap sx={{ fontSize: 13.5, color: tokens.ink2, flex: 1, minWidth: 0 }}>{open ? "" : said ? `“${said}”` : ""}</Typography>
-        <Box className="ek-open" sx={{ display: "flex", alignItems: "center", gap: 0.25, flex: "none", color: "primary.main", fontSize: 13, fontWeight: 600, px: 1, py: 0.25, borderRadius: 999, bgcolor: open ? tokens.primaryBg : "transparent" }}>
-          {open ? "Close" : "Open"}
-          <ExpandMoreIcon sx={{ fontSize: 18, transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }} />
-        </Box>
-      </ButtonBase>
-      {open && (
-        <Box sx={{ pl: { sm: "112px" }, px: 0.5, pb: 1.5 }}>
-          {said && <Typography sx={{ fontSize: 14.5, lineHeight: 1.55, mb: 0.75, whiteSpace: "pre-wrap" }}>“{said}”</Typography>}
-          <Breakdown r={r} />
-          <CheckinLinks r={r} agentId={agentId} />
-        </Box>
-      )}
-    </Box>
-  );
-}
-
-/** A little sparkline of their recent scores, so the direction they're heading
- *  reads at a glance — not just their latest number. */
-function TrendLine({ rows }: { rows: CheckinRow[] }) {
-  // rows come newest-first; plot the recent dozen oldest → newest.
-  const pts = rows.slice(0, 12).reverse().map((r) => {
-    const avg = scoreCheckin(r.answers!, questionsOf(r)).average;
-    return { v: Math.max(1, Math.min(5, avg)), label: `${day(r.answered_at!)} · ${avg}` };
-  });
-  if (pts.length < 3) return null;
-  const n = pts.length;
-  // Insets keep the end dots off the edges and the top/bottom dots uncropped.
-  const X = (i: number) => 6 + (i / (n - 1)) * 88;
-  const Y = (v: number) => 10 + (1 - (v - 1) / 4) * 80;
-  const line = pts.map((p, i) => `${X(i)},${Y(p.v)}`).join(" ");
-  const area = `${X(0)},90 ${line} ${X(n - 1)},90`;
-  const delta = +(pts[n - 1].v - pts[0].v).toFixed(1);
-  const dir = delta > 0.1 ? "up" : delta < -0.1 ? "down" : "flat";
-  const dirColor = dir === "up" ? tokens.green : dir === "down" ? tokens.red : tokens.ink2;
-  const DirIcon = dir === "up" ? TrendingUpRoundedIcon : dir === "down" ? TrendingDownRoundedIcon : TrendingFlatRoundedIcon;
-  return (
-    <Box sx={{ mt: 0.5, mb: 1, pt: 1.5, borderTop: `1px solid ${tokens.divider2}` }}>
-      <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 0.5 }}>
-        <Typography sx={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: tokens.ink2, flex: 1 }}>Their trend</Typography>
-        <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.25, fontSize: 12.5, fontWeight: 700, color: dirColor }}>
-          <DirIcon sx={{ fontSize: 17 }} />
-          {dir === "flat" ? "Steady" : `${delta > 0 ? "+" : ""}${delta} over last ${n}`}
-        </Box>
-      </Box>
-      <Box sx={{ position: "relative", height: 54, width: "100%" }}>
-        <Box component="svg" viewBox="0 0 100 100" preserveAspectRatio="none" sx={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}>
-          <polygon points={area} fill={tokens.primaryBg} />
-          <polyline points={line} fill="none" stroke={tokens.primary} strokeWidth={2} vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
-        </Box>
-        {pts.map((p, i) => (
-          <Tooltip key={i} title={p.label}>
-            <Box sx={{ position: "absolute", left: `${X(i)}%`, top: `${Y(p.v)}%`, transform: "translate(-50%, -50%)", width: i === n - 1 ? 13 : 8, height: i === n - 1 ? 13 : 8, borderRadius: "50%", bgcolor: i === n - 1 ? tokens.primary : "background.paper", border: `2px solid ${tokens.primary}`, boxSizing: "border-box", cursor: "default" }} />
-          </Tooltip>
-        ))}
-      </Box>
     </Box>
   );
 }
@@ -456,11 +382,9 @@ function HowTheyFeel({ agentId, clientName, fromName }: { agentId: string; clien
     <Card stackOnPhone title={first ? `What ${first} told us` : "What they told us"} action={<SendAction agentId={agentId} clientName={clientName} rows={rows} fromName={fromName} onEditQuestions={() => setEditing(true)} />}>
       {editing && <EditQuestions onClose={() => setEditing(false)} />}
       {isLoading ? null : answered.length ? (
-        <>
-          <LatestCheckin r={answered[0]} agentId={agentId} />
-          <TrendLine rows={answered} />
-          {answered.slice(1).map((r) => <EarlierCheckin key={r.id} r={r} agentId={agentId} />)}
-        </>
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 1.25 }}>
+          {answered.map((r, i) => <CheckinCard key={r.id} r={r} agentId={agentId} latest={i === 0} />)}
+        </Box>
       ) : (
         <Typography sx={{ fontSize: 14.5, color: tokens.ink2, py: 2 }}>{first || "They"} hasn't answered yet. Ask how it's going, and the answer shows here like a review.</Typography>
       )}
@@ -667,7 +591,7 @@ export default function CheckInsTab({ agentId, clientName }: { agentId: string; 
   };
   return (
     <LinkCtx.Provider value={linking}>
-      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "minmax(0, 3fr) minmax(0, 2fr)" }, gap: 2, alignItems: "start" }}>
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "minmax(0, 1fr) minmax(0, 1fr)" }, gap: 2, alignItems: "start" }}>
         <HowTheyFeel agentId={agentId} clientName={clientName} fromName={me} />
         <ToDos key={agentId} agentId={agentId} byName={me} />
       </Box>
