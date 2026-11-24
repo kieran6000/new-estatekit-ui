@@ -8,9 +8,12 @@ export interface PitchHost {
   email: string;
 }
 
+// The email MUST be the Google account the person actually uses, so the pitch
+// event lands on their own calendar: Kieran = ousebk@gmail.com,
+// Khushil = khushilg14@gmail.com (not their @estatekit.co addresses).
 export const PITCH_HOSTS: PitchHost[] = [
-  { name: "Kieran", email: "kieran@estatekit.co" },
-  { name: "Khushil", email: "khushil@estatekit.co" },
+  { name: "Kieran", email: "ousebk@gmail.com" },
+  { name: "Khushil", email: "khushilg14@gmail.com" },
 ];
 
 const BY_EMAIL = new Map(PITCH_HOSTS.map((h) => [h.email.toLowerCase(), h]));

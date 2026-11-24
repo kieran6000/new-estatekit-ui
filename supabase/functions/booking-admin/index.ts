@@ -51,9 +51,11 @@ const apptLabel = (iso: string, tz: string) => {
 // Stages past the call — we don't yank one of these back to "Booked" on a move.
 const PAST_CALL = ["Showed", "Proposal sent", "Signed", "Paid", "Lost", "Invalid Number", "Live"];
 
-// The EstateKit people who can be put on a pitch call (the host picker). Keep in
+// The EstateKit people who can be put on a pitch call (the host picker). These
+// are the Google accounts they actually use, so the invite lands on their own
+// calendar (Kieran = ousebk@gmail.com, Khushil = khushilg14@gmail.com). Keep in
 // step with src/lib/pitchHosts.ts. set_hosts only ever invites one of these.
-const PITCH_HOSTS = ["kieran@estatekit.co", "khushil@estatekit.co"];
+const PITCH_HOSTS = ["ousebk@gmail.com", "khushilg14@gmail.com"];
 
 interface Cfg { slug: string; time_zone: string; calendar_email: string }
 
