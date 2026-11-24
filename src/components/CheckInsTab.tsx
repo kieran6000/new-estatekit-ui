@@ -1,4 +1,4 @@
-import { createContext, Fragment, useContext, useEffect, useState } from "react";
+import { createContext, Fragment, useContext, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link as RouterLink } from "react-router-dom";
 import { Box, Button, ButtonBase, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from "@mui/material";
@@ -84,7 +84,7 @@ function CheckinQuote({ r, label, onClick, onRemove }: { r: CheckinRow; label?: 
   const said = whatTheySaid(r.answers, qs, r.comment);
   const head = label || onRemove;
   return (
-    <Box sx={{ borderRadius: "12px", border: `1px solid ${tokens.divider}`, borderLeft: `3px solid ${tokens.primary}`, bgcolor: tokens.primaryBg, overflow: "hidden" }}>
+    <Box sx={{ borderRadius: "8px", border: `1px solid ${tokens.divider}`, borderLeft: `3px solid ${tokens.primary}`, bgcolor: tokens.primaryBg, overflow: "hidden" }}>
       {head && (
         <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, pl: 1.25, pr: 0.5, pt: 0.6 }}>
           <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, flex: 1, color: tokens.primary }}>
@@ -129,6 +129,45 @@ function CheckinLinks({ r, agentId }: { r: CheckinRow; agentId: string }) {
 }
 
 import { NoteEditor, NoteView } from "./RichNote";
+
+/** A long to-do or note, shown short with a "See more". Dead simple: clip to a
+ *  height, fade the cut, and only offer the toggle when it actually overflows. */
+const CLAMP_PX = 132;
+function ClampedNote({ body, muted }: { body: string; muted?: boolean }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [overflows, setOverflows] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const check = () => setOverflows(el.scrollHeight > CLAMP_PX + 8);
+    check();
+    const imgs = Array.from(el.querySelectorAll("img"));
+    imgs.forEach((im) => im.addEventListener("load", check));
+    return () => imgs.forEach((im) => im.removeEventListener("load", check));
+  }, [body]);
+  const clip = overflows && !expanded;
+  return (
+    <Box>
+      <Box
+        ref={ref}
+        sx={{
+          maxHeight: clip ? CLAMP_PX : "none",
+          overflow: "hidden",
+          ...(clip ? { WebkitMaskImage: "linear-gradient(to bottom, #000 70%, transparent)", maskImage: "linear-gradient(to bottom, #000 70%, transparent)" } : {}),
+        }}
+      >
+        <NoteView body={body} muted={muted} />
+      </Box>
+      {overflows && (
+        <Box component="button" type="button" onClick={() => setExpanded((v) => !v)}
+          sx={{ mt: 0.25, p: 0, border: 0, bgcolor: "transparent", font: "inherit", fontSize: 12.5, fontWeight: 600, color: "primary.main", cursor: "pointer", "&:hover": { textDecoration: "underline" }, ...focusSx }}>
+          {expanded ? "See less" : "See more"}
+        </Box>
+      )}
+    </Box>
+  );
+}
 
 // The client's Check-ins tab: how they're feeling, sending a check-in, and what
 // the team has to do for them. Clients answer when they answer, so it shows
@@ -352,7 +391,7 @@ function CheckinCard({ r, agentId, latest }: { r: CheckinRow; agentId: string; l
   const said = whatTheySaid(r.answers, qs, r.comment);
   const lit = useLinking()?.spotCheckin === r.id;
   return (
-    <Box id={`checkin-${r.id}`} sx={{ p: { xs: 1.5, sm: 2 }, borderRadius: "12px", border: `1px solid ${lit ? tokens.primary : tokens.divider}`, transition: "background-color 700ms ease, border-color 700ms ease", bgcolor: lit ? tokens.primaryBg : "background.paper" }}>
+    <Box id={`checkin-${r.id}`} sx={{ p: { xs: 1.5, sm: 2 }, borderRadius: "8px", border: `1px solid ${lit ? tokens.primary : tokens.divider}`, transition: "background-color 700ms ease, border-color 700ms ease", bgcolor: lit ? tokens.primaryBg : "background.paper" }}>
       <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
         <Face n={t.average} size={34} />
         <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -377,9 +416,9 @@ function HowTheyFeel({ agentId, clientName, fromName }: { agentId: string; clien
   const answered = rows.filter((r) => r.answered_at && r.answers);
   const first = clientName.trim().split(/\s+/)[0] ?? "";
 
-  if (error) return <Card title="What they told us"><Typography sx={{ fontSize: 14, color: tokens.ink2 }}>{error instanceof CheckinsNotSetUp ? "Check-ins aren't switched on yet." : "Couldn't load their check-ins. Refresh to try again."}</Typography></Card>;
+  if (error) return <Card title="Customer satisfaction"><Typography sx={{ fontSize: 14, color: tokens.ink2 }}>{error instanceof CheckinsNotSetUp ? "Check-ins aren't switched on yet." : "Couldn't load their check-ins. Refresh to try again."}</Typography></Card>;
   return (
-    <Card stackOnPhone title={first ? `What ${first} told us` : "What they told us"} action={<SendAction agentId={agentId} clientName={clientName} rows={rows} fromName={fromName} onEditQuestions={() => setEditing(true)} />}>
+    <Card stackOnPhone title="Customer satisfaction" action={<SendAction agentId={agentId} clientName={clientName} rows={rows} fromName={fromName} onEditQuestions={() => setEditing(true)} />}>
       {editing && <EditQuestions onClose={() => setEditing(false)} />}
       {isLoading ? null : answered.length ? (
         <Box sx={{ display: "flex", flexDirection: "column", gap: 1.25 }}>
@@ -432,7 +471,7 @@ function NoteRow({ n, agentId, byName, about, flash }: { n: ClientNote; agentId:
           </>
         ) : (
           <>
-            <NoteView body={n.body} muted={!!n.done_at} />
+            <ClampedNote body={n.body} muted={!!n.done_at} />
             <ForAndDueTags assignedTo={n.assigned_to} assignedToName={n.assigned_to_name} dueOn={n.kind === "todo" ? n.due_on : null} done={!!n.done_at} />
           </>
         )}
@@ -545,7 +584,7 @@ function ToDos({ agentId, byName }: { agentId: string; byName: string }) {
         <Button variant="outlined" disabled={empty || saving} onClick={() => add("note")}>Add note</Button>
       </Box>
 
-      <Box sx={{ mt: 1.75 }}>
+      <Box sx={{ mt: 3, pt: 2, borderTop: `1px solid ${tokens.divider2}` }}>
         {open.length === 0 && plain.length === 0 && done.length === 0 && <Typography sx={{ fontSize: 14, color: tokens.ink2 }}>Nothing yet.</Typography>}
         {open.map((n) => <NoteRow key={n.id} n={n} agentId={agentId} byName={byName} about={aboutOf(n)} flash={flashId === n.id} />)}
         {done.length > 0 && <Button size="small" onClick={() => setShowDone((v) => !v)} sx={{ mt: 0.5 }}>{showDone ? "Hide done" : `Show ${done.length} done`}</Button>}
