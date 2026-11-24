@@ -179,10 +179,16 @@ export async function sendPing(id: string, text: string): Promise<boolean> {
 }
 
 /** The team (EstateKit staff): who a to-do can be for. */
-export async function listTeam(): Promise<{ agent_id: string; name: string }[]> {
-  const { data, error } = await supabase.from("agent_profiles").select("agent_id, display_name").eq("is_operator", true).order("display_name");
-  if (error) throw new Error(error.message);
-  return (data ?? []).map((p) => ({ agent_id: p.agent_id as string, name: ((p.display_name as string | null) ?? "").trim().split(/\s+/)[0] || "Someone" }));
+export async function listTeam(): Promise<{ agent_id: string; name: string; avatar_url: string | null }[]> {
+  // avatar_url lets a to-do show whose it is by their face, not just a name.
+  let res = await supabase.from("agent_profiles").select("agent_id, display_name, avatar_url").eq("is_operator", true).order("display_name");
+  if (res.error && noColumn(res.error)) res = await supabase.from("agent_profiles").select("agent_id, display_name").eq("is_operator", true).order("display_name") as typeof res;
+  if (res.error) throw new Error(res.error.message);
+  return (res.data ?? []).map((p) => ({
+    agent_id: p.agent_id as string,
+    name: (((p as { display_name: string | null }).display_name ?? "").trim().split(/\s+/)[0]) || "Someone",
+    avatar_url: ((p as { avatar_url?: string | null }).avatar_url ?? null),
+  }));
 }
 
 /** /t/56f53d36: the to-do or note whose id starts with those 8 characters. */

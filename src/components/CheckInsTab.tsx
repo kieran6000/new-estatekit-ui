@@ -52,6 +52,42 @@ function useBriefly(): [string | null, (id: string) => void] {
 }
 const scrollTo = (el: string) => setTimeout(() => document.getElementById(el)?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
 
+// A client's unsaved to-do/note draft, kept per account in the browser so
+// stepping to another client and back doesn't lose what you were typing.
+// Per-viewer only; wrapped so a locked-down browser can't throw.
+type Draft = { html: string; f: NoteFor };
+const draftKey = (agentId: string) => `ek:todo-draft:${agentId}`;
+function readDraft(agentId: string): Draft {
+  try {
+    const raw = localStorage.getItem(draftKey(agentId));
+    if (!raw) return { html: "", f: NOBODY };
+    const o = JSON.parse(raw) as Partial<Draft>;
+    return { html: typeof o.html === "string" ? o.html : "", f: o.f && typeof o.f === "object" ? o.f as NoteFor : NOBODY };
+  } catch { return { html: "", f: NOBODY }; }
+}
+function writeDraft(agentId: string, html: string, f: NoteFor) {
+  try {
+    if (isEmptyNote(html) && !f.assignedTo && !f.dueOn) localStorage.removeItem(draftKey(agentId));
+    else localStorage.setItem(draftKey(agentId), JSON.stringify({ html, f }));
+  } catch { /* storage may be unavailable; the draft just won't persist */ }
+}
+function clearDraft(agentId: string) {
+  try { localStorage.removeItem(draftKey(agentId)); } catch { /* ignore */ }
+}
+
+/** A tiny label above a quoted check-in so a linked to-do unmistakably reads as
+ *  a reply to that check-in — not a loose note. */
+function ReplyEyebrow({ writing }: { writing?: boolean }) {
+  return (
+    <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, mb: 0.25, color: tokens.primary }}>
+      <ReplyRoundedIcon sx={{ fontSize: 14 }} />
+      <Typography sx={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase" }}>
+        {writing ? "Replying to check-in" : "Reply to check-in"}
+      </Typography>
+    </Box>
+  );
+}
+
 /** A check-in, quoted small: "↩ Fri 6 Nov check-in ★ 3 · Can we change one area…". */
 function CheckinQuote({ r, onClick, onRemove }: { r: CheckinRow; onClick?: () => void; onRemove?: () => void }) {
   const qs = questionsOf(r);
@@ -405,7 +441,12 @@ function NoteRow({ n, agentId, byName, about, flash }: { n: ClientNote; agentId:
         <Checkbox checked={!!n.done_at} onChange={(e) => run(setNoteDone(n.id, e.target.checked, byName))} slotProps={{ input: { "aria-label": "Done" } }} sx={{ p: 0.5, mt: "-3px" }} />
       ) : <Box sx={{ width: 30, flex: "none" }} />}
       <Box sx={{ flex: 1, minWidth: 0 }}>
-        {about && <Box sx={{ mb: 0.5 }}><CheckinQuote r={about} onClick={link ? () => link.showCheckin(about.id) : undefined} /></Box>}
+        {about && (
+          <Box sx={{ mb: 0.75 }}>
+            <ReplyEyebrow />
+            <CheckinQuote r={about} onClick={link ? () => link.showCheckin(about.id) : undefined} />
+          </Box>
+        )}
         {editing ? (
           <>
             <NoteEditor initial={n.body} folder={agentId} placeholder="Write here" onChange={setDraft} autoFocus />
@@ -418,7 +459,7 @@ function NoteRow({ n, agentId, byName, about, flash }: { n: ClientNote; agentId:
         ) : (
           <>
             <NoteView body={n.body} muted={!!n.done_at} />
-            <ForAndDueTags assignedToName={n.assigned_to_name} dueOn={n.kind === "todo" ? n.due_on : null} done={!!n.done_at} />
+            <ForAndDueTags assignedTo={n.assigned_to} assignedToName={n.assigned_to_name} dueOn={n.kind === "todo" ? n.due_on : null} done={!!n.done_at} />
           </>
         )}
         <Typography sx={{ fontSize: 12.5, color: tokens.ink3, mt: 0.25 }}>
@@ -451,11 +492,20 @@ function ToDos({ agentId, byName }: { agentId: string; byName: string }) {
   const qc = useQueryClient();
   const showSnack = useSnack();
   const { data: notes = [], error } = useQuery({ queryKey: ["clientNotes", agentId], queryFn: () => listClientNotes(agentId), retry: (n, e) => !(e instanceof CheckinsNotSetUp) && n < 1 });
-  const [html, setHtml] = useState("");
+  // Pick up any draft left for this client (ToDos remounts per agentId, so the
+  // initial read is this client's own). `seedHtml` feeds the uncontrolled editor.
+  const [draft0] = useState(() => readDraft(agentId));
+  const [html, setHtml] = useState(draft0.html);
+  const [seedHtml, setSeedHtml] = useState(draft0.html);
   const [composer, setComposer] = useState(0);
   const [showDone, setShowDone] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [f, setF] = useState<NoteFor>(NOBODY);
+  const [f, setF] = useState<NoteFor>(draft0.f);
+  // Keep the draft as they type, so stepping to another client and back keeps it.
+  useEffect(() => {
+    const t = setTimeout(() => writeDraft(agentId, html, f), 250);
+    return () => clearTimeout(t);
+  }, [agentId, html, f]);
   const [tell, setTell] = useState<{ id: string; name: string } | null>(null);
   const link = useLinking();
   // Opened from a WhatsApp ("#note-…"): show that one.
@@ -490,7 +540,9 @@ function ToDos({ agentId, byName }: { agentId: string; byName: string }) {
       const sentTo = f;
       link?.reply(null);
       setHtml("");
+      setSeedHtml("");
       setF(NOBODY);
+      clearDraft(agentId);
       setComposer((k) => k + 1); // a fresh, empty box
       await qc.invalidateQueries({ queryKey: ["clientNotes", agentId] });
       void qc.invalidateQueries({ queryKey: ["myTodos"] });
@@ -510,8 +562,8 @@ function ToDos({ agentId, byName }: { agentId: string; byName: string }) {
   );
   return (
     <Card title="To-dos and notes" action={open.length ? <Typography sx={{ fontSize: 11.5, color: tokens.ink3 }}>{open.length} to do</Typography> : undefined}>
-      {link?.replyTo && <Box sx={{ mb: 1 }}><CheckinQuote r={link.replyTo} onClick={() => link.showCheckin(link.replyTo!.id)} onRemove={() => link.reply(null)} /></Box>}
-      <Box id="ek-composer"><NoteEditor key={composer} folder={agentId} placeholder={link?.replyTo ? "What needs doing about this check-in? Type / to link an SOP." : "What needs doing, or notes from a call. Type / to link an SOP."} onChange={setHtml} /></Box>
+      {link?.replyTo && <Box sx={{ mb: 1 }}><ReplyEyebrow writing /><CheckinQuote r={link.replyTo} onClick={() => link.showCheckin(link.replyTo!.id)} onRemove={() => link.reply(null)} /></Box>}
+      <Box id="ek-composer"><NoteEditor key={composer} initial={seedHtml} folder={agentId} placeholder={link?.replyTo ? "What needs doing about this check-in? Type / to link an SOP." : "What needs doing, or notes from a call. Type / to link an SOP."} onChange={setHtml} /></Box>
       <Box sx={{ mt: 0.75 }}><ForAndDue value={f} onChange={setF} /></Box>
       {tell && <TellDialog noteId={tell.id} toName={tell.name} onClose={() => setTell(null)} />}
       <Box sx={{ display: "flex", gap: 1, mt: 1 }}>
@@ -541,6 +593,8 @@ export default function CheckInsTab({ agentId, clientName }: { agentId: string; 
   const me = profiles?.find((p) => p.agent_id === user?.id)?.display_name?.trim().split(/\s+/)[0] ?? "";
   const qc = useQueryClient();
   const [replyTo, setReplyTo] = useState<CheckinRow | null>(null);
+  // Stepping to another client drops a half-started reply (it belonged to them).
+  useEffect(() => { setReplyTo(null); }, [agentId]);
   const [spotCheckin, litCheckin] = useBriefly();
   const [spotNotes, litNotes] = useBriefly();
   const linking: Linking = {
@@ -565,7 +619,7 @@ export default function CheckInsTab({ agentId, clientName }: { agentId: string; 
     <LinkCtx.Provider value={linking}>
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "minmax(0, 3fr) minmax(0, 2fr)" }, gap: 2, alignItems: "start" }}>
         <HowTheyFeel agentId={agentId} clientName={clientName} fromName={me} />
-        <ToDos agentId={agentId} byName={me} />
+        <ToDos key={agentId} agentId={agentId} byName={me} />
       </Box>
     </LinkCtx.Provider>
   );

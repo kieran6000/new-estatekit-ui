@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Badge, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Menu, MenuItem, TextField, Tooltip, Typography } from "@mui/material";
+import { Avatar, Badge, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Menu, MenuItem, TextField, Tooltip, Typography } from "@mui/material";
 import { draftPing, sendPing } from "../api/checkins";
 import { useSnack } from "../hooks/useSnack";
 import PersonAddAltRoundedIcon from "@mui/icons-material/PersonAddAltRounded";
@@ -32,12 +32,55 @@ export function dueWords(due: string, today = todaySA()): string {
   return new Date(`${due}T12:00:00Z`).toLocaleDateString("en-GB", { timeZone: "UTC", weekday: "short", day: "numeric", month: "short" });
 }
 
+// Working hours in South Africa: Mon–Fri, 08:00–17:00 SAST (UTC+2, no DST).
+// A to-do is "due" at the end of business (17:00) on its date.
+const BIZ_START = 8;
+const BIZ_END = 17;
+/** SAST wall-clock day-of-week (0=Sun) and hour for an instant. */
+function sastClock(d: Date) {
+  const t = new Date(d.getTime() + 2 * 60 * 60_000);
+  return { dow: t.getUTCDay(), hour: t.getUTCHours() + t.getUTCMinutes() / 60 };
+}
+/** Whole business hours between now and 17:00 SAST on the due date. `null` when
+ *  the date is too far off to bother showing a countdown (over ~5 days). */
+export function businessHoursLeft(due: string, now = new Date()): number | null {
+  const target = new Date(`${due}T17:00:00+02:00`).getTime();
+  const start = now.getTime();
+  if (start >= target) return 0;
+  if (target - start > 5 * 864e5) return null;
+  let mins = 0;
+  const STEP = 15;
+  for (let t = start; t < target; t += STEP * 60_000) {
+    const { dow, hour } = sastClock(new Date(t));
+    if (dow >= 1 && dow <= 5 && hour >= BIZ_START && hour < BIZ_END) mins += STEP;
+  }
+  return mins / 60;
+}
+/** "5h left", "under 1h left", or null when it's not worth a countdown. */
+export function hoursLeftWords(due: string, done: boolean): string | null {
+  if (done) return null;
+  const h = businessHoursLeft(due);
+  if (h === null) return null;
+  if (h <= 0) return "due now";
+  if (h < 1) return "under 1h left";
+  return `${Math.round(h)}h left`;
+}
+
 const pill = (on: boolean, tone?: "red" | "amber") => ({
   minWidth: 0, px: 1, py: 0.25, fontSize: 13, fontWeight: on ? 600 : 500, borderRadius: "999px", textTransform: "none",
   color: tone === "red" ? tokens.red : tone === "amber" ? tokens.amber : on ? "text.primary" : tokens.ink2,
   bgcolor: tone === "red" ? tokens.redTint : tone === "amber" ? tokens.amberTint : on ? tokens.surface2 : "transparent",
   border: `1px solid ${tone === "red" ? tokens.redBorder : tone === "amber" ? tokens.amberBorder : on ? tokens.divider : "transparent"}`,
 });
+
+/** A teammate's face (their photo, or their initial). */
+function PersonAvatar({ name, src, size }: { name: string | null; src?: string | null; size: number }) {
+  return (
+    <Avatar src={src ?? undefined} alt={name ?? ""} sx={{ width: size, height: size, fontSize: size * 0.5, fontWeight: 600, bgcolor: tokens.primary, color: "#fff" }}>
+      {(name ?? "?").trim()[0]?.toUpperCase()}
+    </Avatar>
+  );
+}
 
 /** The "For" and "Due" buttons. `showDue` only for to-dos. */
 export function ForAndDue({ value, onChange, showDue = true }: { value: NoteFor; onChange: (v: NoteFor) => void; showDue?: boolean }) {
@@ -46,12 +89,20 @@ export function ForAndDue({ value, onChange, showDue = true }: { value: NoteFor;
   const dateRef = useRef<HTMLInputElement>(null);
   const tone = value.dueOn ? (dueState(value.dueOn) === "overdue" ? "red" : dueState(value.dueOn) === "today" ? "amber" : undefined) : undefined;
 
+  const chosen = team.find((p) => p.agent_id === value.assignedTo);
   return (
     <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, flexWrap: "wrap" }}>
       <Box sx={{ display: "inline-flex", alignItems: "center" }}>
         <Tooltip title={value.assignedTo ? "They got a WhatsApp. Tap to change." : "Give it to someone. They get a WhatsApp."}>
-          <Button size="small" startIcon={<PersonAddAltRoundedIcon sx={{ fontSize: "17px !important" }} />} onClick={(e) => setMenu(e.currentTarget)} sx={pill(!!value.assignedTo)}>
-            {value.assignedTo ? `For ${value.assignedToName}` : "For…"}
+          <Button
+            size="small"
+            startIcon={value.assignedTo
+              ? <PersonAvatar name={value.assignedToName} src={chosen?.avatar_url} size={18} />
+              : <PersonAddAltRoundedIcon sx={{ fontSize: "17px !important" }} />}
+            onClick={(e) => setMenu(e.currentTarget)}
+            sx={{ ...pill(!!value.assignedTo), pl: value.assignedTo ? 0.5 : 1 }}
+          >
+            {value.assignedTo ? value.assignedToName : "Assign…"}
           </Button>
         </Tooltip>
         {value.assignedTo && (
@@ -62,8 +113,8 @@ export function ForAndDue({ value, onChange, showDue = true }: { value: NoteFor;
       </Box>
       <Menu anchorEl={menu} open={!!menu} onClose={() => setMenu(null)}>
         {team.map((p) => (
-          <MenuItem key={p.agent_id} selected={p.agent_id === value.assignedTo} onClick={() => { onChange({ ...value, assignedTo: p.agent_id, assignedToName: p.name }); setMenu(null); }}>
-            {p.name}
+          <MenuItem key={p.agent_id} selected={p.agent_id === value.assignedTo} onClick={() => { onChange({ ...value, assignedTo: p.agent_id, assignedToName: p.name }); setMenu(null); }} sx={{ gap: 1 }}>
+            <PersonAvatar name={p.name} src={p.avatar_url} size={22} />{p.name}
           </MenuItem>
         ))}
       </Menu>
@@ -76,7 +127,7 @@ export function ForAndDue({ value, onChange, showDue = true }: { value: NoteFor;
             onClick={() => { const el = dateRef.current; if (!el) return; try { el.showPicker(); } catch { el.focus(); el.click(); } }}
             sx={pill(!!value.dueOn, tone)}
           >
-            {value.dueOn ? `Due ${dueWords(value.dueOn)}` : "Due…"}
+            {value.dueOn ? `Due ${dueWords(value.dueOn)}${tone !== "red" && hoursLeftWords(value.dueOn, false) ? ` · ${hoursLeftWords(value.dueOn, false)}` : ""}` : "Due…"}
           </Button>
           {value.dueOn && (
             <IconButton size="small" aria-label="No due date" onClick={() => onChange({ ...value, dueOn: null })} sx={{ p: 0.25, ml: 0.25 }}>
@@ -98,16 +149,28 @@ export function ForAndDue({ value, onChange, showDue = true }: { value: NoteFor;
   );
 }
 
-/** Under a saved to-do or note: "For Aldredt · Due Fri 14 Nov" (red when late). */
-export function ForAndDueTags({ assignedToName, dueOn, done }: { assignedToName: string | null; dueOn: string | null; done: boolean }) {
+/** Under a saved to-do or note: whose it is (their face + name) and when it's
+ *  due, with business hours left when the clock is ticking. Red when late. */
+export function ForAndDueTags({ assignedTo, assignedToName, dueOn, done }: { assignedTo?: string | null; assignedToName: string | null; dueOn: string | null; done: boolean }) {
+  const { data: team = [] } = useTeam();
   if (!assignedToName && !dueOn) return null;
   const s = dueOn && !done ? dueState(dueOn) : null;
+  const avatar = assignedTo ? team.find((p) => p.agent_id === assignedTo)?.avatar_url : null;
+  const left = dueOn ? hoursLeftWords(dueOn, done) : null;
   return (
     <Box sx={{ display: "flex", gap: 0.75, flexWrap: "wrap", mt: 0.5 }}>
-      {assignedToName && <Box component="span" sx={{ ...pill(true), display: "inline-flex", alignItems: "center", gap: 0.5, py: "1px", fontSize: 12.5, fontWeight: 500 }}><PersonAddAltRoundedIcon sx={{ fontSize: 14 }} />For {assignedToName}</Box>}
+      {assignedToName && (
+        <Tooltip title={`For ${assignedToName}`}>
+          <Box component="span" sx={{ ...pill(true), display: "inline-flex", alignItems: "center", gap: 0.5, py: "1px", pl: "2px", pr: 1, fontSize: 12.5, fontWeight: 500 }}>
+            <PersonAvatar name={assignedToName} src={avatar} size={18} />{assignedToName}
+          </Box>
+        </Tooltip>
+      )}
       {dueOn && (
         <Box component="span" sx={{ ...pill(true, s === "overdue" ? "red" : s === "today" ? "amber" : undefined), display: "inline-flex", alignItems: "center", gap: 0.5, py: "1px", fontSize: 12.5, fontWeight: s ? 600 : 500 }}>
-          <EventRoundedIcon sx={{ fontSize: 14 }} />{s === "overdue" ? `Late · was due ${dueWords(dueOn)}` : `Due ${dueWords(dueOn)}`}
+          <EventRoundedIcon sx={{ fontSize: 14 }} />
+          {s === "overdue" ? `Late · was due ${dueWords(dueOn)}` : `Due ${dueWords(dueOn)}`}
+          {s !== "overdue" && left && <Box component="span" sx={{ fontWeight: 700 }}>· {left}</Box>}
         </Box>
       )}
     </Box>
