@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { AppBar, Box, Button, Chip, Dialog, Drawer, IconButton, MenuItem, Popover, Select, Skeleton, TextField, Toolbar, Typography, useMediaQuery } from "@mui/material";
+import { AppBar, Avatar, Box, Button, ButtonBase, Dialog, Drawer, IconButton, MenuItem, Popover, Select, Skeleton, TextField, Toolbar, Typography, useMediaQuery } from "@mui/material";
+import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import PhoneIcon from "@mui/icons-material/Phone";
@@ -29,6 +30,7 @@ import GoogleCalendarIcon from "../components/GoogleCalendarIcon";
 import LeadDetailPage from "./LeadDetailPage";
 import { allDayCovers, calendarItems, DURATION, KIND_STYLE, layoutBlocks, overdue, spanOnDay, syncKind, weekStart, type CalItem } from "../lib/calendar";
 import { prettyPhone } from "../lib/phone";
+import { useTeam } from "../components/NoteFor";
 
 // Calendar, laid out like Google Calendar (what agents already know): days
 // across, hours down, each appointment, viewing, picked call time and
@@ -848,11 +850,12 @@ function FunnelBookingCard({ b, phone, canSeeFullPhone, onOpen, onReschedule, on
   const s = new Date(b.starts_at);
   const e = new Date(b.ends_at);
   const moved = (b.reschedule_count ?? 0) > 0;
+  const { data: team = [] } = useTeam();
   const chosen = (b.hosts ?? []).map((h) => h.toLowerCase());
-  const toggleHost = (email: string) => {
-    const on = chosen.includes(email.toLowerCase());
-    onSetHosts?.(on ? chosen.filter((h) => h !== email.toLowerCase()) : [...chosen, email.toLowerCase()]);
-  };
+  // One person takes the call: tap a face to give it to them, tap again to clear.
+  const pickHost = (email: string) =>
+    onSetHosts?.(chosen.includes(email.toLowerCase()) ? [] : [email.toLowerCase()]);
+  const assignedNames = PITCH_HOSTS.filter((h) => chosen.includes(h.email.toLowerCase())).map((h) => h.name);
   return (
     <Box>
       <Box sx={{ display: "flex", gap: 1.5, alignItems: "flex-start" }}>
@@ -877,19 +880,39 @@ function FunnelBookingCard({ b, phone, canSeeFullPhone, onOpen, onReschedule, on
       </Box>
       {onSetHosts && (
         <Box sx={{ mt: 2, ml: 3.25 }}>
-          <Typography sx={{ fontSize: 13.5, color: "text.secondary", mb: 0.75 }}>Who's taking this call?</Typography>
-          <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.75 }}>
+          <Typography sx={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "text.secondary", mb: 0.75 }}>Who's taking this call?</Typography>
+          <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
             {PITCH_HOSTS.map((h) => {
               const on = chosen.includes(h.email.toLowerCase());
+              const tm = team.find((t) => t.name.toLowerCase() === h.name.toLowerCase());
               return (
-                <Chip key={h.email} label={h.name} onClick={() => toggleHost(h.email)} disabled={settingHosts}
-                  color={on ? "primary" : "default"} variant={on ? "filled" : "outlined"}
-                  sx={{ minHeight: 36, fontSize: 14, px: 0.5 }} />
+                <ButtonBase
+                  key={h.email}
+                  aria-pressed={on}
+                  disabled={settingHosts}
+                  onClick={() => pickHost(h.email)}
+                  sx={{
+                    display: "inline-flex", alignItems: "center", gap: 0.875, pl: 0.5, pr: 1.75, py: 0.5, borderRadius: "999px",
+                    border: `1.5px solid ${on ? tokens.primary : tokens.divider}`,
+                    bgcolor: on ? tokens.primaryBg : "background.paper",
+                    color: on ? tokens.primary : "text.primary",
+                    fontSize: 15.5, fontWeight: on ? 700 : 500, opacity: settingHosts ? 0.6 : 1,
+                    transition: "background-color .12s, border-color .12s",
+                    "&:hover": { borderColor: on ? tokens.primary : tokens.ink3, bgcolor: on ? tokens.primaryBg : tokens.hover },
+                    "&:focus-visible": { outline: `2px solid ${tokens.primary}`, outlineOffset: 2 },
+                  }}
+                >
+                  <Avatar src={tm?.avatar_url ?? undefined} alt="" sx={{ width: 30, height: 30, fontSize: 14, fontWeight: 600, bgcolor: tokens.primary, color: "#fff" }}>{h.name[0]}</Avatar>
+                  {h.name}
+                  {on && <CheckRoundedIcon sx={{ fontSize: 20 }} />}
+                </ButtonBase>
               );
             })}
           </Box>
-          <Typography sx={{ fontSize: 12.5, color: "text.secondary", mt: 0.75 }}>
-            They're invited to this call only — the lead and its automations aren't touched.
+          <Typography sx={{ fontSize: 12.5, color: "text.secondary", mt: 1 }}>
+            {assignedNames.length
+              ? `${assignedNames.join(" & ")} ${assignedNames.length > 1 ? "are" : "is"} taking this call. Invited to this call only — the lead and its automations aren't touched.`
+              : "No one picked yet. Tap a face to give them the call — they're invited to this call only, the lead and its automations aren't touched."}
           </Typography>
         </Box>
       )}
