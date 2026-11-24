@@ -156,14 +156,16 @@ export default function CalendarPage() {
   const showSnack = useSnack();
   const bookings = useMemo(() => (showFunnel ? funnel?.bookings ?? [] : []), [showFunnel, funnel]);
   const blocks = useMemo(() => (showFunnel ? funnel?.blocks ?? [] : []), [showFunnel, funnel]);
-  // A funnel booking already shows the lead's appointment; don't draw it twice.
+  // A funnel booking draws its own pill; suppress that lead's other pills.
   const bookedLeadIds = useMemo(() => new Set(bookings.map((b) => b.lead_id).filter(Boolean) as string[]), [bookings]);
   const [blockOff, setBlockOff] = useState(false);
 
   const HOUR = phone ? 60 : 48; // px per hour: taller on phones so short calls are easy to tap
   const week = !phone && weekView;
   const items = useMemo(
-    () => calendarItems(leads).filter((it) => !(it.kind === "appointment" && bookedLeadIds.has(it.lead.id))),
+    // A funnel booking draws its own pill; drop every generated pill for that
+    // lead (appointment + call + follow-up) so one booking = one pill, not 3–4.
+    () => calendarItems(leads).filter((it) => !bookedLeadIds.has(it.lead.id)),
     [leads, bookedLeadIds],
   );
   const late = overdue(items, now);
