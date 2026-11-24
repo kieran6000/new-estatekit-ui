@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { AppBar, Box, Button, Dialog, Drawer, IconButton, MenuItem, Popover, Select, Skeleton, TextField, Toolbar, Typography, useMediaQuery } from "@mui/material";
+import { AppBar, Box, Button, Chip, Dialog, Drawer, IconButton, MenuItem, Popover, Select, Skeleton, TextField, Toolbar, Typography, useMediaQuery } from "@mui/material";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import PhoneIcon from "@mui/icons-material/Phone";
@@ -14,6 +14,7 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlineOutlined";
 import EventBusyIcon from "@mui/icons-material/EventBusy";
 import ScheduleSendIcon from "@mui/icons-material/ScheduleSend";
 import { tokens } from "../theme";
+import { PITCH_HOSTS } from "../lib/pitchHosts";
 import { useLeads } from "../hooks/useLeads";
 import { useCanSeeFullPhone } from "../hooks/useTier";
 import { useConnectGoogleCalendar, useGoogleCalendarReturn, useGoogleCalendarStatus, useGoogleEvents } from "../hooks/useGoogleCalendar";
@@ -151,7 +152,7 @@ export default function CalendarPage() {
   const showFunnel = isOperator === true && !managingOther;
   const { data: funnel } = useFunnelCalendar(gFrom, addDays(gFrom, 7), showFunnel);
   const { block: blockMut, unblock: unblockMut, moveBlock: moveBlockMut } = useFunnelBlockActions();
-  const { reschedule: rescheduleMut, cancel: cancelMut } = useFunnelBookingActions();
+  const { reschedule: rescheduleMut, cancel: cancelMut, setHosts: setHostsMut } = useFunnelBookingActions();
   const showSnack = useSnack();
   const bookings = useMemo(() => (showFunnel ? funnel?.bookings ?? [] : []), [showFunnel, funnel]);
   const blocks = useMemo(() => (showFunnel ? funnel?.blocks ?? [] : []), [showFunnel, funnel]);
@@ -348,6 +349,8 @@ export default function CalendarPage() {
       onReschedule={showFunnel && phone ? () => { const fb = open.fb!; setOpen(null); setRebook(fb); } : undefined}
       onCancel={showFunnel ? () => cancelBooking(open.fb!) : undefined}
       canceling={cancelMut.isPending}
+      onSetHosts={showFunnel ? (hosts) => setHostsMut.mutate({ bookingId: open.fb!.id, hosts }) : undefined}
+      settingHosts={setHostsMut.isPending}
       onClose={() => setOpen(null)} />
   ) : open?.bl ? (
     <BlockedCard bl={open.bl} phone={phone} onRemove={() => removeBlock(open.bl!.id)} removing={unblockMut.isPending} onClose={() => setOpen(null)} />
@@ -839,10 +842,15 @@ function GoogleEventCard({ ev, phone, onClose }: { ev: GoogleEvent; phone: boole
 
 /** A funnel discovery call (estatekit.co/pitch): when, who, and the Google Meet
  *  link staff join the call on. Operators only. */
-function FunnelBookingCard({ b, phone, canSeeFullPhone, onOpen, onReschedule, onCancel, canceling, onClose }: { b: FunnelBooking; phone: boolean; canSeeFullPhone: boolean; onOpen?: () => void; onReschedule?: () => void; onCancel?: () => void; canceling?: boolean; onClose: () => void }) {
+function FunnelBookingCard({ b, phone, canSeeFullPhone, onOpen, onReschedule, onCancel, canceling, onSetHosts, settingHosts, onClose }: { b: FunnelBooking; phone: boolean; canSeeFullPhone: boolean; onOpen?: () => void; onReschedule?: () => void; onCancel?: () => void; canceling?: boolean; onSetHosts?: (hosts: string[]) => void; settingHosts?: boolean; onClose: () => void }) {
   const s = new Date(b.starts_at);
   const e = new Date(b.ends_at);
   const moved = (b.reschedule_count ?? 0) > 0;
+  const chosen = (b.hosts ?? []).map((h) => h.toLowerCase());
+  const toggleHost = (email: string) => {
+    const on = chosen.includes(email.toLowerCase());
+    onSetHosts?.(on ? chosen.filter((h) => h !== email.toLowerCase()) : [...chosen, email.toLowerCase()]);
+  };
   return (
     <Box>
       <Box sx={{ display: "flex", gap: 1.5, alignItems: "flex-start" }}>
@@ -865,6 +873,24 @@ function FunnelBookingCard({ b, phone, canSeeFullPhone, onOpen, onReschedule, on
           <ScheduleIcon sx={{ fontSize: 18 }} />Booked from estatekit.co/pitch{moved ? " · moved once" : ""}
         </Box>
       </Box>
+      {onSetHosts && (
+        <Box sx={{ mt: 2, ml: 3.25 }}>
+          <Typography sx={{ fontSize: 13.5, color: "text.secondary", mb: 0.75 }}>Who's taking this call?</Typography>
+          <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.75 }}>
+            {PITCH_HOSTS.map((h) => {
+              const on = chosen.includes(h.email.toLowerCase());
+              return (
+                <Chip key={h.email} label={h.name} onClick={() => toggleHost(h.email)} disabled={settingHosts}
+                  color={on ? "primary" : "default"} variant={on ? "filled" : "outlined"}
+                  sx={{ minHeight: 36, fontSize: 14, px: 0.5 }} />
+              );
+            })}
+          </Box>
+          <Typography sx={{ fontSize: 12.5, color: "text.secondary", mt: 0.75 }}>
+            They're invited to this call only — the lead and its automations aren't touched.
+          </Typography>
+        </Box>
+      )}
       {phone ? (
         <Box sx={{ display: "flex", flexDirection: "column", gap: 1, mt: 2.5 }}>
           {b.meet_url && (

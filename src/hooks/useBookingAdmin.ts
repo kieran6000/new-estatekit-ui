@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   blockFunnelTime, cancelFunnelBooking, listFunnelCalendar, rescheduleFunnelBooking,
-  unblockFunnelTime, updateFunnelBlock, type FunnelCalendar,
+  setFunnelBookingHosts, unblockFunnelTime, updateFunnelBlock, type FunnelCalendar,
 } from "../api/bookingAdmin";
 
 export const FUNNEL_CAL_KEY = "funnelCalendar";
@@ -51,5 +51,9 @@ export function useFunnelBookingActions() {
     mutationFn: (bookingId: string) => cancelFunnelBooking(bookingId),
     onSuccess: invalidate,
   });
-  return { reschedule, cancel };
+  const setHosts = useMutation({
+    mutationFn: (v: { bookingId: string; hosts: string[] }) => setFunnelBookingHosts(v.bookingId, v.hosts),
+    onSuccess: invalidate,
+  });
+  return { reschedule, cancel, setHosts };
 }

@@ -51,6 +51,10 @@ const apptLabel = (iso: string, tz: string) => {
 // Stages past the call — we don't yank one of these back to "Booked" on a move.
 const PAST_CALL = ["Showed", "Proposal sent", "Signed", "Paid", "Lost", "Invalid Number", "Live"];
 
+// The EstateKit people who can be put on a pitch call (the host picker). Keep in
+// step with src/lib/pitchHosts.ts. set_hosts only ever invites one of these.
+const PITCH_HOSTS = ["kieran@estatekit.co", "khushil@estatekit.co"];
+
 interface Cfg { slug: string; time_zone: string; calendar_email: string }
 
 Deno.serve(async (req) => {
@@ -90,7 +94,7 @@ Deno.serve(async (req) => {
     if (!from || !to) return json({ ok: false, error: "Bad request" }, 400);
 
     const { data: rows, error: bErr } = await admin.from("bookings")
-      .select("id, lead_id, starts_at, ends_at, time_zone, status, name, email, phone, meet_url, event_link, reschedule_count")
+      .select("id, lead_id, starts_at, ends_at, time_zone, status, name, email, phone, meet_url, event_link, reschedule_count, hosts")
       .eq("slug", slug)
       .eq("status", "booked")
       .gte("starts_at", from)
@@ -321,6 +325,47 @@ Deno.serve(async (req) => {
       id: ev.id, start: ev.start?.dateTime ?? startsAt, end: ev.end?.dateTime ?? endsAt,
       note: (ev.summary ?? "").replace(/^Blocked\s*[—-]\s*/i, "").replace(/^Blocked$/i, "").trim(),
     } });
+  }
+
+  // ── Set who's on a pitch call (the host picker) ─────────────────────────
+  // Invites exactly the chosen EstateKit people (plus the prospect) to this
+  // booking's Google event + Meet, and records them on the row. Never touches
+  // the lead or its automations — this is only the calendar invite.
+  if (action === "set_hosts") {
+    const bookingId = String(body?.bookingId ?? "").trim();
+    if (!bookingId) return json({ ok: false, error: "Bad request" }, 400);
+    const asked = Array.isArray(body?.hosts) ? (body.hosts as unknown[]).map((h) => String(h).toLowerCase()) : [];
+    const hosts = PITCH_HOSTS.filter((h) => asked.includes(h)); // only known hosts, de-duped
+
+    const { data: bk } = await admin.from("bookings")
+      .select("id, name, email, google_event_id, status")
+      .eq("id", bookingId).eq("slug", slug).maybeSingle();
+    if (!bk || bk.status !== "booked") return json({ ok: false, error: "That booking isn't here anymore." }, 404);
+
+    if (bk.google_event_id) {
+      const attendees = [
+        ...(bk.email ? [{ email: bk.email, displayName: bk.name || undefined }] : []),
+        ...hosts.map((email) => ({ email })),
+      ];
+      const res = await fetch(
+        `${CAL_API}/calendars/${encodeURIComponent(calendar)}/events/${encodeURIComponent(bk.google_event_id)}?sendUpdates=all`,
+        { method: "PATCH", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ attendees }) },
+      );
+      if (!res.ok && res.status !== 404 && res.status !== 410) {
+        const e = await res.json().catch(() => ({}));
+        console.error("booking-admin set_hosts event", res.status, JSON.stringify(e?.error ?? e).slice(0, 300));
+        return json({ ok: false, error: "Couldn't update who's on the call. Please try again." }, 502);
+      }
+      await res.body?.cancel();
+    }
+
+    const { error: updErr } = await admin.from("bookings").update({ hosts }).eq("id", bookingId);
+    if (updErr) {
+      console.error("booking-admin set_hosts row", updErr.message);
+      return json({ ok: false, error: "Couldn't save who's on the call. Please try again." }, 502);
+    }
+    return json({ ok: true, hosts });
   }
 
   return json({ ok: false, error: "Unknown action" }, 400);

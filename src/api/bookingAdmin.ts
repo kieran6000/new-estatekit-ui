@@ -19,6 +19,8 @@ export interface FunnelBooking {
   meet_url: string | null;
   event_link: string | null;
   reschedule_count?: number | null;
+  /** EstateKit people invited to this call (the host picker). */
+  hosts?: string[] | null;
 }
 
 /** A time staff have blocked off. `id` is the Google event id (to lift it). */
@@ -67,6 +69,16 @@ export async function rescheduleFunnelBooking(bookingId: string, startsAt: strin
     body: { action: "reschedule", bookingId, startsAt },
   });
   if (error || !data?.ok) throw new Error(data?.error || error?.message || "reschedule");
+}
+
+/** Set which EstateKit people are on a pitch call. Invites exactly those (plus
+ *  the prospect) to the Google event + Meet; doesn't touch the lead/automations. */
+export async function setFunnelBookingHosts(bookingId: string, hosts: string[]): Promise<string[]> {
+  const { data, error } = await supabase.functions.invoke("booking-admin", {
+    body: { action: "set_hosts", bookingId, hosts },
+  });
+  if (error || !data?.ok) throw new Error(data?.error || error?.message || "set_hosts");
+  return (data.hosts as string[]) ?? [];
 }
 
 /** Cancel a discovery call: pull it from the diary and stop its reminders. */
