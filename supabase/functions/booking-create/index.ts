@@ -21,11 +21,11 @@ const CORS = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 
-// EstateKit's own people are added to every pitch call as guests, so they're on
-// the invite, it lands on their calendar, and Google Meet lets them straight in
-// (invited guests never have to "ask to join"). Co-host controls themselves can
-// only be granted in Meet/Workspace, not via the Calendar API.
-const HOST_GUESTS = ["ousebk@gmail.com", "khushil@estatekit.co", "kieran@estatekit.co"];
+// Only the prospect is invited to the calendar event now — auto-adding the whole
+// EstateKit team made every booking a cluttered 4-guest event. The call lives on
+// partner@'s calendar (the funnel diary the team already watches). A later
+// "who takes this call" picker can add the chosen closer per booking.
+const HOST_GUESTS: string[] = [];
 
 interface Config {
   slug: string;
