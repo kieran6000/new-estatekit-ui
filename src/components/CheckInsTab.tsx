@@ -20,9 +20,13 @@ import { checkinMessage, checkinState, cleanQuestions, daysAgo, DEFAULT_QUESTION
 import { isEmptyNote, noteForSaving } from "../lib/richNote";
 import { tokens } from "../theme";
 import { Face } from "./Faces";
-import ReplyRoundedIcon from "@mui/icons-material/ReplyRounded";
+import AddTaskRoundedIcon from "@mui/icons-material/AddTaskRounded";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import ChecklistRoundedIcon from "@mui/icons-material/ChecklistRounded";
+import ChatBubbleOutlineRoundedIcon from "@mui/icons-material/ChatBubbleOutlineRounded";
+import TrendingUpRoundedIcon from "@mui/icons-material/TrendingUpRounded";
+import TrendingDownRoundedIcon from "@mui/icons-material/TrendingDownRounded";
+import TrendingFlatRoundedIcon from "@mui/icons-material/TrendingFlatRounded";
 
 // Check-ins and to-dos are usually about the same thing, so they point at each
 // other: "Reply" on a check-in puts a little quote of it in the to-do box; the
@@ -75,36 +79,36 @@ function clearDraft(agentId: string) {
   try { localStorage.removeItem(draftKey(agentId)); } catch { /* ignore */ }
 }
 
-/** A tiny label above a quoted check-in so a linked to-do unmistakably reads as
- *  a reply to that check-in — not a loose note. */
-function ReplyEyebrow({ writing }: { writing?: boolean }) {
-  return (
-    <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, mb: 0.25, color: tokens.primary }}>
-      <ReplyRoundedIcon sx={{ fontSize: 14 }} />
-      <Typography sx={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase" }}>
-        {writing ? "Replying to check-in" : "Reply to check-in"}
-      </Typography>
-    </Box>
-  );
-}
-
-/** A check-in, quoted small: "↩ Fri 6 Nov check-in ★ 3 · Can we change one area…". */
-function CheckinQuote({ r, onClick, onRemove }: { r: CheckinRow; onClick?: () => void; onRemove?: () => void }) {
+/** The check-in a to-do is about, shown as a small card: its face up front, the
+ *  day, the score, and a line of what they said. `label` names the tie ("About
+ *  this check-in"); tapping it lights up the full check-in above. */
+function CheckinQuote({ r, label, onClick, onRemove }: { r: CheckinRow; label?: string; onClick?: () => void; onRemove?: () => void }) {
   const qs = questionsOf(r);
   const t = scoreCheckin(r.answers!, qs);
   const said = whatTheySaid(r.answers, qs, r.comment);
+  const head = label || onRemove;
   return (
-    <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, minWidth: 0, pl: 1, pr: onRemove ? 0.25 : 1, py: 0.5, borderRadius: "8px", borderLeft: `3px solid ${tokens.primary}`, bgcolor: tokens.primaryBg }}>
+    <Box sx={{ borderRadius: "12px", border: `1px solid ${tokens.divider}`, borderLeft: `3px solid ${tokens.primary}`, bgcolor: tokens.primaryBg, overflow: "hidden" }}>
+      {head && (
+        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, pl: 1.25, pr: 0.5, pt: 0.6 }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, flex: 1, color: tokens.primary }}>
+            <ChatBubbleOutlineRoundedIcon sx={{ fontSize: 13 }} />
+            {label && <Typography sx={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase" }}>{label}</Typography>}
+          </Box>
+          {onRemove && <IconButton size="small" aria-label="Don't link it" onClick={onRemove} sx={{ p: 0.25 }}><CloseRoundedIcon sx={{ fontSize: 16 }} /></IconButton>}
+        </Box>
+      )}
       <Box component={onClick ? "button" : "div"} type={onClick ? "button" : undefined} onClick={onClick}
         title={onClick ? "Show this check-in" : undefined}
-        sx={{ display: "flex", alignItems: "center", gap: 0.75, minWidth: 0, flex: 1, p: 0, border: 0, borderRadius: "4px", bgcolor: "transparent", font: "inherit", color: "inherit", textAlign: "left", cursor: onClick ? "pointer" : "default", ...focusSx, "&:hover .ek-q": onClick ? { textDecoration: "underline" } : undefined }}>
-        <ReplyRoundedIcon sx={{ fontSize: 16, color: tokens.primary, flex: "none" }} />
-        <Typography className="ek-q" sx={{ fontSize: 12.5, fontWeight: 600, flex: "none" }}>{day(r.answered_at!)} check-in</Typography>
-        <Face n={t.average} size={15} />
-        <Typography sx={{ fontSize: 12.5, fontWeight: 600, flex: "none" }}>{t.average}</Typography>
-        {said && <Typography noWrap sx={{ fontSize: 12.5, color: tokens.ink2, minWidth: 0 }}>· {said}</Typography>}
+        sx={{ display: "flex", alignItems: "center", gap: 1, width: "100%", minWidth: 0, px: 1.25, pb: 1, pt: head ? 0.4 : 1, border: 0, bgcolor: "transparent", font: "inherit", color: "inherit", textAlign: "left", cursor: onClick ? "pointer" : "default", ...focusSx, "&:hover .ek-q": onClick ? { textDecoration: "underline" } : undefined }}>
+        <Face n={t.average} size={30} />
+        <Box sx={{ minWidth: 0, flex: 1 }}>
+          <Typography className="ek-q" sx={{ fontSize: 13, fontWeight: 700, lineHeight: 1.3 }}>
+            {day(r.answered_at!)} · {t.average}<Box component="span" sx={{ color: tokens.ink3, fontWeight: 500 }}> of 5</Box>
+          </Typography>
+          {said && <Typography noWrap sx={{ fontSize: 12.5, color: tokens.ink2, minWidth: 0 }}>“{said}”</Typography>}
+        </Box>
       </Box>
-      {onRemove && <IconButton size="small" aria-label="Don't link it" onClick={onRemove} sx={{ p: 0.25 }}><CloseRoundedIcon sx={{ fontSize: 16 }} /></IconButton>}
     </Box>
   );
 }
@@ -120,7 +124,7 @@ function CheckinLinks({ r, agentId }: { r: CheckinRow; agentId: string }) {
   const words = [todos ? `${todos} to-do${todos === 1 ? "" : "s"}` : "", other ? `${other} ${todos ? "more" : `note${other === 1 ? "" : "s"}`}` : ""].filter(Boolean).join(" · ");
   return (
     <Box sx={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 1, mt: 1.25 }}>
-      <Button size="small" startIcon={<ReplyRoundedIcon />} onClick={() => link.reply(r)} sx={{ ml: -0.75 }}>Reply with a to-do</Button>
+      <Button size="small" startIcon={<AddTaskRoundedIcon />} onClick={() => link.reply(r)} sx={{ ml: -0.75 }}>Make a to-do about this</Button>
       {about.length > 0 && (
         <Button size="small" startIcon={<ChecklistRoundedIcon />} onClick={() => link.showNotes(r.id)} sx={{ color: tokens.ink2 }}>{words}</Button>
       )}
@@ -375,7 +379,10 @@ function EarlierCheckin({ r, agentId }: { r: CheckinRow; agentId: string }) {
     <Box id={`checkin-${r.id}`} sx={{ borderTop: `1px solid ${tokens.divider2}`, borderRadius: "6px", ...flashSx(lit) }}>
       <ButtonBase onClick={() => setOpen(!open)} aria-expanded={open}
         sx={{ width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 1.5, py: 1.1, px: 0.75, borderRadius: "6px", cursor: "pointer", bgcolor: open ? tokens.surface2 : "transparent", "&:hover": { bgcolor: tokens.surface2 }, "&:hover .ek-open": { bgcolor: tokens.primaryBg } }}>
-        <Typography sx={{ fontSize: 13.5, fontWeight: 500, width: 92, flex: "none" }}>{day(r.answered_at!)}</Typography>
+        <Box sx={{ width: 96, flex: "none" }}>
+          <Typography sx={{ fontSize: 13.5, fontWeight: 500, lineHeight: 1.2 }}>{day(r.answered_at!)}</Typography>
+          <Typography sx={{ fontSize: 11, color: tokens.ink3, lineHeight: 1.2 }}>{daysAgo(r.answered_at!)}</Typography>
+        </Box>
         <Face n={t.average} size={18} />
         <Typography sx={{ fontSize: 13.5, fontWeight: 600, width: 26, flex: "none", fontVariantNumeric: "tabular-nums" }}>{t.average}</Typography>
         <Typography noWrap sx={{ fontSize: 13.5, color: tokens.ink2, flex: 1, minWidth: 0 }}>{open ? "" : said ? `“${said}”` : ""}</Typography>
@@ -395,6 +402,49 @@ function EarlierCheckin({ r, agentId }: { r: CheckinRow; agentId: string }) {
   );
 }
 
+/** A little sparkline of their recent scores, so the direction they're heading
+ *  reads at a glance — not just their latest number. */
+function TrendLine({ rows }: { rows: CheckinRow[] }) {
+  // rows come newest-first; plot the recent dozen oldest → newest.
+  const pts = rows.slice(0, 12).reverse().map((r) => {
+    const avg = scoreCheckin(r.answers!, questionsOf(r)).average;
+    return { v: Math.max(1, Math.min(5, avg)), label: `${day(r.answered_at!)} · ${avg}` };
+  });
+  if (pts.length < 3) return null;
+  const n = pts.length;
+  // Insets keep the end dots off the edges and the top/bottom dots uncropped.
+  const X = (i: number) => 6 + (i / (n - 1)) * 88;
+  const Y = (v: number) => 10 + (1 - (v - 1) / 4) * 80;
+  const line = pts.map((p, i) => `${X(i)},${Y(p.v)}`).join(" ");
+  const area = `${X(0)},90 ${line} ${X(n - 1)},90`;
+  const delta = +(pts[n - 1].v - pts[0].v).toFixed(1);
+  const dir = delta > 0.1 ? "up" : delta < -0.1 ? "down" : "flat";
+  const dirColor = dir === "up" ? tokens.green : dir === "down" ? tokens.red : tokens.ink2;
+  const DirIcon = dir === "up" ? TrendingUpRoundedIcon : dir === "down" ? TrendingDownRoundedIcon : TrendingFlatRoundedIcon;
+  return (
+    <Box sx={{ mt: 0.5, mb: 1, pt: 1.5, borderTop: `1px solid ${tokens.divider2}` }}>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 0.5 }}>
+        <Typography sx={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: tokens.ink2, flex: 1 }}>Their trend</Typography>
+        <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.25, fontSize: 12.5, fontWeight: 700, color: dirColor }}>
+          <DirIcon sx={{ fontSize: 17 }} />
+          {dir === "flat" ? "Steady" : `${delta > 0 ? "+" : ""}${delta} over last ${n}`}
+        </Box>
+      </Box>
+      <Box sx={{ position: "relative", height: 54, width: "100%" }}>
+        <Box component="svg" viewBox="0 0 100 100" preserveAspectRatio="none" sx={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}>
+          <polygon points={area} fill={tokens.primaryBg} />
+          <polyline points={line} fill="none" stroke={tokens.primary} strokeWidth={2} vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
+        </Box>
+        {pts.map((p, i) => (
+          <Tooltip key={i} title={p.label}>
+            <Box sx={{ position: "absolute", left: `${X(i)}%`, top: `${Y(p.v)}%`, transform: "translate(-50%, -50%)", width: i === n - 1 ? 13 : 8, height: i === n - 1 ? 13 : 8, borderRadius: "50%", bgcolor: i === n - 1 ? tokens.primary : "background.paper", border: `2px solid ${tokens.primary}`, boxSizing: "border-box", cursor: "default" }} />
+          </Tooltip>
+        ))}
+      </Box>
+    </Box>
+  );
+}
+
 function HowTheyFeel({ agentId, clientName, fromName }: { agentId: string; clientName: string; fromName: string }) {
   const [editing, setEditing] = useState(false);
   const { data: rows = [], isLoading, error } = useQuery({ queryKey: ["checkins", agentId], queryFn: () => listCheckins(agentId), retry: (n, e) => !(e instanceof CheckinsNotSetUp) && n < 1 });
@@ -408,6 +458,7 @@ function HowTheyFeel({ agentId, clientName, fromName }: { agentId: string; clien
       {isLoading ? null : answered.length ? (
         <>
           <LatestCheckin r={answered[0]} agentId={agentId} />
+          <TrendLine rows={answered} />
           {answered.slice(1).map((r) => <EarlierCheckin key={r.id} r={r} agentId={agentId} />)}
         </>
       ) : (
@@ -443,8 +494,7 @@ function NoteRow({ n, agentId, byName, about, flash }: { n: ClientNote; agentId:
       <Box sx={{ flex: 1, minWidth: 0 }}>
         {about && (
           <Box sx={{ mb: 0.75 }}>
-            <ReplyEyebrow />
-            <CheckinQuote r={about} onClick={link ? () => link.showCheckin(about.id) : undefined} />
+            <CheckinQuote r={about} label="About this check-in" onClick={link ? () => link.showCheckin(about.id) : undefined} />
           </Box>
         )}
         {editing ? (
@@ -562,7 +612,7 @@ function ToDos({ agentId, byName }: { agentId: string; byName: string }) {
   );
   return (
     <Card title="To-dos and notes" action={open.length ? <Typography sx={{ fontSize: 11.5, color: tokens.ink3 }}>{open.length} to do</Typography> : undefined}>
-      {link?.replyTo && <Box sx={{ mb: 1 }}><ReplyEyebrow writing /><CheckinQuote r={link.replyTo} onClick={() => link.showCheckin(link.replyTo!.id)} onRemove={() => link.reply(null)} /></Box>}
+      {link?.replyTo && <Box sx={{ mb: 1 }}><CheckinQuote r={link.replyTo} label="About this check-in" onClick={() => link.showCheckin(link.replyTo!.id)} onRemove={() => link.reply(null)} /></Box>}
       <Box id="ek-composer"><NoteEditor key={composer} initial={seedHtml} folder={agentId} placeholder={link?.replyTo ? "What needs doing about this check-in? Type / to link an SOP." : "What needs doing, or notes from a call. Type / to link an SOP."} onChange={setHtml} /></Box>
       <Box sx={{ mt: 0.75 }}><ForAndDue value={f} onChange={setF} /></Box>
       {tell && <TellDialog noteId={tell.id} toName={tell.name} onClose={() => setTell(null)} />}

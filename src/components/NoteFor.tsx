@@ -56,14 +56,14 @@ export function businessHoursLeft(due: string, now = new Date()): number | null 
   }
   return mins / 60;
 }
-/** "5h left", "under 1h left", or null when it's not worth a countdown. */
+/** "5h", "under 1h", "now", or null when it's not worth a countdown. */
 export function hoursLeftWords(due: string, done: boolean): string | null {
   if (done) return null;
   const h = businessHoursLeft(due);
   if (h === null) return null;
-  if (h <= 0) return "due now";
-  if (h < 1) return "under 1h left";
-  return `${Math.round(h)}h left`;
+  if (h <= 0) return "now";
+  if (h < 1) return "under 1h";
+  return `${Math.round(h)}h`;
 }
 
 const pill = (on: boolean, tone?: "red" | "amber") => ({

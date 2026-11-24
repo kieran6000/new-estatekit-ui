@@ -1,9 +1,10 @@
 import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Box, IconButton, Tooltip, Typography } from "@mui/material";
+import { Box, IconButton, Tooltip } from "@mui/material";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
+import KeyboardOutlinedIcon from "@mui/icons-material/KeyboardOutlined";
 import { listAgentProfiles } from "../api/_client";
 import { useAuth } from "../hooks/useAuth";
 import { clientPath, CLIENT_TABS, type ClientTab } from "../lib/clientSlug";
@@ -68,22 +69,21 @@ export default function ClientArrows({ agentId }: { agentId: string }) {
           <IconButton aria-label={`Next account: ${name(next)}`} onClick={() => go(next.agent_id)} onMouseEnter={() => void prefetchClient(qc, next.agent_id)} sx={btn}><ChevronRightIcon /></IconButton>
         </Tooltip>
       </Box>
-      {/* Says, quietly, that the keyboard arrows do this too. Desktop only. */}
-      <Tooltip title="Use the ← and → keys to move between accounts">
-        <Box aria-hidden sx={{ display: { xs: "none", md: "flex" }, alignItems: "center", gap: 0.5, userSelect: "none" }}>
-          <Box component="span" sx={keycapSx}>←</Box>
-          <Box component="span" sx={keycapSx}>→</Box>
-          <Typography component="span" sx={{ fontSize: 11.5, color: tokens.ink3, ml: 0.25 }}>to switch</Typography>
+      {/* The keyboard shortcut, shown plainly: a keyboard glyph + two keycaps. */}
+      <Tooltip title="The ← and → keys move between accounts">
+        <Box aria-hidden sx={{ display: { xs: "none", md: "inline-flex" }, alignItems: "center", gap: 0.5, ml: 0.5, userSelect: "none" }}>
+          <KeyboardOutlinedIcon sx={{ fontSize: 19, color: tokens.ink3 }} />
+          <Box component="span" sx={keycapSx}><ChevronLeftIcon sx={{ fontSize: 15 }} /></Box>
+          <Box component="span" sx={keycapSx}><ChevronRightIcon sx={{ fontSize: 15 }} /></Box>
         </Box>
       </Tooltip>
     </Box>
   );
 }
 
-// A little keyboard-key look: raised cap, bottom shadow.
+// A real keyboard-key look: light cap, rounded, a thicker bottom edge.
 const keycapSx = {
   display: "inline-flex", alignItems: "center", justifyContent: "center",
-  minWidth: 20, height: 20, px: 0.5, borderRadius: "5px", fontSize: 13, lineHeight: 1,
-  color: tokens.ink2, bgcolor: "background.paper",
-  border: `1px solid ${tokens.divider}`, borderBottomWidth: 2,
+  width: 22, height: 22, borderRadius: "6px", color: tokens.ink2, bgcolor: "background.paper",
+  border: `1px solid ${tokens.divider}`, borderBottomWidth: 2, boxShadow: "0 1px 0 rgba(0,0,0,.04)",
 } as const;
