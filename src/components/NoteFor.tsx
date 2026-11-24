@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Avatar, Badge, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Menu, MenuItem, TextField, Tooltip, Typography } from "@mui/material";
+import { Avatar, Badge, Box, Button, ButtonBase, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, TextField, Tooltip, Typography } from "@mui/material";
 import { draftPing, sendPing } from "../api/checkins";
 import { useSnack } from "../hooks/useSnack";
-import PersonAddAltRoundedIcon from "@mui/icons-material/PersonAddAltRounded";
+import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import EventRoundedIcon from "@mui/icons-material/EventRounded";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import { listOpenTodos, listTeam, type NoteFor } from "../api/checkins";
@@ -82,67 +82,88 @@ function PersonAvatar({ name, src, size }: { name: string | null; src?: string |
   );
 }
 
-/** The "For" and "Due" buttons. `showDue` only for to-dos. */
+const fieldLabel = { fontSize: 11.5, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: tokens.ink2 } as const;
+
+/** Picking who a to-do/note is for, and when it's due. Assigning is a row of
+ *  tappable faces — tap one to give it to them (they get a WhatsApp), tap again
+ *  to take it back. One can be chosen; the chosen one is filled and ticked. */
 export function ForAndDue({ value, onChange, showDue = true }: { value: NoteFor; onChange: (v: NoteFor) => void; showDue?: boolean }) {
   const { data: team = [] } = useTeam();
-  const [menu, setMenu] = useState<HTMLElement | null>(null);
   const dateRef = useRef<HTMLInputElement>(null);
   const tone = value.dueOn ? (dueState(value.dueOn) === "overdue" ? "red" : dueState(value.dueOn) === "today" ? "amber" : undefined) : undefined;
 
-  const chosen = team.find((p) => p.agent_id === value.assignedTo);
+  // Tap a face to assign; tap the chosen one again to clear it (single pick).
+  const pick = (p: { agent_id: string; name: string }) =>
+    onChange(p.agent_id === value.assignedTo
+      ? { ...value, assignedTo: null, assignedToName: null }
+      : { ...value, assignedTo: p.agent_id, assignedToName: p.name });
+
   return (
-    <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, flexWrap: "wrap" }}>
-      <Box sx={{ display: "inline-flex", alignItems: "center" }}>
-        <Tooltip title={value.assignedTo ? "They got a WhatsApp. Tap to change." : "Give it to someone. They get a WhatsApp."}>
-          <Button
-            size="small"
-            startIcon={value.assignedTo
-              ? <PersonAvatar name={value.assignedToName} src={chosen?.avatar_url} size={18} />
-              : <PersonAddAltRoundedIcon sx={{ fontSize: "17px !important" }} />}
-            onClick={(e) => setMenu(e.currentTarget)}
-            sx={{ ...pill(!!value.assignedTo), pl: value.assignedTo ? 0.5 : 1 }}
-          >
-            {value.assignedTo ? value.assignedToName : "Assign…"}
-          </Button>
-        </Tooltip>
-        {value.assignedTo && (
-          <IconButton size="small" aria-label="For nobody" onClick={() => onChange({ ...value, assignedTo: null, assignedToName: null })} sx={{ p: 0.25, ml: 0.25 }}>
-            <CloseRoundedIcon sx={{ fontSize: 15 }} />
-          </IconButton>
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 1.25 }}>
+      <Box>
+        <Typography sx={{ ...fieldLabel, mb: 0.625, display: "flex", alignItems: "center", gap: 0.5 }}>
+          Assign to
+          <Box component="span" sx={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, color: tokens.ink3 }}>· they get a WhatsApp</Box>
+        </Typography>
+        {team.length === 0 ? (
+          <Typography sx={{ fontSize: 13, color: tokens.ink3 }}>No one to assign to yet.</Typography>
+        ) : (
+          <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.75 }}>
+            {team.map((p) => {
+              const on = p.agent_id === value.assignedTo;
+              return (
+                <Tooltip key={p.agent_id} title={on ? `Assigned to ${p.name} — tap to undo` : `Assign to ${p.name}`}>
+                  <ButtonBase
+                    aria-pressed={on}
+                    onClick={() => pick(p)}
+                    sx={{
+                      display: "inline-flex", alignItems: "center", gap: 0.625, pl: 0.5, pr: 1.25, py: 0.375, borderRadius: "999px",
+                      border: `1.5px solid ${on ? tokens.primary : tokens.divider}`,
+                      bgcolor: on ? tokens.primaryBg : "background.paper",
+                      color: on ? tokens.primary : "text.primary",
+                      fontSize: 13.5, fontWeight: on ? 700 : 500, transition: "background-color .12s, border-color .12s",
+                      "&:hover": { borderColor: on ? tokens.primary : tokens.ink3, bgcolor: on ? tokens.primaryBg : tokens.hover },
+                      "&:focus-visible": { outline: `2px solid ${tokens.primary}`, outlineOffset: 2 },
+                    }}
+                  >
+                    <PersonAvatar name={p.name} src={p.avatar_url} size={22} />
+                    {p.name}
+                    {on && <CheckRoundedIcon sx={{ fontSize: 16 }} />}
+                  </ButtonBase>
+                </Tooltip>
+              );
+            })}
+          </Box>
         )}
       </Box>
-      <Menu anchorEl={menu} open={!!menu} onClose={() => setMenu(null)}>
-        {team.map((p) => (
-          <MenuItem key={p.agent_id} selected={p.agent_id === value.assignedTo} onClick={() => { onChange({ ...value, assignedTo: p.agent_id, assignedToName: p.name }); setMenu(null); }} sx={{ gap: 1 }}>
-            <PersonAvatar name={p.name} src={p.avatar_url} size={22} />{p.name}
-          </MenuItem>
-        ))}
-      </Menu>
 
       {showDue && (
-        <Box sx={{ display: "inline-flex", alignItems: "center", position: "relative" }}>
-          <Button
-            size="small"
-            startIcon={<EventRoundedIcon sx={{ fontSize: "17px !important" }} />}
-            onClick={() => { const el = dateRef.current; if (!el) return; try { el.showPicker(); } catch { el.focus(); el.click(); } }}
-            sx={pill(!!value.dueOn, tone)}
-          >
-            {value.dueOn ? `Due ${dueWords(value.dueOn)}${tone !== "red" && hoursLeftWords(value.dueOn, false) ? ` · ${hoursLeftWords(value.dueOn, false)}` : ""}` : "Due…"}
-          </Button>
-          {value.dueOn && (
-            <IconButton size="small" aria-label="No due date" onClick={() => onChange({ ...value, dueOn: null })} sx={{ p: 0.25, ml: 0.25 }}>
-              <CloseRoundedIcon sx={{ fontSize: 15 }} />
-            </IconButton>
-          )}
-          <input
-            ref={dateRef}
-            type="date"
-            aria-label="Due date"
-            tabIndex={-1}
-            value={value.dueOn ?? ""}
-            onChange={(e) => onChange({ ...value, dueOn: e.target.value || null })}
-            style={{ position: "absolute", left: 0, bottom: 0, width: 1, height: 1, opacity: 0, pointerEvents: "none", border: 0, padding: 0 }}
-          />
+        <Box>
+          <Typography sx={{ ...fieldLabel, mb: 0.625 }}>Due date</Typography>
+          <Box sx={{ display: "inline-flex", alignItems: "center", position: "relative" }}>
+            <Button
+              size="small"
+              startIcon={<EventRoundedIcon sx={{ fontSize: "17px !important" }} />}
+              onClick={() => { const el = dateRef.current; if (!el) return; try { el.showPicker(); } catch { el.focus(); el.click(); } }}
+              sx={pill(!!value.dueOn, tone)}
+            >
+              {value.dueOn ? `${dueWords(value.dueOn)}${tone !== "red" && hoursLeftWords(value.dueOn, false) ? ` · ${hoursLeftWords(value.dueOn, false)}` : ""}` : "Set a date…"}
+            </Button>
+            {value.dueOn && (
+              <IconButton size="small" aria-label="No due date" onClick={() => onChange({ ...value, dueOn: null })} sx={{ p: 0.25, ml: 0.25 }}>
+                <CloseRoundedIcon sx={{ fontSize: 15 }} />
+              </IconButton>
+            )}
+            <input
+              ref={dateRef}
+              type="date"
+              aria-label="Due date"
+              tabIndex={-1}
+              value={value.dueOn ?? ""}
+              onChange={(e) => onChange({ ...value, dueOn: e.target.value || null })}
+              style={{ position: "absolute", left: 0, bottom: 0, width: 1, height: 1, opacity: 0, pointerEvents: "none", border: 0, padding: 0 }}
+            />
+          </Box>
         </Box>
       )}
     </Box>
